@@ -1,0 +1,67 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dweb-core",
+    "crates/dweb-identity",
+    "crates/dweb-network",
+    "crates/dweb-node",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+# Internal crates
+dweb-core = { path = "crates/dweb-core" }
+dweb-identity = { path = "crates/dweb-identity" }
+dweb-network = { path = "crates/dweb-network" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# P2P networking
+libp2p = { version = "0.54", features = [
+    "tokio",
+    "noise",
+    "tcp",
+    "quic",
+    "yamux",
+    "mdns",
+    "request-response",
+    "cbor",
+    "macros",
+    "identify",
+] }
+
+# Cryptography
+ed25519-dalek = { version = "2", features = ["rand_core", "serde"] }
+rand = "0.8"
+
+# Content addressing
+blake3 = "1"
+cid = "0.11"
+multihash = "0.19"
+multihash-codetable = { version = "0.1", features = ["blake3"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ciborium = "0.2"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Misc
+directories = "5"
+hex = "0.4"
+tempfile = "3"

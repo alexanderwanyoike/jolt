@@ -1,0 +1,25 @@
+[package]
+name = "dweb-node"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "dweb"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[dependencies]
+dweb-core = { workspace = true }
+dweb-identity = { workspace = true }
+dweb-network = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+directories = { workspace = true }
+hex = { workspace = true }

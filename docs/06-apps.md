@@ -1,0 +1,265 @@
+# Application System
+
+## Overview
+
+dweb apps are distributed software packages. A developer compiles their app to WASM, publishes it to the dweb network, and users install it on their nodes. Apps run locally, store data locally, and communicate with other users peer-to-peer.
+
+## App Manifest
+
+Every app has a manifest that describes it:
+
+```toml
+[app]
+id = "bafk..."                          # ContentId of the initial version
+name = "dweb-chat"
+description = "End-to-end encrypted peer-to-peer chat"
+version = "1.0.0"
+developer = "ed25519:a1b2c3d4..."       # developer's public key
+homepage = "dweb://a1b2c3d4/apps/chat"  # optional
+license = "MIT"
+
+[app.type]
+kind = "hybrid"                         # "client" | "server" | "hybrid"
+
+[app.client]
+entry = "index.html"                    # entry point for browser UI
+wasm = "app_client.wasm"               # client-side WASM (optional)
+assets = ["styles.css", "app.js"]      # static assets
+
+[app.server]
+wasm = "app_server.wasm"               # server-side WASM binary
+entry_function = "handle_request"       # exported function name
+
+[capabilities.required]
+storage = true
+network = true
+
+[capabilities.optional]
+identity = "Display your name in chat"
+crypto = "End-to-end message encryption"
+
+[capabilities.never]
+http = true
+
+[resources]
+max_memory = "32MB"
+max_storage = "50MB"
+```
+
+## App Lifecycle
+
+### Publishing
+
+```mermaid
+flowchart TD
+    Write["Write app in any WASM-compatible language"]
+    Write --> Compile["Compile to WASM target"]
+    Compile --> Manifest["Create manifest.toml"]
+    Manifest --> Pack["dweb app pack ./my-app/"]
+    Pack --> DWEB[".dweb archive\n(wasm + assets + manifest)"]
+    DWEB --> Publish["dweb app publish"]
+
+    Publish --> Sign["Sign with developer key"]
+    Sign --> CAddr["Content-address the package"]
+    CAddr --> Announce["Announce to DHT"]
+    Announce --> Log["Add to developer's update log"]
+```
+
+### Discovery
+
+Users find apps through:
+
+1. **Direct link** -- a dweb:// URI shared by someone
+2. **Developer's profile** -- browse a developer's published apps
+3. **Search** -- query the DHT for app manifests matching keywords
+4. **App directory** -- community-maintained curated lists (themselves dweb apps)
+5. **Recommendation** -- apps can suggest related apps
+
+There is no centralized app store. Discovery is decentralized, but curated directories can emerge organically.
+
+### Installation
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Node as dweb Node
+    participant Net as Network
+
+    User->>Node: Install app (ContentId)
+    Node->>Net: Fetch .dweb package
+    Net-->>Node: Package bytes
+    Node->>Node: Verify content hash matches ContentId
+    Node->>Node: Verify developer signature
+    Node->>User: Display manifest + required permissions
+    User->>Node: Approve permissions
+    Node->>Node: Store WASM binary + assets locally
+    Node->>User: App appears in launcher
+```
+
+### Running
+
+**Client-side apps:**
+```
+1. User clicks app in launcher
+2. Node serves app assets via localhost HTTP
+3. Browser loads HTML + WASM
+4. App runs entirely in the browser
+5. Communicates with node via localhost API for storage/network
+```
+
+**Server-side apps:**
+```
+1. App starts in wasmtime sandbox on the node
+2. Runs in background, handles events (incoming messages, scheduled tasks)
+3. Exposes HTTP endpoints proxied through the node's server
+4. Browser UI communicates with server-side WASM via these endpoints
+```
+
+**Hybrid apps:**
+```
+1. Server-side component starts on node (background processing)
+2. Client-side component loaded in browser (UI)
+3. Browser talks to server component via localhost HTTP
+4. Server component handles P2P sync, caching, background tasks
+5. Client component handles UI, real-time updates via WebSocket
+```
+
+### Updating
+
+```
+1. Node periodically checks developer's update log for new versions
+   (configurable: auto-check, manual, or disabled)
+2. New version found:
+   - Fetch new package
+   - Verify developer signature (same key as original publish)
+   - Show user: changelog, permission changes
+   - If new permissions required, user must approve
+3. User accepts: old WASM replaced, data preserved
+4. User declines: stays on current version
+5. Auto-update option for trusted developers
+```
+
+### Uninstalling
+
+```
+1. User clicks "Uninstall" (or: dweb app uninstall <app-id>)
+2. WASM binary and assets deleted
+3. User chooses: keep data or delete data
+4. If keep: data remains in per-app namespace, accessible if reinstalled
+5. If delete: all app data removed permanently
+```
+
+## App-to-App Communication
+
+Apps on the same node can communicate through a controlled message bus:
+
+```rust
+// App A wants to share data with App B
+// Both apps must declare this capability and the user must approve
+
+fn app_send(target_app: &ContentId, message: &[u8]) -> Result<(), Error>
+fn on_app_message(callback: fn(source_app: ContentId, message: &[u8]))
+```
+
+Use cases:
+- A file picker app that other apps can invoke
+- A crypto wallet app that other apps use for payments
+- A contacts app that shares contact info with chat apps
+
+The user explicitly grants inter-app communication permissions.
+
+## Developer SDK
+
+dweb provides SDK packages that wrap the host API:
+
+### Rust SDK Example
+
+```rust
+use dweb_sdk::prelude::*;
+
+#[dweb::main]
+async fn handle_request(req: Request) -> Response {
+    // Read from app's KV store
+    let count: u64 = kv::get("visit_count").unwrap_or(0);
+    kv::set("visit_count", count + 1);
+
+    // Get visitor identity
+    let visitor = identity::self_peer_id();
+
+    Response::html(format!(
+        "<h1>Welcome to my app!</h1>
+         <p>You are: {}</p>
+         <p>Visit count: {}</p>",
+        visitor, count
+    ))
+}
+```
+
+### JavaScript SDK Example
+
+```javascript
+import { kv, network, identity } from 'dweb-sdk';
+
+// Handle incoming chat messages
+network.onPeerMessage(async (peer, data) => {
+    const message = JSON.parse(data);
+    const messages = await kv.get('messages') || [];
+    messages.push({ from: peer, text: message.text, time: Date.now() });
+    await kv.set('messages', messages);
+});
+
+// Send a message
+export async function sendMessage(peerId, text) {
+    await network.peerSend(peerId, JSON.stringify({ text }));
+}
+```
+
+## App Signing and Trust
+
+### Developer Identity
+
+Apps are signed with the developer's Ed25519 key. This provides:
+- **Authenticity** -- proof the app came from the claimed developer
+- **Update integrity** -- only the original developer can publish updates
+- **Accountability** -- malicious apps can be traced to a key
+
+### Trust Model
+
+dweb does not have a central review process. Trust is distributed:
+
+```mermaid
+graph TD
+    Trust["Trust Signals"]
+    Trust --> DevKey["Developer's public key<br/>(consistent identity across apps)"]
+    Trust --> Reviews["Community ratings/reviews<br/>(signed by real dweb identities)"]
+    Trust --> Curated["Curated directories<br/>(trusted community members vouch)"]
+    Trust --> Source["Source code availability<br/>(published alongside WASM)"]
+    Trust --> Perms["Permission requests<br/>(minimal = more trustworthy)"]
+    Trust --> Installs["Install count<br/>(via DHT provider records)"]
+```
+
+### Malicious App Protection
+
+- WASM sandbox prevents access to host system
+- Capability system limits what apps can do
+- Resource limits prevent resource exhaustion
+- Users can revoke permissions or uninstall at any time
+- Community can flag malicious apps in curated directories
+- No app can escalate its own privileges
+
+## Example Apps
+
+### dweb-blog (Client-Side)
+A blogging platform. Write posts in markdown, publish to the network. Readers subscribe to your update log. Client-side rendering, no server component needed.
+
+### dweb-chat (Hybrid)
+Encrypted peer-to-peer messaging. Server component receives messages when browser is closed and syncs history. Client component provides the chat UI.
+
+### dweb-video (Client-Side)
+Publish and stream video. Videos are chunked and content-addressed. Viewers stream from multiple peers simultaneously (swarm). Subscriptions via update logs.
+
+### dweb-market (Client-Side)
+Buy and sell goods. Listings are published content. Search is via DHT. Payments are external (crypto, payment links). Reviews are signed by buyer identities.
+
+### dweb-forum (Hybrid)
+Discussion boards. Topics and replies stored per-user. Server component indexes and aggregates across peers for search. Moderation by community-elected keys.
