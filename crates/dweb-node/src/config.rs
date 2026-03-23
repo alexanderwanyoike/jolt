@@ -4,6 +4,7 @@ pub struct NodeConfig {
     pub data_dir: PathBuf,
     pub identity_dir: PathBuf,
     pub content_store_dir: PathBuf,
+    pub cache_dir: PathBuf,
 }
 
 impl NodeConfig {
@@ -18,7 +19,8 @@ impl NodeConfig {
 
         Self {
             identity_dir: base.join("identity"),
-            content_store_dir: base.join("data").join("published"),
+            content_store_dir: base.join("data"),
+            cache_dir: base.join("data").join("cache"),
             data_dir: base,
         }
     }
@@ -27,7 +29,8 @@ impl NodeConfig {
     pub fn with_base_dir(base: PathBuf) -> Self {
         Self {
             identity_dir: base.join("identity"),
-            content_store_dir: base.join("data").join("published"),
+            content_store_dir: base.join("data"),
+            cache_dir: base.join("data").join("cache"),
             data_dir: base,
         }
     }
@@ -36,6 +39,7 @@ impl NodeConfig {
     pub fn ensure_dirs(&self) -> std::io::Result<()> {
         std::fs::create_dir_all(&self.identity_dir)?;
         std::fs::create_dir_all(&self.content_store_dir)?;
+        std::fs::create_dir_all(&self.cache_dir)?;
         Ok(())
     }
 }
@@ -53,13 +57,21 @@ mod tests {
 
         assert!(config.identity_dir.exists());
         assert!(config.content_store_dir.exists());
+        assert!(config.cache_dir.exists());
     }
 
     #[test]
     fn default_dirs_produces_valid_paths() {
         let config = NodeConfig::default_dirs();
-        assert!(config.data_dir.is_absolute() || config.data_dir.starts_with("."));
         assert!(config.identity_dir.starts_with(&config.data_dir));
         assert!(config.content_store_dir.starts_with(&config.data_dir));
+        assert!(config.cache_dir.starts_with(&config.data_dir));
+    }
+
+    #[test]
+    fn config_has_cache_dir() {
+        let dir = tempdir().unwrap();
+        let config = NodeConfig::with_base_dir(dir.path().to_path_buf());
+        assert!(config.cache_dir.to_string_lossy().contains("cache"));
     }
 }

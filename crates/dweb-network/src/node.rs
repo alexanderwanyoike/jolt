@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use libp2p::futures::StreamExt;
@@ -11,6 +11,7 @@ use tracing::{debug, info, warn};
 
 use dweb_core::{ContentId, ContentManifest};
 use dweb_identity::NodeIdentity;
+use dweb_store::ContentStore;
 
 use crate::behaviour::{DwebBehaviour, DwebBehaviourEvent};
 use crate::error::NetworkError;
@@ -19,20 +20,19 @@ use crate::protocol::{ContentRequest, ContentResponse};
 pub struct NetworkNode {
     swarm: Swarm<DwebBehaviour>,
     identity: NodeIdentity,
-    content_store: PathBuf,
-    published_content: HashMap<String, PathBuf>,
-    pending_fetches:
-        HashMap<OutboundRequestId, oneshot::Sender<Result<ContentResponse, NetworkError>>>,
+    store: ContentStore,
+    pending_fetches: HashMap<
+        OutboundRequestId,
+        (String, oneshot::Sender<Result<ContentResponse, NetworkError>>),
+    >,
 }
 
 impl NetworkNode {
-    /// Create a new network node.
+    /// Create a new network node with the given identity and content store.
     pub async fn new(
         identity: NodeIdentity,
-        content_store: PathBuf,
+        store: ContentStore,
     ) -> Result<Self, NetworkError> {
-        std::fs::create_dir_all(&content_store).map_err(NetworkError::Io)?;
-
         let libp2p_keypair = identity.to_libp2p_keypair();
 
         let swarm = libp2p::SwarmBuilder::with_existing_identity(libp2p_keypair)
@@ -65,18 +65,12 @@ impl NetworkNode {
             .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(60)))
             .build();
 
-        let mut node = Self {
+        Ok(Self {
             swarm,
             identity,
-            content_store,
-            published_content: HashMap::new(),
+            store,
             pending_fetches: HashMap::new(),
-        };
-
-        // Load any existing published content
-        node.load_published_content()?;
-
-        Ok(node)
+        })
     }
 
     /// Start listening on a multiaddr.
@@ -107,20 +101,9 @@ impl NetworkNode {
     pub fn publish_file(&mut self, file_path: &Path) -> Result<ContentId, NetworkError> {
         let data = std::fs::read(file_path).map_err(NetworkError::Io)?;
         let content_id = ContentId::from_bytes(&data);
-        let id_str = content_id.to_string();
 
-        // Create content directory
-        let content_dir = self.content_store.join(&id_str);
-        std::fs::create_dir_all(&content_dir).map_err(NetworkError::Io)?;
+        let signature = self.identity.sign(&data);
 
-        // Write content
-        let content_path = content_dir.join("content");
-        std::fs::write(&content_path, &data).map_err(NetworkError::Io)?;
-
-        // Sign the content hash
-        let signature = self.identity.sign(data.as_slice());
-
-        // Write manifest
         let manifest = ContentManifest {
             content_id: content_id.clone(),
             size: data.len() as u64,
@@ -128,19 +111,15 @@ impl NetworkNode {
             publisher_key: self.identity.public_key_bytes().to_vec(),
             signature,
         };
-        let manifest_json =
-            serde_json::to_string_pretty(&manifest).map_err(|e| NetworkError::Protocol(e.to_string()))?;
-        std::fs::write(content_dir.join("manifest.json"), manifest_json)
-            .map_err(NetworkError::Io)?;
 
-        self.published_content
-            .insert(id_str, content_path);
+        self.store
+            .publish(&data, &manifest)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
 
         Ok(content_id)
     }
 
     /// Request content from connected peers by ContentId.
-    /// Returns a oneshot receiver that will resolve when content arrives.
     pub fn request_content(
         &mut self,
         content_id: &ContentId,
@@ -151,53 +130,34 @@ impl NetworkNode {
         }
 
         let (tx, rx) = oneshot::channel();
+        let id_str = content_id.to_string();
         let request = ContentRequest {
-            content_id: content_id.to_string(),
+            content_id: id_str.clone(),
         };
 
-        // Send to the first connected peer
         let peer = peers[0];
         let request_id = self
             .swarm
             .behaviour_mut()
             .content_fetch
             .send_request(&peer, request);
-        self.pending_fetches.insert(request_id, tx);
+        self.pending_fetches.insert(request_id, (id_str, tx));
 
         Ok(rx)
     }
 
-    /// Load existing published content from the content store directory.
-    fn load_published_content(&mut self) -> Result<(), NetworkError> {
-        if !self.content_store.exists() {
-            return Ok(());
-        }
-
-        let entries = std::fs::read_dir(&self.content_store).map_err(NetworkError::Io)?;
-        for entry in entries {
-            let entry = entry.map_err(NetworkError::Io)?;
-            let content_path = entry.path().join("content");
-            if content_path.exists() {
-                let id_str = entry
-                    .file_name()
-                    .to_string_lossy()
-                    .to_string();
-                self.published_content.insert(id_str, content_path);
-            }
-        }
-
-        info!(
-            "Loaded {} published content items",
-            self.published_content.len()
-        );
-        Ok(())
+    /// Get a reference to the content store.
+    pub fn store(&self) -> &ContentStore {
+        &self.store
     }
 
-    /// Handle a single swarm event. Returns true if a fetch was completed.
-    pub fn handle_swarm_event(
-        &mut self,
-        event: SwarmEvent<DwebBehaviourEvent>,
-    ) {
+    /// Get a mutable reference to the content store.
+    pub fn store_mut(&mut self) -> &mut ContentStore {
+        &mut self.store
+    }
+
+    /// Handle a single swarm event.
+    pub fn handle_swarm_event(&mut self, event: SwarmEvent<DwebBehaviourEvent>) {
         match event {
             SwarmEvent::Behaviour(DwebBehaviourEvent::Mdns(
                 libp2p::mdns::Event::Discovered(peers),
@@ -205,7 +165,6 @@ impl NetworkNode {
                 for (peer_id, addr) in peers {
                     info!("mDNS discovered peer: {peer_id} at {addr}");
                     self.swarm.add_peer_address(peer_id, addr.clone());
-                    // Dial the peer to establish a connection
                     if let Err(e) = self.swarm.dial(addr) {
                         debug!("Failed to dial discovered peer: {e}");
                     }
@@ -231,35 +190,21 @@ impl NetworkNode {
             )) => {
                 info!("Received content request for: {}", request.content_id);
 
-                let response = if let Some(content_path) =
-                    self.published_content.get(&request.content_id)
-                {
-                    match std::fs::read(content_path) {
-                        Ok(data) => {
-                            let signature = self.identity.sign(&data);
-                            ContentResponse {
-                                data,
-                                signature,
-                                publisher_key: self.identity.public_key_bytes().to_vec(),
-                            }
+                let response =
+                    if let Some(content_data) = self.store.get_content(&request.content_id) {
+                        ContentResponse {
+                            data: content_data.data,
+                            signature: content_data.signature,
+                            publisher_key: content_data.publisher_key,
                         }
-                        Err(e) => {
-                            warn!("Failed to read content: {e}");
-                            ContentResponse {
-                                data: vec![],
-                                signature: vec![],
-                                publisher_key: vec![],
-                            }
+                    } else {
+                        debug!("Content not found: {}", request.content_id);
+                        ContentResponse {
+                            data: vec![],
+                            signature: vec![],
+                            publisher_key: vec![],
                         }
-                    }
-                } else {
-                    debug!("Content not found: {}", request.content_id);
-                    ContentResponse {
-                        data: vec![],
-                        signature: vec![],
-                        publisher_key: vec![],
-                    }
-                };
+                    };
 
                 if let Err(e) = self
                     .swarm
@@ -282,7 +227,18 @@ impl NetworkNode {
                 },
             )) => {
                 info!("Received content response ({} bytes)", response.data.len());
-                if let Some(tx) = self.pending_fetches.remove(&request_id) {
+                if let Some((content_id_str, tx)) = self.pending_fetches.remove(&request_id) {
+                    // Auto-cache the received content
+                    if !response.data.is_empty() {
+                        if let Err(e) = self.store.cache_content(
+                            &content_id_str,
+                            &response.data,
+                            &response.publisher_key,
+                            &response.signature,
+                        ) {
+                            warn!("Failed to cache content: {e}");
+                        }
+                    }
                     let _ = tx.send(Ok(response));
                 }
             }
@@ -293,7 +249,7 @@ impl NetworkNode {
                 },
             )) => {
                 warn!("Outbound request failed: {error}");
-                if let Some(tx) = self.pending_fetches.remove(&request_id) {
+                if let Some((_content_id, tx)) = self.pending_fetches.remove(&request_id) {
                     let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
                 }
             }
@@ -341,13 +297,19 @@ impl NetworkNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dweb_store::CacheConfig;
     use tempfile::tempdir;
+
+    fn make_store(dir: &Path) -> ContentStore {
+        ContentStore::open(dir, CacheConfig::default()).unwrap()
+    }
 
     #[tokio::test]
     async fn new_creates_node_without_error() {
         let dir = tempdir().unwrap();
         let identity = NodeIdentity::generate();
-        let node = NetworkNode::new(identity, dir.path().join("store")).await;
+        let store = make_store(dir.path());
+        let node = NetworkNode::new(identity, store).await;
         assert!(node.is_ok());
     }
 
@@ -355,9 +317,8 @@ mod tests {
     async fn publish_file_returns_valid_content_id() {
         let dir = tempdir().unwrap();
         let identity = NodeIdentity::generate();
-        let mut node = NetworkNode::new(identity, dir.path().join("store"))
-            .await
-            .unwrap();
+        let store = make_store(dir.path());
+        let mut node = NetworkNode::new(identity, store).await.unwrap();
 
         let test_file = dir.path().join("test.txt");
         std::fs::write(&test_file, b"hello dweb").unwrap();
@@ -371,26 +332,20 @@ mod tests {
         let dir = tempdir().unwrap();
         let identity = NodeIdentity::generate();
         let pubkey = identity.public_key_bytes();
-        let mut node = NetworkNode::new(identity, dir.path().join("store"))
-            .await
-            .unwrap();
+        let store = make_store(dir.path());
+        let mut node = NetworkNode::new(identity, store).await.unwrap();
 
         let test_file = dir.path().join("test.txt");
         let data = b"content to sign";
         std::fs::write(&test_file, data).unwrap();
 
         let content_id = node.publish_file(&test_file).unwrap();
-        let id_str = content_id.to_string();
 
-        // Read the manifest
-        let manifest_path = dir.path().join("store").join(&id_str).join("manifest.json");
-        let manifest_json = std::fs::read_to_string(manifest_path).unwrap();
-        let manifest: ContentManifest = serde_json::from_str(&manifest_json).unwrap();
-
-        // Verify signature
+        // Verify content is in the store and signature is valid
+        let content_data = node.store_mut().get_content(&content_id.to_string()).unwrap();
         let valid =
-            dweb_identity::verify_signature(&pubkey, data, &manifest.signature).unwrap();
+            dweb_identity::verify_signature(&pubkey, data, &content_data.signature).unwrap();
         assert!(valid);
-        assert_eq!(manifest.publisher_key, pubkey.to_vec());
+        assert_eq!(content_data.publisher_key, pubkey.to_vec());
     }
 }

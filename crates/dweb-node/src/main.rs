@@ -5,7 +5,7 @@ mod config;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use cli::{Cli, Commands};
+use cli::{CacheCommands, Cli, Commands};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,6 +23,12 @@ async fn main() -> anyhow::Result<()> {
         Commands::Fetch { content_id, output } => {
             commands::fetch::run(&content_id, output).await?
         }
+        Commands::Cache { command } => match command {
+            CacheCommands::Stats => commands::cache::stats()?,
+            CacheCommands::List => commands::cache::list()?,
+            CacheCommands::Pin { content_id } => commands::cache::pin(&content_id)?,
+            CacheCommands::Unpin { content_id } => commands::cache::unpin(&content_id)?,
+        },
     }
 
     Ok(())

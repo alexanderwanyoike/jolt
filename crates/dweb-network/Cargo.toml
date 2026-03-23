@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 dweb-core = { workspace = true }
 dweb-identity = { workspace = true }
+dweb-store = { workspace = true }
 libp2p = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

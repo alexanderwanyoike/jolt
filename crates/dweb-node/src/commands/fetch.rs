@@ -7,6 +7,7 @@ use tracing::info;
 use dweb_core::ContentId;
 use dweb_identity::{verify_signature, NodeIdentity};
 use dweb_network::NetworkNode;
+use dweb_store::{CacheConfig, ContentStore};
 
 use crate::config::NodeConfig;
 
@@ -18,12 +19,12 @@ pub async fn run(content_id_str: &str, output: Option<PathBuf>) -> Result<()> {
     let config = NodeConfig::default_dirs();
     config.ensure_dirs()?;
 
-    // Use a throwaway identity for fetch so we don't conflict with
-    // a running `dweb start` node that uses the stored identity
+    // Use a throwaway identity to avoid conflicting with a running `dweb start`,
+    // but use the real content store so fetched content is cached persistently.
     let identity = NodeIdentity::generate();
-    let temp_store = std::env::temp_dir().join(format!("dweb-fetch-{}", std::process::id()));
+    let store = ContentStore::open(&config.content_store_dir, CacheConfig::default())?;
 
-    let mut node = NetworkNode::new(identity, temp_store).await?;
+    let mut node = NetworkNode::new(identity, store).await?;
 
     node.listen_on("/ip4/0.0.0.0/tcp/0")?;
     node.listen_on("/ip4/0.0.0.0/udp/0/quic-v1")?;
@@ -35,11 +36,12 @@ pub async fn run(content_id_str: &str, output: Option<PathBuf>) -> Result<()> {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     loop {
         if tokio::time::Instant::now() > deadline {
-            anyhow::bail!("Timed out waiting for peers. Is another dweb node running on this network?");
+            anyhow::bail!(
+                "Timed out waiting for peers. Is another dweb node running on this network?"
+            );
         }
 
-        let event =
-            tokio::time::timeout(Duration::from_millis(500), node.next_event()).await;
+        let event = tokio::time::timeout(Duration::from_millis(500), node.next_event()).await;
         if let Ok(ev) = event {
             node.handle_swarm_event(ev);
         }
@@ -99,11 +101,17 @@ pub async fn run(content_id_str: &str, output: Option<PathBuf>) -> Result<()> {
         }
     }
 
+    info!("Content auto-cached for re-sharing");
+
     // Save to file
     let output_path = output.unwrap_or_else(|| PathBuf::from(content_id_str));
     std::fs::write(&output_path, &response.data)?;
     info!("Saved to: {}", output_path.display());
-    println!("Saved {} bytes to {}", response.data.len(), output_path.display());
+    println!(
+        "Saved {} bytes to {}",
+        response.data.len(),
+        output_path.display()
+    );
 
     Ok(())
 }

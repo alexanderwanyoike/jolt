@@ -29,6 +29,33 @@ pub enum Commands {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+
+    /// Manage the content cache
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum CacheCommands {
+    /// Show cache statistics
+    Stats,
+
+    /// List cached content
+    List,
+
+    /// Pin content to prevent eviction
+    Pin {
+        /// The ContentId to pin
+        content_id: String,
+    },
+
+    /// Unpin content to allow eviction
+    Unpin {
+        /// The ContentId to unpin
+        content_id: String,
+    },
 }
 
 #[cfg(test)]
@@ -74,6 +101,54 @@ mod tests {
                 assert_eq!(output, Some(PathBuf::from("/tmp/out.bin")));
             }
             _ => panic!("expected Fetch command"),
+        }
+    }
+
+    #[test]
+    fn parse_cache_stats_command() {
+        let cli = Cli::parse_from(["dweb", "cache", "stats"]);
+        assert!(matches!(
+            cli.command,
+            Commands::Cache {
+                command: CacheCommands::Stats
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_cache_list_command() {
+        let cli = Cli::parse_from(["dweb", "cache", "list"]);
+        assert!(matches!(
+            cli.command,
+            Commands::Cache {
+                command: CacheCommands::List
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_cache_pin_command() {
+        let cli = Cli::parse_from(["dweb", "cache", "pin", "bafk_test"]);
+        match cli.command {
+            Commands::Cache {
+                command: CacheCommands::Pin { content_id },
+            } => {
+                assert_eq!(content_id, "bafk_test");
+            }
+            _ => panic!("expected Cache Pin command"),
+        }
+    }
+
+    #[test]
+    fn parse_cache_unpin_command() {
+        let cli = Cli::parse_from(["dweb", "cache", "unpin", "bafk_test"]);
+        match cli.command {
+            Commands::Cache {
+                command: CacheCommands::Unpin { content_id },
+            } => {
+                assert_eq!(content_id, "bafk_test");
+            }
+            _ => panic!("expected Cache Unpin command"),
         }
     }
 }

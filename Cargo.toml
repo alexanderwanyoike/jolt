@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/dweb-core",
     "crates/dweb-identity",
+    "crates/dweb-store",
     "crates/dweb-network",
     "crates/dweb-node",
 ]
@@ -16,6 +17,7 @@ license = "MIT"
 # Internal crates
 dweb-core = { path = "crates/dweb-core" }
 dweb-identity = { path = "crates/dweb-identity" }
+dweb-store = { path = "crates/dweb-store" }
 dweb-network = { path = "crates/dweb-network" }
 
 # Async runtime

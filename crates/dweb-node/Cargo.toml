@@ -13,6 +13,7 @@ tempfile = { workspace = true }
 [dependencies]
 dweb-core = { workspace = true }
 dweb-identity = { workspace = true }
+dweb-store = { workspace = true }
 dweb-network = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
