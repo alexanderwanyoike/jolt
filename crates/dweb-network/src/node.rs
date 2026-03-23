@@ -94,6 +94,9 @@ impl NetworkNode {
                     libp2p::autonat::Config::default(),
                 );
 
+                // Relay server (allows this node to relay for others)
+                let relay_server = libp2p::relay::Behaviour::new(peer_id, Default::default());
+
                 // dcutr (hole punching)
                 let dcutr = libp2p::dcutr::Behaviour::new(peer_id);
 
@@ -107,6 +110,7 @@ impl NetworkNode {
                     identify,
                     autonat,
                     relay_client,
+                    relay_server,
                     dcutr,
                     upnp,
                 })
