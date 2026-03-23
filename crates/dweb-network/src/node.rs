@@ -241,6 +241,23 @@ impl NetworkNode {
             .bootstrap()
             .map_err(|e| NetworkError::Dht(format!("Bootstrap failed: {e:?}")))?;
 
+        // Listen on relay circuit addresses so NAT'd peers can be reached
+        // via the bootstrap nodes acting as relays
+        for addr in bootstrap_addrs {
+            let (peer_id, _) = crate::bootstrap::parse_bootstrap_addr(&addr.to_string())?;
+            let relay_addr: Multiaddr = format!(
+                "{}/p2p/{}/p2p-circuit",
+                addr, peer_id
+            )
+            .parse()
+            .map_err(|e: libp2p::multiaddr::Error| NetworkError::Swarm(e.to_string()))?;
+            if let Err(e) = self.swarm.listen_on(relay_addr.clone()) {
+                debug!("Failed to listen on relay circuit: {e}");
+            } else {
+                info!("Listening on relay circuit via {peer_id}");
+            }
+        }
+
         info!("DHT bootstrap initiated");
         Ok(())
     }
