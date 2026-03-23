@@ -8,5 +8,6 @@ pub mod protocol;
 pub use config::NetworkConfig;
 pub use error::NetworkError;
 pub use libp2p::Multiaddr;
+pub use libp2p::PeerId;
 pub use node::NetworkNode;
 pub use protocol::{ContentRequest, ContentResponse};

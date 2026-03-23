@@ -120,8 +120,8 @@ pub async fn run(
         let _query_id = node.find_providers(&content_id);
 
         let dht_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        let mut last_peer_count = node.connected_peers().len();
-        let mut retry_at = tokio::time::Instant::now() + Duration::from_secs(30); // no retry initially
+        let mut provider_peer: Option<dweb_network::PeerId> = None;
+        let mut request_sent = false;
 
         while tokio::time::Instant::now() < dht_deadline {
             let event = tokio::time::timeout(Duration::from_millis(200), node.next_event()).await;
@@ -129,42 +129,50 @@ pub async fn run(
                 node.handle_swarm_event(ev);
             }
 
-            // When a new peer connects, schedule a retry after a short delay
-            // to let the connection fully establish
-            let current_peers = node.connected_peers().len();
-            if current_peers > last_peer_count {
-                info!("New peer connected via DHT, will request content shortly...");
-                last_peer_count = current_peers;
-                retry_at = tokio::time::Instant::now() + Duration::from_secs(2);
+            // Check if DHT found a provider
+            if provider_peer.is_none() {
+                if let Some(peer) = node.take_discovered_provider(&content_id) {
+                    info!("DHT discovered provider: {peer}");
+                    provider_peer = Some(peer);
+                }
             }
 
-            // Try requesting when the retry timer fires
-            if tokio::time::Instant::now() >= retry_at {
-                retry_at = tokio::time::Instant::now() + Duration::from_secs(30); // don't retry again immediately
-                if let Ok(rx) = node.request_content(&content_id) {
-                    info!("Requesting content from provider...");
-                    let mut rx = rx;
-                    let req_deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-                    loop {
-                        if tokio::time::Instant::now() > req_deadline {
-                            break;
-                        }
-                        tokio::select! {
-                            result = &mut rx => {
-                                if let Ok(Ok(resp)) = result {
-                                    if !resp.data.is_empty() {
-                                        response = resp;
-                                    }
-                                }
+            // Once we have a provider AND it's connected, send the request
+            if let Some(ref provider) = provider_peer {
+                if !request_sent && node.connected_peers().contains(provider) {
+                    // Wait a moment for the relay circuit to fully establish
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    // Pump any events that arrived during sleep
+                    while let Ok(ev) = tokio::time::timeout(Duration::from_millis(100), node.next_event()).await {
+                        node.handle_swarm_event(ev);
+                    }
+
+                    info!("Requesting content from provider {provider}...");
+                    request_sent = true;
+                    if let Ok(rx) = node.request_content_from(&content_id, provider) {
+                        let mut rx = rx;
+                        let req_deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+                        loop {
+                            if tokio::time::Instant::now() > req_deadline {
                                 break;
                             }
-                            event = node.next_event() => {
-                                node.handle_swarm_event(event);
+                            tokio::select! {
+                                result = &mut rx => {
+                                    if let Ok(Ok(resp)) = result {
+                                        if !resp.data.is_empty() {
+                                            response = resp;
+                                        }
+                                    }
+                                    break;
+                                }
+                                event = node.next_event() => {
+                                    node.handle_swarm_event(event);
+                                }
                             }
                         }
-                    }
-                    if !response.data.is_empty() {
-                        break;
+                        if !response.data.is_empty() {
+                            break;
+                        }
                     }
                 }
             }

@@ -28,6 +28,8 @@ pub struct NetworkNode {
     >,
     /// Bootstrap peers (PeerId, full multiaddr) to register relay circuits with once connected.
     pending_relay_peers: Vec<(libp2p::PeerId, Multiaddr)>,
+    /// Providers discovered via DHT: content_id string -> provider PeerId
+    discovered_providers: HashMap<String, libp2p::PeerId>,
 }
 
 impl NetworkNode {
@@ -129,6 +131,7 @@ impl NetworkNode {
             store,
             pending_fetches: HashMap::new(),
             pending_relay_peers: Vec::new(),
+            discovered_providers: HashMap::new(),
         })
     }
 
@@ -184,6 +187,7 @@ impl NetworkNode {
     }
 
     /// Request content from connected peers by ContentId.
+    /// Sends to the first connected peer. Use `request_content_from` for a specific peer.
     pub fn request_content(
         &mut self,
         content_id: &ContentId,
@@ -192,19 +196,26 @@ impl NetworkNode {
         if peers.is_empty() {
             return Err(NetworkError::NoPeers);
         }
+        self.request_content_from(content_id, &peers[0])
+    }
 
+    /// Request content from a specific peer.
+    pub fn request_content_from(
+        &mut self,
+        content_id: &ContentId,
+        peer: &libp2p::PeerId,
+    ) -> Result<oneshot::Receiver<Result<ContentResponse, NetworkError>>, NetworkError> {
         let (tx, rx) = oneshot::channel();
         let id_str = content_id.to_string();
         let request = ContentRequest {
             content_id: id_str.clone(),
         };
 
-        let peer = peers[0];
         let request_id = self
             .swarm
             .behaviour_mut()
             .content_fetch
-            .send_request(&peer, request);
+            .send_request(peer, request);
         self.pending_fetches.insert(request_id, (id_str, tx));
 
         Ok(rx)
@@ -265,6 +276,11 @@ impl NetworkNode {
             .map_err(|e| NetworkError::Dht(format!("Failed to announce provider: {e:?}")))?;
         debug!("Announcing as provider for: {content_id}");
         Ok(())
+    }
+
+    /// Take a discovered provider for the given content (removes it from internal tracking).
+    pub fn take_discovered_provider(&mut self, content_id: &ContentId) -> Option<libp2p::PeerId> {
+        self.discovered_providers.remove(&content_id.to_string())
     }
 
     /// Query the DHT for providers of the given content.
@@ -408,11 +424,13 @@ impl NetworkNode {
                             libp2p::kad::QueryResult::GetProviders(Ok(ok)) => {
                                 match ok {
                                     libp2p::kad::GetProvidersOk::FoundProviders {
-                                        providers, ..
+                                        key, providers, ..
                                     } => {
+                                        let key_str = String::from_utf8_lossy(key.as_ref()).to_string();
                                         for provider in providers {
                                             if provider != *self.swarm.local_peer_id() {
-                                                info!("DHT found provider: {provider}, dialing...");
+                                                info!("DHT found provider {provider} for {key_str}");
+                                                self.discovered_providers.insert(key_str.clone(), provider);
                                                 if let Err(e) = self.swarm.dial(provider) {
                                                     debug!("Failed to dial provider {provider}: {e}");
                                                 }
