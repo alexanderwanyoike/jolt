@@ -80,23 +80,31 @@ pub async fn run(
 
     info!("Found {} peer(s)", node.connected_peers().len());
 
-    // Request the content
+    // Try fetching from connected peers first
     let rx = node.request_content(&content_id)?;
 
-    let response = {
+    let mut response = {
         let mut rx = rx;
-        let fetch_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        let fetch_deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         loop {
             if tokio::time::Instant::now() > fetch_deadline {
-                anyhow::bail!("Timed out waiting for content");
+                break dweb_network::ContentResponse {
+                    data: vec![],
+                    signature: vec![],
+                    publisher_key: vec![],
+                };
             }
 
             tokio::select! {
                 result = &mut rx => {
                     match result {
                         Ok(Ok(resp)) => break resp,
-                        Ok(Err(e)) => anyhow::bail!("Fetch error: {e}"),
-                        Err(_) => anyhow::bail!("Response channel closed"),
+                        Ok(Err(_)) => break dweb_network::ContentResponse {
+                            data: vec![], signature: vec![], publisher_key: vec![],
+                        },
+                        Err(_) => break dweb_network::ContentResponse {
+                            data: vec![], signature: vec![], publisher_key: vec![],
+                        },
                     }
                 }
                 event = node.next_event() => {
@@ -106,8 +114,59 @@ pub async fn run(
         }
     };
 
+    // If not found on directly connected peers, try DHT provider discovery
     if response.data.is_empty() {
-        anyhow::bail!("Content not found on any peer");
+        info!("Content not on connected peers, querying DHT for providers...");
+        let _query_id = node.find_providers(&content_id);
+
+        // Pump events -- wait for provider discovery, new connections, and content
+        let dht_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        let mut provider_found = false;
+
+        while tokio::time::Instant::now() < dht_deadline {
+            let event = tokio::time::timeout(Duration::from_millis(500), node.next_event()).await;
+            if let Ok(ev) = event {
+                node.handle_swarm_event(ev);
+            }
+
+            // Check if we have new peers we haven't tried yet
+            let peers = node.connected_peers();
+            if peers.len() > 1 && !provider_found {
+                // New peer connected (likely the provider), try requesting from them
+                info!("New peer connected via DHT, requesting content...");
+                provider_found = true;
+                match node.request_content(&content_id) {
+                    Ok(rx) => {
+                        let mut rx = rx;
+                        let req_deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+                        loop {
+                            if tokio::time::Instant::now() > req_deadline {
+                                break;
+                            }
+                            tokio::select! {
+                                result = &mut rx => {
+                                    if let Ok(Ok(resp)) = result {
+                                        response = resp;
+                                    }
+                                    break;
+                                }
+                                event = node.next_event() => {
+                                    node.handle_swarm_event(event);
+                                }
+                            }
+                        }
+                        if !response.data.is_empty() {
+                            break;
+                        }
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+
+        if response.data.is_empty() {
+            anyhow::bail!("Content not found on any peer or via DHT");
+        }
     }
 
     if !content_id.verify(&response.data) {

@@ -399,7 +399,10 @@ impl NetworkNode {
                                     } => {
                                         for provider in providers {
                                             if provider != *self.swarm.local_peer_id() {
-                                                info!("DHT found provider: {provider}");
+                                                info!("DHT found provider: {provider}, dialing...");
+                                                if let Err(e) = self.swarm.dial(provider) {
+                                                    debug!("Failed to dial provider {provider}: {e}");
+                                                }
                                             }
                                         }
                                     }
