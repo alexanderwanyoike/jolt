@@ -90,8 +90,8 @@ async fn two_nodes_dht_provider_announce_and_fetch() {
             }
         }
 
-        // Wait a moment for identify exchange and Kademlia routing table update
-        let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        // Wait for identify exchange and Kademlia routing table update
+        let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         while tokio::time::Instant::now() < settle_deadline {
             let event = tokio::time::timeout(Duration::from_millis(100), node_b.next_event()).await;
             if let Ok(ev) = event {

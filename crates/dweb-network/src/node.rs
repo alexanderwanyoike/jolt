@@ -26,6 +26,8 @@ pub struct NetworkNode {
         OutboundRequestId,
         (String, oneshot::Sender<Result<ContentResponse, NetworkError>>),
     >,
+    /// Bootstrap peers (PeerId, full multiaddr) to register relay circuits with once connected.
+    pending_relay_peers: Vec<(libp2p::PeerId, Multiaddr)>,
 }
 
 impl NetworkNode {
@@ -126,6 +128,7 @@ impl NetworkNode {
             identity,
             store,
             pending_fetches: HashMap::new(),
+            pending_relay_peers: Vec::new(),
         })
     }
 
@@ -241,20 +244,10 @@ impl NetworkNode {
             .bootstrap()
             .map_err(|e| NetworkError::Dht(format!("Bootstrap failed: {e:?}")))?;
 
-        // Listen on relay circuit addresses so NAT'd peers can be reached
-        // via the bootstrap nodes acting as relays
+        // Store bootstrap peer info to register relay circuits once connected
         for addr in bootstrap_addrs {
-            let (peer_id, _) = crate::bootstrap::parse_bootstrap_addr(&addr.to_string())?;
-            let relay_addr: Multiaddr = format!(
-                "/p2p/{}/p2p-circuit",
-                peer_id
-            )
-            .parse()
-            .map_err(|e: libp2p::multiaddr::Error| NetworkError::Swarm(e.to_string()))?;
-            if let Err(e) = self.swarm.listen_on(relay_addr.clone()) {
-                debug!("Failed to listen on relay circuit: {e}");
-            } else {
-                info!("Listening on relay circuit via {peer_id}");
+            if let Ok((peer_id, _)) = crate::bootstrap::parse_bootstrap_addr(&addr.to_string()) {
+                self.pending_relay_peers.push((peer_id, addr.clone()));
             }
         }
 
@@ -384,12 +377,15 @@ impl NetworkNode {
                 libp2p::identify::Event::Received { peer_id, info, .. },
             )) => {
                 debug!("Identified peer {peer_id}: {} protocols", info.protocols.len());
+                // Feed addresses into Kademlia
                 for addr in &info.listen_addrs {
                     self.swarm
                         .behaviour_mut()
                         .kademlia
                         .add_address(&peer_id, addr.clone());
                 }
+                // Add our observed address as external (needed for relay server)
+                self.swarm.add_external_address(info.observed_addr.clone());
             }
 
             // --- Kademlia ---
@@ -492,6 +488,18 @@ impl NetworkNode {
 
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                 info!("Connected to peer: {peer_id}");
+
+                // If this is a bootstrap peer, register a relay circuit reservation
+                if let Some(idx) = self.pending_relay_peers.iter().position(|(pid, _)| pid == &peer_id) {
+                    let (_, relay_full_addr) = self.pending_relay_peers.remove(idx);
+                    // Append /p2p-circuit to the full relay multiaddr
+                    let circuit_addr = relay_full_addr
+                        .with(libp2p::multiaddr::Protocol::P2pCircuit);
+                    match self.swarm.listen_on(circuit_addr.clone()) {
+                        Ok(_) => info!("Requested relay reservation via {peer_id}"),
+                        Err(e) => warn!("Failed to request relay reservation via {peer_id}: {e}"),
+                    }
+                }
             }
 
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
