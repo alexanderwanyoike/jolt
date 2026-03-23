@@ -18,11 +18,18 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Start { port } => commands::start::run(port).await?,
+        Commands::Start {
+            port,
+            bootstrap,
+            no_bootstrap,
+        } => commands::start::run(port, bootstrap, no_bootstrap).await?,
         Commands::Publish { file } => commands::publish::run(&file).await?,
-        Commands::Fetch { content_id, output, dial } => {
-            commands::fetch::run(&content_id, output, dial).await?
-        }
+        Commands::Fetch {
+            content_id,
+            output,
+            dial,
+            bootstrap,
+        } => commands::fetch::run(&content_id, output, dial, bootstrap).await?,
         Commands::Cache { command } => match command {
             CacheCommands::Stats => commands::cache::stats()?,
             CacheCommands::List => commands::cache::list()?,

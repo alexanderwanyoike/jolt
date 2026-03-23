@@ -22,4 +22,13 @@ pub enum NetworkError {
 
     #[error("No peers available")]
     NoPeers,
+
+    #[error("DHT error: {0}")]
+    Dht(String),
+
+    #[error("Bootstrap failed: no known peers")]
+    NoBootstrapPeers,
+
+    #[error("Provider not found for content: {0}")]
+    ProviderNotFound(String),
 }

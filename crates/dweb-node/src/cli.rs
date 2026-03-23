@@ -16,6 +16,14 @@ pub enum Commands {
         /// TCP port to listen on (default: random)
         #[arg(short, long)]
         port: Option<u16>,
+
+        /// Bootstrap peer multiaddr (repeatable, e.g., /ip4/1.2.3.4/tcp/4001/p2p/12D3KooW...)
+        #[arg(short, long)]
+        bootstrap: Vec<String>,
+
+        /// Disable DHT bootstrapping (LAN-only mode)
+        #[arg(long)]
+        no_bootstrap: bool,
     },
 
     /// Publish a file to the network
@@ -36,6 +44,10 @@ pub enum Commands {
         /// Dial a specific peer address (e.g., /ip4/1.2.3.4/tcp/40933)
         #[arg(short, long)]
         dial: Option<String>,
+
+        /// Bootstrap peer multiaddr (e.g., /ip4/1.2.3.4/tcp/4001/p2p/12D3KooW...)
+        #[arg(short, long)]
+        bootstrap: Vec<String>,
     },
 
     /// Manage the content cache

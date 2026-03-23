@@ -4,7 +4,7 @@ use anyhow::Result;
 use tracing::info;
 
 use dweb_identity::NodeIdentity;
-use dweb_network::NetworkNode;
+use dweb_network::{NetworkConfig, NetworkNode};
 use dweb_store::{CacheConfig, ContentStore};
 
 use crate::config::NodeConfig;
@@ -20,7 +20,7 @@ pub async fn run(file: &Path) -> Result<()> {
     let identity = NodeIdentity::load_or_generate(&config.identity_dir)?;
 
     let store = ContentStore::open(&config.content_store_dir, CacheConfig::default())?;
-    let mut node = NetworkNode::new(identity, store).await?;
+    let mut node = NetworkNode::new(identity, store, NetworkConfig::test_config()).await?;
 
     let metadata = std::fs::metadata(file)?;
     info!("Publishing: {}", file.display());

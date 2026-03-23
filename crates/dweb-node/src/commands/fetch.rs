@@ -6,12 +6,17 @@ use tracing::info;
 
 use dweb_core::ContentId;
 use dweb_identity::{verify_signature, NodeIdentity};
-use dweb_network::NetworkNode;
+use dweb_network::{NetworkConfig, NetworkNode};
 use dweb_store::{CacheConfig, ContentStore};
 
 use crate::config::NodeConfig;
 
-pub async fn run(content_id_str: &str, output: Option<PathBuf>, dial: Option<String>) -> Result<()> {
+pub async fn run(
+    content_id_str: &str,
+    output: Option<PathBuf>,
+    dial: Option<String>,
+    bootstrap: Vec<String>,
+) -> Result<()> {
     let content_id: ContentId = content_id_str
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid ContentId: {e}"))?;
@@ -19,25 +24,37 @@ pub async fn run(content_id_str: &str, output: Option<PathBuf>, dial: Option<Str
     let config = NodeConfig::default_dirs();
     config.ensure_dirs()?;
 
-    // Use a throwaway identity to avoid conflicting with a running `dweb start`,
-    // but use the real content store so fetched content is cached persistently.
     let identity = NodeIdentity::generate();
     let store = ContentStore::open(&config.content_store_dir, CacheConfig::default())?;
 
-    let mut node = NetworkNode::new(identity, store).await?;
+    let mut net_config = NetworkConfig::default();
+    if !bootstrap.is_empty() {
+        net_config.bootstrap_peers = bootstrap
+            .iter()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+    }
+
+    let mut node = NetworkNode::new(identity, store, net_config).await?;
 
     node.listen_on("/ip4/0.0.0.0/tcp/0")?;
     node.listen_on("/ip4/0.0.0.0/udp/0/quic-v1")?;
 
     info!("Fetching: {content_id}");
 
-    // If a direct dial address is provided, connect to it
     if let Some(ref addr) = dial {
+        // Direct dial mode (manual address)
         info!("Dialing peer at {addr}");
         let multiaddr: dweb_network::Multiaddr = addr
             .parse()
             .map_err(|e| anyhow::anyhow!("Invalid multiaddr: {e}"))?;
         node.dial(multiaddr)?;
+    } else if !bootstrap.is_empty() {
+        // DHT mode: bootstrap, then find providers
+        info!("Bootstrapping into DHT...");
+        let addrs: Vec<dweb_network::Multiaddr> =
+            bootstrap.iter().filter_map(|s| s.parse().ok()).collect();
+        node.bootstrap_dht(&addrs)?;
     } else {
         info!("Discovering peers via mDNS...");
     }
@@ -47,7 +64,7 @@ pub async fn run(content_id_str: &str, output: Option<PathBuf>, dial: Option<Str
     loop {
         if tokio::time::Instant::now() > deadline {
             anyhow::bail!(
-                "Timed out waiting for peers. Is another dweb node running on this network?"
+                "Timed out waiting for peers. Try --dial or --bootstrap."
             );
         }
 
@@ -66,7 +83,6 @@ pub async fn run(content_id_str: &str, output: Option<PathBuf>, dial: Option<Str
     // Request the content
     let rx = node.request_content(&content_id)?;
 
-    // Pump events while waiting for response
     let response = {
         let mut rx = rx;
         let fetch_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
@@ -94,13 +110,11 @@ pub async fn run(content_id_str: &str, output: Option<PathBuf>, dial: Option<Str
         anyhow::bail!("Content not found on any peer");
     }
 
-    // Verify content
     if !content_id.verify(&response.data) {
         anyhow::bail!("Content verification failed: hash mismatch");
     }
     info!("Hash verified: content matches ContentId");
 
-    // Verify signature
     if let Ok(valid) =
         verify_signature(&response.publisher_key, &response.data, &response.signature)
     {
@@ -113,7 +127,6 @@ pub async fn run(content_id_str: &str, output: Option<PathBuf>, dial: Option<Str
 
     info!("Content auto-cached for re-sharing");
 
-    // Save to file
     let output_path = output.unwrap_or_else(|| PathBuf::from(content_id_str));
     std::fs::write(&output_path, &response.data)?;
     info!("Saved to: {}", output_path.display());

@@ -35,6 +35,12 @@ libp2p = { version = "0.54", features = [
     "cbor",
     "macros",
     "identify",
+    "kad",
+    "autonat",
+    "relay",
+    "dcutr",
+    "upnp",
+    "dns",
 ] }
 
 # Cryptography

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use dweb_identity::{verify_signature, NodeIdentity};
-use dweb_network::NetworkNode;
+use dweb_network::{NetworkConfig, NetworkNode};
 use dweb_store::{CacheConfig, ContentStore};
 use tempfile::tempdir;
 
@@ -24,7 +24,7 @@ async fn two_nodes_publish_and_fetch() {
 
     // Create Node A and start listening
     let store_a = make_store(dir_a.path());
-    let mut node_a = NetworkNode::new(identity_a, store_a).await.unwrap();
+    let mut node_a = NetworkNode::new(identity_a, store_a, NetworkConfig::test_config()).await.unwrap();
     node_a.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
 
     // Publish test content on Node A
@@ -55,7 +55,7 @@ async fn two_nodes_publish_and_fetch() {
 
     // Create Node B and dial Node A
     let store_b = make_store(dir_b.path());
-    let mut node_b = NetworkNode::new(identity_b, store_b).await.unwrap();
+    let mut node_b = NetworkNode::new(identity_b, store_b, NetworkConfig::test_config()).await.unwrap();
     node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     node_b.dial(addr_a).unwrap();
 

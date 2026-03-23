@@ -14,6 +14,7 @@ use dweb_identity::NodeIdentity;
 use dweb_store::ContentStore;
 
 use crate::behaviour::{DwebBehaviour, DwebBehaviourEvent};
+use crate::config::NetworkConfig;
 use crate::error::NetworkError;
 use crate::protocol::{ContentRequest, ContentResponse};
 
@@ -28,10 +29,11 @@ pub struct NetworkNode {
 }
 
 impl NetworkNode {
-    /// Create a new network node with the given identity and content store.
+    /// Create a new network node with the given identity, content store, and config.
     pub async fn new(
         identity: NodeIdentity,
         store: ContentStore,
+        config: NetworkConfig,
     ) -> Result<Self, NetworkError> {
         let libp2p_keypair = identity.to_libp2p_keypair();
 
@@ -44,11 +46,23 @@ impl NetworkNode {
             )
             .map_err(|e| NetworkError::Swarm(e.to_string()))?
             .with_quic()
-            .with_behaviour(|key| {
+            .with_dns()
+            .map_err(|e| NetworkError::Swarm(e.to_string()))?
+            .with_relay_client(
+                libp2p::noise::Config::new,
+                libp2p::yamux::Config::default,
+            )
+            .map_err(|e| NetworkError::Swarm(e.to_string()))?
+            .with_behaviour(|key, relay_client| {
+                let peer_id = key.public().to_peer_id();
+
+                // mDNS (LAN discovery)
                 let mdns = libp2p::mdns::tokio::Behaviour::new(
                     libp2p::mdns::Config::default(),
-                    key.public().to_peer_id(),
+                    peer_id,
                 )?;
+
+                // Content fetch protocol (unchanged)
                 let content_fetch = request_response::cbor::Behaviour::new(
                     [(
                         StreamProtocol::new("/dweb/content/1.0.0"),
@@ -56,14 +70,52 @@ impl NetworkNode {
                     )],
                     request_response::Config::default(),
                 );
+
+                // Kademlia DHT
+                let mut kad_config = libp2p::kad::Config::new(
+                    StreamProtocol::new("/dweb/kad/1.0.0"),
+                );
+                kad_config.set_query_timeout(Duration::from_secs(60));
+                let kad_store = libp2p::kad::store::MemoryStore::new(peer_id);
+                let kademlia =
+                    libp2p::kad::Behaviour::with_config(peer_id, kad_store, kad_config);
+
+                // Identify (peer info exchange)
+                let identify = libp2p::identify::Behaviour::new(
+                    libp2p::identify::Config::new(
+                        "/dweb/id/1.0.0".to_string(),
+                        key.public(),
+                    ),
+                );
+
+                // AutoNAT (NAT detection)
+                let autonat = libp2p::autonat::Behaviour::new(
+                    peer_id,
+                    libp2p::autonat::Config::default(),
+                );
+
+                // dcutr (hole punching)
+                let dcutr = libp2p::dcutr::Behaviour::new(peer_id);
+
+                // UPnP (automatic port mapping)
+                let upnp = libp2p::upnp::tokio::Behaviour::default();
+
                 Ok(DwebBehaviour {
                     mdns,
                     content_fetch,
+                    kademlia,
+                    identify,
+                    autonat,
+                    relay_client,
+                    dcutr,
+                    upnp,
                 })
             })
             .map_err(|e| NetworkError::Swarm(e.to_string()))?
             .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(60)))
             .build();
+
+        let _ = config; // Will be used in later phases for bootstrap peers
 
         Ok(Self {
             swarm,
@@ -116,6 +168,11 @@ impl NetworkNode {
             .publish(&data, &manifest)
             .map_err(|e| NetworkError::Protocol(e.to_string()))?;
 
+        // Announce as DHT provider (best-effort, don't fail publish on DHT error)
+        if let Err(e) = self.announce_provider(&content_id) {
+            debug!("DHT announcement skipped: {e}");
+        }
+
         Ok(content_id)
     }
 
@@ -156,9 +213,56 @@ impl NetworkNode {
         &mut self.store
     }
 
+    /// Add bootstrap peers to Kademlia, dial them, and initiate DHT bootstrap.
+    pub fn bootstrap_dht(
+        &mut self,
+        bootstrap_addrs: &[Multiaddr],
+    ) -> Result<(), NetworkError> {
+        for addr in bootstrap_addrs {
+            let (peer_id, transport) = crate::bootstrap::parse_bootstrap_addr(&addr.to_string())?;
+            self.swarm
+                .behaviour_mut()
+                .kademlia
+                .add_address(&peer_id, transport.clone());
+            // Actually dial the bootstrap peer to establish a connection
+            if let Err(e) = self.swarm.dial(transport) {
+                warn!("Failed to dial bootstrap peer {peer_id}: {e}");
+            }
+            info!("Added bootstrap peer: {peer_id}");
+        }
+
+        self.swarm
+            .behaviour_mut()
+            .kademlia
+            .bootstrap()
+            .map_err(|e| NetworkError::Dht(format!("Bootstrap failed: {e:?}")))?;
+
+        info!("DHT bootstrap initiated");
+        Ok(())
+    }
+
+    /// Announce this node as a provider for the given content in the DHT.
+    pub fn announce_provider(&mut self, content_id: &ContentId) -> Result<(), NetworkError> {
+        let key = libp2p::kad::RecordKey::new(&content_id.to_string().into_bytes());
+        self.swarm
+            .behaviour_mut()
+            .kademlia
+            .start_providing(key)
+            .map_err(|e| NetworkError::Dht(format!("Failed to announce provider: {e:?}")))?;
+        debug!("Announcing as provider for: {content_id}");
+        Ok(())
+    }
+
+    /// Query the DHT for providers of the given content.
+    pub fn find_providers(&mut self, content_id: &ContentId) -> libp2p::kad::QueryId {
+        let key = libp2p::kad::RecordKey::new(&content_id.to_string().into_bytes());
+        self.swarm.behaviour_mut().kademlia.get_providers(key)
+    }
+
     /// Handle a single swarm event.
     pub fn handle_swarm_event(&mut self, event: SwarmEvent<DwebBehaviourEvent>) {
         match event {
+            // --- mDNS ---
             SwarmEvent::Behaviour(DwebBehaviourEvent::Mdns(
                 libp2p::mdns::Event::Discovered(peers),
             )) => {
@@ -179,6 +283,7 @@ impl NetworkNode {
                 }
             }
 
+            // --- Content Fetch ---
             SwarmEvent::Behaviour(DwebBehaviourEvent::ContentFetch(
                 request_response::Event::Message {
                     message:
@@ -228,7 +333,6 @@ impl NetworkNode {
             )) => {
                 info!("Received content response ({} bytes)", response.data.len());
                 if let Some((content_id_str, tx)) = self.pending_fetches.remove(&request_id) {
-                    // Auto-cache the received content
                     if !response.data.is_empty() {
                         if let Err(e) = self.store.cache_content(
                             &content_id_str,
@@ -254,6 +358,110 @@ impl NetworkNode {
                 }
             }
 
+            // --- Identify ---
+            SwarmEvent::Behaviour(DwebBehaviourEvent::Identify(
+                libp2p::identify::Event::Received { peer_id, info, .. },
+            )) => {
+                debug!("Identified peer {peer_id}: {} protocols", info.protocols.len());
+                for addr in &info.listen_addrs {
+                    self.swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .add_address(&peer_id, addr.clone());
+                }
+            }
+
+            // --- Kademlia ---
+            SwarmEvent::Behaviour(DwebBehaviourEvent::Kademlia(event)) => {
+                match event {
+                    libp2p::kad::Event::OutboundQueryProgressed { result, .. } => {
+                        match result {
+                            libp2p::kad::QueryResult::Bootstrap(Ok(ok)) => {
+                                debug!("DHT bootstrap step: {} remaining", ok.num_remaining);
+                            }
+                            libp2p::kad::QueryResult::Bootstrap(Err(e)) => {
+                                warn!("DHT bootstrap error: {e:?}");
+                            }
+                            libp2p::kad::QueryResult::StartProviding(Ok(_)) => {
+                                debug!("Announced as DHT provider");
+                            }
+                            libp2p::kad::QueryResult::StartProviding(Err(e)) => {
+                                warn!("Failed to announce as provider: {e:?}");
+                            }
+                            libp2p::kad::QueryResult::GetProviders(Ok(ok)) => {
+                                match ok {
+                                    libp2p::kad::GetProvidersOk::FoundProviders {
+                                        providers, ..
+                                    } => {
+                                        for provider in providers {
+                                            if provider != *self.swarm.local_peer_id() {
+                                                info!("DHT found provider: {provider}");
+                                            }
+                                        }
+                                    }
+                                    libp2p::kad::GetProvidersOk::FinishedWithNoAdditionalRecord {
+                                        ..
+                                    } => {
+                                        debug!("DHT provider search finished");
+                                    }
+                                }
+                            }
+                            libp2p::kad::QueryResult::GetProviders(Err(e)) => {
+                                warn!("DHT get_providers error: {e:?}");
+                            }
+                            _ => {}
+                        }
+                    }
+                    libp2p::kad::Event::RoutingUpdated { peer, .. } => {
+                        debug!("Kademlia routing updated: {peer}");
+                    }
+                    _ => {}
+                }
+            }
+
+            // --- AutoNAT ---
+            SwarmEvent::Behaviour(DwebBehaviourEvent::Autonat(
+                libp2p::autonat::Event::StatusChanged { old, new },
+            )) => {
+                info!("NAT status: {old:?} -> {new:?}");
+            }
+
+            // --- Relay Client ---
+            SwarmEvent::Behaviour(DwebBehaviourEvent::RelayClient(event)) => {
+                info!("Relay event: {event:?}");
+            }
+
+            // --- dcutr ---
+            SwarmEvent::Behaviour(DwebBehaviourEvent::Dcutr(event)) => {
+                match event.result {
+                    Ok(_) => {
+                        info!("Direct connection established via hole punch with {}", event.remote_peer_id);
+                    }
+                    Err(ref e) => {
+                        debug!("Hole punch failed with {}: {e}", event.remote_peer_id);
+                    }
+                }
+            }
+
+            // --- UPnP ---
+            SwarmEvent::Behaviour(DwebBehaviourEvent::Upnp(event)) => {
+                match event {
+                    libp2p::upnp::Event::NewExternalAddr(addr) => {
+                        info!("UPnP mapped external address: {addr}");
+                    }
+                    libp2p::upnp::Event::ExpiredExternalAddr(addr) => {
+                        debug!("UPnP mapping expired: {addr}");
+                    }
+                    libp2p::upnp::Event::GatewayNotFound => {
+                        debug!("UPnP gateway not found");
+                    }
+                    libp2p::upnp::Event::NonRoutableGateway => {
+                        debug!("UPnP gateway is not routable");
+                    }
+                }
+            }
+
+            // --- Swarm-level events ---
             SwarmEvent::NewListenAddr { address, .. } => {
                 info!("Listening on {address}");
             }
@@ -309,7 +517,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let identity = NodeIdentity::generate();
         let store = make_store(dir.path());
-        let node = NetworkNode::new(identity, store).await;
+        let node = NetworkNode::new(identity, store, NetworkConfig::test_config()).await;
         assert!(node.is_ok());
     }
 
@@ -318,7 +526,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let identity = NodeIdentity::generate();
         let store = make_store(dir.path());
-        let mut node = NetworkNode::new(identity, store).await.unwrap();
+        let mut node = NetworkNode::new(identity, store, NetworkConfig::test_config())
+            .await
+            .unwrap();
 
         let test_file = dir.path().join("test.txt");
         std::fs::write(&test_file, b"hello dweb").unwrap();
@@ -333,7 +543,9 @@ mod tests {
         let identity = NodeIdentity::generate();
         let pubkey = identity.public_key_bytes();
         let store = make_store(dir.path());
-        let mut node = NetworkNode::new(identity, store).await.unwrap();
+        let mut node = NetworkNode::new(identity, store, NetworkConfig::test_config())
+            .await
+            .unwrap();
 
         let test_file = dir.path().join("test.txt");
         let data = b"content to sign";
@@ -341,7 +553,6 @@ mod tests {
 
         let content_id = node.publish_file(&test_file).unwrap();
 
-        // Verify content is in the store and signature is valid
         let content_data = node.store_mut().get_content(&content_id.to_string()).unwrap();
         let valid =
             dweb_identity::verify_signature(&pubkey, data, &content_data.signature).unwrap();
