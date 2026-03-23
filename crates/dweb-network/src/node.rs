@@ -246,8 +246,8 @@ impl NetworkNode {
         for addr in bootstrap_addrs {
             let (peer_id, _) = crate::bootstrap::parse_bootstrap_addr(&addr.to_string())?;
             let relay_addr: Multiaddr = format!(
-                "{}/p2p/{}/p2p-circuit",
-                addr, peer_id
+                "/p2p/{}/p2p-circuit",
+                peer_id
             )
             .parse()
             .map_err(|e: libp2p::multiaddr::Error| NetworkError::Swarm(e.to_string()))?;
