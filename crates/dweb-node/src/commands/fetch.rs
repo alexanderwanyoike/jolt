@@ -11,7 +11,7 @@ use dweb_store::{CacheConfig, ContentStore};
 
 use crate::config::NodeConfig;
 
-pub async fn run(content_id_str: &str, output: Option<PathBuf>) -> Result<()> {
+pub async fn run(content_id_str: &str, output: Option<PathBuf>, dial: Option<String>) -> Result<()> {
     let content_id: ContentId = content_id_str
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid ContentId: {e}"))?;
@@ -30,9 +30,19 @@ pub async fn run(content_id_str: &str, output: Option<PathBuf>) -> Result<()> {
     node.listen_on("/ip4/0.0.0.0/udp/0/quic-v1")?;
 
     info!("Fetching: {content_id}");
-    info!("Discovering peers via mDNS...");
 
-    // Wait for peer discovery
+    // If a direct dial address is provided, connect to it
+    if let Some(ref addr) = dial {
+        info!("Dialing peer at {addr}");
+        let multiaddr: dweb_network::Multiaddr = addr
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Invalid multiaddr: {e}"))?;
+        node.dial(multiaddr)?;
+    } else {
+        info!("Discovering peers via mDNS...");
+    }
+
+    // Wait for peer connection
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     loop {
         if tokio::time::Instant::now() > deadline {

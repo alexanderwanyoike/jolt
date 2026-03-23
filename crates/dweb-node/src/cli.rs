@@ -12,7 +12,11 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Start the dweb node
-    Start,
+    Start {
+        /// TCP port to listen on (default: random)
+        #[arg(short, long)]
+        port: Option<u16>,
+    },
 
     /// Publish a file to the network
     Publish {
@@ -28,6 +32,10 @@ pub enum Commands {
         /// Output file path (defaults to content ID in current directory)
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Dial a specific peer address (e.g., /ip4/1.2.3.4/tcp/40933)
+        #[arg(short, long)]
+        dial: Option<String>,
     },
 
     /// Manage the content cache
@@ -66,7 +74,7 @@ mod tests {
     #[test]
     fn parse_start_command() {
         let cli = Cli::parse_from(["dweb", "start"]);
-        assert!(matches!(cli.command, Commands::Start));
+        assert!(matches!(cli.command, Commands::Start { .. }));
     }
 
     #[test]
@@ -84,7 +92,7 @@ mod tests {
     fn parse_fetch_command() {
         let cli = Cli::parse_from(["dweb", "fetch", "bafk_test_id"]);
         match cli.command {
-            Commands::Fetch { content_id, output } => {
+            Commands::Fetch { content_id, output, .. } => {
                 assert_eq!(content_id, "bafk_test_id");
                 assert!(output.is_none());
             }
@@ -96,7 +104,7 @@ mod tests {
     fn parse_fetch_command_with_output() {
         let cli = Cli::parse_from(["dweb", "fetch", "bafk_test_id", "-o", "/tmp/out.bin"]);
         match cli.command {
-            Commands::Fetch { content_id, output } => {
+            Commands::Fetch { content_id, output, .. } => {
                 assert_eq!(content_id, "bafk_test_id");
                 assert_eq!(output, Some(PathBuf::from("/tmp/out.bin")));
             }
