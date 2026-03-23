@@ -119,47 +119,53 @@ pub async fn run(
         info!("Content not on connected peers, querying DHT for providers...");
         let _query_id = node.find_providers(&content_id);
 
-        // Pump events -- wait for provider discovery, new connections, and content
         let dht_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        let mut provider_found = false;
+        let mut last_peer_count = node.connected_peers().len();
+        let mut retry_at = tokio::time::Instant::now() + Duration::from_secs(30); // no retry initially
 
         while tokio::time::Instant::now() < dht_deadline {
-            let event = tokio::time::timeout(Duration::from_millis(500), node.next_event()).await;
+            let event = tokio::time::timeout(Duration::from_millis(200), node.next_event()).await;
             if let Ok(ev) = event {
                 node.handle_swarm_event(ev);
             }
 
-            // Check if we have new peers we haven't tried yet
-            let peers = node.connected_peers();
-            if peers.len() > 1 && !provider_found {
-                // New peer connected (likely the provider), try requesting from them
-                info!("New peer connected via DHT, requesting content...");
-                provider_found = true;
-                match node.request_content(&content_id) {
-                    Ok(rx) => {
-                        let mut rx = rx;
-                        let req_deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-                        loop {
-                            if tokio::time::Instant::now() > req_deadline {
-                                break;
-                            }
-                            tokio::select! {
-                                result = &mut rx => {
-                                    if let Ok(Ok(resp)) = result {
-                                        response = resp;
-                                    }
-                                    break;
-                                }
-                                event = node.next_event() => {
-                                    node.handle_swarm_event(event);
-                                }
-                            }
-                        }
-                        if !response.data.is_empty() {
+            // When a new peer connects, schedule a retry after a short delay
+            // to let the connection fully establish
+            let current_peers = node.connected_peers().len();
+            if current_peers > last_peer_count {
+                info!("New peer connected via DHT, will request content shortly...");
+                last_peer_count = current_peers;
+                retry_at = tokio::time::Instant::now() + Duration::from_secs(2);
+            }
+
+            // Try requesting when the retry timer fires
+            if tokio::time::Instant::now() >= retry_at {
+                retry_at = tokio::time::Instant::now() + Duration::from_secs(30); // don't retry again immediately
+                if let Ok(rx) = node.request_content(&content_id) {
+                    info!("Requesting content from provider...");
+                    let mut rx = rx;
+                    let req_deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+                    loop {
+                        if tokio::time::Instant::now() > req_deadline {
                             break;
                         }
+                        tokio::select! {
+                            result = &mut rx => {
+                                if let Ok(Ok(resp)) = result {
+                                    if !resp.data.is_empty() {
+                                        response = resp;
+                                    }
+                                }
+                                break;
+                            }
+                            event = node.next_event() => {
+                                node.handle_swarm_event(event);
+                            }
+                        }
                     }
-                    Err(_) => {}
+                    if !response.data.is_empty() {
+                        break;
+                    }
                 }
             }
         }
