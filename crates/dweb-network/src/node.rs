@@ -486,14 +486,32 @@ impl NetworkNode {
 
             // --- Relay Client ---
             SwarmEvent::Behaviour(DwebBehaviourEvent::RelayClient(event)) => {
-                if let libp2p::relay::client::Event::ReservationReqAccepted {
-                    relay_peer_id, ..
-                } = &event
-                {
-                    info!("Relay reservation accepted by {relay_peer_id}");
-                    self.relay_circuits_ready.insert(*relay_peer_id);
+                match &event {
+                    libp2p::relay::client::Event::ReservationReqAccepted {
+                        relay_peer_id, ..
+                    } => {
+                        info!("Relay reservation accepted by {relay_peer_id}");
+                        self.relay_circuits_ready.insert(*relay_peer_id);
+                    }
+                    libp2p::relay::client::Event::InboundCircuitEstablished {
+                        src_peer_id, ..
+                    } => {
+                        info!("Inbound relay circuit from {src_peer_id}");
+                    }
+                    libp2p::relay::client::Event::OutboundCircuitEstablished {
+                        relay_peer_id, ..
+                    } => {
+                        info!("Outbound relay circuit via {relay_peer_id}");
+                    }
+                    _ => {
+                        info!("Relay event: {event:?}");
+                    }
                 }
-                debug!("Relay event: {event:?}");
+            }
+
+            // --- Relay Server ---
+            SwarmEvent::Behaviour(DwebBehaviourEvent::RelayServer(event)) => {
+                info!("Relay server event: {event:?}");
             }
 
             // --- dcutr ---
@@ -503,7 +521,7 @@ impl NetworkNode {
                         info!("Direct connection established via hole punch with {}", event.remote_peer_id);
                     }
                     Err(ref e) => {
-                        debug!("Hole punch failed with {}: {e}", event.remote_peer_id);
+                        warn!("Hole punch failed with {}: {e}", event.remote_peer_id);
                     }
                 }
             }
@@ -531,8 +549,8 @@ impl NetworkNode {
                 info!("Listening on {address}");
             }
 
-            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                info!("Connected to peer: {peer_id}");
+            SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
+                info!("Connected to peer: {peer_id} (relayed: {})", endpoint.is_relayed());
 
                 // If this is a bootstrap peer, register a relay circuit reservation
                 if let Some(idx) = self.pending_relay_peers.iter().position(|(pid, _)| pid == &peer_id) {
@@ -549,6 +567,14 @@ impl NetworkNode {
 
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
                 debug!("Disconnected from peer: {peer_id}");
+            }
+
+            SwarmEvent::ExternalAddrConfirmed { address } => {
+                info!("External address confirmed: {address}");
+            }
+
+            SwarmEvent::NewExternalAddrCandidate { address } => {
+                info!("New external address candidate: {address}");
             }
 
             _ => {}
