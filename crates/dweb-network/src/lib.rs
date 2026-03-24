@@ -8,6 +8,7 @@ pub mod error;
 pub mod nat;
 pub mod node;
 pub mod protocol;
+pub mod stun;
 
 pub use command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus, PeerInfo,

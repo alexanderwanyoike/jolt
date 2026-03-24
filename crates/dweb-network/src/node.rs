@@ -78,6 +78,8 @@ pub struct NetworkNode {
     relay_circuits_ready: HashSet<libp2p::PeerId>,
     /// Connection quality tracking: peer -> connection info
     peer_connections: HashMap<libp2p::PeerId, PeerConnectionInfo>,
+    /// Detected NAT type from STUN probing
+    nat_type: crate::stun::NatType,
     /// When the node was created (for uptime reporting)
     started_at: Instant,
     /// Manages in-flight fetch operations for the daemon loop
@@ -185,6 +187,7 @@ impl NetworkNode {
             discovered_providers: HashMap::new(),
             relay_circuits_ready: HashSet::new(),
             peer_connections: HashMap::new(),
+            nat_type: crate::stun::NatType::Unknown,
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
         })
@@ -711,6 +714,21 @@ impl NetworkNode {
         let mut timeout_interval = tokio::time::interval(Duration::from_secs(1));
         let mut relay_renewal = tokio::time::interval(Duration::from_secs(30));
         relay_renewal.tick().await; // skip first immediate tick
+        let mut stun_interval = tokio::time::interval(Duration::from_secs(300)); // 5 min refresh
+        let mut stun_pending = false;
+
+        // Kick off initial STUN discovery (non-blocking via channel)
+        let (stun_tx, mut stun_rx) = mpsc::channel::<crate::stun::StunResult>(1);
+        {
+            let tx = stun_tx.clone();
+            tokio::spawn(async move {
+                let servers = crate::stun::resolve_stun_servers().await;
+                let result = crate::stun::discover_external_addr(0, &servers).await;
+                let _ = tx.send(result).await;
+            });
+            stun_pending = true;
+        }
+
         loop {
             tokio::select! {
                 event = self.swarm.select_next_some() => {
@@ -730,6 +748,20 @@ impl NetworkNode {
                             info!("Command channel closed, shutting down");
                             return;
                         }
+                    }
+                }
+                Some(result) = stun_rx.recv() => {
+                    self.apply_stun_result(result);
+                }
+                _ = stun_interval.tick() => {
+                    if !stun_pending {
+                        let tx = stun_tx.clone();
+                        tokio::spawn(async move {
+                            let servers = crate::stun::resolve_stun_servers().await;
+                            let result = crate::stun::discover_external_addr(0, &servers).await;
+                            let _ = tx.send(result).await;
+                        });
+                        stun_pending = true;
                     }
                 }
                 _ = relay_renewal.tick() => {
@@ -829,6 +861,7 @@ impl NetworkNode {
                     connected_peers: self.swarm.connected_peers().count(),
                     direct_peers: direct,
                     relayed_peers: relayed,
+                    nat_type: format!("{:?}", self.nat_type),
                     published_count: self.store.published_ids().len(),
                     cached_count: self.store.list_entries().len(),
                     listen_addresses: self.swarm.listeners().map(|a| a.to_string()).collect(),
@@ -936,6 +969,19 @@ impl NetworkNode {
     /// Get the listeners' addresses.
     pub fn listeners(&self) -> Vec<Multiaddr> {
         self.swarm.listeners().cloned().collect()
+    }
+
+    /// Apply STUN discovery result: update NAT type and add external address.
+    fn apply_stun_result(&mut self, result: crate::stun::StunResult) {
+        self.nat_type = result.nat_type;
+
+        if let Some(addr) = result.external_addr {
+            let multiaddr: Multiaddr = format!("/ip4/{}/udp/{}/quic-v1", addr.ip(), addr.port())
+                .parse()
+                .unwrap();
+            self.swarm.add_external_address(multiaddr.clone());
+            info!("STUN: added external address {multiaddr}");
+        }
     }
 
     /// Set the fetch timeout for the daemon's fetch manager.
