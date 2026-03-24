@@ -33,6 +33,8 @@ pub struct NetworkNode {
     >,
     /// Bootstrap peers (PeerId, full multiaddr) to register relay circuits with once connected.
     pending_relay_peers: Vec<(libp2p::PeerId, Multiaddr)>,
+    /// Active relay circuit addresses for periodic reservation renewal.
+    relay_circuit_addrs: Vec<Multiaddr>,
     /// Providers discovered via DHT: content_id string -> provider PeerIds
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
     /// Relay circuits that have been confirmed ready (reservation accepted)
@@ -140,6 +142,7 @@ impl NetworkNode {
             store,
             pending_fetches: HashMap::new(),
             pending_relay_peers: Vec::new(),
+            relay_circuit_addrs: Vec::new(),
             discovered_providers: HashMap::new(),
             relay_circuits_ready: HashSet::new(),
             started_at: Instant::now(),
@@ -611,7 +614,13 @@ impl NetworkNode {
                     let circuit_addr = relay_full_addr
                         .with(libp2p::multiaddr::Protocol::P2pCircuit);
                     match self.swarm.listen_on(circuit_addr.clone()) {
-                        Ok(_) => info!("Requested relay reservation via {peer_id}"),
+                        Ok(_) => {
+                            info!("Requested relay reservation via {peer_id}");
+                            // Store for periodic renewal
+                            if !self.relay_circuit_addrs.contains(&circuit_addr) {
+                                self.relay_circuit_addrs.push(circuit_addr);
+                            }
+                        }
                         Err(e) => warn!("Failed to request relay reservation via {peer_id}: {e}"),
                     }
                 }
@@ -638,6 +647,8 @@ impl NetworkNode {
     /// Returns when a `Shutdown` command is received or the command channel closes.
     pub async fn run_daemon_loop(&mut self, mut cmd_rx: mpsc::Receiver<DaemonCommand>) {
         let mut timeout_interval = tokio::time::interval(Duration::from_secs(1));
+        let mut relay_renewal = tokio::time::interval(Duration::from_secs(30));
+        relay_renewal.tick().await; // skip first immediate tick
         loop {
             tokio::select! {
                 event = self.swarm.select_next_some() => {
@@ -656,6 +667,15 @@ impl NetworkNode {
                         None => {
                             info!("Command channel closed, shutting down");
                             return;
+                        }
+                    }
+                }
+                _ = relay_renewal.tick() => {
+                    // Renew relay reservations to prevent expiry
+                    for addr in &self.relay_circuit_addrs.clone() {
+                        match self.swarm.listen_on(addr.clone()) {
+                            Ok(_) => debug!("Relay reservation renewal requested"),
+                            Err(e) => debug!("Relay reservation renewal failed: {e}"),
                         }
                     }
                 }
