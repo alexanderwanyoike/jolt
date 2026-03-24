@@ -76,6 +76,8 @@ pub struct NetworkNode {
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
     /// Relay circuits that have been confirmed ready (reservation accepted)
     relay_circuits_ready: HashSet<libp2p::PeerId>,
+    /// Peers known to have public addresses (potential relays)
+    known_relay_peers: HashSet<libp2p::PeerId>,
     /// Connection quality tracking: peer -> connection info
     peer_connections: HashMap<libp2p::PeerId, PeerConnectionInfo>,
     /// Detected NAT type from STUN probing
@@ -186,6 +188,7 @@ impl NetworkNode {
             relay_circuit_addrs: Vec::new(),
             discovered_providers: HashMap::new(),
             relay_circuits_ready: HashSet::new(),
+            known_relay_peers: HashSet::new(),
             peer_connections: HashMap::new(),
             nat_type: crate::stun::NatType::Unknown,
             started_at: Instant::now(),
@@ -484,12 +487,56 @@ impl NetworkNode {
             )) => {
                 debug!("Identified peer {peer_id}: {} protocols", info.protocols.len());
                 // Feed addresses into Kademlia
+                let mut has_public_addr = false;
                 for addr in &info.listen_addrs {
                     self.swarm
                         .behaviour_mut()
                         .kademlia
                         .add_address(&peer_id, addr.clone());
+
+                    // Detect if this peer has a public (non-private) IP
+                    let addr_str = addr.to_string();
+                    if !addr_str.contains("/ip4/10.")
+                        && !addr_str.contains("/ip4/172.")
+                        && !addr_str.contains("/ip4/192.168.")
+                        && !addr_str.contains("/ip4/127.")
+                        && !addr_str.contains("/ip6/::1")
+                        && !addr_str.contains("/ip6/fe80")
+                        && (addr_str.contains("/ip4/") || addr_str.contains("/ip6/"))
+                    {
+                        has_public_addr = true;
+                    }
                 }
+
+                // Track peers with public IPs as potential relays
+                if has_public_addr && !self.known_relay_peers.contains(&peer_id) {
+                    info!("Discovered public peer {peer_id} (potential relay)");
+                    self.known_relay_peers.insert(peer_id);
+
+                    // Request relay reservation if we don't have enough active relays
+                    if self.relay_circuits_ready.len() < 3 {
+                        // Build relay circuit addr from the peer's listen addresses
+                        if let Some(public_addr) = info.listen_addrs.iter().find(|a| {
+                            let s = a.to_string();
+                            !s.contains("127.") && !s.contains("10.") && !s.contains("192.168.")
+                                && !s.contains("172.") && s.contains("/udp/")
+                        }) {
+                            let circuit_addr = public_addr.clone()
+                                .with(libp2p::multiaddr::Protocol::P2p(peer_id))
+                                .with(libp2p::multiaddr::Protocol::P2pCircuit);
+                            match self.swarm.listen_on(circuit_addr.clone()) {
+                                Ok(_) => {
+                                    info!("Requested relay reservation via public peer {peer_id}");
+                                    if !self.relay_circuit_addrs.contains(&circuit_addr) {
+                                        self.relay_circuit_addrs.push(circuit_addr);
+                                    }
+                                }
+                                Err(e) => debug!("Relay reservation via {peer_id} failed: {e}"),
+                            }
+                        }
+                    }
+                }
+
                 // Add our observed address as external (needed for relay server)
                 self.swarm.add_external_address(info.observed_addr.clone());
             }
@@ -537,17 +584,18 @@ impl NetworkNode {
 
                                                 // Try direct dial first
                                                 if let Err(_) = self.swarm.dial(provider) {
-                                                    // If direct dial fails, try via relay circuits
+                                                    // Direct dial failed -- try ALL relay circuits
                                                     let local_peer = *self.swarm.local_peer_id();
-                                                    let circuit_listen: Option<Multiaddr> = self.swarm.listeners()
-                                                        .find(|a| a.to_string().contains("p2p-circuit"))
-                                                        .cloned();
-                                                    if let Some(relay_addr) = circuit_listen {
+                                                    let circuit_addrs: Vec<Multiaddr> = self.swarm.listeners()
+                                                        .filter(|a| a.to_string().contains("p2p-circuit"))
+                                                        .cloned()
+                                                        .collect();
+                                                    for relay_addr in circuit_addrs {
                                                         let circuit_addr = relay_addr
                                                             .to_string()
                                                             .replace(&format!("/p2p/{}", local_peer), &format!("/p2p/{}", provider));
                                                         if let Ok(addr) = circuit_addr.parse::<Multiaddr>() {
-                                                            info!("Dialing provider {provider} via relay circuit");
+                                                            info!("Dialing provider {provider} via relay circuit: {addr}");
                                                             if let Err(e) = self.swarm.dial(addr) {
                                                                 debug!("Failed to dial provider via relay: {e}");
                                                             }
@@ -862,6 +910,7 @@ impl NetworkNode {
                     direct_peers: direct,
                     relayed_peers: relayed,
                     nat_type: format!("{:?}", self.nat_type),
+                    active_relays: self.relay_circuits_ready.len(),
                     published_count: self.store.published_ids().len(),
                     cached_count: self.store.list_entries().len(),
                     listen_addresses: self.swarm.listeners().map(|a| a.to_string()).collect(),

@@ -32,6 +32,10 @@ pub enum Commands {
         /// Disable DHT bootstrapping (LAN-only mode)
         #[arg(long)]
         no_bootstrap: bool,
+
+        /// Disable IPv6 listeners
+        #[arg(long)]
+        no_ipv6: bool,
     },
 
     /// Stop the running daemon
@@ -92,7 +96,19 @@ mod tests {
     #[test]
     fn parse_start_command() {
         let cli = Cli::parse_from(["dweb", "start"]);
-        assert!(matches!(cli.command, Commands::Start { .. }));
+        match cli.command {
+            Commands::Start { no_ipv6, .. } => assert!(!no_ipv6),
+            _ => panic!("expected Start"),
+        }
+    }
+
+    #[test]
+    fn parse_start_no_ipv6() {
+        let cli = Cli::parse_from(["dweb", "start", "--no-ipv6"]);
+        match cli.command {
+            Commands::Start { no_ipv6, .. } => assert!(no_ipv6),
+            _ => panic!("expected Start"),
+        }
     }
 
     #[test]

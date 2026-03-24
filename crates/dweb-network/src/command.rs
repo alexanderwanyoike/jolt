@@ -61,6 +61,7 @@ pub struct NodeStatus {
     pub direct_peers: usize,
     pub relayed_peers: usize,
     pub nat_type: String,
+    pub active_relays: usize,
     pub published_count: usize,
     pub cached_count: usize,
     pub listen_addresses: Vec<String>,

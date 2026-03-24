@@ -1,6 +1,6 @@
 use anyhow::Result;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{debug, info};
 
 use dweb_identity::NodeIdentity;
 use dweb_network::{DaemonHandle, NetworkConfig, NetworkNode};
@@ -15,6 +15,7 @@ pub async fn run(
     api_bind: &str,
     bootstrap: Vec<String>,
     no_bootstrap: bool,
+    no_ipv6: bool,
 ) -> Result<()> {
     let config = NodeConfig::default_dirs();
     config.ensure_dirs()?;
@@ -58,6 +59,26 @@ pub async fn run(
 
     node.listen_on(&tcp_addr)?;
     node.listen_on(&udp_addr)?;
+
+    // IPv6 listeners (no NAT = direct P2P where available)
+    if !no_ipv6 {
+        let tcp6_addr = match port {
+            Some(p) => format!("/ip6/::/tcp/{p}"),
+            None => "/ip6/::/tcp/0".to_string(),
+        };
+        let udp6_addr = match port {
+            Some(p) => format!("/ip6/::/udp/{p}/quic-v1"),
+            None => "/ip6/::/udp/0/quic-v1".to_string(),
+        };
+        match node.listen_on(&tcp6_addr) {
+            Ok(_) => {}
+            Err(e) => debug!("IPv6 TCP listen failed (may not be available): {e}"),
+        }
+        match node.listen_on(&udp6_addr) {
+            Ok(_) => {}
+            Err(e) => debug!("IPv6 QUIC listen failed (may not be available): {e}"),
+        }
+    }
 
     // NAT-PMP/PCP port mapping
     let listen_port = port.unwrap_or(0);
