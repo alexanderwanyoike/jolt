@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use libp2p::futures::StreamExt;
 use libp2p::request_response::{self, OutboundRequestId, ProtocolSupport};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, StreamProtocol, Swarm};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, warn};
 
 use dweb_core::{ContentId, ContentManifest};
@@ -14,8 +14,13 @@ use dweb_identity::NodeIdentity;
 use dweb_store::ContentStore;
 
 use crate::behaviour::{DwebBehaviour, DwebBehaviourEvent};
+use crate::command::{
+    CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus, PeerInfo,
+    PublishResponse,
+};
 use crate::config::NetworkConfig;
 use crate::error::NetworkError;
+use crate::fetch_manager::FetchManager;
 use crate::protocol::{ContentRequest, ContentResponse};
 
 pub struct NetworkNode {
@@ -32,6 +37,10 @@ pub struct NetworkNode {
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
     /// Relay circuits that have been confirmed ready (reservation accepted)
     relay_circuits_ready: HashSet<libp2p::PeerId>,
+    /// When the node was created (for uptime reporting)
+    started_at: Instant,
+    /// Manages in-flight fetch operations for the daemon loop
+    fetch_manager: FetchManager,
 }
 
 impl NetworkNode {
@@ -133,6 +142,8 @@ impl NetworkNode {
             pending_relay_peers: Vec::new(),
             discovered_providers: HashMap::new(),
             relay_circuits_ready: HashSet::new(),
+            started_at: Instant::now(),
+            fetch_manager: FetchManager::new(),
         })
     }
 
@@ -269,7 +280,7 @@ impl NetworkNode {
             .kademlia
             .start_providing(key)
             .map_err(|e| NetworkError::Dht(format!("Failed to announce provider: {e:?}")))?;
-        debug!("Announcing as provider for: {content_id}");
+        info!("Announcing as DHT provider for: {content_id}");
         Ok(())
     }
 
@@ -363,6 +374,26 @@ impl NetworkNode {
                 },
             )) => {
                 info!("Received content response ({} bytes)", response.data.len());
+
+                // Try fetch manager first (daemon-managed fetches)
+                if !response.data.is_empty() {
+                    if let Some(content_id_str) = self.fetch_manager.on_content_response(request_id, response.clone()) {
+                        // Cache the fetched content for re-sharing
+                        if let Err(e) = self.store.cache_content(
+                            &content_id_str,
+                            &response.data,
+                            &response.publisher_key,
+                            &response.signature,
+                        ) {
+                            warn!("Failed to cache content: {e}");
+                        } else {
+                            info!("Content cached for re-sharing: {content_id_str}");
+                        }
+                        return;
+                    }
+                }
+
+                // Fall back to legacy pending_fetches (for non-daemon operations)
                 if let Some((content_id_str, tx)) = self.pending_fetches.remove(&request_id) {
                     if !response.data.is_empty() {
                         if let Err(e) = self.store.cache_content(
@@ -384,6 +415,13 @@ impl NetworkNode {
                 },
             )) => {
                 warn!("Outbound request failed: {error}");
+
+                // Try fetch manager first
+                if self.fetch_manager.on_request_failure(request_id) {
+                    return;
+                }
+
+                // Fall back to legacy pending_fetches
                 if let Some((_content_id, tx)) = self.pending_fetches.remove(&request_id) {
                     let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
                 }
@@ -411,16 +449,16 @@ impl NetworkNode {
                     libp2p::kad::Event::OutboundQueryProgressed { result, .. } => {
                         match result {
                             libp2p::kad::QueryResult::Bootstrap(Ok(ok)) => {
-                                debug!("DHT bootstrap step: {} remaining", ok.num_remaining);
+                                info!("DHT bootstrap step: {} remaining", ok.num_remaining);
                             }
                             libp2p::kad::QueryResult::Bootstrap(Err(e)) => {
                                 warn!("DHT bootstrap error: {e:?}");
                             }
                             libp2p::kad::QueryResult::StartProviding(Ok(_)) => {
-                                debug!("Announced as DHT provider");
+                                info!("DHT provider announcement confirmed");
                             }
                             libp2p::kad::QueryResult::StartProviding(Err(e)) => {
-                                warn!("Failed to announce as provider: {e:?}");
+                                warn!("DHT provider announcement FAILED: {e:?}");
                             }
                             libp2p::kad::QueryResult::GetProviders(Ok(ok)) => {
                                 match ok {
@@ -435,6 +473,17 @@ impl NetworkNode {
                                                     .entry(key_str.clone())
                                                     .or_default()
                                                     .push(provider);
+
+                                                // If fetch manager is waiting for a provider,
+                                                // record it and dial (DON'T send request yet --
+                                                // wait for connection + relay settle)
+                                                if self.fetch_manager.is_awaiting_provider(&key_str) {
+                                                    let already_connected = self.swarm.connected_peers()
+                                                        .any(|p| *p == provider);
+                                                    self.fetch_manager
+                                                        .on_provider_discovered(&key_str, provider, already_connected);
+                                                }
+
                                                 // Try direct dial first
                                                 if let Err(_) = self.swarm.dial(provider) {
                                                     // If direct dial fails, try via relay circuits
@@ -460,7 +509,7 @@ impl NetworkNode {
                                     libp2p::kad::GetProvidersOk::FinishedWithNoAdditionalRecord {
                                         ..
                                     } => {
-                                        debug!("DHT provider search finished");
+                                        info!("DHT provider search finished (no more records)");
                                     }
                                 }
                             }
@@ -552,6 +601,9 @@ impl NetworkNode {
             SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
                 info!("Connected to peer: {peer_id} (relayed: {})", endpoint.is_relayed());
 
+                // Notify fetch manager in case this is a provider we're waiting for
+                self.fetch_manager.on_peer_connected(&peer_id);
+
                 // If this is a bootstrap peer, register a relay circuit reservation
                 if let Some(idx) = self.pending_relay_peers.iter().position(|(pid, _)| pid == &peer_id) {
                     let (_, relay_full_addr) = self.pending_relay_peers.remove(idx);
@@ -578,6 +630,186 @@ impl NetworkNode {
             }
 
             _ => {}
+        }
+    }
+
+    /// Run the daemon event loop, processing both swarm events and incoming commands.
+    ///
+    /// Returns when a `Shutdown` command is received or the command channel closes.
+    pub async fn run_daemon_loop(&mut self, mut cmd_rx: mpsc::Receiver<DaemonCommand>) {
+        let mut timeout_interval = tokio::time::interval(Duration::from_secs(1));
+        loop {
+            tokio::select! {
+                event = self.swarm.select_next_some() => {
+                    self.handle_swarm_event(event);
+                }
+                cmd = cmd_rx.recv() => {
+                    match cmd {
+                        Some(command) => {
+                            let should_shutdown = matches!(command, DaemonCommand::Shutdown { .. });
+                            self.handle_command(command);
+                            if should_shutdown {
+                                info!("Daemon shutting down");
+                                return;
+                            }
+                        }
+                        None => {
+                            info!("Command channel closed, shutting down");
+                            return;
+                        }
+                    }
+                }
+                _ = timeout_interval.tick() => {
+                    self.fetch_manager.check_timeouts();
+
+                    // Send content requests for providers that have connected
+                    // and the relay settle delay has passed
+                    let ready = self.fetch_manager.ready_to_request();
+                    for (content_id, provider) in ready {
+                        info!("Sending content request to provider {provider} for {content_id}");
+                        let request = ContentRequest {
+                            content_id: content_id.clone(),
+                        };
+                        let req_id = self
+                            .swarm
+                            .behaviour_mut()
+                            .content_fetch
+                            .send_request(&provider, request);
+                        self.fetch_manager.mark_request_sent(&content_id, req_id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Handle a single daemon command.
+    fn handle_command(&mut self, command: DaemonCommand) {
+        match command {
+            DaemonCommand::Publish {
+                file_path,
+                response_tx,
+            } => {
+                let result = self.publish_file(&file_path).map(|content_id| {
+                    let size = std::fs::metadata(&file_path)
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    PublishResponse {
+                        content_id: content_id.to_string(),
+                        size,
+                    }
+                });
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::Fetch {
+                content_id,
+                response_tx,
+            } => {
+                // Check local store first
+                if let Some(content_data) = self.store.get_content(&content_id) {
+                    let _ = response_tx.send(Ok(FetchResult {
+                        data: content_data.data.clone(),
+                        content_id: content_id.clone(),
+                        size: content_data.data.len() as u64,
+                    }));
+                    return;
+                }
+
+                // Try connected peers first
+                let peers: Vec<_> = self.swarm.connected_peers().cloned().collect();
+                info!("Fetch {content_id}: {} connected peers, querying them first", peers.len());
+                let mut request_ids = Vec::new();
+                let request = ContentRequest {
+                    content_id: content_id.clone(),
+                };
+                for peer in &peers {
+                    let req_id = self
+                        .swarm
+                        .behaviour_mut()
+                        .content_fetch
+                        .send_request(peer, request.clone());
+                    request_ids.push(req_id);
+                }
+
+                // Also start DHT provider query immediately (don't wait for peer failures)
+                info!("Fetch {content_id}: starting DHT provider query");
+                let key = libp2p::kad::RecordKey::new(&content_id.clone().into_bytes());
+                self.swarm.behaviour_mut().kademlia.get_providers(key);
+
+                self.fetch_manager
+                    .start_fetch(content_id, response_tx, request_ids);
+            }
+            DaemonCommand::GetStatus { response_tx } => {
+                let status = NodeStatus {
+                    peer_id: self.swarm.local_peer_id().to_string(),
+                    uptime_secs: self.started_at.elapsed().as_secs(),
+                    connected_peers: self.swarm.connected_peers().count(),
+                    published_count: self.store.published_ids().len(),
+                    cached_count: self.store.list_entries().len(),
+                    listen_addresses: self.swarm.listeners().map(|a| a.to_string()).collect(),
+                };
+                let _ = response_tx.send(status);
+            }
+            DaemonCommand::GetPeers { response_tx } => {
+                let peers = self
+                    .swarm
+                    .connected_peers()
+                    .map(|p| PeerInfo {
+                        peer_id: p.to_string(),
+                    })
+                    .collect();
+                let _ = response_tx.send(peers);
+            }
+            DaemonCommand::GetCacheStats { response_tx } => {
+                let stats = self.store.stats();
+                let _ = response_tx.send(CacheStatsResponse {
+                    total_cached: stats.total_cached,
+                    total_published: stats.total_published,
+                    cached_items: stats.cached_items,
+                    published_items: stats.published_items,
+                    pinned_items: stats.pinned_items,
+                    pinned_size: stats.pinned_size,
+                    max_size: stats.max_size,
+                    available: stats.available,
+                });
+            }
+            DaemonCommand::ListCacheEntries { response_tx } => {
+                let entries = self
+                    .store
+                    .list_entries()
+                    .into_iter()
+                    .map(|e| CacheEntryInfo {
+                        content_id: e.content_id.clone(),
+                        size: e.size,
+                        cached_at: e.cached_at,
+                        last_accessed: e.last_accessed,
+                        pinned: e.pinned,
+                    })
+                    .collect();
+                let _ = response_tx.send(entries);
+            }
+            DaemonCommand::Pin {
+                content_id,
+                response_tx,
+            } => {
+                let result = self
+                    .store
+                    .pin(&content_id)
+                    .map_err(|e| NetworkError::Protocol(e.to_string()));
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::Unpin {
+                content_id,
+                response_tx,
+            } => {
+                let result = self
+                    .store
+                    .unpin(&content_id)
+                    .map_err(|e| NetworkError::Protocol(e.to_string()));
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::Shutdown { response_tx } => {
+                let _ = response_tx.send(());
+            }
         }
     }
 
@@ -613,6 +845,11 @@ impl NetworkNode {
     pub fn listeners(&self) -> Vec<Multiaddr> {
         self.swarm.listeners().cloned().collect()
     }
+
+    /// Set the fetch timeout for the daemon's fetch manager.
+    pub fn set_fetch_timeout(&mut self, timeout: Duration) {
+        self.fetch_manager = FetchManager::with_timeout(timeout);
+    }
 }
 
 #[cfg(test)]
@@ -623,6 +860,14 @@ mod tests {
 
     fn make_store(dir: &Path) -> ContentStore {
         ContentStore::open(dir, CacheConfig::default()).unwrap()
+    }
+
+    async fn make_node(dir: &Path) -> NetworkNode {
+        let identity = NodeIdentity::generate();
+        let store = make_store(dir);
+        NetworkNode::new(identity, store, NetworkConfig::test_config())
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
@@ -671,5 +916,198 @@ mod tests {
             dweb_identity::verify_signature(&pubkey, data, &content_data.signature).unwrap();
         assert!(valid);
         assert_eq!(content_data.publisher_key, pubkey.to_vec());
+    }
+
+    // --- Phase 1: Daemon command channel tests ---
+
+    #[tokio::test]
+    async fn test_daemon_command_status() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path()).await;
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx.clone());
+
+        // Run daemon loop in background
+        let daemon = tokio::spawn(async move {
+            node.run_daemon_loop(cmd_rx).await;
+        });
+
+        let status = handle.status().await.unwrap();
+        assert!(!status.peer_id.is_empty());
+        assert_eq!(status.connected_peers, 0);
+        assert_eq!(status.published_count, 0);
+
+        // Shut down
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_daemon_command_publish() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path()).await;
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx);
+
+        let daemon = tokio::spawn(async move {
+            node.run_daemon_loop(cmd_rx).await;
+        });
+
+        let test_file = dir.path().join("test.txt");
+        std::fs::write(&test_file, b"hello daemon").unwrap();
+
+        let response = handle.publish(test_file).await.unwrap();
+        assert!(!response.content_id.is_empty());
+        assert_eq!(response.size, 12); // "hello daemon" = 12 bytes
+
+        // Verify the content ID matches expected hash
+        let expected = ContentId::from_bytes(b"hello daemon");
+        assert_eq!(response.content_id, expected.to_string());
+
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_daemon_command_cache_stats() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path()).await;
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx);
+
+        let daemon = tokio::spawn(async move {
+            node.run_daemon_loop(cmd_rx).await;
+        });
+
+        let stats = handle.cache_stats().await.unwrap();
+        assert_eq!(stats.cached_items, 0);
+        assert_eq!(stats.published_items, 0);
+        assert!(stats.max_size > 0);
+
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_daemon_handle_publish_fetch_roundtrip() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path()).await;
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx);
+
+        let daemon = tokio::spawn(async move {
+            node.run_daemon_loop(cmd_rx).await;
+        });
+
+        // Publish
+        let test_file = dir.path().join("roundtrip.txt");
+        std::fs::write(&test_file, b"roundtrip data").unwrap();
+        let pub_resp = handle.publish(test_file).await.unwrap();
+
+        // Fetch the same content back from local store
+        let fetch_resp = handle.fetch(pub_resp.content_id.clone()).await.unwrap();
+        assert_eq!(fetch_resp.data, b"roundtrip data");
+        assert_eq!(fetch_resp.content_id, pub_resp.content_id);
+        assert_eq!(fetch_resp.size, 14);
+
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_daemon_handle_shutdown() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path()).await;
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx);
+
+        let daemon = tokio::spawn(async move {
+            node.run_daemon_loop(cmd_rx).await;
+        });
+
+        // Shutdown should complete the daemon loop
+        handle.shutdown().await.unwrap();
+
+        // The daemon task should finish
+        let result = tokio::time::timeout(Duration::from_secs(5), daemon).await;
+        assert!(result.is_ok(), "Daemon should have shut down");
+        result.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_fetch_local_content() {
+        // Publish content, then fetch via daemon command channel - should return from local store
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path()).await;
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx);
+
+        let daemon = tokio::spawn(async move {
+            node.run_daemon_loop(cmd_rx).await;
+        });
+
+        // Publish first
+        let test_file = dir.path().join("local_fetch.txt");
+        std::fs::write(&test_file, b"fetch me locally").unwrap();
+        let pub_resp = handle.publish(test_file).await.unwrap();
+
+        // Fetch should return from local store without any network
+        let fetch_resp = handle.fetch(pub_resp.content_id.clone()).await.unwrap();
+        assert_eq!(fetch_resp.data, b"fetch me locally");
+        assert_eq!(fetch_resp.size, 16);
+
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_fetch_timeout() {
+        // Request non-existent content with no peers - should eventually timeout
+        // Note: In the daemon, fetches with no peers go to DHT which will time out
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path()).await;
+        // Override fetch manager with short timeout for test
+        node.fetch_manager = crate::fetch_manager::FetchManager::with_timeout(Duration::from_millis(100));
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx);
+
+        let daemon = tokio::spawn(async move {
+            node.run_daemon_loop(cmd_rx).await;
+        });
+
+        let result = handle.fetch("nonexistent_content_id".to_string()).await;
+        assert!(result.is_err());
+
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_daemon_handle_disconnected() {
+        let (cmd_tx, cmd_rx) = mpsc::channel::<DaemonCommand>(16);
+        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx);
+
+        // Drop the receiver to simulate daemon not running
+        drop(cmd_rx);
+
+        // All methods should return errors, not panic
+        let status_err = handle.status().await;
+        assert!(status_err.is_err());
+
+        let publish_err = handle.publish("/nonexistent".into()).await;
+        assert!(publish_err.is_err());
+
+        let fetch_err = handle.fetch("fake_id".to_string()).await;
+        assert!(fetch_err.is_err());
+
+        let shutdown_err = handle.shutdown().await;
+        assert!(shutdown_err.is_err());
     }
 }

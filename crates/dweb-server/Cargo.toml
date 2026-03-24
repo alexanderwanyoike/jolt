@@ -1,0 +1,22 @@
+[package]
+name = "dweb-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dweb-core = { workspace = true }
+dweb-network = { workspace = true }
+axum = { workspace = true }
+axum-extra = { workspace = true }
+tower-http = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+reqwest = { workspace = true }
+dweb-identity = { workspace = true }
+dweb-store = { workspace = true }

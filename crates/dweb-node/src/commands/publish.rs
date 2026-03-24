@@ -3,11 +3,9 @@ use std::path::Path;
 use anyhow::Result;
 use tracing::info;
 
-use dweb_identity::NodeIdentity;
-use dweb_network::{NetworkConfig, NetworkNode};
-use dweb_store::{CacheConfig, ContentStore};
-
+use crate::client::DaemonClient;
 use crate::config::NodeConfig;
+use crate::daemon;
 
 pub async fn run(file: &Path) -> Result<()> {
     if !file.exists() {
@@ -15,21 +13,27 @@ pub async fn run(file: &Path) -> Result<()> {
     }
 
     let config = NodeConfig::default_dirs();
-    config.ensure_dirs()?;
+    let info = daemon::read_daemon_info(&config)
+        .ok_or_else(|| anyhow::anyhow!("Daemon not running. Start with: dweb start"))?;
 
-    let identity = NodeIdentity::load_or_generate(&config.identity_dir)?;
+    if !daemon::is_daemon_running(&config) {
+        daemon::clear_daemon_info(&config);
+        anyhow::bail!("Daemon not running. Start with: dweb start");
+    }
 
-    let store = ContentStore::open(&config.content_store_dir, CacheConfig::default())?;
-    let mut node = NetworkNode::new(identity, store, NetworkConfig::test_config()).await?;
+    let client = DaemonClient::new(info.port);
 
     let metadata = std::fs::metadata(file)?;
     info!("Publishing: {}", file.display());
     info!("Size: {} bytes", metadata.len());
 
-    let content_id = node.publish_file(file)?;
+    let response = client.publish(file).await?;
 
+    let content_id = response["content_id"]
+        .as_str()
+        .unwrap_or("unknown");
     println!("{content_id}");
-    info!("Content will be served when the node is running (dweb start)");
+    info!("Content is now being served by the daemon");
 
     Ok(())
 }

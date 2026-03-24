@@ -1,0 +1,175 @@
+# Docker Compose network simulation for dweb
+#
+# Topology (after setup.sh connects second interfaces):
+#   internet (10.100.0.0/24): bootstrap, nat-gw1, nat-gw2, cgnat-gw
+#   lan1 (10.101.0.0/24):     nat-gw1, node1, node2
+#   lan2 (10.102.0.0/24):     nat-gw2, node3
+#   isp  (10.103.0.0/24):     cgnat-gw, home-gw
+#   home (10.104.0.0/24):     home-gw, node4
+#
+# Docker reserves x.x.x.1 as bridge gateway, so our gateways use .0.2.
+# Gateways start on one network; setup.sh attaches the second.
+
+networks:
+  internet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.100.0.0/24
+  lan1:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.101.0.0/24
+  lan2:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.102.0.0/24
+  isp:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.103.0.0/24
+  home:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.104.0.0/24
+
+services:
+  # === Public bootstrap node ===
+  bootstrap:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+    command: ["start", "--port", "4001", "--api-port", "9862", "--api-bind", "0.0.0.0", "--no-bootstrap"]
+    networks:
+      internet:
+        ipv4_address: 10.100.0.10
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9862/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # === NAT Gateways ===
+  nat-gw1:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    networks:
+      lan1:
+        ipv4_address: 10.101.0.2
+
+  nat-gw2:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    networks:
+      lan2:
+        ipv4_address: 10.102.0.2
+
+  cgnat-gw:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    networks:
+      isp:
+        ipv4_address: 10.103.0.2
+
+  home-gw:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    networks:
+      home:
+        ipv4_address: 10.104.0.2
+
+  # === Nodes ===
+  # node-entrypoint.sh: sets default route, discovers bootstrap peer ID, starts dweb
+  # Args: <gateway_ip> <listen_port> <bootstrap_ip> <bootstrap_port>
+
+  node1:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+    cap_add:
+      - NET_ADMIN
+    networks:
+      lan1:
+        ipv4_address: 10.101.0.10
+    entrypoint: ["/usr/local/bin/node-entrypoint.sh"]
+    command: ["10.101.0.2", "4001", "10.100.0.10", "4001"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9862/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  node2:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+    cap_add:
+      - NET_ADMIN
+    networks:
+      lan1:
+        ipv4_address: 10.101.0.20
+    entrypoint: ["/usr/local/bin/node-entrypoint.sh"]
+    command: ["10.101.0.2", "4002", "10.100.0.10", "4001"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9862/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  node3:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+    cap_add:
+      - NET_ADMIN
+    networks:
+      lan2:
+        ipv4_address: 10.102.0.10
+    entrypoint: ["/usr/local/bin/node-entrypoint.sh"]
+    command: ["10.102.0.2", "4001", "10.100.0.10", "4001"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9862/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  node4:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+    cap_add:
+      - NET_ADMIN
+    networks:
+      home:
+        ipv4_address: 10.104.0.10
+    entrypoint: ["/usr/local/bin/node-entrypoint.sh"]
+    command: ["10.104.0.2", "4001", "10.100.0.10", "4001"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9862/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20

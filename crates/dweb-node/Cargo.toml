@@ -15,6 +15,7 @@ dweb-core = { workspace = true }
 dweb-identity = { workspace = true }
 dweb-store = { workspace = true }
 dweb-network = { workspace = true }
+dweb-server = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
@@ -24,3 +25,4 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 directories = { workspace = true }
 hex = { workspace = true }
+reqwest = { workspace = true }

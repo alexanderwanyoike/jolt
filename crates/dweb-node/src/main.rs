@@ -1,6 +1,8 @@
 mod cli;
+mod client;
 mod commands;
 mod config;
+mod daemon;
 
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
@@ -20,21 +22,23 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Start {
             port,
+            api_port,
+            api_bind,
             bootstrap,
             no_bootstrap,
-        } => commands::start::run(port, bootstrap, no_bootstrap).await?,
+        } => commands::start::run(port, api_port, &api_bind, bootstrap, no_bootstrap).await?,
+        Commands::Stop => commands::stop::run().await?,
+        Commands::Status => commands::status::run().await?,
         Commands::Publish { file } => commands::publish::run(&file).await?,
         Commands::Fetch {
             content_id,
             output,
-            dial,
-            bootstrap,
-        } => commands::fetch::run(&content_id, output, dial, bootstrap).await?,
+        } => commands::fetch::run(&content_id, output).await?,
         Commands::Cache { command } => match command {
-            CacheCommands::Stats => commands::cache::stats()?,
-            CacheCommands::List => commands::cache::list()?,
-            CacheCommands::Pin { content_id } => commands::cache::pin(&content_id)?,
-            CacheCommands::Unpin { content_id } => commands::cache::unpin(&content_id)?,
+            CacheCommands::Stats => commands::cache::stats().await?,
+            CacheCommands::List => commands::cache::list().await?,
+            CacheCommands::Pin { content_id } => commands::cache::pin(&content_id).await?,
+            CacheCommands::Unpin { content_id } => commands::cache::unpin(&content_id).await?,
         },
     }
 

@@ -5,6 +5,7 @@ members = [
     "crates/dweb-identity",
     "crates/dweb-store",
     "crates/dweb-network",
+    "crates/dweb-server",
     "crates/dweb-node",
 ]
 
@@ -19,6 +20,7 @@ dweb-core = { path = "crates/dweb-core" }
 dweb-identity = { path = "crates/dweb-identity" }
 dweb-store = { path = "crates/dweb-store" }
 dweb-network = { path = "crates/dweb-network" }
+dweb-server = { path = "crates/dweb-server" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -72,6 +74,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # NAT traversal
 crab_nat = "0.7"
 netdev = "0.37"
+
+# HTTP server
+axum = "0.8"
+axum-extra = { version = "0.10", features = ["multipart"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 
 # Misc
 directories = "5"

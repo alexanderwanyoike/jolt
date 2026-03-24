@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+#[derive(Clone)]
 pub struct NodeConfig {
     pub data_dir: PathBuf,
     pub identity_dir: PathBuf,

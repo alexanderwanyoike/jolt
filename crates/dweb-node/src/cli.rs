@@ -11,11 +11,19 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Start the dweb node
+    /// Start the dweb daemon
     Start {
         /// TCP port to listen on (default: random)
         #[arg(short, long)]
         port: Option<u16>,
+
+        /// HTTP API port (default: 9862)
+        #[arg(long, default_value = "9862")]
+        api_port: u16,
+
+        /// HTTP API bind address (default: 127.0.0.1, use 0.0.0.0 for all interfaces)
+        #[arg(long, default_value = "127.0.0.1")]
+        api_bind: String,
 
         /// Bootstrap peer multiaddr (repeatable, e.g., /ip4/1.2.3.4/tcp/4001/p2p/12D3KooW...)
         #[arg(short, long)]
@@ -25,6 +33,12 @@ pub enum Commands {
         #[arg(long)]
         no_bootstrap: bool,
     },
+
+    /// Stop the running daemon
+    Stop,
+
+    /// Show daemon status
+    Status,
 
     /// Publish a file to the network
     Publish {
@@ -40,14 +54,6 @@ pub enum Commands {
         /// Output file path (defaults to content ID in current directory)
         #[arg(short, long)]
         output: Option<PathBuf>,
-
-        /// Dial a specific peer address (e.g., /ip4/1.2.3.4/tcp/40933)
-        #[arg(short, long)]
-        dial: Option<String>,
-
-        /// Bootstrap peer multiaddr (e.g., /ip4/1.2.3.4/tcp/4001/p2p/12D3KooW...)
-        #[arg(short, long)]
-        bootstrap: Vec<String>,
     },
 
     /// Manage the content cache
@@ -87,6 +93,27 @@ mod tests {
     fn parse_start_command() {
         let cli = Cli::parse_from(["dweb", "start"]);
         assert!(matches!(cli.command, Commands::Start { .. }));
+    }
+
+    #[test]
+    fn parse_start_with_api_port() {
+        let cli = Cli::parse_from(["dweb", "start", "--api-port", "8080"]);
+        match cli.command {
+            Commands::Start { api_port, .. } => assert_eq!(api_port, 8080),
+            _ => panic!("expected Start command"),
+        }
+    }
+
+    #[test]
+    fn parse_stop_command() {
+        let cli = Cli::parse_from(["dweb", "stop"]);
+        assert!(matches!(cli.command, Commands::Stop));
+    }
+
+    #[test]
+    fn parse_status_command() {
+        let cli = Cli::parse_from(["dweb", "status"]);
+        assert!(matches!(cli.command, Commands::Status));
     }
 
     #[test]
