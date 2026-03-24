@@ -435,8 +435,24 @@ impl NetworkNode {
                                                     .entry(key_str.clone())
                                                     .or_default()
                                                     .push(provider);
-                                                if let Err(e) = self.swarm.dial(provider) {
-                                                    debug!("Failed to dial provider {provider}: {e}");
+                                                // Try direct dial first
+                                                if let Err(_) = self.swarm.dial(provider) {
+                                                    // If direct dial fails, try via relay circuits
+                                                    let local_peer = *self.swarm.local_peer_id();
+                                                    let circuit_listen: Option<Multiaddr> = self.swarm.listeners()
+                                                        .find(|a| a.to_string().contains("p2p-circuit"))
+                                                        .cloned();
+                                                    if let Some(relay_addr) = circuit_listen {
+                                                        let circuit_addr = relay_addr
+                                                            .to_string()
+                                                            .replace(&format!("/p2p/{}", local_peer), &format!("/p2p/{}", provider));
+                                                        if let Ok(addr) = circuit_addr.parse::<Multiaddr>() {
+                                                            info!("Dialing provider {provider} via relay circuit");
+                                                            if let Err(e) = self.swarm.dial(addr) {
+                                                                debug!("Failed to dial provider via relay: {e}");
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
