@@ -1,4 +1,42 @@
-# M3 Failure Report: Daemon Architecture & P2P Network Testing
+# M3 Report: Daemon Architecture & P2P Network Testing
+
+## Real-World Test Results (3 Machines: Kenya, Germany, Mac)
+
+### What Works
+
+**LAN Direct P2P -- CONFIRMED**
+- Mac (`192.168.1.68`) and Kenya machine (`192.168.1.67`) on the same WiFi
+- mDNS discovers peers instantly, connection is `relayed: false`
+- Content fetch completes in <20ms, direct peer-to-peer
+- Content auto-cached for re-sharing
+- No bootstrap needed for LAN discovery (but DHT works in parallel)
+
+**DHT Provider Discovery -- CONFIRMED**
+- Content published on Kenya machine, Mac finds provider via DHT through Hetzner bootstrap
+- Provider found in <1s across the internet
+- Works regardless of network topology
+
+**Relay-Based Transfer -- CONFIRMED**
+- When peers are on different networks (cross-NAT), content transfers via relay
+- Data arrives correctly but goes through bootstrap (not true P2P for cross-NAT)
+
+### What Doesn't Work
+
+**Cross-NAT Direct Connection -- FAILED**
+- When Mac is on mobile hotspot (`172.20.10.x`) and Kenya on home WiFi (`192.168.1.x`)
+- DHT finds provider, but `Dialing provider via relay circuit` never results in connection
+- FetchManager stuck in `WaitingForProvider` until timeout
+- dcutr hole punching fails: "Giving up after 3 dial attempts"
+
+### Critical Discovery: QUIC vs TCP Bootstrap
+
+Using QUIC bootstrap (`/udp/.../quic-v1/`) instead of TCP (`/tcp/`) makes the identify protocol discover UDP external addresses. With TCP bootstrap, only TCP addresses are discovered, and TCP hole punching almost never works through NAT. **Always use QUIC bootstrap addresses.**
+
+### Remaining Problem: Relay Circuit Dial
+
+The relay circuit dial from the FetchManager flow doesn't complete when peers are on different networks. The code dials `provider via relay circuit` but no `Connected to peer` event fires. This needs investigation -- the relay reservation is confirmed, the bootstrap relay is running, but the circuit connection from Mac to Kenya via relay doesn't establish.
+
+---
 
 ## What Was Built
 
