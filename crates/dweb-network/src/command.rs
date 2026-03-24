@@ -58,6 +58,8 @@ pub struct NodeStatus {
     pub peer_id: String,
     pub uptime_secs: u64,
     pub connected_peers: usize,
+    pub direct_peers: usize,
+    pub relayed_peers: usize,
     pub published_count: usize,
     pub cached_count: usize,
     pub listen_addresses: Vec<String>,
@@ -66,6 +68,9 @@ pub struct NodeStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeerInfo {
     pub peer_id: String,
+    pub is_relayed: bool,
+    pub transport: String,
+    pub remote_addr: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

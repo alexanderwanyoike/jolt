@@ -27,7 +27,7 @@ if [ -z "$PEER_ID" ] || [ "$PEER_ID" = "null" ]; then
     exit 1
 fi
 
-BOOTSTRAP_ADDR="/ip4/${BOOTSTRAP_IP}/tcp/${BOOTSTRAP_PORT}/p2p/${PEER_ID}"
+BOOTSTRAP_ADDR="/ip4/${BOOTSTRAP_IP}/udp/${BOOTSTRAP_PORT}/quic-v1/p2p/${PEER_ID}"
 echo "Bootstrap: $BOOTSTRAP_ADDR"
 
 exec dweb start --port "$PORT" --api-port 9862 --api-bind 0.0.0.0 --bootstrap "$BOOTSTRAP_ADDR"

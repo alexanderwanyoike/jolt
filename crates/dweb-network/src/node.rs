@@ -23,6 +23,43 @@ use crate::error::NetworkError;
 use crate::fetch_manager::FetchManager;
 use crate::protocol::{ContentRequest, ContentResponse};
 
+/// Tracks connection quality for a connected peer.
+#[derive(Debug, Clone)]
+pub struct PeerConnectionInfo {
+    pub is_relayed: bool,
+    pub transport: String,
+    pub remote_addr: String,
+}
+
+impl PeerConnectionInfo {
+    fn from_endpoint(endpoint: &libp2p::core::ConnectedPoint) -> Self {
+        let (remote_addr, is_relayed) = match endpoint {
+            libp2p::core::ConnectedPoint::Dialer { address, .. } => {
+                (address.to_string(), address.to_string().contains("p2p-circuit"))
+            }
+            libp2p::core::ConnectedPoint::Listener { send_back_addr, .. } => {
+                (send_back_addr.to_string(), send_back_addr.to_string().contains("p2p-circuit"))
+            }
+        };
+
+        let transport = if remote_addr.contains("quic-v1") {
+            "quic".to_string()
+        } else if remote_addr.contains("/tcp/") {
+            "tcp".to_string()
+        } else if remote_addr.contains("webrtc") {
+            "webrtc".to_string()
+        } else {
+            "unknown".to_string()
+        };
+
+        Self {
+            is_relayed: is_relayed || endpoint.is_relayed(),
+            transport,
+            remote_addr,
+        }
+    }
+}
+
 pub struct NetworkNode {
     swarm: Swarm<DwebBehaviour>,
     identity: NodeIdentity,
@@ -39,6 +76,8 @@ pub struct NetworkNode {
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
     /// Relay circuits that have been confirmed ready (reservation accepted)
     relay_circuits_ready: HashSet<libp2p::PeerId>,
+    /// Connection quality tracking: peer -> connection info
+    peer_connections: HashMap<libp2p::PeerId, PeerConnectionInfo>,
     /// When the node was created (for uptime reporting)
     started_at: Instant,
     /// Manages in-flight fetch operations for the daemon loop
@@ -145,6 +184,7 @@ impl NetworkNode {
             relay_circuit_addrs: Vec::new(),
             discovered_providers: HashMap::new(),
             relay_circuits_ready: HashSet::new(),
+            peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
         })
@@ -252,13 +292,18 @@ impl NetworkNode {
         bootstrap_addrs: &[Multiaddr],
     ) -> Result<(), NetworkError> {
         for addr in bootstrap_addrs {
-            let (peer_id, transport) = crate::bootstrap::parse_bootstrap_addr(&addr.to_string())?;
-            self.swarm
-                .behaviour_mut()
-                .kademlia
-                .add_address(&peer_id, transport.clone());
-            if let Err(e) = self.swarm.dial(transport) {
-                warn!("Failed to dial bootstrap peer {peer_id}: {e}");
+            // Parse and generate both TCP and QUIC variants for better connectivity
+            let variants = crate::bootstrap::parse_bootstrap_addr_with_quic(&addr.to_string())?;
+            let peer_id = variants[0].0;
+
+            for (_, transport) in &variants {
+                self.swarm
+                    .behaviour_mut()
+                    .kademlia
+                    .add_address(&peer_id, transport.clone());
+                if let Err(e) = self.swarm.dial(transport.clone()) {
+                    debug!("Failed to dial bootstrap peer {peer_id} at {transport}: {e}");
+                }
             }
             // Store for relay circuit registration once connected
             self.pending_relay_peers.push((peer_id, addr.clone()));
@@ -571,6 +616,11 @@ impl NetworkNode {
                 match event.result {
                     Ok(_) => {
                         info!("Direct connection established via hole punch with {}", event.remote_peer_id);
+                        // Upgrade connection tracking: relayed -> direct
+                        if let Some(conn) = self.peer_connections.get_mut(&event.remote_peer_id) {
+                            conn.is_relayed = false;
+                            conn.transport = "quic (hole-punched)".to_string();
+                        }
                     }
                     Err(ref e) => {
                         warn!("Hole punch failed with {}: {e}", event.remote_peer_id);
@@ -602,7 +652,16 @@ impl NetworkNode {
             }
 
             SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
-                info!("Connected to peer: {peer_id} (relayed: {})", endpoint.is_relayed());
+                let conn_info = PeerConnectionInfo::from_endpoint(&endpoint);
+                info!("Connected to peer: {peer_id} (relayed: {}, transport: {})", conn_info.is_relayed, conn_info.transport);
+
+                // Track connection quality (keep best: direct > relayed)
+                let dominated = self.peer_connections.get(&peer_id)
+                    .map(|existing| existing.is_relayed && !conn_info.is_relayed)
+                    .unwrap_or(true);
+                if dominated {
+                    self.peer_connections.insert(peer_id, conn_info);
+                }
 
                 // Notify fetch manager in case this is a provider we're waiting for
                 self.fetch_manager.on_peer_connected(&peer_id);
@@ -628,6 +687,9 @@ impl NetworkNode {
 
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
                 debug!("Disconnected from peer: {peer_id}");
+                if !self.swarm.is_connected(&peer_id) {
+                    self.peer_connections.remove(&peer_id);
+                }
             }
 
             SwarmEvent::ExternalAddrConfirmed { address } => {
@@ -759,10 +821,14 @@ impl NetworkNode {
                     .start_fetch(content_id, response_tx, request_ids);
             }
             DaemonCommand::GetStatus { response_tx } => {
+                let direct = self.peer_connections.values().filter(|c| !c.is_relayed).count();
+                let relayed = self.peer_connections.values().filter(|c| c.is_relayed).count();
                 let status = NodeStatus {
                     peer_id: self.swarm.local_peer_id().to_string(),
                     uptime_secs: self.started_at.elapsed().as_secs(),
                     connected_peers: self.swarm.connected_peers().count(),
+                    direct_peers: direct,
+                    relayed_peers: relayed,
                     published_count: self.store.published_ids().len(),
                     cached_count: self.store.list_entries().len(),
                     listen_addresses: self.swarm.listeners().map(|a| a.to_string()).collect(),
@@ -773,8 +839,14 @@ impl NetworkNode {
                 let peers = self
                     .swarm
                     .connected_peers()
-                    .map(|p| PeerInfo {
-                        peer_id: p.to_string(),
+                    .map(|p| {
+                        let conn = self.peer_connections.get(p);
+                        PeerInfo {
+                            peer_id: p.to_string(),
+                            is_relayed: conn.map(|c| c.is_relayed).unwrap_or(true),
+                            transport: conn.map(|c| c.transport.clone()).unwrap_or_else(|| "unknown".to_string()),
+                            remote_addr: conn.map(|c| c.remote_addr.clone()).unwrap_or_default(),
+                        }
                     })
                     .collect();
                 let _ = response_tx.send(peers);
