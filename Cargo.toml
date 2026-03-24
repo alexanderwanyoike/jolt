@@ -69,6 +69,10 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# NAT traversal
+crab_nat = "0.7"
+netdev = "0.37"
+
 # Misc
 directories = "5"
 hex = "0.4"

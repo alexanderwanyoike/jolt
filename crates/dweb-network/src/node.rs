@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Duration;
 
@@ -28,8 +28,10 @@ pub struct NetworkNode {
     >,
     /// Bootstrap peers (PeerId, full multiaddr) to register relay circuits with once connected.
     pending_relay_peers: Vec<(libp2p::PeerId, Multiaddr)>,
-    /// Providers discovered via DHT: content_id string -> provider PeerId
-    discovered_providers: HashMap<String, libp2p::PeerId>,
+    /// Providers discovered via DHT: content_id string -> provider PeerIds
+    discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
+    /// Relay circuits that have been confirmed ready (reservation accepted)
+    relay_circuits_ready: HashSet<libp2p::PeerId>,
 }
 
 impl NetworkNode {
@@ -37,14 +39,14 @@ impl NetworkNode {
     pub async fn new(
         identity: NodeIdentity,
         store: ContentStore,
-        config: NetworkConfig,
+        _config: NetworkConfig,
     ) -> Result<Self, NetworkError> {
         let libp2p_keypair = identity.to_libp2p_keypair();
 
         let swarm = libp2p::SwarmBuilder::with_existing_identity(libp2p_keypair)
             .with_tokio()
             .with_tcp(
-                libp2p::tcp::Config::default(),
+                libp2p::tcp::Config::default().nodelay(true),
                 libp2p::noise::Config::new,
                 libp2p::yamux::Config::default,
             )
@@ -120,10 +122,8 @@ impl NetworkNode {
                 })
             })
             .map_err(|e| NetworkError::Swarm(e.to_string()))?
-            .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(60)))
+            .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(300)))
             .build();
-
-        let _ = config; // Will be used in later phases for bootstrap peers
 
         Ok(Self {
             swarm,
@@ -132,6 +132,7 @@ impl NetworkNode {
             pending_fetches: HashMap::new(),
             pending_relay_peers: Vec::new(),
             discovered_providers: HashMap::new(),
+            relay_circuits_ready: HashSet::new(),
         })
     }
 
@@ -242,10 +243,11 @@ impl NetworkNode {
                 .behaviour_mut()
                 .kademlia
                 .add_address(&peer_id, transport.clone());
-            // Actually dial the bootstrap peer to establish a connection
             if let Err(e) = self.swarm.dial(transport) {
                 warn!("Failed to dial bootstrap peer {peer_id}: {e}");
             }
+            // Store for relay circuit registration once connected
+            self.pending_relay_peers.push((peer_id, addr.clone()));
             info!("Added bootstrap peer: {peer_id}");
         }
 
@@ -254,13 +256,6 @@ impl NetworkNode {
             .kademlia
             .bootstrap()
             .map_err(|e| NetworkError::Dht(format!("Bootstrap failed: {e:?}")))?;
-
-        // Store bootstrap peer info to register relay circuits once connected
-        for addr in bootstrap_addrs {
-            if let Ok((peer_id, _)) = crate::bootstrap::parse_bootstrap_addr(&addr.to_string()) {
-                self.pending_relay_peers.push((peer_id, addr.clone()));
-            }
-        }
 
         info!("DHT bootstrap initiated");
         Ok(())
@@ -278,9 +273,15 @@ impl NetworkNode {
         Ok(())
     }
 
-    /// Take a discovered provider for the given content (removes it from internal tracking).
+    /// Take the first discovered provider for the given content.
     pub fn take_discovered_provider(&mut self, content_id: &ContentId) -> Option<libp2p::PeerId> {
-        self.discovered_providers.remove(&content_id.to_string())
+        let key = content_id.to_string();
+        if let Some(providers) = self.discovered_providers.get_mut(&key) {
+            if !providers.is_empty() {
+                return Some(providers.remove(0));
+            }
+        }
+        None
     }
 
     /// Query the DHT for providers of the given content.
@@ -430,7 +431,10 @@ impl NetworkNode {
                                         for provider in providers {
                                             if provider != *self.swarm.local_peer_id() {
                                                 info!("DHT found provider {provider} for {key_str}");
-                                                self.discovered_providers.insert(key_str.clone(), provider);
+                                                self.discovered_providers
+                                                    .entry(key_str.clone())
+                                                    .or_default()
+                                                    .push(provider);
                                                 if let Err(e) = self.swarm.dial(provider) {
                                                     debug!("Failed to dial provider {provider}: {e}");
                                                 }
@@ -466,7 +470,14 @@ impl NetworkNode {
 
             // --- Relay Client ---
             SwarmEvent::Behaviour(DwebBehaviourEvent::RelayClient(event)) => {
-                info!("Relay event: {event:?}");
+                if let libp2p::relay::client::Event::ReservationReqAccepted {
+                    relay_peer_id, ..
+                } = &event
+                {
+                    info!("Relay reservation accepted by {relay_peer_id}");
+                    self.relay_circuits_ready.insert(*relay_peer_id);
+                }
+                debug!("Relay event: {event:?}");
             }
 
             // --- dcutr ---
@@ -544,6 +555,16 @@ impl NetworkNode {
     /// Get the list of currently connected peers.
     pub fn connected_peers(&self) -> Vec<libp2p::PeerId> {
         self.swarm.connected_peers().cloned().collect()
+    }
+
+    /// Check if a relay circuit is confirmed ready.
+    pub fn is_relay_ready(&self, relay_peer: &libp2p::PeerId) -> bool {
+        self.relay_circuits_ready.contains(relay_peer)
+    }
+
+    /// Check if any relay circuit is ready.
+    pub fn has_ready_relay(&self) -> bool {
+        !self.relay_circuits_ready.is_empty()
     }
 
     /// Get the listeners' addresses.

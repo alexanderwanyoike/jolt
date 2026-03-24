@@ -5,8 +5,9 @@ use anyhow::Result;
 use tracing::info;
 
 use dweb_core::ContentId;
-use dweb_identity::{verify_signature, NodeIdentity};
-use dweb_network::{NetworkConfig, NetworkNode};
+use dweb_identity::verify_signature;
+use dweb_identity::NodeIdentity;
+use dweb_network::{ContentResponse, NetworkConfig, NetworkNode};
 use dweb_store::{CacheConfig, ContentStore};
 
 use crate::config::NodeConfig;
@@ -21,6 +22,26 @@ pub async fn run(
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid ContentId: {e}"))?;
 
+    let mut node = setup_node(&bootstrap).await?;
+
+    info!("Fetching: {content_id}");
+
+    connect_to_peers(&mut node, dial.as_deref(), &bootstrap).await?;
+
+    // Try connected peers first
+    if let Some(resp) = try_fetch_from_peers(&mut node, &content_id).await {
+        return save_and_verify(resp, &content_id, output, content_id_str);
+    }
+
+    // Fall back to DHT provider discovery
+    if let Some(resp) = fetch_via_dht(&mut node, &content_id).await {
+        return save_and_verify(resp, &content_id, output, content_id_str);
+    }
+
+    anyhow::bail!("Content not found on any peer or via DHT")
+}
+
+async fn setup_node(bootstrap: &[String]) -> Result<NetworkNode> {
     let config = NodeConfig::default_dirs();
     config.ensure_dirs()?;
 
@@ -36,21 +57,24 @@ pub async fn run(
     }
 
     let mut node = NetworkNode::new(identity, store, net_config).await?;
-
     node.listen_on("/ip4/0.0.0.0/tcp/0")?;
     node.listen_on("/ip4/0.0.0.0/udp/0/quic-v1")?;
 
-    info!("Fetching: {content_id}");
+    Ok(node)
+}
 
-    if let Some(ref addr) = dial {
-        // Direct dial mode (manual address)
+async fn connect_to_peers(
+    node: &mut NetworkNode,
+    dial: Option<&str>,
+    bootstrap: &[String],
+) -> Result<()> {
+    if let Some(addr) = dial {
         info!("Dialing peer at {addr}");
         let multiaddr: dweb_network::Multiaddr = addr
             .parse()
             .map_err(|e| anyhow::anyhow!("Invalid multiaddr: {e}"))?;
         node.dial(multiaddr)?;
     } else if !bootstrap.is_empty() {
-        // DHT mode: bootstrap, then find providers
         info!("Bootstrapping into DHT...");
         let addrs: Vec<dweb_network::Multiaddr> =
             bootstrap.iter().filter_map(|s| s.parse().ok()).collect();
@@ -59,130 +83,119 @@ pub async fn run(
         info!("Discovering peers via mDNS...");
     }
 
-    // Wait for peer connection
+    // Wait for at least one peer connection
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    while tokio::time::Instant::now() < deadline {
+        pump_events(node, Duration::from_millis(500)).await;
+        if !node.connected_peers().is_empty() {
+            info!("Found {} peer(s)", node.connected_peers().len());
+            return Ok(());
+        }
+    }
+
+    anyhow::bail!("Timed out waiting for peers. Try --dial or --bootstrap.")
+}
+
+async fn try_fetch_from_peers(
+    node: &mut NetworkNode,
+    content_id: &ContentId,
+) -> Option<ContentResponse> {
+    let rx = node.request_content(content_id).ok()?;
+    let mut rx = rx;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+
     loop {
         if tokio::time::Instant::now() > deadline {
-            anyhow::bail!(
-                "Timed out waiting for peers. Try --dial or --bootstrap."
-            );
+            return None;
         }
-
-        let event = tokio::time::timeout(Duration::from_millis(500), node.next_event()).await;
-        if let Ok(ev) = event {
-            node.handle_swarm_event(ev);
-        }
-
-        if !node.connected_peers().is_empty() {
-            break;
-        }
-    }
-
-    info!("Found {} peer(s)", node.connected_peers().len());
-
-    // Try fetching from connected peers first
-    let rx = node.request_content(&content_id)?;
-
-    let mut response = {
-        let mut rx = rx;
-        let fetch_deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-        loop {
-            if tokio::time::Instant::now() > fetch_deadline {
-                break dweb_network::ContentResponse {
-                    data: vec![],
-                    signature: vec![],
-                    publisher_key: vec![],
+        tokio::select! {
+            result = &mut rx => {
+                return match result {
+                    Ok(Ok(resp)) if !resp.data.is_empty() => Some(resp),
+                    _ => None,
                 };
             }
-
-            tokio::select! {
-                result = &mut rx => {
-                    match result {
-                        Ok(Ok(resp)) => break resp,
-                        Ok(Err(_)) => break dweb_network::ContentResponse {
-                            data: vec![], signature: vec![], publisher_key: vec![],
-                        },
-                        Err(_) => break dweb_network::ContentResponse {
-                            data: vec![], signature: vec![], publisher_key: vec![],
-                        },
-                    }
-                }
-                event = node.next_event() => {
-                    node.handle_swarm_event(event);
-                }
+            event = node.next_event() => {
+                node.handle_swarm_event(event);
             }
         }
-    };
+    }
+}
 
-    // If not found on directly connected peers, try DHT provider discovery
-    if response.data.is_empty() {
-        info!("Content not on connected peers, querying DHT for providers...");
-        let _query_id = node.find_providers(&content_id);
+async fn fetch_via_dht(
+    node: &mut NetworkNode,
+    content_id: &ContentId,
+) -> Option<ContentResponse> {
+    info!("Content not on connected peers, querying DHT for providers...");
+    let _query_id = node.find_providers(content_id);
 
-        let dht_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        let mut provider_peer: Option<dweb_network::PeerId> = None;
-        let mut request_sent = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    let mut provider_peer: Option<dweb_network::PeerId> = None;
 
-        while tokio::time::Instant::now() < dht_deadline {
-            let event = tokio::time::timeout(Duration::from_millis(200), node.next_event()).await;
-            if let Ok(ev) = event {
-                node.handle_swarm_event(ev);
-            }
+    while tokio::time::Instant::now() < deadline {
+        pump_events(node, Duration::from_millis(200)).await;
 
-            // Check if DHT found a provider
-            if provider_peer.is_none() {
-                if let Some(peer) = node.take_discovered_provider(&content_id) {
-                    info!("DHT discovered provider: {peer}");
-                    provider_peer = Some(peer);
-                }
-            }
-
-            // Once we have a provider AND it's connected, send the request
-            if let Some(ref provider) = provider_peer {
-                if !request_sent && node.connected_peers().contains(provider) {
-                    // Wait a moment for the relay circuit to fully establish
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                    // Pump any events that arrived during sleep
-                    while let Ok(ev) = tokio::time::timeout(Duration::from_millis(100), node.next_event()).await {
-                        node.handle_swarm_event(ev);
-                    }
-
-                    info!("Requesting content from provider {provider}...");
-                    request_sent = true;
-                    if let Ok(rx) = node.request_content_from(&content_id, provider) {
-                        let mut rx = rx;
-                        let req_deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-                        loop {
-                            if tokio::time::Instant::now() > req_deadline {
-                                break;
-                            }
-                            tokio::select! {
-                                result = &mut rx => {
-                                    if let Ok(Ok(resp)) = result {
-                                        if !resp.data.is_empty() {
-                                            response = resp;
-                                        }
-                                    }
-                                    break;
-                                }
-                                event = node.next_event() => {
-                                    node.handle_swarm_event(event);
-                                }
-                            }
-                        }
-                        if !response.data.is_empty() {
-                            break;
-                        }
-                    }
-                }
+        // Wait for DHT to discover a provider
+        if provider_peer.is_none() {
+            if let Some(peer) = node.take_discovered_provider(content_id) {
+                info!("DHT discovered provider: {peer}");
+                provider_peer = Some(peer);
             }
         }
 
-        if response.data.is_empty() {
-            anyhow::bail!("Content not found on any peer or via DHT");
+        // Once provider is connected AND relay circuit is ready, send request
+        if let Some(ref provider) = provider_peer {
+            let connected = node.connected_peers().contains(provider);
+            let relay_ready = node.has_ready_relay();
+
+            if connected && relay_ready {
+                info!("Requesting content from provider {provider}...");
+                if let Some(resp) = try_fetch_from_specific_peer(node, content_id, provider).await
+                {
+                    return Some(resp);
+                }
+                // If this provider failed, try next one
+                provider_peer = node.take_discovered_provider(content_id);
+            }
         }
     }
 
+    None
+}
+
+async fn try_fetch_from_specific_peer(
+    node: &mut NetworkNode,
+    content_id: &ContentId,
+    peer: &dweb_network::PeerId,
+) -> Option<ContentResponse> {
+    let rx = node.request_content_from(content_id, peer).ok()?;
+    let mut rx = rx;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+
+    loop {
+        if tokio::time::Instant::now() > deadline {
+            return None;
+        }
+        tokio::select! {
+            result = &mut rx => {
+                return match result {
+                    Ok(Ok(resp)) if !resp.data.is_empty() => Some(resp),
+                    _ => None,
+                };
+            }
+            event = node.next_event() => {
+                node.handle_swarm_event(event);
+            }
+        }
+    }
+}
+
+fn save_and_verify(
+    response: ContentResponse,
+    content_id: &ContentId,
+    output: Option<PathBuf>,
+    content_id_str: &str,
+) -> Result<()> {
     if !content_id.verify(&response.data) {
         anyhow::bail!("Content verification failed: hash mismatch");
     }
@@ -210,4 +223,10 @@ pub async fn run(
     );
 
     Ok(())
+}
+
+async fn pump_events(node: &mut NetworkNode, timeout: Duration) {
+    if let Ok(ev) = tokio::time::timeout(timeout, node.next_event()).await {
+        node.handle_swarm_event(ev);
+    }
 }

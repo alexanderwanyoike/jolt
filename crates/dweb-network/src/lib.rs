@@ -2,6 +2,7 @@ pub mod behaviour;
 pub mod bootstrap;
 pub mod config;
 pub mod error;
+pub mod nat;
 pub mod node;
 pub mod protocol;
 

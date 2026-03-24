@@ -42,6 +42,12 @@ pub async fn run(port: Option<u16>, bootstrap: Vec<String>, no_bootstrap: bool) 
     node.listen_on(&tcp_addr)?;
     node.listen_on(&udp_addr)?;
 
+    // Attempt NAT-PMP/PCP port mapping in background (alongside UPnP)
+    let listen_port = port.unwrap_or(0);
+    if listen_port > 0 {
+        tokio::spawn(dweb_network::nat::try_all_mappings(listen_port, listen_port));
+    }
+
     // Bootstrap into DHT if not disabled
     if !no_bootstrap && !bootstrap.is_empty() {
         let addrs: Vec<_> = bootstrap.iter().filter_map(|s| s.parse().ok()).collect();
