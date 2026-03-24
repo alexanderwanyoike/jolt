@@ -31,19 +31,22 @@
 
 ---
 
-## M3: Browser UI, HTTP Server, and Protocol Handler
+## M3: Daemon Architecture, HTTP API, and Protocol Design
 
-**Goal:** Users interact with their node through a browser. `dweb://` links work system-wide.
+**Goal:** The dweb node runs as a persistent daemon. CLI commands and browser UI are thin clients that talk to the daemon via a localhost HTTP API. Connections stay alive for hole punching and content serving.
 
 **Deliverables:**
-- `dweb-server` crate with axum HTTP server
-- REST API for node operations (identity, content, peers)
+- Protocol design document (connection lifecycle, content routing, handshake)
+- Daemon process management (start, stop, status, auto-restart)
+- `dweb-server` crate with axum HTTP server (localhost REST API)
+- CLI commands refactored to call the daemon's API instead of creating throwaway nodes
+- Persistent connection management (relay circuits maintained, dcutr completes)
+- Docker Compose test environment (3-node network simulation)
 - Basic browser UI: node status, peer list, publish/fetch content
-- Localhost-only binding
-- Register `dweb://` as OS protocol handler on install (Linux `.desktop`, macOS `Info.plist`, Windows registry)
-- URI resolution: `dweb://` links resolve through the node and open in the default browser
+- Register `dweb://` as OS protocol handler on install
+- URI resolution: `dweb://` links resolve through the daemon
 
-**Success criteria:** User opens localhost in browser, sees their node status, can publish and fetch files through the UI. Clicking a `dweb://` link anywhere on the system opens the content in the browser.
+**Success criteria:** Daemon stays running, maintains relay circuits and DHT presence. `dweb fetch` talks to the daemon and gets content without creating a new node. dcutr hole-punching completes because connections persist. Docker tests verify the full flow.
 
 ---
 
