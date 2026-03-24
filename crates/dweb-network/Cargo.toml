@@ -8,6 +8,8 @@ dweb-core = { workspace = true }
 dweb-identity = { workspace = true }
 dweb-store = { workspace = true }
 libp2p = { workspace = true }
+libp2p-webrtc = { workspace = true }
+rand = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -80,6 +80,16 @@ pub async fn run(
         }
     }
 
+    // WebRTC listener for ICE-based NAT traversal
+    let webrtc_addr = match port {
+        Some(p) => format!("/ip4/0.0.0.0/udp/{}/webrtc-direct", p + 1),
+        None => "/ip4/0.0.0.0/udp/0/webrtc-direct".to_string(),
+    };
+    match node.listen_on(&webrtc_addr) {
+        Ok(_) => info!("WebRTC listener active"),
+        Err(e) => debug!("WebRTC listen failed: {e}"),
+    }
+
     // NAT-PMP/PCP port mapping
     let listen_port = port.unwrap_or(0);
     if listen_port > 0 {

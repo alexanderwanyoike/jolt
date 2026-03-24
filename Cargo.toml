@@ -26,7 +26,7 @@ dweb-server = { path = "crates/dweb-server" }
 tokio = { version = "1", features = ["full"] }
 
 # P2P networking
-libp2p = { version = "0.54", features = [
+libp2p = { version = "0.56", features = [
     "tokio",
     "noise",
     "tcp",
@@ -74,6 +74,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # NAT traversal
 crab_nat = "0.7"
 netdev = "0.37"
+
+# WebRTC (native, for ICE NAT traversal)
+libp2p-webrtc = { version = "0.9.0-alpha.1", features = ["tokio"] }
 
 # HTTP server
 axum = "0.8"

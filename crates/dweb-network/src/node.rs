@@ -106,6 +106,12 @@ impl NetworkNode {
             )
             .map_err(|e| NetworkError::Swarm(e.to_string()))?
             .with_quic()
+            .with_other_transport(|keypair| {
+                let certificate = libp2p_webrtc::tokio::Certificate::generate(&mut rand::thread_rng())
+                    .map_err(|e| std::io::Error::other(e))?;
+                Ok(libp2p_webrtc::tokio::Transport::new(keypair.clone(), certificate))
+            })
+            .map_err(|e| NetworkError::Swarm(e.to_string()))?
             .with_dns()
             .map_err(|e| NetworkError::Swarm(e.to_string()))?
             .with_relay_client(
