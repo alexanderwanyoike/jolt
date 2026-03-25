@@ -771,13 +771,24 @@ impl NetworkNode {
         let mut stun_interval = tokio::time::interval(Duration::from_secs(300)); // 5 min refresh
         let mut stun_pending = false;
 
+        // Get the QUIC listener's actual bound port for STUN discovery
+        let quic_port = self.swarm.listeners()
+            .find(|a| a.to_string().contains("quic-v1") && !a.to_string().contains("127.0.0.1"))
+            .and_then(|a| {
+                a.iter().find_map(|p| match p {
+                    libp2p::multiaddr::Protocol::Udp(port) => Some(port),
+                    _ => None,
+                })
+            })
+            .unwrap_or(0);
+
         // Kick off initial STUN discovery (non-blocking via channel)
         let (stun_tx, mut stun_rx) = mpsc::channel::<crate::stun::StunResult>(1);
         {
             let tx = stun_tx.clone();
             tokio::spawn(async move {
                 let servers = crate::stun::resolve_stun_servers().await;
-                let result = crate::stun::discover_external_addr(0, &servers).await;
+                let result = crate::stun::discover_external_addr(quic_port, &servers).await;
                 let _ = tx.send(result).await;
             });
             stun_pending = true;
@@ -810,9 +821,10 @@ impl NetworkNode {
                 _ = stun_interval.tick() => {
                     if !stun_pending {
                         let tx = stun_tx.clone();
+                        let port = quic_port;
                         tokio::spawn(async move {
                             let servers = crate::stun::resolve_stun_servers().await;
-                            let result = crate::stun::discover_external_addr(0, &servers).await;
+                            let result = crate::stun::discover_external_addr(port, &servers).await;
                             let _ = tx.send(result).await;
                         });
                         stun_pending = true;

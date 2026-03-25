@@ -257,11 +257,15 @@ fn getrandom(buf: &mut [u8]) {
 
 /// Discover external address by querying multiple STUN servers.
 /// Also detects NAT type based on whether the external port is consistent.
+///
+/// `quic_port` is the QUIC listener's actual bound port. The STUN query uses its
+/// own ephemeral socket for probing, but the returned external address uses the
+/// QUIC port (since that's what peers need to dial). The external IP comes from
+/// STUN; the port comes from the QUIC listener.
 pub async fn discover_external_addr(
-    local_port: u16,
+    quic_port: u16,
     stun_servers: &[SocketAddr],
 ) -> StunResult {
-    // Bind a UDP socket on the same port we use for QUIC
     let socket = match UdpSocket::bind(("0.0.0.0", 0)).await {
         Ok(s) => s,
         Err(e) => {
@@ -294,19 +298,29 @@ pub async fn discover_external_addr(
         };
     }
 
-    let external_addr = Some(successful[0]);
     let nat_type = detect_nat_type(&successful);
+
+    // Use the external IP from STUN, but substitute the QUIC listener's actual port.
+    // The STUN socket's mapped port is for an ephemeral socket we don't listen on.
+    // Peers need to dial the QUIC listener port, not the STUN probe port.
+    let external_ip = successful[0].ip();
+    let external_addr = if quic_port > 0 {
+        Some(SocketAddr::new(external_ip, quic_port))
+    } else {
+        // No QUIC port provided -- use STUN-discovered port as-is (less reliable)
+        Some(successful[0])
+    };
 
     match &nat_type {
         NatType::EndpointIndependent => {
-            info!("STUN: external address {} (endpoint-independent NAT, hole-punchable)", successful[0]);
+            info!("STUN: external IP {external_ip} (endpoint-independent NAT, hole-punchable), QUIC port {quic_port}");
         }
         NatType::Symmetric => {
             let ports: Vec<u16> = successful.iter().map(|a| a.port()).collect();
             warn!("STUN: symmetric NAT detected (ports vary: {ports:?}). Hole punching unlikely to work.");
         }
         _ => {
-            info!("STUN: external address {}", successful[0]);
+            info!("STUN: external IP {external_ip}");
         }
     }
 
