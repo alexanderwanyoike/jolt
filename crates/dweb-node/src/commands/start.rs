@@ -45,9 +45,9 @@ pub async fn run(
 
     let mut node = NetworkNode::new(identity, store, net_config).await?;
 
-    // Tell iroh transport to accept incoming connections
-    // The address is informational -- iroh binds its own UDP socket and DERP relay
-    node.listen_on("/p2p/0")?;
+    // Tell iroh transport to accept incoming connections via its Router
+    // The address is ignored by libp2p-iroh but must be a valid multiaddr
+    node.listen_on("/ip4/0.0.0.0/udp/0/quic-v1")?;
 
     // Bootstrap into DHT
     if !no_bootstrap && !bootstrap.is_empty() {
