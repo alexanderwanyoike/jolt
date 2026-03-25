@@ -38,7 +38,7 @@ libp2p = { version = "0.56", features = [
     "identify",
     "kad",
 ] }
-libp2p-iroh = "0.1"
+libp2p-iroh = { git = "https://github.com/alexanderwanyoike/libp2p-iroh.git", branch = "main" }
 iroh = "0.97"
 
 # Cryptography
