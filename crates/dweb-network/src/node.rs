@@ -535,9 +535,10 @@ impl NetworkNode {
                     info!("Discovered public peer {peer_id} (potential relay)");
                     self.known_relay_peers.insert(peer_id);
 
-                    // Request relay reservation if we don't have enough active relays
-                    if self.relay_circuits_ready.len() < 3 {
-                        // Build relay circuit addr from the peer's listen addresses
+                    // Request relay reservation if we don't already have one for this peer
+                    let already_has_reservation = self.relay_circuits_ready.contains(&peer_id)
+                        || self.relay_circuit_addrs.iter().any(|a| a.to_string().contains(&peer_id.to_string()));
+                    if !already_has_reservation && self.relay_circuit_addrs.len() < 3 {
                         if let Some(public_addr) = info.listen_addrs.iter().find(|a| {
                             let s = a.to_string();
                             !s.contains("127.") && !s.contains("10.") && !s.contains("192.168.")
@@ -549,9 +550,7 @@ impl NetworkNode {
                             match self.swarm.listen_on(circuit_addr.clone()) {
                                 Ok(_) => {
                                     info!("Requested relay reservation via public peer {peer_id}");
-                                    if !self.relay_circuit_addrs.contains(&circuit_addr) {
-                                        self.relay_circuit_addrs.push(circuit_addr);
-                                    }
+                                    self.relay_circuit_addrs.push(circuit_addr);
                                 }
                                 Err(e) => debug!("Relay reservation via {peer_id} failed: {e}"),
                             }
@@ -783,7 +782,7 @@ impl NetworkNode {
     /// Returns when a `Shutdown` command is received or the command channel closes.
     pub async fn run_daemon_loop(&mut self, mut cmd_rx: mpsc::Receiver<DaemonCommand>) {
         let mut timeout_interval = tokio::time::interval(Duration::from_secs(1));
-        let mut relay_renewal = tokio::time::interval(Duration::from_secs(30));
+        let mut relay_renewal = tokio::time::interval(Duration::from_secs(60));
         relay_renewal.tick().await; // skip first immediate tick
         let mut stun_interval = tokio::time::interval(Duration::from_secs(300)); // 5 min refresh
         let mut stun_pending = false;
@@ -839,9 +838,10 @@ impl NetworkNode {
                     }
                 }
                 _ = relay_renewal.tick() => {
-                    // Renew relay reservations to prevent expiry
-                    for addr in &self.relay_circuit_addrs.clone() {
-                        match self.swarm.listen_on(addr.clone()) {
+                    // Renew only the FIRST relay reservation to prevent expiry
+                    // (avoid flooding the relay server with multiple requests)
+                    if let Some(addr) = self.relay_circuit_addrs.first().cloned() {
+                        match self.swarm.listen_on(addr) {
                             Ok(_) => debug!("Relay reservation renewal requested"),
                             Err(e) => debug!("Relay reservation renewal failed: {e}"),
                         }
