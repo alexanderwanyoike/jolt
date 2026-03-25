@@ -1046,17 +1046,26 @@ impl NetworkNode {
         self.swarm.listeners().cloned().collect()
     }
 
-    /// Apply STUN discovery result: update NAT type.
+    /// Apply STUN discovery result: update NAT type and add external address.
     ///
-    /// We do NOT call add_external_address here because the STUN socket's external
-    /// port differs from the QUIC listener's NAT-mapped port. Adding a wrong port
-    /// confuses dcutr hole punching. The identify protocol already discovers the
-    /// correct external address via the relay connection.
+    /// For endpoint-independent NAT, the NAT maps the same local port to the same
+    /// external port regardless of destination. So external_ip:local_quic_port is
+    /// correct. This gives dcutr a non-relay address to exchange for hole punching.
     fn apply_stun_result(&mut self, result: crate::stun::StunResult) {
-        self.nat_type = result.nat_type;
+        self.nat_type = result.nat_type.clone();
 
         if let Some(addr) = result.external_addr {
             info!("STUN: external IP {}, NAT type: {:?}", addr.ip(), self.nat_type);
+
+            // Only add external address for endpoint-independent NAT where
+            // local_port maps consistently to the same external port
+            if self.nat_type == crate::stun::NatType::EndpointIndependent && self.quic_listen_port > 0 {
+                let multiaddr: Multiaddr = format!("/ip4/{}/udp/{}/quic-v1", addr.ip(), self.quic_listen_port)
+                    .parse()
+                    .unwrap();
+                self.swarm.add_external_address(multiaddr.clone());
+                info!("STUN: added external address {multiaddr} (endpoint-independent NAT)");
+            }
         }
     }
 
