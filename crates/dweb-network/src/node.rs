@@ -82,6 +82,8 @@ pub struct NetworkNode {
     peer_connections: HashMap<libp2p::PeerId, PeerConnectionInfo>,
     /// Detected NAT type from STUN probing
     nat_type: crate::stun::NatType,
+    /// QUIC listener port (for STUN external address construction)
+    quic_listen_port: u16,
     /// When the node was created (for uptime reporting)
     started_at: Instant,
     /// Manages in-flight fetch operations for the daemon loop
@@ -197,6 +199,7 @@ impl NetworkNode {
             known_relay_peers: HashSet::new(),
             peer_connections: HashMap::new(),
             nat_type: crate::stun::NatType::Unknown,
+            quic_listen_port: 0,
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
         })
@@ -210,6 +213,19 @@ impl NetworkNode {
         self.swarm
             .listen_on(multiaddr.clone())
             .map_err(|e| NetworkError::Swarm(e.to_string()))?;
+
+        // Track the QUIC listener port for STUN discovery
+        if addr.contains("quic-v1") && !addr.contains("127.0.0.1") && !addr.contains("::1") {
+            if let Some(port) = multiaddr.iter().find_map(|p| match p {
+                libp2p::multiaddr::Protocol::Udp(port) => Some(port),
+                _ => None,
+            }) {
+                if port > 0 {
+                    self.quic_listen_port = port;
+                }
+            }
+        }
+
         Ok(multiaddr)
     }
 
@@ -771,16 +787,7 @@ impl NetworkNode {
         let mut stun_interval = tokio::time::interval(Duration::from_secs(300)); // 5 min refresh
         let mut stun_pending = false;
 
-        // Get the QUIC listener's actual bound port for STUN discovery
-        let quic_port = self.swarm.listeners()
-            .find(|a| a.to_string().contains("quic-v1") && !a.to_string().contains("127.0.0.1"))
-            .and_then(|a| {
-                a.iter().find_map(|p| match p {
-                    libp2p::multiaddr::Protocol::Udp(port) => Some(port),
-                    _ => None,
-                })
-            })
-            .unwrap_or(0);
+        let quic_port = self.quic_listen_port;
 
         // Kick off initial STUN discovery (non-blocking via channel)
         let (stun_tx, mut stun_rx) = mpsc::channel::<crate::stun::StunResult>(1);
