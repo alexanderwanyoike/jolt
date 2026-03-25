@@ -14,6 +14,7 @@ pub async fn run(
     api_bind: &str,
     bootstrap: Vec<String>,
     no_bootstrap: bool,
+    p2p_port: u16,
 ) -> Result<()> {
     let config = NodeConfig::default_dirs();
     config.ensure_dirs()?;
@@ -33,6 +34,7 @@ pub async fn run(
     info!("Peer ID: {}", identity.peer_id());
 
     let mut net_config = NetworkConfig::default();
+    net_config.p2p_port = p2p_port;
     if !bootstrap.is_empty() {
         net_config.bootstrap_peers = bootstrap
             .iter()

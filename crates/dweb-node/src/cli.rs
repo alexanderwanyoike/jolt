@@ -28,6 +28,10 @@ pub enum Commands {
         /// Disable DHT bootstrapping (LAN-only mode)
         #[arg(long)]
         no_bootstrap: bool,
+
+        /// Fixed UDP port for P2P (default: 0 = random). Use on servers with firewalls.
+        #[arg(long, default_value = "0")]
+        p2p_port: u16,
     },
 
     /// Stop the running daemon

@@ -9,6 +9,9 @@ pub struct NetworkConfig {
     pub enable_mdns: bool,
     /// Enable UPnP for automatic port mapping.
     pub enable_upnp: bool,
+    /// Fixed UDP port for iroh P2P (0 = random). Use a fixed port on servers
+    /// so the firewall can be configured once.
+    pub p2p_port: u16,
 }
 
 impl Default for NetworkConfig {
@@ -17,6 +20,7 @@ impl Default for NetworkConfig {
             bootstrap_peers: Vec::new(),
             enable_mdns: true,
             enable_upnp: true,
+            p2p_port: 0,
         }
     }
 }
@@ -28,6 +32,7 @@ impl NetworkConfig {
             bootstrap_peers: Vec::new(),
             enable_mdns: true,
             enable_upnp: false,
+            p2p_port: 0,
         }
     }
 }

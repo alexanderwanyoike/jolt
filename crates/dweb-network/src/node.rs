@@ -82,15 +82,22 @@ impl NetworkNode {
     pub async fn new(
         identity: NodeIdentity,
         store: ContentStore,
-        _config: NetworkConfig,
+        config: NetworkConfig,
     ) -> Result<Self, NetworkError> {
         let libp2p_keypair = identity.to_libp2p_keypair();
         let peer_id = libp2p_keypair.public().to_peer_id();
 
         // Create iroh transport (handles NAT traversal, DERP relay, hole punching)
-        let transport = libp2p_iroh::Transport::new(Some(&libp2p_keypair))
-            .await
-            .map_err(|e| NetworkError::Swarm(format!("Failed to create iroh transport: {e}")))?;
+        let transport = if config.p2p_port > 0 {
+            info!("Binding iroh transport to fixed UDP port {}", config.p2p_port);
+            libp2p_iroh::Transport::new_with_port(Some(&libp2p_keypair), config.p2p_port)
+                .await
+                .map_err(|e| NetworkError::Swarm(format!("Failed to create iroh transport: {e}")))?
+        } else {
+            libp2p_iroh::Transport::new(Some(&libp2p_keypair))
+                .await
+                .map_err(|e| NetworkError::Swarm(format!("Failed to create iroh transport: {e}")))?
+        };
 
         // Build behaviours (only 4 -- iroh handles all NAT/relay)
         let mdns = libp2p::mdns::tokio::Behaviour::new(
