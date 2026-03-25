@@ -13,8 +13,9 @@ use crate::protocol::ContentResponse;
 const DEFAULT_FETCH_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// How long to wait after provider connects before sending the content request.
-/// This lets the relay circuit fully establish (based on real-world testing).
-const RELAY_SETTLE_DELAY: Duration = Duration::from_secs(2);
+/// With iroh transport, connections are ready immediately (DERP relay is instant,
+/// path upgrade to direct happens transparently). Minimal delay.
+const RELAY_SETTLE_DELAY: Duration = Duration::from_millis(100);
 
 /// Tracks the state of an in-flight fetch operation.
 enum FetchState {

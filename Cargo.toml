@@ -29,8 +29,6 @@ tokio = { version = "1", features = ["full"] }
 libp2p = { version = "0.56", features = [
     "tokio",
     "noise",
-    "tcp",
-    "quic",
     "yamux",
     "mdns",
     "request-response",
@@ -38,12 +36,9 @@ libp2p = { version = "0.56", features = [
     "macros",
     "identify",
     "kad",
-    "autonat",
-    "relay",
-    "dcutr",
-    "upnp",
-    "dns",
 ] }
+libp2p-iroh = "0.1"
+iroh = "0.97"
 
 # Cryptography
 ed25519-dalek = { version = "2", features = ["rand_core", "serde"] }
@@ -71,13 +66,6 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# NAT traversal
-crab_nat = "0.7"
-netdev = "0.37"
-
-# WebRTC (native, for ICE NAT traversal)
-libp2p-webrtc = { version = "0.9.0-alpha.1", features = ["tokio"] }
-
 # HTTP server
 axum = "0.8"
 axum-extra = { version = "0.10", features = ["multipart"] }
@@ -88,6 +76,3 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "mul
 directories = "5"
 hex = "0.4"
 tempfile = "3"
-
-[patch.crates-io]
-libp2p-dcutr = { git = "https://github.com/alexanderwanyoike/libp2p-dcutr.git" }

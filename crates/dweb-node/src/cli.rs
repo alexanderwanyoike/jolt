@@ -13,10 +13,6 @@ pub struct Cli {
 pub enum Commands {
     /// Start the dweb daemon
     Start {
-        /// TCP port to listen on (default: random)
-        #[arg(short, long)]
-        port: Option<u16>,
-
         /// HTTP API port (default: 9862)
         #[arg(long, default_value = "9862")]
         api_port: u16,
@@ -25,17 +21,13 @@ pub enum Commands {
         #[arg(long, default_value = "127.0.0.1")]
         api_bind: String,
 
-        /// Bootstrap peer multiaddr (repeatable, e.g., /ip4/1.2.3.4/tcp/4001/p2p/12D3KooW...)
+        /// Bootstrap peer multiaddr (repeatable, e.g., /ip4/1.2.3.4/udp/4001/quic-v1/p2p/12D3KooW...)
         #[arg(short, long)]
         bootstrap: Vec<String>,
 
         /// Disable DHT bootstrapping (LAN-only mode)
         #[arg(long)]
         no_bootstrap: bool,
-
-        /// Disable IPv6 listeners
-        #[arg(long)]
-        no_ipv6: bool,
     },
 
     /// Stop the running daemon
@@ -96,19 +88,7 @@ mod tests {
     #[test]
     fn parse_start_command() {
         let cli = Cli::parse_from(["dweb", "start"]);
-        match cli.command {
-            Commands::Start { no_ipv6, .. } => assert!(!no_ipv6),
-            _ => panic!("expected Start"),
-        }
-    }
-
-    #[test]
-    fn parse_start_no_ipv6() {
-        let cli = Cli::parse_from(["dweb", "start", "--no-ipv6"]);
-        match cli.command {
-            Commands::Start { no_ipv6, .. } => assert!(no_ipv6),
-            _ => panic!("expected Start"),
-        }
+        assert!(matches!(cli.command, Commands::Start { .. }));
     }
 
     #[test]

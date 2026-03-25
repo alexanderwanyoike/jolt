@@ -1,6 +1,6 @@
 use anyhow::Result;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::info;
 
 use dweb_identity::NodeIdentity;
 use dweb_network::{DaemonHandle, NetworkConfig, NetworkNode};
@@ -10,12 +10,10 @@ use crate::config::NodeConfig;
 use crate::daemon;
 
 pub async fn run(
-    port: Option<u16>,
     api_port: u16,
     api_bind: &str,
     bootstrap: Vec<String>,
     no_bootstrap: bool,
-    no_ipv6: bool,
 ) -> Result<()> {
     let config = NodeConfig::default_dirs();
     config.ensure_dirs()?;
@@ -29,7 +27,6 @@ pub async fn run(
             info.port
         );
     }
-    // Clean up stale PID files
     daemon::clear_daemon_info(&config);
 
     let identity = NodeIdentity::load_or_generate(&config.identity_dir)?;
@@ -48,53 +45,8 @@ pub async fn run(
 
     let mut node = NetworkNode::new(identity, store, net_config).await?;
 
-    let tcp_addr = match port {
-        Some(p) => format!("/ip4/0.0.0.0/tcp/{p}"),
-        None => "/ip4/0.0.0.0/tcp/0".to_string(),
-    };
-    let udp_addr = match port {
-        Some(p) => format!("/ip4/0.0.0.0/udp/{p}/quic-v1"),
-        None => "/ip4/0.0.0.0/udp/0/quic-v1".to_string(),
-    };
-
-    node.listen_on(&tcp_addr)?;
-    node.listen_on(&udp_addr)?;
-
-    // IPv6 listeners (no NAT = direct P2P where available)
-    if !no_ipv6 {
-        let tcp6_addr = match port {
-            Some(p) => format!("/ip6/::/tcp/{p}"),
-            None => "/ip6/::/tcp/0".to_string(),
-        };
-        let udp6_addr = match port {
-            Some(p) => format!("/ip6/::/udp/{p}/quic-v1"),
-            None => "/ip6/::/udp/0/quic-v1".to_string(),
-        };
-        match node.listen_on(&tcp6_addr) {
-            Ok(_) => {}
-            Err(e) => debug!("IPv6 TCP listen failed (may not be available): {e}"),
-        }
-        match node.listen_on(&udp6_addr) {
-            Ok(_) => {}
-            Err(e) => debug!("IPv6 QUIC listen failed (may not be available): {e}"),
-        }
-    }
-
-    // WebRTC listener for ICE-based NAT traversal
-    let webrtc_addr = match port {
-        Some(p) => format!("/ip4/0.0.0.0/udp/{}/webrtc-direct", p + 1),
-        None => "/ip4/0.0.0.0/udp/0/webrtc-direct".to_string(),
-    };
-    match node.listen_on(&webrtc_addr) {
-        Ok(_) => info!("WebRTC listener active"),
-        Err(e) => debug!("WebRTC listen failed: {e}"),
-    }
-
-    // NAT-PMP/PCP port mapping
-    let listen_port = port.unwrap_or(0);
-    if listen_port > 0 {
-        tokio::spawn(dweb_network::nat::try_all_mappings(listen_port, listen_port));
-    }
+    // Iroh transport handles listening automatically (QUIC + DERP relay)
+    // No need to manually bind TCP/QUIC/IPv6/WebRTC ports
 
     // Bootstrap into DHT
     if !no_bootstrap && !bootstrap.is_empty() {
@@ -129,10 +81,10 @@ pub async fn run(
 
     info!("mDNS discovery active on LAN");
     info!("Published content: {} items", published_ids.len());
-    info!("HTTP API: http://127.0.0.1:{api_port}");
+    info!("HTTP API: http://{api_bind}:{api_port}");
     info!("PID: {pid}");
+    info!("NAT traversal: iroh (automatic DERP relay + hole punching)");
 
-    // Install signal handler for graceful shutdown
     let config_for_cleanup = config.clone();
     let shutdown_handle = handle.clone();
 
@@ -140,7 +92,6 @@ pub async fn run(
     let server_result =
         dweb_server::server::start_server(shutdown_handle, api_port, api_bind).await;
 
-    // Clean up on exit
     daemon::clear_daemon_info(&config_for_cleanup);
     info!("Daemon stopped");
 

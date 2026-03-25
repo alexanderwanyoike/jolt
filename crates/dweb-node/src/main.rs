@@ -21,13 +21,11 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Start {
-            port,
             api_port,
             api_bind,
             bootstrap,
             no_bootstrap,
-            no_ipv6,
-        } => commands::start::run(port, api_port, &api_bind, bootstrap, no_bootstrap, no_ipv6).await?,
+        } => commands::start::run(api_port, &api_bind, bootstrap, no_bootstrap).await?,
         Commands::Stop => commands::stop::run().await?,
         Commands::Status => commands::status::run().await?,
         Commands::Publish { file } => commands::publish::run(&file).await?,
