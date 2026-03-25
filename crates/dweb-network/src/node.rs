@@ -163,7 +163,18 @@ impl NetworkNode {
                 );
 
                 // Relay server (allows this node to relay for others)
-                let relay_server = libp2p::relay::Behaviour::new(peer_id, Default::default());
+                // Increase limits from defaults to support dcutr hole punching
+                // alongside content transfer on the same relay connections
+                let relay_config = libp2p::relay::Config {
+                    max_reservations: 256,
+                    max_reservations_per_peer: 8,
+                    max_circuits: 64,
+                    max_circuits_per_peer: 8,
+                    max_circuit_duration: std::time::Duration::from_secs(5 * 60),
+                    max_circuit_bytes: 1 << 20, // 1 MB
+                    ..Default::default()
+                };
+                let relay_server = libp2p::relay::Behaviour::new(peer_id, relay_config);
 
                 // dcutr (hole punching)
                 let dcutr = libp2p::dcutr::Behaviour::new(peer_id);
