@@ -1045,16 +1045,17 @@ impl NetworkNode {
         self.swarm.listeners().cloned().collect()
     }
 
-    /// Apply STUN discovery result: update NAT type and add external address.
+    /// Apply STUN discovery result: update NAT type.
+    ///
+    /// We do NOT call add_external_address here because the STUN socket's external
+    /// port differs from the QUIC listener's NAT-mapped port. Adding a wrong port
+    /// confuses dcutr hole punching. The identify protocol already discovers the
+    /// correct external address via the relay connection.
     fn apply_stun_result(&mut self, result: crate::stun::StunResult) {
         self.nat_type = result.nat_type;
 
         if let Some(addr) = result.external_addr {
-            let multiaddr: Multiaddr = format!("/ip4/{}/udp/{}/quic-v1", addr.ip(), addr.port())
-                .parse()
-                .unwrap();
-            self.swarm.add_external_address(multiaddr.clone());
-            info!("STUN: added external address {multiaddr}");
+            info!("STUN: external IP {}, NAT type: {:?}", addr.ip(), self.nat_type);
         }
     }
 
