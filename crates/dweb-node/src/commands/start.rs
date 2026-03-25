@@ -45,8 +45,9 @@ pub async fn run(
 
     let mut node = NetworkNode::new(identity, store, net_config).await?;
 
-    // Iroh transport handles listening automatically (QUIC + DERP relay)
-    // No need to manually bind TCP/QUIC/IPv6/WebRTC ports
+    // Tell iroh transport to accept incoming connections
+    // The address is informational -- iroh binds its own UDP socket and DERP relay
+    node.listen_on("/p2p/0")?;
 
     // Bootstrap into DHT
     if !no_bootstrap && !bootstrap.is_empty() {
