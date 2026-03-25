@@ -29,7 +29,8 @@ async fn three_node_cache_relay() {
 
     // --- Step 1: Node A publishes content ---
     let store_a = ContentStore::open(dir_a.path(), CacheConfig::default()).unwrap();
-    let mut node_a = NetworkNode::new(identity_a, store_a, NetworkConfig::test_config()).await.unwrap();
+    let mut node_a = NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config())
+        .unwrap();
     node_a.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
 
     let test_file = dir_a.path().join("test.txt");
@@ -57,7 +58,8 @@ async fn three_node_cache_relay() {
 
     // --- Step 2: Node B fetches from A (auto-cached) ---
     let store_b = ContentStore::open(dir_b.path(), CacheConfig::default()).unwrap();
-    let mut node_b = NetworkNode::new(identity_b, store_b, NetworkConfig::test_config()).await.unwrap();
+    let mut node_b = NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config())
+        .unwrap();
     node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     node_b.dial(addr_a).unwrap();
 
@@ -158,7 +160,8 @@ async fn three_node_cache_relay() {
     };
 
     let store_c = ContentStore::open(dir_c.path(), CacheConfig::default()).unwrap();
-    let mut node_c = NetworkNode::new(identity_c, store_c, NetworkConfig::test_config()).await.unwrap();
+    let mut node_c = NetworkNode::new_tcp(identity_c, store_c, NetworkConfig::test_config())
+        .unwrap();
     node_c.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     node_c.dial(addr_b).unwrap();
 

@@ -147,6 +147,79 @@ impl NetworkNode {
         })
     }
 
+    /// Create a new network node with TCP transport (for testing in isolated namespaces).
+    ///
+    /// Uses noise + yamux over TCP instead of iroh, so it works in environments
+    /// without internet access (e.g. patchbay network namespaces).
+    pub fn new_tcp(
+        identity: NodeIdentity,
+        store: ContentStore,
+        _config: NetworkConfig,
+    ) -> Result<Self, NetworkError> {
+        let libp2p_keypair = identity.to_libp2p_keypair();
+        let peer_id = libp2p_keypair.public().to_peer_id();
+
+        let transport = libp2p::tcp::tokio::Transport::default()
+            .upgrade(libp2p::core::upgrade::Version::V1)
+            .authenticate(libp2p::noise::Config::new(&libp2p_keypair)
+                .map_err(|e| NetworkError::Swarm(e.to_string()))?)
+            .multiplex(libp2p::yamux::Config::default())
+            .boxed();
+
+        let mdns = libp2p::mdns::tokio::Behaviour::new(
+            libp2p::mdns::Config::default(),
+            peer_id,
+        ).map_err(|e| NetworkError::Swarm(e.to_string()))?;
+
+        let content_fetch = request_response::cbor::Behaviour::new(
+            [(
+                StreamProtocol::new("/dweb/content/1.0.0"),
+                ProtocolSupport::Full,
+            )],
+            request_response::Config::default(),
+        );
+
+        let mut kad_config = libp2p::kad::Config::new(
+            StreamProtocol::new("/dweb/kad/1.0.0"),
+        );
+        kad_config.set_query_timeout(Duration::from_secs(60));
+        let kad_store = libp2p::kad::store::MemoryStore::new(peer_id);
+        let kademlia = libp2p::kad::Behaviour::with_config(peer_id, kad_store, kad_config);
+
+        let identify = libp2p::identify::Behaviour::new(
+            libp2p::identify::Config::new(
+                "/dweb/id/1.0.0".to_string(),
+                libp2p_keypair.public(),
+            ),
+        );
+
+        let behaviour = DwebBehaviour {
+            mdns,
+            content_fetch,
+            kademlia,
+            identify,
+        };
+
+        let swarm = Swarm::new(
+            transport,
+            behaviour,
+            peer_id,
+            libp2p::swarm::Config::with_tokio_executor()
+                .with_idle_connection_timeout(Duration::from_secs(300)),
+        );
+
+        Ok(Self {
+            swarm,
+            identity,
+            store,
+            pending_fetches: HashMap::new(),
+            discovered_providers: HashMap::new(),
+            peer_connections: HashMap::new(),
+            started_at: Instant::now(),
+            fetch_manager: FetchManager::new(),
+        })
+    }
+
     /// Start listening on a multiaddr.
     pub fn listen_on(&mut self, addr: &str) -> Result<Multiaddr, NetworkError> {
         let multiaddr: Multiaddr = addr
