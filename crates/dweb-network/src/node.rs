@@ -604,23 +604,24 @@ impl NetworkNode {
                                                         .on_provider_discovered(&key_str, provider, already_connected);
                                                 }
 
-                                                // Try direct dial first
-                                                if let Err(_) = self.swarm.dial(provider) {
-                                                    // Direct dial failed -- try ALL relay circuits
-                                                    let local_peer = *self.swarm.local_peer_id();
-                                                    let circuit_addrs: Vec<Multiaddr> = self.swarm.listeners()
-                                                        .filter(|a| a.to_string().contains("p2p-circuit"))
-                                                        .cloned()
-                                                        .collect();
-                                                    for relay_addr in circuit_addrs {
-                                                        let circuit_addr = relay_addr
-                                                            .to_string()
-                                                            .replace(&format!("/p2p/{}", local_peer), &format!("/p2p/{}", provider));
-                                                        if let Ok(addr) = circuit_addr.parse::<Multiaddr>() {
-                                                            info!("Dialing provider {provider} via relay circuit: {addr}");
-                                                            if let Err(e) = self.swarm.dial(addr) {
-                                                                debug!("Failed to dial provider via relay: {e}");
-                                                            }
+                                                // Try direct dial (may succeed if addresses are cached)
+                                                let _ = self.swarm.dial(provider);
+
+                                                // ALWAYS also try relay circuits -- direct dial may have
+                                                // queued with stale cached addresses that will fail later
+                                                let local_peer = *self.swarm.local_peer_id();
+                                                let circuit_addrs: Vec<Multiaddr> = self.swarm.listeners()
+                                                    .filter(|a| a.to_string().contains("p2p-circuit"))
+                                                    .cloned()
+                                                    .collect();
+                                                for relay_addr in circuit_addrs {
+                                                    let circuit_addr = relay_addr
+                                                        .to_string()
+                                                        .replace(&format!("/p2p/{}", local_peer), &format!("/p2p/{}", provider));
+                                                    if let Ok(addr) = circuit_addr.parse::<Multiaddr>() {
+                                                        info!("Dialing provider {provider} via relay circuit: {addr}");
+                                                        if let Err(e) = self.swarm.dial(addr) {
+                                                            debug!("Failed to dial provider via relay: {e}");
                                                         }
                                                     }
                                                 }
