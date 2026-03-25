@@ -78,6 +78,8 @@ pub struct NetworkNode {
     relay_circuits_ready: HashSet<libp2p::PeerId>,
     /// Peers known to have public addresses (potential relays)
     known_relay_peers: HashSet<libp2p::PeerId>,
+    /// Peers we've already signaled dcutr for (prevent duplicate attempts)
+    dcutr_signaled_peers: HashSet<libp2p::PeerId>,
     /// Connection quality tracking: peer -> connection info
     peer_connections: HashMap<libp2p::PeerId, PeerConnectionInfo>,
     /// Detected NAT type from STUN probing
@@ -208,6 +210,7 @@ impl NetworkNode {
             discovered_providers: HashMap::new(),
             relay_circuits_ready: HashSet::new(),
             known_relay_peers: HashSet::new(),
+            dcutr_signaled_peers: HashSet::new(),
             peer_connections: HashMap::new(),
             nat_type: crate::stun::NatType::Unknown,
             quic_listen_port: 0,
@@ -572,12 +575,13 @@ impl NetworkNode {
                 // Add our observed address as external (needed for relay server)
                 self.swarm.add_external_address(info.observed_addr.clone());
 
-                // Signal dcutr that the relay circuit to this peer is functional.
+                // Signal dcutr ONCE that the relay circuit to this peer is functional.
                 // dcutr no longer auto-triggers on connection establishment (our fork).
-                // The identify exchange completing proves the relay circuit works.
+                // Only signal once per peer to avoid competing dcutr attempts.
                 if let Some(conn_info) = self.peer_connections.get(&peer_id) {
-                    if conn_info.is_relayed {
+                    if conn_info.is_relayed && !self.dcutr_signaled_peers.contains(&peer_id) {
                         info!("Signaling dcutr: relay to {peer_id} confirmed working via identify");
+                        self.dcutr_signaled_peers.insert(peer_id);
                         self.swarm.behaviour_mut().dcutr.initiate_holepunch(&peer_id);
                     }
                 }
