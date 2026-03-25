@@ -571,6 +571,16 @@ impl NetworkNode {
 
                 // Add our observed address as external (needed for relay server)
                 self.swarm.add_external_address(info.observed_addr.clone());
+
+                // Signal dcutr that the relay circuit to this peer is functional.
+                // dcutr no longer auto-triggers on connection establishment (our fork).
+                // The identify exchange completing proves the relay circuit works.
+                if let Some(conn_info) = self.peer_connections.get(&peer_id) {
+                    if conn_info.is_relayed {
+                        info!("Signaling dcutr: relay to {peer_id} confirmed working via identify");
+                        self.swarm.behaviour_mut().dcutr.initiate_holepunch(&peer_id);
+                    }
+                }
             }
 
             // --- Kademlia ---

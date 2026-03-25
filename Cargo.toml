@@ -88,3 +88,6 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "mul
 directories = "5"
 hex = "0.4"
 tempfile = "3"
+
+[patch.crates-io]
+libp2p-dcutr = { git = "https://github.com/alexanderwanyoike/libp2p-dcutr.git" }
