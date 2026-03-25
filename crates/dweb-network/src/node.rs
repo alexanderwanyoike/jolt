@@ -322,11 +322,19 @@ impl NetworkNode {
     ) -> Result<(), NetworkError> {
         for addr in bootstrap_addrs {
             let (peer_id, transport) = crate::bootstrap::parse_bootstrap_addr(&addr.to_string())?;
+            // Add address to Kademlia routing table
+            // For iroh transport, use the /p2p/<peer_id> addr; for TCP, use the transport addr
+            let kad_addr = if transport.iter().count() == 0 {
+                addr.clone() // pure /p2p/ addr (iroh)
+            } else {
+                transport.clone()
+            };
             self.swarm
                 .behaviour_mut()
                 .kademlia
-                .add_address(&peer_id, transport.clone());
-            if let Err(e) = self.swarm.dial(transport) {
+                .add_address(&peer_id, kad_addr.clone());
+            // Dial the full multiaddr so iroh can extract the NodeId
+            if let Err(e) = self.swarm.dial(addr.clone()) {
                 warn!("Failed to dial bootstrap peer {peer_id}: {e}");
             }
             info!("Added bootstrap peer: {peer_id}");
