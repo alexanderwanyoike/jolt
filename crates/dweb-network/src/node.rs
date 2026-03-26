@@ -75,6 +75,8 @@ pub struct NetworkNode {
     started_at: Instant,
     /// Manages in-flight fetch operations for the daemon loop
     fetch_manager: FetchManager,
+    /// iroh endpoint for pre-populating peer addresses before dialing
+    iroh_endpoint: Option<iroh::Endpoint>,
 }
 
 impl NetworkNode {
@@ -98,6 +100,9 @@ impl NetworkNode {
                 .await
                 .map_err(|e| NetworkError::Swarm(format!("Failed to create iroh transport: {e}")))?
         };
+
+        // Get the iroh endpoint for pre-populating peer addresses
+        let iroh_endpoint = transport.endpoint().ok();
 
         // Build behaviours (only 4 -- iroh handles all NAT/relay)
         let mdns = libp2p::mdns::tokio::Behaviour::new(
@@ -151,6 +156,7 @@ impl NetworkNode {
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
+            iroh_endpoint,
         })
     }
 
@@ -224,6 +230,7 @@ impl NetworkNode {
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
+            iroh_endpoint: None,
         })
     }
 
@@ -340,6 +347,7 @@ impl NetworkNode {
                 .behaviour_mut()
                 .kademlia
                 .add_address(&peer_id, kad_addr.clone());
+
             // Dial the full multiaddr so iroh can extract the NodeId
             if let Err(e) = self.swarm.dial(addr.clone()) {
                 warn!("Failed to dial bootstrap peer {peer_id}: {e}");

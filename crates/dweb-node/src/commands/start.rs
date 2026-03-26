@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 use tracing::info;
 
 use dweb_identity::NodeIdentity;
-use dweb_network::{DaemonHandle, NetworkConfig, NetworkNode};
+use dweb_network::{DaemonHandle, Multiaddr, NetworkConfig, NetworkNode};
 use dweb_store::{CacheConfig, ContentStore};
 
 use crate::config::NodeConfig;
@@ -51,21 +51,21 @@ pub async fn run(
     // The address is ignored by libp2p-iroh but must be a valid multiaddr
     node.listen_on("/ip4/0.0.0.0/udp/0/quic-v1")?;
 
-    // Bootstrap into DHT
-    if !no_bootstrap && !bootstrap.is_empty() {
-        let addrs: Vec<_> = bootstrap.iter().filter_map(|s| s.parse().ok()).collect();
-        match node.bootstrap_dht(&addrs) {
-            Ok(()) => info!("DHT bootstrap initiated with {} peers", addrs.len()),
-            Err(e) => info!("DHT bootstrap skipped: {e}"),
-        }
-    }
-
     // Re-announce all published content as DHT providers
     for content_id_str in &published_ids {
         if let Ok(content_id) = content_id_str.parse::<dweb_core::ContentId>() {
             if let Err(e) = node.announce_provider(&content_id) {
                 info!("Provider announcement skipped for {content_id_str}: {e}");
             }
+        }
+    }
+
+    // Bootstrap into DHT (must happen before daemon loop starts so swarm has peers)
+    if !no_bootstrap && !bootstrap.is_empty() {
+        let addrs: Vec<Multiaddr> = bootstrap.iter().filter_map(|s| s.parse().ok()).collect();
+        match node.bootstrap_dht(&addrs) {
+            Ok(()) => info!("DHT bootstrap initiated with {} peers", addrs.len()),
+            Err(e) => info!("DHT bootstrap skipped: {e}"),
         }
     }
 
