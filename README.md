@@ -1,137 +1,157 @@
-# dweb
+# jolt
 
-A decentralized peer-to-peer web platform built in Rust. Every user runs a node that serves as their personal server, app runtime, and data store. Apps are distributed as WASM binaries, installed locally, and connect users directly -- no corporations, no central servers, no middlemen.
+A peer-to-peer content platform built in Rust. Nodes discover each other, connect across NATs, and transfer content directly -- no central servers, no middlemen. Content spreads through the network via caching: every fetch makes the mesh more resilient.
 
-> Your node, your apps, your data. Connected to everyone, controlled by no one.
-
-## Why?
-
-- **Corporations own your data.** Your posts, messages, and files live on servers you don't control.
-- **Content is walled in platforms.** Your audience on one platform doesn't transfer to another.
-- **Single points of failure.** If a platform goes down, nobody can use it.
-- **No real privacy.** Your data is a breach or a subpoena away from exposure.
-- **Creators get taxed.** Platforms take 15-45% of creator revenue.
-
-## How dweb works
-
-1. **Apps are installed, not visited.** Like mobile apps, dweb apps are WASM binaries that download to your node and run locally. If the developer disappears, the app still works.
-2. **Data stays with its owner.** Your messages, files, and content live on your machine. Always.
-3. **Content spreads through the network.** Public content is cached by nodes that access it. Popular content becomes more available, not less.
-4. **Users connect directly.** No server in the middle. Peer-to-peer, encrypted by default.
+> Your node, your data. Connected to everyone, controlled by no one.
 
 ## Current Status
 
-**Milestone 1 complete** -- two nodes on a LAN discover each other via mDNS, exchange content-addressed files, and verify both hash integrity and Ed25519 signatures.
+**Milestones 1-3 + 5 complete.** Validated across three machines, two NATs, and a carrier-grade NAT -- content flowing in every direction over iroh P2P.
 
-### Architecture
+```
+                  Bootstrap Node
+                  (public server)
+                        |
+            iroh QUIC   |   iroh QUIC
+          (direct UDP)  |  (direct UDP)
+                        |
+       Node A --------- + --------- Node B
+     (home NAT)                   (mobile CGNAT)
+```
+
+### What Works
+- P2P content transfer across the internet (NAT, CGNAT, direct)
+- Kademlia DHT for content discovery
+- mDNS for zero-config LAN discovery
+- Content caching with automatic re-sharing (mesh propagation)
+- Daemon architecture with HTTP API
+- 95 tests including simulated NAT topologies (patchbay)
+
+## Quick Start
+
+### Prerequisites
+
+- Rust 1.89+
+
+### Build
+
+```bash
+cargo build --release
+```
+
+### Run a Node
+
+```bash
+# Start as a bootstrap node (public server with fixed UDP port)
+./target/release/dweb start --no-bootstrap --p2p-port 4001 --api-bind 0.0.0.0
+
+# Start a client node (connects to bootstrap)
+./target/release/dweb start \
+  --bootstrap "/ip4/<BOOTSTRAP_IP>/udp/<PORT>/p2p/<BOOTSTRAP_PEER_ID>"
+```
+
+### Publish Content
+
+```bash
+curl -F "file=@myfile.txt" http://127.0.0.1:9862/api/v1/publish
+# {"content_id": "bafkr4i...", "size": 1234}
+```
+
+### Fetch Content
+
+```bash
+curl -X POST http://127.0.0.1:9862/api/v1/fetch \
+  -H 'Content-Type: application/json' \
+  -d '{"content_id": "bafkr4i..."}'
+```
+
+### API Endpoints
+
+```
+GET  /api/v1/health          Health check
+GET  /api/v1/status          Node status, peer count, uptime
+GET  /api/v1/peers           Connected peer list
+POST /api/v1/publish         Publish a file (multipart form)
+POST /api/v1/fetch           Fetch content by ID
+GET  /api/v1/cache/stats     Cache statistics
+GET  /api/v1/cache/entries   List cached content
+POST /api/v1/cache/pin/{id}  Pin content (prevent eviction)
+DEL  /api/v1/cache/pin/{id}  Unpin content
+```
+
+### Run Tests
+
+```bash
+# Unit + integration tests
+cargo test -p dweb-network --lib
+cargo test -p dweb-network --test nat_traversal
+cargo test -p dweb-network --test dht_integration
+cargo test -p dweb-network --test cache_integration
+
+# All crates
+cargo test -p dweb-core
+cargo test -p dweb-identity
+cargo test -p dweb-store
+cargo test -p dweb-node
+```
+
+## Architecture
 
 ```
 dweb node
-  +-- Browser UI (localhost)
-  +-- HTTP Server (axum)
-  +-- Node Runtime
-  |     +-- App Manager
-  |     +-- Identity (Ed25519 keypair)
-  |     +-- Content Manager
-  |     +-- WASM Runtime (wasmtime)
-  |     +-- Data Store (per-app isolated)
-  |     +-- Crypto (encryption / key exchange)
-  +-- P2P Network (libp2p)
-        +-- Discovery (DHT + mDNS)
-        +-- Transport (QUIC + TCP)
-        +-- NAT Traversal
-        +-- Protocols (content fetch, app sync, messaging)
+  +-- HTTP API (axum, localhost:9862)
+  +-- Daemon Loop (tokio::select!)
+  |     +-- FetchManager (state machine)
+  |     +-- Command Channel (mpsc)
+  +-- Identity (Ed25519 keypair)
+  +-- Content Store (publish + LRU cache + pinning)
+  +-- P2P Network
+        +-- iroh transport (QUIC, DERP relay, hole punching)
+        +-- Kademlia DHT (content provider discovery)
+        +-- mDNS (LAN peer discovery)
+        +-- request-response (content fetch protocol)
+        +-- identify (peer protocol exchange)
 ```
 
 ### Crate Structure
 
 | Crate | Purpose |
 |---|---|
-| `dweb-core` | Content addressing (BLAKE3 + CIDv1), shared types |
+| `dweb-core` | Content addressing (SHA-256 + CIDv1), shared types |
 | `dweb-identity` | Ed25519 keypair management, signing, verification |
-| `dweb-network` | libp2p node, mDNS discovery, content fetch protocol |
-| `dweb-node` | CLI entry point (`dweb start`, `dweb publish`, `dweb fetch`) |
-
-## Quick Start
-
-### Prerequisites
-
-- Rust 1.75+
-
-### Build
-
-```bash
-cargo build
-```
-
-### Usage
-
-Publish a file and start serving it:
-
-```bash
-# Publish a file (stores locally and prints the ContentId)
-cargo run -- publish ~/my-file.txt
-
-# Start the node (serves published content to the network)
-cargo run -- start
-```
-
-Fetch content from another node on the same LAN:
-
-```bash
-# In another terminal (or another machine on the same network)
-cargo run -- fetch <content-id>
-```
-
-### Run Tests
-
-```bash
-cargo test --workspace
-```
-
-30 tests covering content addressing, identity management, P2P networking (including a two-node integration test), and CLI parsing.
+| `dweb-store` | Content store with LRU cache, pinning, eviction |
+| `dweb-network` | NetworkNode, DaemonHandle, FetchManager, P2P behaviours |
+| `dweb-server` | axum HTTP API server |
+| `dweb-node` | CLI binary and daemon management |
 
 ## Roadmap
 
 | Milestone | Status | Description |
 |---|---|---|
-| M1: Two Nodes Talking | Done | mDNS discovery, content-addressed file exchange, Ed25519 signatures |
-| M2: Caching | Planned | LRU cache, pinning, serve cached content to other peers |
-| M3: Browser UI | Planned | axum HTTP server, REST API, `dweb://` protocol handler |
-| M4: Update Logs | Planned | Append-only signed logs for mutable content |
-| M5: DHT Networking | Planned | Kademlia DHT, NAT traversal, internet-wide discovery |
+| M1: Two Nodes Talking | Done | mDNS discovery, content-addressed file exchange, signatures |
+| M2: Caching | Done | LRU cache, pinning, serve cached content, re-sharing |
+| M3: Daemon + API | Done | Persistent daemon, HTTP API, CLI thin client |
+| M4: Update Logs | Next | Append-only signed logs for mutable content |
+| M5: Internet-Wide P2P | Done | Kademlia DHT, iroh NAT traversal, real hardware validated |
 | M6: Encryption | Planned | E2E encryption, group keys, access control |
-| M7: WASM Runtime | Planned | wasmtime sandbox, host API, capability-based permissions |
+| M7: WASM Runtime | Planned | wasmtime sandbox, host API, permissions |
 | M8: App Lifecycle | Planned | Install, update, remove apps from the network |
 | M9: Host API | Planned | Network + identity APIs for WASM apps |
-| M10: Streaming | Planned | Chunked file transfer, video/audio streaming |
-| M11: Redundancy | Planned | Groups of nodes keeping each other's content available |
-| M12: Developer SDK | Planned | Rust + JS SDKs, app templates, documentation |
+| M10: Streaming | Planned | Chunked transfer, video/audio streaming |
+| M11: Redundancy | Planned | Groups of nodes keeping content available |
+| M12: Developer SDK | Planned | Rust + JS SDKs, templates, docs |
 
-## Example Applications (Future)
+## Future Applications
 
-- **dweb-video** -- YouTube without YouTube. Viewers become seeders.
-- **dweb-chat** -- E2E encrypted messaging. No phone number required.
-- **dweb-blog** -- Personal publishing. Your blog, your rules, forever.
-- **dweb-drive** -- File storage and sharing. Dropbox without the cloud.
-- **dweb-market** -- P2P marketplace. No platform fees.
-- **dweb-social** -- Social feed without the algorithm.
+- **jolt-video** -- YouTube without YouTube. Viewers become seeders.
+- **jolt-chat** -- E2E encrypted messaging. No phone number required.
+- **jolt-blog** -- Personal publishing. Your blog, your rules, forever.
+- **jolt-drive** -- File storage and sharing. No cloud required.
+- **jolt-social** -- Social feed without the algorithm.
 
 ## Design Docs
 
-Detailed technical documentation is in the [`docs/`](docs/) directory:
-
-- [Vision](docs/00-vision.md)
-- [Architecture](docs/01-architecture.md)
-- [Identity and Cryptography](docs/02-identity-and-crypto.md)
-- [Networking](docs/03-networking.md)
-- [WASM Runtime](docs/04-wasm-runtime.md)
-- [Data Model](docs/05-data-model.md)
-- [Application System](docs/06-apps.md)
-- [Content Distribution](docs/07-content-distribution.md)
-- [Access Control](docs/08-access-control.md)
-- [Milestones](docs/09-milestones.md)
-- [Example Apps](docs/10-example-apps.md)
+Detailed technical documentation in [`docs/`](docs/).
 
 ## License
 
