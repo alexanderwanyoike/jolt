@@ -6,6 +6,23 @@ dweb is a decentralized internet platform built on peer-to-peer technology. Ever
 
 > Your node, your apps, your data. Connected to everyone, controlled by no one.
 
+## Core Thesis
+
+The normal web makes the server the authority. If you post on X, Instagram, YouTube, or Facebook, the content may be about you, but the platform stores it, identifies it, serves it, ranks it, and can remove it. If you avoid platforms, you can run a VPS, but then you inherit deployment, uptime, security, backups, DNS, and operations.
+
+dweb does not remove the physical need for online computers. If content must be reachable while its owner is offline, some online node must store or serve it. dweb changes who has authority:
+
+```
+Current web:
+  The platform/server is the authority.
+
+dweb:
+  The user's key is the authority.
+  Relays are replaceable carriers.
+```
+
+Users own identities, signatures, encryption keys, update logs, and content graphs. Relays help keep content reachable, but they do not own the data, identity, or permissions.
+
 ## Problems With Today's Internet
 
 1. **Corporations own your data.** Your posts, messages, photos, and files live on servers you don't control. They can be sold, mined, or deleted without your consent.
@@ -24,10 +41,10 @@ dweb is a decentralized internet platform built on peer-to-peer technology. Ever
 
 | Problem | dweb Approach |
 |---|---|
-| Data ownership | Data lives on the user's node. Always. No exceptions. |
+| Data ownership | The user's keys and signed records define ownership. Relays may hold copies, but they are not the authority. |
 | Content silos | Content is published to an open network. Any app can access public content. |
 | Community fragility | Communities run on members' nodes. No single entity can shut them down. |
-| Centralization | No central server. The network is its participants. |
+| Centralization | No required central server. The network is its participants and their chosen relays. |
 | Privacy | End-to-end encryption by default. Data at rest on your machine, encrypted in transit. |
 | Platform tax | Direct creator-to-consumer. No middleman to take a cut. |
 
@@ -35,11 +52,13 @@ dweb is a decentralized internet platform built on peer-to-peer technology. Ever
 
 1. **Apps are installed, not visited.** Like mobile apps, dweb apps are WASM binaries that download to your node and run locally. The developer publishes the app; users install it. If the developer disappears, the app still works.
 
-2. **Data stays with its owner.** When you use a chat app, your messages are on your node. When you publish a video, it's on your node. Other users never store your private data unless you explicitly set up encrypted backups.
+2. **Data remains controlled by its owner.** When you publish content, your identity signs it and your keys control who can read it. Your node may keep it locally, a relay may pin it for reachability, and other nodes may cache it, but ownership is not transferred to a platform.
 
 3. **Content spreads through the network.** Public content (videos, posts, files) is cached by nodes that access it. Popular content becomes more available, not less -- like BitTorrent.
 
-4. **Users connect directly.** No server in the middle. Two users running the same app communicate peer-to-peer. The app defines the protocol; dweb provides the transport.
+4. **Relays provide delegated availability.** A user's laptop or phone may sleep. A relay is an always-online helper that can keep signed/encrypted content reachable and announce where it can be fetched. Users should not have to think about relay mechanics in normal use; their node manages relay selection and availability.
+
+5. **Users connect directly when possible.** No server is the authority. Two users running the same app communicate peer-to-peer when reachable. Relays help with discovery, NAT traversal, and offline availability when direct connectivity is not enough.
 
 ## Target Users
 

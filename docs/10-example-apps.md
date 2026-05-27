@@ -38,7 +38,7 @@ sequenceDiagram
 
 **Permissions:** storage, network, content
 
-**Revenue:** Direct tipping, paid content (encrypted video, pay-to-decrypt), no ads, no platform cut
+**Sustainability:** No ads and no platform-controlled monetization in the core protocol. Any app-level economic model is outside the protocol.
 
 ---
 
@@ -185,8 +185,8 @@ sequenceDiagram
     Buyer->>Net: Search / browse listings
     Net-->>Buyer: Matching listings
     Buyer->>Seller: Contact directly (P2P encrypted)
-    Buyer->>Seller: Payment (external: crypto, payment link, cash)
-    Seller->>Seller: Confirm payment, ship item
+    Buyer->>Seller: Agree terms outside protocol
+    Seller->>Seller: Ship item or provide access
     Buyer->>Net: Leave signed review
 
     Note over Net: No listing fee, no transaction fee<br/>No platform cut, seller keeps 100%

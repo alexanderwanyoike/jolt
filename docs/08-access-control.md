@@ -4,6 +4,8 @@
 
 dweb supports both public and private content. Public content is accessible to anyone on the network. Private content is encrypted and only readable by authorized users. Access control is enforced cryptographically -- there is no server to bypass.
 
+Encryption must be crypto-agile. The protocol should be able to move from today's algorithms to post-quantum-safe or hybrid schemes without changing the ownership model. Relays and caches store ciphertext; authorization lives in keys and signed records, not in relay-side access checks.
+
 ## Visibility Levels
 
 ### Public
@@ -120,20 +122,9 @@ Creating a private forum:
   5. New members get group key, can read history
 ```
 
-### Paid Content
+### Deferred: Paid Content
 
-```
-App: dweb-video (with payments)
-
-Creator publishes a paid video:
-  1. Preview/thumbnail published as public content
-  2. Full video encrypted with a content key
-  3. Buyer sends payment (external: crypto, payment link)
-  4. Creator's node verifies payment
-  5. Creator encrypts content key to buyer's public key
-  6. Buyer decrypts content key, decrypts video
-  7. Buyer has permanent access (owns the decrypted content)
-```
+Paid content is intentionally outside the core protocol for now. The access-control layer should only model cryptographic authorization: who can decrypt which content, and how keys are shared or revoked.
 
 ## Key Management
 

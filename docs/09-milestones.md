@@ -65,6 +65,28 @@
 
 ---
 
+## M4.5: Relays and Owner-Directed Availability
+
+**Goal:** Users can keep published content online through a home relay without giving the relay ownership or authority over the content.
+
+**Deliverables:**
+- Relay capability model: discovery-only vs pinning relay
+- Home relay configuration on the user node
+- Pin request protocol: owner signs a request for a relay to keep a ContentId
+- Relay stores pinned content and announces provider records
+- Node-managed availability checks: user node verifies its home relay still serves pinned content
+- Cache/pin terminology clarified in docs and API
+
+**Non-goals:**
+- Payments
+- Storage markets
+- Blockchain settlement
+- Automatic relay-to-relay durable replication
+
+**Success criteria:** Alice publishes content, her home relay pins it, Alice's node goes offline, Bob resolves Alice's latest signed record and fetches the content from the relay.
+
+---
+
 ## M5: DHT and Internet-Wide Networking
 
 **Goal:** Nodes discover each other and exchange content over the internet, not just LAN.
@@ -203,6 +225,9 @@ graph TD
     M1 --> M5["M5: DHT / Internet-Wide"]
     M1 --> M6["M6: Encryption"]
 
+    M4 --> M45["M4.5: Relays / Availability"]
+    M5 --> M45
+
     M2 --> M7["M7: WASM Runtime"]
     M2 --> M11["M11: Redundancy Groups"]
 
@@ -217,6 +242,7 @@ graph TD
     style M2 fill:#0f3460,stroke:#fff,color:#fff
     style M3 fill:#0f3460,stroke:#fff,color:#fff
     style M4 fill:#0f3460,stroke:#fff,color:#fff
+    style M45 fill:#0f3460,stroke:#fff,color:#fff
     style M5 fill:#0f3460,stroke:#fff,color:#fff
     style M6 fill:#0f3460,stroke:#fff,color:#fff
     style M7 fill:#533483,stroke:#fff,color:#fff
@@ -227,4 +253,4 @@ graph TD
     style M12 fill:#533483,stroke:#fff,color:#fff
 ```
 
-M1 through M5 can be worked on somewhat in parallel. M7-M9 build sequentially. M10, M11, and M12 can be developed independently once their dependencies are met.
+M1 through M5 can be worked on somewhat in parallel. M4.5 depends on mutable records and internet-wide networking: a relay needs signed owner intent and a network path for others to resolve and fetch pinned content. M7-M9 build sequentially. M10, M11, and M12 can be developed independently once their dependencies are met.

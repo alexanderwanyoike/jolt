@@ -27,6 +27,12 @@ A peer-to-peer content platform built in Rust. Nodes discover each other, connec
 - Daemon architecture with HTTP API
 - 95 tests including simulated NAT topologies (patchbay)
 
+### Protocol Direction
+
+Jolt separates ownership from availability. A user's key is the authority over identity, content, and permissions. Relays are replaceable nodes that help content stay reachable by providing discovery, NAT assistance, caching, and owner-directed pinning.
+
+Replication should be owner-directed: the user's node chooses which relays intentionally pin content. Relays may cache what they fetch, but durable relay-to-relay mirroring is a future explicit authorization model, not a v0 default.
+
 ## Quick Start
 
 ### Prerequisites
@@ -132,6 +138,7 @@ dweb node
 | M2: Caching | Done | LRU cache, pinning, serve cached content, re-sharing |
 | M3: Daemon + API | Done | Persistent daemon, HTTP API, CLI thin client |
 | M4: Update Logs | Next | Append-only signed logs for mutable content |
+| M4.5: Relays | Next | Home relay, owner-directed pinning, availability checks |
 | M5: Internet-Wide P2P | Done | Kademlia DHT, iroh NAT traversal, real hardware validated |
 | M6: Encryption | Planned | E2E encryption, group keys, access control |
 | M7: WASM Runtime | Planned | wasmtime sandbox, host API, permissions |

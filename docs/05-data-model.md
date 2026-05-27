@@ -2,11 +2,11 @@
 
 ## Principles
 
-1. **Data belongs to its owner.** Your data lives on your node. Period.
+1. **Data belongs to its owner.** Your keys and signed records define ownership. Nodes and relays may hold copies, but they are not the authority.
 2. **Apps don't own data.** An app is code that operates on your data. Uninstall the app, keep the data.
 3. **Apps are isolated.** Each app has its own data namespace. App A cannot read App B's data.
 4. **Public content is cacheable.** Other nodes may cache your public content for availability.
-5. **Private data never leaves your node unencrypted.** Encrypted backups are opt-in only.
+5. **Private data never leaves your node unencrypted.** Relays and caches may carry ciphertext without being able to read it.
 
 ## Data Categories
 
@@ -58,6 +58,7 @@ This content:
 - Is signed by the publisher's key
 - Can be cached by any node that fetches it
 - Is served to the network via the content fetch protocol
+- Can be pinned by a home relay at the owner's request
 
 ### 3. Cached Content (From Other Nodes)
 
@@ -251,6 +252,18 @@ When limits are reached:
 - Published content: user must remove content before publishing more
 
 ## Redundancy and Backup
+
+### Relay Pinning
+
+Users can delegate availability to a relay. The relay pins owner-requested content and announces itself as a provider. The relay is replaceable and does not become the authority for the content.
+
+For v0, replication is owner-directed:
+
+```
+owner node -> selected relay(s)
+```
+
+Relays should not create durable relay-to-relay copies unless the owner explicitly authorizes mirroring in a future protocol version.
 
 ### Peer Pinning
 

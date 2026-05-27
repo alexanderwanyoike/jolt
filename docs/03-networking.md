@@ -2,7 +2,9 @@
 
 ## Overview
 
-dweb networking is built on libp2p, providing peer discovery, content routing, NAT traversal, and encrypted transport. The network has no central servers -- only peer nodes.
+dweb networking is built on libp2p and iroh, providing peer discovery, content routing, NAT traversal, relays, and encrypted transport. The network has no required central server -- only user nodes and relay nodes.
+
+Relays are ordinary dweb nodes with public reachability and extra responsibilities. They may help with discovery, NAT traversal, content pinning, and serving. They are replaceable carriers, not authorities over identity or content.
 
 ## Transport
 
@@ -29,6 +31,8 @@ Bootstrap list (hardcoded + user-configurable):
 ```
 
 Bootstrap nodes do not have special authority. They only help new nodes discover other peers. Anyone can run a bootstrap node.
+
+Some relays may be discovery-only. A discovery relay helps nodes find peers and provider records, but does not accept content pinning.
 
 ### Kademlia DHT
 
@@ -103,6 +107,10 @@ Relay is a fallback, not the default. Relayed connections are:
 - Limited in bandwidth (relays impose quotas)
 - Still end-to-end encrypted (relay cannot read content)
 
+In addition to traffic relay, dweb uses the term relay for delegated availability. A user's home relay can pin that user's signed/encrypted content and announce provider records so the content remains reachable when the user's personal device is offline.
+
+Traffic relay and persistence relay are separate capabilities. A node may offer one, both, or neither.
+
 ### 3. UPnP / NAT-PMP
 
 The node attempts to configure port forwarding on the router automatically. Works on many home networks without user intervention.
@@ -140,6 +148,19 @@ sequenceDiagram
     Req->>Req: Verify hash matches ContentId
     Req->>Req: Cache content locally
 ```
+
+### `/dweb/pin/1.0.0` -- Relay Pinning
+
+Request that a relay intentionally keep content available.
+
+For v0, pinning is owner-directed: the user's node chooses relays and uploads content to them. Relays do not independently replicate durable copies to other relays.
+
+```
+Request:  { owner: PeerId, content_id: ContentId, record_id: Option<ContentId>, signature: Signature }
+Response: { accepted: bool, reason: Option<String> }
+```
+
+The signature proves that the owner requested this pin. A relay may reject a pin request for any local reason: capacity, policy, unknown user, invalid signature, or unsupported content.
 
 ### `/dweb/updatelog/1.0.0` -- Update Log Sync
 

@@ -163,8 +163,8 @@ fn on_app_message(callback: fn(source_app: ContentId, message: &[u8]))
 
 Use cases:
 - A file picker app that other apps can invoke
-- A crypto wallet app that other apps use for payments
 - A contacts app that shares contact info with chat apps
+- A media library app that shares selected files with publishing apps
 
 The user explicitly grants inter-app communication permissions.
 
@@ -257,9 +257,6 @@ Encrypted peer-to-peer messaging. Server component receives messages when browse
 
 ### dweb-video (Client-Side)
 Publish and stream video. Videos are chunked and content-addressed. Viewers stream from multiple peers simultaneously (swarm). Subscriptions via update logs.
-
-### dweb-market (Client-Side)
-Buy and sell goods. Listings are published content. Search is via DHT. Payments are external (crypto, payment links). Reviews are signed by buyer identities.
 
 ### dweb-forum (Hybrid)
 Discussion boards. Topics and replies stored per-user. Server component indexes and aggregates across peers for search. Moderation by community-elected keys.
