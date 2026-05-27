@@ -1,8 +1,8 @@
 # 017: Global Jolt Resolution v0
 
-**Type:** HITL
+**Type:** AFK
 **Milestone:** M4.5 / M5
-**Status:** Ready for design
+**Status:** Ready for implementation
 **Blocked by:** 016
 
 ## Why
@@ -24,16 +24,15 @@ Without this, `.jolt` addresses are only display identifiers. With it, Jolt star
 
 ## What to Decide
 
-This card needs a short design pass before implementation.
+The design pass is captured in [Global Jolt Resolution](../12-global-jolt-resolution.md).
 
-Decide the v0 shape for a signed reachability record:
+The v0 design decisions are:
 
-- How Alice publishes home relay/provider information.
-- Whether reachability is an `UpdateAction` in the existing update log or a separate signed record.
-- What exact fields are signed.
-- How records are discovered by Bob.
-- Whether discovery starts local/manual, DHT-backed, relay-backed, or some combination.
-- How stale relay/provider records expire or get superseded.
+- Reachability is signed as part of Alice's update log.
+- `SetReachability` replaces the prior reachability set.
+- Relays and DHT provider records are discovery hints, not authorities.
+- The first implementation slice should be a pure resolver from `JoltAddress + verified update log` to `ContentId + reachability hints`.
+- Network lookup can stage from local/provided records to known relay lookup and then DHT candidate discovery.
 
 The minimal design should not solve payments, relay marketplaces, social naming, or relay-to-relay replication.
 
@@ -43,11 +42,15 @@ Start with an update-log action that says where Alice's identity can be reached:
 
 ```text
 UpdateAction::SetReachability {
-  home_relay_identity: IdentityId,
-  home_relay_peer_id: PeerId,
-  home_relay_addresses: Vec<Multiaddr>,
-  capabilities: discovery | pinning | both,
-  expires_at: Option<Timestamp>
+  relays: Vec<RelayHint>
+}
+
+RelayHint {
+  identity: IdentityId,
+  peer_id: String,
+  addresses: Vec<String>,
+  capabilities: Vec<RelayCapability>,
+  expires_at: Option<u64>
 }
 ```
 
@@ -70,7 +73,7 @@ by:
 
 After the design is accepted, implement the smallest useful vertical slice:
 
-- Add a signed reachability action or record.
+- Add a signed reachability action to the update log.
 - Resolve reachability from a verified update log.
 - Add tests for replacing stale reachability with a newer signed entry.
 - Add a resolver function that accepts `JoltAddress` plus a verified record/log and returns the target `ContentId` plus reachability hints.
@@ -84,7 +87,7 @@ Network-wide lookup can be staged:
 
 ## Acceptance Criteria
 
-- [ ] The signed data model for reachability is documented.
+- [x] The signed data model for reachability is documented.
 - [ ] Bob never accepts reachability records unless they verify against Alice's identity.
 - [ ] Newer signed reachability supersedes older reachability.
 - [ ] `{identity}.jolt/path` can resolve to a `ContentId` from verified signed state.
