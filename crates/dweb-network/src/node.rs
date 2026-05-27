@@ -16,7 +16,7 @@ use dweb_store::ContentStore;
 use crate::behaviour::{DwebBehaviour, DwebBehaviourEvent};
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus, PeerInfo,
-    PublishResponse,
+    PeerConnectResponse, PublishResponse,
 };
 use crate::config::NetworkConfig;
 use crate::error::NetworkError;
@@ -77,6 +77,8 @@ pub struct NetworkNode {
     fetch_manager: FetchManager,
     /// iroh endpoint for pre-populating peer addresses before dialing
     iroh_endpoint: Option<iroh::Endpoint>,
+    /// Transport label reported through status endpoints.
+    transport_name: &'static str,
 }
 
 impl NetworkNode {
@@ -157,6 +159,7 @@ impl NetworkNode {
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
             iroh_endpoint,
+            transport_name: "iroh",
         })
     }
 
@@ -231,6 +234,7 @@ impl NetworkNode {
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
             iroh_endpoint: None,
+            transport_name: "tcp",
         })
     }
 
@@ -363,6 +367,34 @@ impl NetworkNode {
 
         info!("DHT bootstrap initiated");
         Ok(())
+    }
+
+    /// Dial a peer by multiaddr. A `/p2p/<peer-id>` suffix is recommended so the
+    /// address can be registered with Kademlia before dialing.
+    pub fn connect_peer_multiaddr(
+        &mut self,
+        addr: &str,
+    ) -> Result<Option<libp2p::PeerId>, NetworkError> {
+        if addr.contains("/p2p/") {
+            let (peer_id, transport_addr) = crate::bootstrap::parse_bootstrap_addr(addr)?;
+            self.swarm
+                .behaviour_mut()
+                .kademlia
+                .add_address(&peer_id, transport_addr.clone());
+            self.swarm.add_peer_address(peer_id, transport_addr.clone());
+            self.swarm
+                .dial(transport_addr)
+                .map_err(|e| NetworkError::Swarm(format!("Dial failed: {e}")))?;
+            Ok(Some(peer_id))
+        } else {
+            let multiaddr: Multiaddr = addr
+                .parse()
+                .map_err(|e| NetworkError::Swarm(format!("Invalid peer multiaddr: {e}")))?;
+            self.swarm
+                .dial(multiaddr)
+                .map_err(|e| NetworkError::Swarm(format!("Dial failed: {e}")))?;
+            Ok(None)
+        }
     }
 
     /// Announce this node as a provider for the given content in the DHT.
@@ -743,6 +775,18 @@ impl NetworkNode {
                 self.fetch_manager
                     .start_fetch(content_id, response_tx, request_ids);
             }
+            DaemonCommand::ConnectPeer {
+                multiaddr,
+                response_tx,
+            } => {
+                let result =
+                    self.connect_peer_multiaddr(&multiaddr)
+                        .map(|peer_id| PeerConnectResponse {
+                            peer_id: peer_id.map(|p| p.to_string()),
+                            multiaddr,
+                        });
+                let _ = response_tx.send(result);
+            }
             DaemonCommand::GetStatus { response_tx } => {
                 let direct = self.peer_connections.values().filter(|c| !c.is_relayed).count();
                 let relayed = self.peer_connections.values().filter(|c| c.is_relayed).count();
@@ -752,7 +796,7 @@ impl NetworkNode {
                     connected_peers: self.swarm.connected_peers().count(),
                     direct_peers: direct,
                     relayed_peers: relayed,
-                    nat_type: "iroh".to_string(),
+                    nat_type: self.transport_name.to_string(),
                     active_relays: 0,
                     published_count: self.store.published_ids().len(),
                     cached_count: self.store.list_entries().len(),
@@ -769,7 +813,7 @@ impl NetworkNode {
                         PeerInfo {
                             peer_id: p.to_string(),
                             is_relayed: conn.map(|c| c.is_relayed).unwrap_or(false),
-                            transport: conn.map(|c| c.transport.clone()).unwrap_or_else(|| "iroh".to_string()),
+                            transport: conn.map(|c| c.transport.clone()).unwrap_or_else(|| self.transport_name.to_string()),
                             remote_addr: conn.map(|c| c.remote_addr.clone()).unwrap_or_default(),
                         }
                     })

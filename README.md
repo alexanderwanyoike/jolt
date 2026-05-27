@@ -71,12 +71,65 @@ curl -X POST http://127.0.0.1:9862/api/v1/fetch \
   -d '{"content_id": "bafkr4i..."}'
 ```
 
+### Local Two-Node Dashboard Demo
+
+The default daemon transport is iroh for real P2P and NAT traversal. For a deterministic one-machine demo, use TCP transport and separate data directories:
+
+```bash
+cargo build
+
+# Terminal 1: node A
+JOLT_A=$(mktemp -d)
+XDG_DATA_HOME="$JOLT_A" target/debug/dweb start \
+  --transport tcp \
+  --p2p-port 4901 \
+  --api-port 9871 \
+  --no-bootstrap
+
+# Terminal 2: node B
+JOLT_B=$(mktemp -d)
+XDG_DATA_HOME="$JOLT_B" target/debug/dweb start \
+  --transport tcp \
+  --p2p-port 4902 \
+  --api-port 9872 \
+  --no-bootstrap
+```
+
+Open the dashboards:
+
+- Node A: http://127.0.0.1:9871/dashboard
+- Node B: http://127.0.0.1:9872/dashboard
+
+Connect node B to node A:
+
+```bash
+PEER_A=$(curl -sS http://127.0.0.1:9871/api/v1/status \
+  | sed -n 's/.*"peer_id":"\([^"]*\)".*/\1/p')
+
+curl -sS -X POST http://127.0.0.1:9872/api/v1/peers/connect \
+  -H 'Content-Type: application/json' \
+  -d "{\"multiaddr\":\"/ip4/127.0.0.1/tcp/4901/p2p/$PEER_A\"}"
+```
+
+Then publish on node A and fetch from node B:
+
+```bash
+printf 'hello from node A' > /tmp/jolt-demo.txt
+CID=$(curl -sS -F "file=@/tmp/jolt-demo.txt" http://127.0.0.1:9871/api/v1/publish \
+  | sed -n 's/.*"content_id":"\([^"]*\)".*/\1/p')
+
+curl -sS -X POST http://127.0.0.1:9872/api/v1/fetch \
+  -H 'Content-Type: application/json' \
+  -d "{\"content_id\":\"$CID\"}"
+```
+
 ### API Endpoints
 
 ```
 GET  /api/v1/health          Health check
 GET  /api/v1/status          Node status, peer count, uptime
 GET  /api/v1/peers           Connected peer list
+POST /api/v1/peers/connect   Dial a peer multiaddr
 POST /api/v1/publish         Publish a file (multipart form)
 POST /api/v1/fetch           Fetch content by ID
 GET  /api/v1/cache/stats     Cache statistics

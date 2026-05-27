@@ -26,7 +26,18 @@ async fn main() -> anyhow::Result<()> {
             bootstrap,
             no_bootstrap,
             p2p_port,
-        } => commands::start::run(api_port, &api_bind, bootstrap, no_bootstrap, p2p_port).await?,
+            transport,
+        } => {
+            commands::start::run(
+                api_port,
+                &api_bind,
+                bootstrap,
+                no_bootstrap,
+                p2p_port,
+                transport,
+            )
+            .await?
+        }
         Commands::Stop => commands::stop::run().await?,
         Commands::Status => commands::status::run().await?,
         Commands::Publish { file } => commands::publish::run(&file).await?,

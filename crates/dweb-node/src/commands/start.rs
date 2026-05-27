@@ -6,6 +6,7 @@ use dweb_identity::NodeIdentity;
 use dweb_network::{DaemonHandle, Multiaddr, NetworkConfig, NetworkNode};
 use dweb_store::{CacheConfig, ContentStore};
 
+use crate::cli::TransportMode;
 use crate::config::NodeConfig;
 use crate::daemon;
 
@@ -15,6 +16,7 @@ pub async fn run(
     bootstrap: Vec<String>,
     no_bootstrap: bool,
     p2p_port: u16,
+    transport: TransportMode,
 ) -> Result<()> {
     let config = NodeConfig::default_dirs();
     config.ensure_dirs()?;
@@ -45,11 +47,20 @@ pub async fn run(
     let store = ContentStore::open(&config.content_store_dir, CacheConfig::default())?;
     let published_ids: Vec<String> = store.published_ids();
 
-    let mut node = NetworkNode::new(identity, store, net_config).await?;
-
-    // Tell iroh transport to accept incoming connections via its Router
-    // The address is ignored by libp2p-iroh but must be a valid multiaddr
-    node.listen_on("/ip4/0.0.0.0/udp/0/quic-v1")?;
+    let mut node = match transport {
+        TransportMode::Iroh => {
+            let mut node = NetworkNode::new(identity, store, net_config).await?;
+            // Tell iroh transport to accept incoming connections via its Router.
+            // The address is ignored by libp2p-iroh but must be a valid multiaddr.
+            node.listen_on("/ip4/0.0.0.0/udp/0/quic-v1")?;
+            node
+        }
+        TransportMode::Tcp => {
+            let mut node = NetworkNode::new_tcp(identity, store, net_config)?;
+            node.listen_on(&format!("/ip4/0.0.0.0/tcp/{p2p_port}"))?;
+            node
+        }
+    };
 
     // Re-announce all published content as DHT providers
     for content_id_str in &published_ids {
@@ -86,7 +97,10 @@ pub async fn run(
     info!("Published content: {} items", published_ids.len());
     info!("HTTP API: http://{api_bind}:{api_port}");
     info!("PID: {pid}");
-    info!("NAT traversal: iroh (automatic DERP relay + hole punching)");
+    match transport {
+        TransportMode::Iroh => info!("Transport: iroh (automatic DERP relay + hole punching)"),
+        TransportMode::Tcp => info!("Transport: tcp (local deterministic demo mode)"),
+    }
 
     let config_for_cleanup = config.clone();
     let shutdown_handle = handle.clone();
