@@ -2,13 +2,14 @@ use std::fmt;
 use std::str::FromStr;
 
 use data_encoding::BASE32_NOPAD;
+use serde::{Deserialize, Serialize};
 
 use crate::DwebError;
 
 const IDENTITY_PUBLIC_KEY_LEN: usize = 32;
 const JOLT_SUFFIX: &str = ".jolt";
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct IdentityId {
     public_key: [u8; IDENTITY_PUBLIC_KEY_LEN],
 }
