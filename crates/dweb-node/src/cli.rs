@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(name = "dweb", about = "Decentralized web platform", version)]
@@ -29,9 +29,13 @@ pub enum Commands {
         #[arg(long)]
         no_bootstrap: bool,
 
-        /// Fixed UDP port for P2P (default: 0 = random). Use on servers with firewalls.
+        /// Fixed P2P port (default: 0 = random). UDP for iroh, TCP for --transport tcp.
         #[arg(long, default_value = "0")]
         p2p_port: u16,
+
+        /// P2P transport to use. iroh is the real-network default; tcp is for local demos/tests.
+        #[arg(long, value_enum, default_value_t = TransportMode::Iroh)]
+        transport: TransportMode,
     },
 
     /// Stop the running daemon
@@ -61,6 +65,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: CacheCommands,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum TransportMode {
+    Iroh,
+    Tcp,
 }
 
 #[derive(Subcommand)]
@@ -100,6 +110,15 @@ mod tests {
         let cli = Cli::parse_from(["dweb", "start", "--api-port", "8080"]);
         match cli.command {
             Commands::Start { api_port, .. } => assert_eq!(api_port, 8080),
+            _ => panic!("expected Start command"),
+        }
+    }
+
+    #[test]
+    fn parse_start_with_tcp_transport() {
+        let cli = Cli::parse_from(["dweb", "start", "--transport", "tcp"]);
+        match cli.command {
+            Commands::Start { transport, .. } => assert_eq!(transport, TransportMode::Tcp),
             _ => panic!("expected Start command"),
         }
     }

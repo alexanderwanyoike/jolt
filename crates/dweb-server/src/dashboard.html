@@ -571,6 +571,22 @@
 
         <section class="panel">
           <div class="panel-head">
+            <h2>Connect</h2>
+          </div>
+          <div class="panel-body forms">
+            <div class="field">
+              <label for="connect-addr">Peer multiaddr</label>
+              <input id="connect-addr" class="mono" type="text" autocomplete="off" spellcheck="false" placeholder="/ip4/127.0.0.1/tcp/4901/p2p/12D3...">
+            </div>
+            <div class="button-row">
+              <button class="primary" id="connect-button" type="button">Connect</button>
+            </div>
+            <div class="result mono" id="connect-result">No connect request yet.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
             <h2>Fetch</h2>
           </div>
           <div class="panel-body forms">
@@ -759,6 +775,17 @@
       return JSON.parse(body);
     }
 
+    async function connectPeer(multiaddr) {
+      const response = await fetch("/api/v1/peers/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ multiaddr })
+      });
+      const body = await readResponse(response);
+      if (!response.ok) throw new Error(body);
+      return JSON.parse(body);
+    }
+
     async function readResponse(response) {
       const text = await response.text();
       return text || `${response.status} ${response.statusText}`;
@@ -811,6 +838,21 @@
         await refresh();
       } catch (error) {
         setResult("publish-result", "err", error.message);
+      }
+    });
+
+    $("connect-button").addEventListener("click", async () => {
+      const multiaddr = $("connect-addr").value.trim();
+      if (!multiaddr) {
+        setResult("connect-result", "err", "No peer multiaddr entered.");
+        return;
+      }
+      try {
+        const result = await connectPeer(multiaddr);
+        setResult("connect-result", "ok", `Dial started\n${result.peer_id || "peer id unknown"}\n${result.multiaddr}`);
+        await refresh();
+      } catch (error) {
+        setResult("connect-result", "err", error.message);
       }
     });
 

@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::command::{
-    CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus, PeerInfo,
-    PublishResponse,
+    CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
+    PeerConnectResponse, PeerInfo, PublishResponse,
 };
 use crate::error::NetworkError;
 
@@ -42,6 +42,23 @@ impl DaemonHandle {
         self.cmd_tx
             .send(DaemonCommand::Fetch {
                 content_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Connect to a peer by multiaddr.
+    pub async fn connect_peer(
+        &self,
+        multiaddr: String,
+    ) -> Result<PeerConnectResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::ConnectPeer {
+                multiaddr,
                 response_tx: tx,
             })
             .await

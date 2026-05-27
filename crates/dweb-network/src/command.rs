@@ -15,6 +15,10 @@ pub enum DaemonCommand {
         content_id: String,
         response_tx: oneshot::Sender<Result<FetchResult, NetworkError>>,
     },
+    ConnectPeer {
+        multiaddr: String,
+        response_tx: oneshot::Sender<Result<PeerConnectResponse, NetworkError>>,
+    },
     GetStatus {
         response_tx: oneshot::Sender<NodeStatus>,
     },
@@ -51,6 +55,12 @@ pub struct FetchResult {
     pub data: Vec<u8>,
     pub content_id: String,
     pub size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerConnectResponse {
+    pub peer_id: Option<String>,
+    pub multiaddr: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
