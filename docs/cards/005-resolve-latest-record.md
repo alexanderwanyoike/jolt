@@ -1,9 +1,9 @@
-# 003: Resolve Latest Record by Identity
+# 005: Resolve Latest Record by Identity
 
 **Type:** AFK  
 **Milestone:** M4  
-**Status:** Blocked  
-**Blocked by:** 004
+**Status:** Done
+**Blocked by:** None
 
 ## Why
 
@@ -24,11 +24,11 @@ This card can stay local/in-memory. Network sync can come later.
 
 ## Acceptance Criteria
 
-- [ ] Given a valid log, resolver returns the latest profile state.
-- [ ] Given multiple updates to the same path, resolver returns the newest content CID.
-- [ ] Given remove actions, resolver omits removed paths.
-- [ ] Resolver rejects invalid or unverified logs.
-- [ ] Tests cover replaying a realistic log into current state.
+- [x] Given a valid log, resolver returns the latest profile state.
+- [x] Given multiple updates to the same path, resolver returns the newest content CID.
+- [x] Given remove actions, resolver omits removed paths.
+- [x] Resolver rejects invalid or unverified logs.
+- [x] Tests cover replaying a realistic log into current state.
 
 ## Notes
 

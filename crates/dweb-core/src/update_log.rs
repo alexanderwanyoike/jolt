@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -34,6 +36,12 @@ pub enum UpdateLogError {
 
     #[error("entry at index {index} has a broken previous-entry hash")]
     BrokenPreviousHash { index: usize },
+
+    #[error("entry at index {index} changes owner public key")]
+    OwnerChanged { index: usize },
+
+    #[error("cannot resolve latest state from an empty update log")]
+    EmptyLog,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -44,6 +52,8 @@ pub enum UpdateAction {
     PublishContent { content_id: ContentId },
     UpdateRoot { content_id: ContentId },
     UpdateProfile { profile: UpdateProfile },
+    SetPath { path: String, content_id: ContentId },
+    RemovePath { path: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +75,15 @@ pub struct UpdateLogEntryBody {
 pub struct UpdateLogEntry {
     pub body: UpdateLogEntryBody,
     pub signature: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedLatestRecord {
+    pub owner_public_key: Vec<u8>,
+    pub latest_sequence: u64,
+    pub latest_root: Option<ContentId>,
+    pub profile: Option<UpdateProfile>,
+    pub paths: BTreeMap<String, ContentId>,
 }
 
 impl UpdateLogEntry {
@@ -157,6 +176,15 @@ impl UpdateAction {
                 let avatar = profile.avatar.as_ref().map(ToString::to_string);
                 put_optional_string(bytes, avatar.as_deref());
             }
+            Self::SetPath { path, content_id } => {
+                bytes.push(3);
+                put_string(bytes, path);
+                put_string(bytes, &content_id.to_string());
+            }
+            Self::RemovePath { path } => {
+                bytes.push(4);
+                put_string(bytes, path);
+            }
         }
     }
 }
@@ -175,6 +203,10 @@ pub fn verify_update_log(entries: &[UpdateLogEntry]) -> Result<(), UpdateLogErro
             continue;
         }
 
+        if entry.body.owner_public_key != entries[0].body.owner_public_key {
+            return Err(UpdateLogError::OwnerChanged { index });
+        }
+
         let expected_sequence = entries[index - 1].body.sequence + 1;
         if entry.body.sequence != expected_sequence {
             return Err(UpdateLogError::OutOfOrderSequence {
@@ -191,6 +223,45 @@ pub fn verify_update_log(entries: &[UpdateLogEntry]) -> Result<(), UpdateLogErro
     }
 
     Ok(())
+}
+
+pub fn resolve_latest_record(
+    entries: &[UpdateLogEntry],
+) -> Result<ResolvedLatestRecord, UpdateLogError> {
+    verify_update_log(entries)?;
+
+    let Some(first) = entries.first() else {
+        return Err(UpdateLogError::EmptyLog);
+    };
+
+    let mut resolved = ResolvedLatestRecord {
+        owner_public_key: first.body.owner_public_key.clone(),
+        latest_sequence: first.body.sequence,
+        latest_root: None,
+        profile: None,
+        paths: BTreeMap::new(),
+    };
+
+    for entry in entries {
+        resolved.latest_sequence = entry.body.sequence;
+        match &entry.body.action {
+            UpdateAction::PublishContent { .. } => {}
+            UpdateAction::UpdateRoot { content_id } => {
+                resolved.latest_root = Some(content_id.clone());
+            }
+            UpdateAction::UpdateProfile { profile } => {
+                resolved.profile = Some(profile.clone());
+            }
+            UpdateAction::SetPath { path, content_id } => {
+                resolved.paths.insert(path.clone(), content_id.clone());
+            }
+            UpdateAction::RemovePath { path } => {
+                resolved.paths.remove(path);
+            }
+        }
+    }
+
+    Ok(resolved)
 }
 
 fn verify_signature(
@@ -435,5 +506,235 @@ mod tests {
             .unwrap();
 
         verify_update_log(&[genesis, root, profile]).unwrap();
+    }
+
+    #[test]
+    fn resolves_latest_profile_state() {
+        let key = signing_key();
+        let genesis = UpdateLogEntry::genesis(
+            public_key(&key),
+            UpdateAction::UpdateProfile {
+                profile: UpdateProfile {
+                    display_name: Some("Alice".to_string()),
+                    bio: None,
+                    avatar: None,
+                },
+            },
+            |bytes| sign(&key, bytes),
+        )
+        .unwrap();
+        let latest_profile = genesis
+            .append(
+                UpdateAction::UpdateProfile {
+                    profile: UpdateProfile {
+                        display_name: Some("Alice A.".to_string()),
+                        bio: Some("Building Jolt".to_string()),
+                        avatar: Some(content_id(b"avatar")),
+                    },
+                },
+                |bytes| sign(&key, bytes),
+            )
+            .unwrap();
+
+        let resolved = resolve_latest_record(&[genesis, latest_profile]).unwrap();
+
+        assert_eq!(
+            resolved.profile,
+            Some(UpdateProfile {
+                display_name: Some("Alice A.".to_string()),
+                bio: Some("Building Jolt".to_string()),
+                avatar: Some(content_id(b"avatar")),
+            })
+        );
+    }
+
+    #[test]
+    fn resolves_newest_content_for_repeated_path_updates() {
+        let key = signing_key();
+        let genesis = UpdateLogEntry::genesis(
+            public_key(&key),
+            UpdateAction::SetPath {
+                path: "/posts/hello".to_string(),
+                content_id: content_id(b"first version"),
+            },
+            |bytes| sign(&key, bytes),
+        )
+        .unwrap();
+        let updated = genesis
+            .append(
+                UpdateAction::SetPath {
+                    path: "/posts/hello".to_string(),
+                    content_id: content_id(b"second version"),
+                },
+                |bytes| sign(&key, bytes),
+            )
+            .unwrap();
+
+        let resolved = resolve_latest_record(&[genesis, updated]).unwrap();
+
+        assert_eq!(
+            resolved.paths.get("/posts/hello"),
+            Some(&content_id(b"second version"))
+        );
+    }
+
+    #[test]
+    fn omits_removed_paths() {
+        let key = signing_key();
+        let genesis = UpdateLogEntry::genesis(
+            public_key(&key),
+            UpdateAction::SetPath {
+                path: "/posts/hello".to_string(),
+                content_id: content_id(b"hello"),
+            },
+            |bytes| sign(&key, bytes),
+        )
+        .unwrap();
+        let removed = genesis
+            .append(
+                UpdateAction::RemovePath {
+                    path: "/posts/hello".to_string(),
+                },
+                |bytes| sign(&key, bytes),
+            )
+            .unwrap();
+
+        let resolved = resolve_latest_record(&[genesis, removed]).unwrap();
+
+        assert!(!resolved.paths.contains_key("/posts/hello"));
+    }
+
+    #[test]
+    fn resolver_rejects_invalid_logs() {
+        let owner = signing_key();
+        let attacker = signing_key();
+        let entry = UpdateLogEntry::genesis(
+            public_key(&owner),
+            UpdateAction::UpdateRoot {
+                content_id: content_id(b"root"),
+            },
+            |bytes| sign(&attacker, bytes),
+        )
+        .unwrap();
+
+        assert_eq!(
+            resolve_latest_record(&[entry]),
+            Err(UpdateLogError::InvalidSignature)
+        );
+    }
+
+    #[test]
+    fn resolver_rejects_owner_changes() {
+        let owner = signing_key();
+        let attacker = signing_key();
+        let genesis = UpdateLogEntry::genesis(
+            public_key(&owner),
+            UpdateAction::UpdateRoot {
+                content_id: content_id(b"root"),
+            },
+            |bytes| sign(&owner, bytes),
+        )
+        .unwrap();
+
+        let mut next = genesis
+            .append(
+                UpdateAction::SetPath {
+                    path: "/posts/hello".to_string(),
+                    content_id: content_id(b"hello"),
+                },
+                |bytes| sign(&owner, bytes),
+            )
+            .unwrap();
+        next.body.owner_public_key = public_key(&attacker).to_vec();
+        next.signature = sign(&attacker, &next.body.canonical_bytes());
+
+        assert_eq!(
+            resolve_latest_record(&[genesis, next]),
+            Err(UpdateLogError::OwnerChanged { index: 1 })
+        );
+    }
+
+    #[test]
+    fn resolver_rejects_empty_logs() {
+        assert_eq!(resolve_latest_record(&[]), Err(UpdateLogError::EmptyLog));
+    }
+
+    #[test]
+    fn resolver_replays_realistic_log_into_current_state() {
+        let key = signing_key();
+        let genesis = UpdateLogEntry::genesis(
+            public_key(&key),
+            UpdateAction::UpdateProfile {
+                profile: UpdateProfile {
+                    display_name: Some("Alice".to_string()),
+                    bio: Some("Early profile".to_string()),
+                    avatar: None,
+                },
+            },
+            |bytes| sign(&key, bytes),
+        )
+        .unwrap();
+        let root = genesis
+            .append(
+                UpdateAction::UpdateRoot {
+                    content_id: content_id(b"site root v1"),
+                },
+                |bytes| sign(&key, bytes),
+            )
+            .unwrap();
+        let post_v1 = root
+            .append(
+                UpdateAction::SetPath {
+                    path: "/posts/hello".to_string(),
+                    content_id: content_id(b"hello v1"),
+                },
+                |bytes| sign(&key, bytes),
+            )
+            .unwrap();
+        let about = post_v1
+            .append(
+                UpdateAction::SetPath {
+                    path: "/about".to_string(),
+                    content_id: content_id(b"about"),
+                },
+                |bytes| sign(&key, bytes),
+            )
+            .unwrap();
+        let post_v2 = about
+            .append(
+                UpdateAction::SetPath {
+                    path: "/posts/hello".to_string(),
+                    content_id: content_id(b"hello v2"),
+                },
+                |bytes| sign(&key, bytes),
+            )
+            .unwrap();
+        let remove_about = post_v2
+            .append(
+                UpdateAction::RemovePath {
+                    path: "/about".to_string(),
+                },
+                |bytes| sign(&key, bytes),
+            )
+            .unwrap();
+
+        let resolved =
+            resolve_latest_record(&[genesis, root, post_v1, about, post_v2, remove_about]).unwrap();
+
+        assert_eq!(resolved.latest_sequence, 5);
+        assert_eq!(resolved.latest_root, Some(content_id(b"site root v1")));
+        assert_eq!(
+            resolved.paths.get("/posts/hello"),
+            Some(&content_id(b"hello v2"))
+        );
+        assert!(!resolved.paths.contains_key("/about"));
+        assert_eq!(
+            resolved.profile,
+            Some(UpdateProfile {
+                display_name: Some("Alice".to_string()),
+                bio: Some("Early profile".to_string()),
+                avatar: None,
+            })
+        );
     }
 }
