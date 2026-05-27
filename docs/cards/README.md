@@ -37,8 +37,9 @@ The current focus is:
 3. Make a local two-node dashboard demo reliable.
 4. Implement signed mutable records.
 5. Resolve latest state by identity.
-6. Add home relay / owner-directed pinning.
-7. Add basic availability checks.
+6. Add local petnames so people do not handle raw peer IDs.
+7. Add home relay / owner-directed pinning.
+8. Add basic availability checks.
 
 ## Cards
 
@@ -50,6 +51,7 @@ The current focus is:
 | [003](003-testing-strategy-and-harness.md) | AFK | Ready | Define and automate the test layers. |
 | [004](004-update-log-core.md) | AFK | Ready | Add signed append-only update log primitives. |
 | [005](005-resolve-latest-record.md) | AFK | Blocked by 004 | Resolve latest signed state for an identity. |
+| [015](015-local-petnames-and-address-book.md) | AFK | Blocked by 005 | Add local aliases for peer IDs before human-facing profile/feed work. |
 | [006](006-profile-and-feed-v0.md) | AFK | Blocked by 005 | Publish and resolve a minimal profile/feed. |
 | [007](007-home-relay-configuration.md) | AFK | Blocked by 005 | Configure a user's home relay. |
 | [008](008-owner-signed-pin-protocol.md) | AFK | Blocked by 004, 007 | Define and implement owner-signed pin requests. |
