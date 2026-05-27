@@ -792,6 +792,7 @@ impl NetworkNode {
                 let relayed = self.peer_connections.values().filter(|c| c.is_relayed).count();
                 let status = NodeStatus {
                     peer_id: self.swarm.local_peer_id().to_string(),
+                    identity_address: self.identity.jolt_address().to_string(),
                     uptime_secs: self.started_at.elapsed().as_secs(),
                     connected_peers: self.swarm.connected_peers().count(),
                     direct_peers: direct,

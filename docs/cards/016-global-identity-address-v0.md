@@ -2,8 +2,8 @@
 
 **Type:** AFK
 **Milestone:** Human addressing / M4.5
-**Status:** Ready
-**Blocked by:** 005
+**Status:** Done
+**Blocked by:** None
 
 ## Why
 
@@ -43,16 +43,16 @@ This card does not need to resolve content from the network yet. It creates the 
 
 ## Acceptance Criteria
 
-- [ ] Identity ID derivation is deterministic for a public identity key.
-- [ ] `{identity}.jolt` round-trips through parse and display.
-- [ ] `{identity}.jolt/profile` parses into identity plus path.
-- [ ] Empty or missing path normalizes to `/`.
-- [ ] Invalid domains, invalid identity strings, and malformed paths fail with clear errors.
-- [ ] Node status output shows the canonical identity address.
-- [ ] HTTP status API returns the canonical identity address.
-- [ ] Dashboard identity panel shows the canonical identity address.
-- [ ] Tests cover valid, invalid, and path-normalization cases.
-- [ ] Docs explain that identity addresses are canonical, while peer IDs are transport/debug identifiers.
+- [x] Identity ID derivation is deterministic for a public identity key.
+- [x] `{identity}.jolt` round-trips through parse and display.
+- [x] `{identity}.jolt/profile` parses into identity plus path.
+- [x] Empty or missing path normalizes to `/`.
+- [x] Invalid domains, invalid identity strings, and malformed paths fail with clear errors.
+- [x] Node status output shows the canonical identity address.
+- [x] HTTP status API returns the canonical identity address.
+- [x] Dashboard identity panel shows the canonical identity address.
+- [x] Tests cover valid, invalid, and path-normalization cases.
+- [x] Docs explain that identity addresses are canonical, while peer IDs are transport/debug identifiers.
 
 ## Notes
 

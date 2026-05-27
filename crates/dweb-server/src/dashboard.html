@@ -482,6 +482,10 @@
           </div>
           <div class="panel-body identity">
             <div class="identity-row">
+              <span>Jolt address</span>
+              <strong class="mono copyline" id="identity-address">--</strong>
+            </div>
+            <div class="identity-row">
               <span>Peer ID</span>
               <strong class="mono copyline" id="peer-id">--</strong>
             </div>
@@ -693,13 +697,15 @@
       const status = state.status || {};
       const stats = state.cacheStats || {};
       const peerId = status.peer_id || "--";
+      const identityAddress = status.identity_address || "--";
 
-      $("peer-summary").textContent = peerId === "--" ? "waiting for daemon" : peerId;
+      $("peer-summary").textContent = identityAddress === "--" ? "waiting for daemon" : identityAddress;
       $("updated-at").textContent = new Date().toLocaleTimeString();
       $("uptime").textContent = formatDuration(status.uptime_secs);
       $("peer-count").textContent = status.connected_peers ?? "--";
       $("published-count").textContent = status.published_count ?? "--";
       $("cached-count").textContent = status.cached_count ?? "--";
+      $("identity-address").textContent = identityAddress;
       $("peer-id").textContent = peerId;
       $("connectivity").textContent = `${status.nat_type || "unknown"} / relays ${status.active_relays ?? 0}`;
       $("peer-mix").textContent = `direct ${status.direct_peers ?? 0} / relayed ${status.relayed_peers ?? 0}`;

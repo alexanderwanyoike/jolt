@@ -24,6 +24,10 @@ pub async fn run() -> Result<()> {
                         "  Peer ID:    {}",
                         status["peer_id"].as_str().unwrap_or("unknown")
                     );
+                    println!(
+                        "  Jolt:       {}",
+                        status["identity_address"].as_str().unwrap_or("unknown")
+                    );
                     println!("  API port:   {}", info.port);
                     println!(
                         "  Peers:      {}",

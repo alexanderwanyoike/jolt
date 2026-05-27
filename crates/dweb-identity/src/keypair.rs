@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use dweb_core::{IdentityId, JoltAddress};
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 
@@ -72,6 +73,16 @@ impl NodeIdentity {
     /// Get the raw public key bytes (32 bytes).
     pub fn public_key_bytes(&self) -> [u8; 32] {
         self.signing_key.verifying_key().to_bytes()
+    }
+
+    /// Get the canonical Jolt identity ID derived from this identity key.
+    pub fn identity_id(&self) -> IdentityId {
+        IdentityId::from_public_key(self.public_key_bytes())
+    }
+
+    /// Get the canonical root Jolt address for this identity.
+    pub fn jolt_address(&self) -> JoltAddress {
+        JoltAddress::new(self.identity_id(), "/").expect("root path is valid")
     }
 
     /// Get the Ed25519 verifying (public) key.
