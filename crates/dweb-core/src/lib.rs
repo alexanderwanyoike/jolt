@@ -7,6 +7,6 @@ pub use content_id::ContentId;
 pub use error::DwebError;
 pub use types::ContentManifest;
 pub use update_log::{
-    verify_update_log, UpdateAction, UpdateLogEntry, UpdateLogEntryBody, UpdateLogEntryHash,
-    UpdateLogError, UpdateProfile,
+    resolve_latest_record, verify_update_log, ResolvedLatestRecord, UpdateAction, UpdateLogEntry,
+    UpdateLogEntryBody, UpdateLogEntryHash, UpdateLogError, UpdateProfile,
 };

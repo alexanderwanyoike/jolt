@@ -50,10 +50,10 @@ The current focus is:
 | [014](014-local-multi-node-demo-mode.md) | AFK | Ready after 002 | Make two local dashboard nodes connect and transfer content predictably. |
 | [003](003-testing-strategy-and-harness.md) | AFK | Done | Define and automate the test layers. |
 | [004](004-update-log-core.md) | AFK | Done | Add signed append-only update log primitives. |
-| [005](005-resolve-latest-record.md) | AFK | Ready | Resolve latest signed state for an identity. |
-| [015](015-local-petnames-and-address-book.md) | AFK | Blocked by 005 | Add local aliases for peer IDs before human-facing profile/feed work. |
-| [006](006-profile-and-feed-v0.md) | AFK | Blocked by 005 | Publish and resolve a minimal profile/feed. |
-| [007](007-home-relay-configuration.md) | AFK | Blocked by 005 | Configure a user's home relay. |
+| [005](005-resolve-latest-record.md) | AFK | Done | Resolve latest signed state for an identity. |
+| [015](015-local-petnames-and-address-book.md) | AFK | Ready | Add local aliases for peer IDs before human-facing profile/feed work. |
+| [006](006-profile-and-feed-v0.md) | AFK | Ready | Publish and resolve a minimal profile/feed. |
+| [007](007-home-relay-configuration.md) | AFK | Ready | Configure a user's home relay. |
 | [008](008-owner-signed-pin-protocol.md) | AFK | Blocked by 004, 007 | Define and implement owner-signed pin requests. |
 | [009](009-relay-pinning-and-provider-announcement.md) | AFK | Blocked by 008 | Relay accepts pins, stores content, announces providers. |
 | [010](010-offline-fetch-through-home-relay.md) | AFK | Blocked by 006, 009 | End-to-end offline publisher flow. |
