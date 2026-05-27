@@ -118,6 +118,12 @@ pub struct ResolvedJoltTarget {
     pub reachability: Vec<RelayHint>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedUpdateLog {
+    pub entries: Vec<UpdateLogEntry>,
+    pub latest_sequence: u64,
+}
+
 impl UpdateLogEntry {
     pub fn genesis<F>(
         owner_public_key: impl Into<Vec<u8>>,
@@ -339,13 +345,7 @@ pub fn resolve_jolt_address(
     now: Option<u64>,
 ) -> Result<ResolvedJoltTarget, UpdateLogError> {
     let resolved = resolve_latest_record(entries)?;
-    let identity = IdentityId::from_public_key(
-        resolved
-            .owner_public_key
-            .as_slice()
-            .try_into()
-            .map_err(|_| UpdateLogError::InvalidOwnerPublicKey)?,
-    );
+    let identity = identity_from_public_key_bytes(&resolved.owner_public_key)?;
 
     if address.identity() != &identity {
         return Err(UpdateLogError::IdentityMismatch);
@@ -377,6 +377,41 @@ pub fn resolve_jolt_address(
         content_id,
         reachability,
     })
+}
+
+pub fn verify_update_log_for_identity(
+    identity: &IdentityId,
+    entries: &[UpdateLogEntry],
+) -> Result<u64, UpdateLogError> {
+    verify_update_log(entries)?;
+    let owner = identity_from_public_key_bytes(&entries[0].body.owner_public_key)?;
+    if &owner != identity {
+        return Err(UpdateLogError::IdentityMismatch);
+    }
+    Ok(entries
+        .last()
+        .expect("verified non-empty log has a last entry")
+        .body
+        .sequence)
+}
+
+pub fn select_newest_verified_update_log<I>(
+    identity: &IdentityId,
+    candidates: I,
+) -> Option<VerifiedUpdateLog>
+where
+    I: IntoIterator<Item = Vec<UpdateLogEntry>>,
+{
+    candidates
+        .into_iter()
+        .filter_map(|entries| {
+            let latest_sequence = verify_update_log_for_identity(identity, &entries).ok()?;
+            Some(VerifiedUpdateLog {
+                entries,
+                latest_sequence,
+            })
+        })
+        .max_by_key(|candidate| candidate.latest_sequence)
 }
 
 fn verify_signature(
@@ -418,6 +453,14 @@ fn validate_signature_len(signature: &[u8]) -> Result<(), UpdateLogError> {
     } else {
         Err(UpdateLogError::InvalidSignatureLength)
     }
+}
+
+fn identity_from_public_key_bytes(public_key: &[u8]) -> Result<IdentityId, UpdateLogError> {
+    Ok(IdentityId::from_public_key(
+        public_key
+            .try_into()
+            .map_err(|_| UpdateLogError::InvalidOwnerPublicKey)?,
+    ))
 }
 
 fn put_optional_string(bytes: &mut Vec<u8>, value: Option<&str>) {
@@ -1031,5 +1074,54 @@ mod tests {
 
         assert_eq!(target.content_id, content);
         assert_eq!(target.reachability, vec![relay_hint(&current, Some(300))]);
+    }
+
+    #[test]
+    fn selects_newest_verified_update_log_for_identity() {
+        let owner = signing_key();
+        let attacker = signing_key();
+        let genesis = UpdateLogEntry::genesis(
+            public_key(&owner),
+            UpdateAction::SetPath {
+                path: "/profile".to_string(),
+                content_id: content_id(b"profile-v1"),
+            },
+            |bytes| sign(&owner, bytes),
+        )
+        .unwrap();
+        let newer = genesis
+            .append(
+                UpdateAction::SetPath {
+                    path: "/profile".to_string(),
+                    content_id: content_id(b"profile-v2"),
+                },
+                |bytes| sign(&owner, bytes),
+            )
+            .unwrap();
+        let wrong_identity = UpdateLogEntry::genesis(
+            public_key(&attacker),
+            UpdateAction::SetPath {
+                path: "/profile".to_string(),
+                content_id: content_id(b"attacker-profile"),
+            },
+            |bytes| sign(&attacker, bytes),
+        )
+        .unwrap();
+        let mut invalid_newer = newer.clone();
+        invalid_newer.signature = vec![0; invalid_newer.signature.len()];
+
+        let selected = select_newest_verified_update_log(
+            &identity_id(&owner),
+            [
+                vec![genesis.clone()],
+                vec![wrong_identity],
+                vec![genesis.clone(), invalid_newer],
+                vec![genesis, newer.clone()],
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(selected.latest_sequence, 1);
+        assert_eq!(selected.entries, vec![selected.entries[0].clone(), newer]);
     }
 }

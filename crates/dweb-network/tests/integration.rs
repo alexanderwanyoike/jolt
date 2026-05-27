@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use dweb_core::{ContentId, JoltAddress, UpdateAction, UpdateLogEntry};
 use dweb_identity::{verify_signature, NodeIdentity};
 use dweb_network::{NetworkConfig, NetworkNode};
 use dweb_store::{CacheConfig, ContentStore};
@@ -9,11 +10,21 @@ fn make_store(dir: &std::path::Path) -> ContentStore {
     ContentStore::open(dir, CacheConfig::default()).unwrap()
 }
 
+fn signed_profile_log(identity: &NodeIdentity, label: &[u8]) -> Vec<UpdateLogEntry> {
+    vec![UpdateLogEntry::genesis(
+        identity.public_key_bytes(),
+        UpdateAction::SetPath {
+            path: "/profile".to_string(),
+            content_id: ContentId::from_bytes(label),
+        },
+        |bytes| identity.sign(bytes),
+    )
+    .unwrap()]
+}
+
 #[tokio::test]
 async fn two_nodes_publish_and_fetch() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .try_init();
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
 
     let dir_a = tempdir().unwrap();
     let dir_b = tempdir().unwrap();
@@ -24,7 +35,8 @@ async fn two_nodes_publish_and_fetch() {
 
     // Create Node A and start listening
     let store_a = make_store(dir_a.path());
-    let mut node_a = NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config()).unwrap();
+    let mut node_a =
+        NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config()).unwrap();
     node_a.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
 
     // Publish test content on Node A
@@ -55,7 +67,8 @@ async fn two_nodes_publish_and_fetch() {
 
     // Create Node B and dial Node A
     let store_b = make_store(dir_b.path());
-    let mut node_b = NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config()).unwrap();
+    let mut node_b =
+        NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config()).unwrap();
     node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     node_b.dial(addr_a).unwrap();
 
@@ -134,7 +147,124 @@ async fn two_nodes_publish_and_fetch() {
     assert_eq!(response.publisher_key, pubkey_a.to_vec());
 
     // Verify auto-caching happened
-    assert!(was_cached, "fetched content should be auto-cached on Node B");
+    assert!(
+        was_cached,
+        "fetched content should be auto-cached on Node B"
+    );
+
+    node_a_handle.abort();
+    node_b_handle.abort();
+}
+
+#[tokio::test]
+async fn two_nodes_request_and_cache_verified_update_log() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+
+    let dir_a = tempdir().unwrap();
+    let dir_b = tempdir().unwrap();
+
+    let identity_a = NodeIdentity::generate();
+    let jolt_identity = identity_a.identity_id();
+    let update_log = signed_profile_log(&identity_a, b"profile");
+    let identity_b = NodeIdentity::generate();
+
+    let store_a = make_store(dir_a.path());
+    let mut node_a =
+        NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config()).unwrap();
+    node_a
+        .store_verified_update_log(jolt_identity.clone(), update_log.clone())
+        .unwrap();
+    node_a.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+
+    let (mut node_a, addr_a) = {
+        let handle = tokio::spawn(async move {
+            loop {
+                let event = node_a.next_event().await;
+                node_a.handle_swarm_event(event);
+                if !node_a.listeners().is_empty() {
+                    return node_a;
+                }
+            }
+        });
+        let node_a = tokio::time::timeout(Duration::from_secs(5), handle)
+            .await
+            .expect("timed out")
+            .expect("task failed");
+        let addr = node_a.listeners()[0].clone();
+        (node_a, addr)
+    };
+
+    let store_b = make_store(dir_b.path());
+    let mut node_b =
+        NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config()).unwrap();
+    node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    node_b.dial(addr_a).unwrap();
+
+    let identity_clone = jolt_identity.clone();
+    let address = JoltAddress::new(jolt_identity.clone(), "/profile").unwrap();
+    let expected_log = update_log.clone();
+    let (tx_result, rx_result) = tokio::sync::oneshot::channel();
+
+    let node_a_handle = tokio::spawn(async move {
+        node_a.run_event_loop().await;
+    });
+
+    let node_b_handle = tokio::spawn(async move {
+        let peer = loop {
+            let event = tokio::time::timeout(Duration::from_secs(1), node_b.next_event()).await;
+            if let Ok(ev) = event {
+                node_b.handle_swarm_event(ev);
+            }
+            if let Some(peer) = node_b.connected_peers().first().cloned() {
+                break peer;
+            }
+        };
+
+        let rx = match node_b.request_jolt_address_from_peer(&address, None, &peer) {
+            Ok(rx) => rx,
+            Err(e) => {
+                let _ = tx_result.send(Err(format!("Failed to resolve address: {e}")));
+                return;
+            }
+        };
+
+        let mut rx = rx;
+        loop {
+            tokio::select! {
+                result = &mut rx => {
+                    match result {
+                        Ok(Ok(target)) => {
+                            let cached = node_b.update_log_entries(&identity_clone)
+                                .map(|entries| entries.to_vec());
+                            let _ = tx_result.send(Ok((target.content_id, cached)));
+                            return;
+                        }
+                        Ok(Err(e)) => {
+                            let _ = tx_result.send(Err(format!("Resolution error: {e}")));
+                            return;
+                        }
+                        Err(_) => {
+                            let _ = tx_result.send(Err("Channel closed".to_string()));
+                            return;
+                        }
+                    }
+                }
+                event = node_b.next_event() => {
+                    node_b.handle_swarm_event(event);
+                }
+            }
+        }
+    });
+
+    let (resolved_content_id, cached_entries) =
+        tokio::time::timeout(Duration::from_secs(15), rx_result)
+            .await
+            .expect("timed out")
+            .expect("channel closed")
+            .expect("address resolution failed");
+
+    assert_eq!(cached_entries, Some(expected_log));
+    assert_eq!(resolved_content_id, ContentId::from_bytes(b"profile"));
 
     node_a_handle.abort();
     node_b_handle.abort();

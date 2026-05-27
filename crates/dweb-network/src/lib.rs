@@ -18,4 +18,4 @@ pub use error::NetworkError;
 pub use libp2p::Multiaddr;
 pub use libp2p::PeerId;
 pub use node::NetworkNode;
-pub use protocol::{ContentRequest, ContentResponse};
+pub use protocol::{ContentRequest, ContentResponse, UpdateLogRequest, UpdateLogResponse};

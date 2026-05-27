@@ -9,7 +9,8 @@ pub use error::DwebError;
 pub use identity_address::{IdentityId, JoltAddress};
 pub use types::ContentManifest;
 pub use update_log::{
-    resolve_jolt_address, resolve_latest_record, verify_update_log, RelayCapability, RelayHint,
+    resolve_jolt_address, resolve_latest_record, select_newest_verified_update_log,
+    verify_update_log, verify_update_log_for_identity, RelayCapability, RelayHint,
     ResolvedJoltTarget, ResolvedLatestRecord, UpdateAction, UpdateLogEntry, UpdateLogEntryBody,
-    UpdateLogEntryHash, UpdateLogError, UpdateProfile,
+    UpdateLogEntryHash, UpdateLogError, UpdateProfile, VerifiedUpdateLog,
 };

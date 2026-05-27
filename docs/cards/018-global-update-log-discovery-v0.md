@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** M5
-**Status:** Ready after 017
+**Status:** Done
 **Blocked by:** 017
 
 ## Why
@@ -127,14 +127,14 @@ Add a local multi-node test only after the pure selection logic is covered.
 
 ## Acceptance Criteria
 
-- [ ] A node can request update-log entries for a specific `IdentityId`.
-- [ ] A node can serve a local update log for an identity it knows about.
-- [ ] The resolver rejects candidate logs that do not verify against the requested identity.
-- [ ] The resolver chooses the newest valid contiguous log from multiple candidates.
-- [ ] A stale lower-sequence response does not replace a newer local verified log.
-- [ ] `{identity}.jolt/path` can be resolved through the network-backed discovery path in a deterministic local test.
-- [ ] The resolved `ContentId` is still produced by the signed-state resolver, not by the relay or DHT response itself.
-- [ ] Docs explain that DHT/relays locate candidate logs but do not define `.jolt` truth.
+- [x] A node can request update-log entries for a specific `IdentityId`.
+- [x] A node can serve a local update log for an identity it knows about.
+- [x] The resolver rejects candidate logs that do not verify against the requested identity.
+- [x] The resolver chooses the newest valid contiguous log from multiple candidates.
+- [x] A stale lower-sequence response does not replace a newer local verified log.
+- [x] `{identity}.jolt/path` can be resolved through the network-backed discovery path in a deterministic local test.
+- [x] The resolved `ContentId` is still produced by the signed-state resolver, not by the relay or DHT response itself.
+- [x] Docs explain that DHT/relays locate candidate logs but do not define `.jolt` truth.
 
 ## Notes
 
