@@ -35,6 +35,49 @@ fn base_url(port: u16) -> String {
 }
 
 #[tokio::test]
+async fn test_dashboard_root_endpoint() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client.get(base_url(port)).send().await.unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(content_type.starts_with("text/html"));
+
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("Jolt Node Console"));
+    assert!(body.contains("/api/v1/status"));
+    assert!(body.contains("/api/v1/publish"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_dashboard_path_endpoint() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{}/dashboard", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("Jolt Node Console"));
+    assert!(body.contains("/api/v1/cache/entries"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_health_endpoint() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();

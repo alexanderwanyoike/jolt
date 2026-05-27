@@ -13,6 +13,8 @@ pub fn build_router(daemon: DaemonHandle) -> Router {
     let state = AppState { daemon };
 
     Router::new()
+        .route("/", get(routes::dashboard::dashboard))
+        .route("/dashboard", get(routes::dashboard::dashboard))
         .route("/api/v1/health", get(routes::health::health))
         .route("/api/v1/status", get(routes::status::get_status))
         .route("/api/v1/peers", get(routes::peers::list_peers))
