@@ -8,11 +8,14 @@ Every dweb user is identified by an Ed25519 keypair. There is no central identit
 graph LR
     subgraph identity["Identity"]
         PK["Private Key<br/><i>stored locally, never leaves your node</i>"]
-        PubK["Public Key<br/><i>your address on the network</i>"]
-        PeerID["Peer ID<br/><i>derived from public key (libp2p compatible)</i>"]
+        PubK["Public Key<br/><i>your long-lived identity</i>"]
+        JoltAddr["Jolt address<br/><i>{identity}.jolt</i>"]
+        PeerID["Peer ID<br/><i>transport/debug identity</i>"]
     end
 
-    PK -->|derives| PubK -->|derives| PeerID
+    PK -->|derives| PubK
+    PubK -->|encodes| JoltAddr
+    PubK -->|derives| PeerID
 ```
 
 ### Key Generation
@@ -28,15 +31,32 @@ On first launch, the node generates an Ed25519 keypair and stores it in the loca
 
 The private key is encrypted at rest using a passphrase-derived key (Argon2id for key derivation, ChaCha20-Poly1305 for encryption).
 
+### Canonical Identity Addresses
+
+Jolt addresses people by long-lived identity key, not by current device, relay, or content ID.
+
+The canonical v0 address format is:
+
+```text
+{identity}.jolt
+{identity}.jolt/profile
+{identity}.jolt/feed
+{identity}.jolt/posts/hello
+```
+
+`{identity}` is the lowercase base32, no-padding encoding of the 32-byte Ed25519 public identity key. This keeps the identity host within one DNS-style label while preserving enough information to recover the public key.
+
+Peer IDs remain visible for transport, debugging, and manual peer connections. They are not the primary human-facing address.
+
 ### Human-Readable Names
 
-Public keys are not user-friendly. dweb supports a petname system where users assign local nicknames to peers they interact with.
+Identity addresses are still not user-friendly. Jolt supports a petname system where users assign local nicknames to identities they interact with.
 
 ```
 Your local petnames (stored on YOUR node only):
-  "alice"   -> ed25519:a1b2c3d4...
-  "bob"     -> ed25519:e5f6g7h8...
-  "mom"     -> ed25519:i9j0k1l2...
+  "alice"   -> {identity}.jolt
+  "bob"     -> {identity}.jolt
+  "mom"     -> {identity}.jolt
 ```
 
 Petnames are local. Alice might call Bob "bob" while Carol calls him "robert." There is no global username registry, which avoids squatting and governance problems.

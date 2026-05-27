@@ -16,4 +16,7 @@ pub enum DwebError {
 
     #[error("Invalid content ID: {0}")]
     InvalidContentId(String),
+
+    #[error("Invalid identity address: {0}")]
+    InvalidIdentityAddress(String),
 }

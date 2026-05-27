@@ -52,8 +52,8 @@ The current focus is:
 | [003](003-testing-strategy-and-harness.md) | AFK | Done | Define and automate the test layers. |
 | [004](004-update-log-core.md) | AFK | Done | Add signed append-only update log primitives. |
 | [005](005-resolve-latest-record.md) | AFK | Done | Resolve latest signed state for an identity. |
-| [016](016-global-identity-address-v0.md) | AFK | Ready | Add canonical `{identity}.jolt` addresses before local petnames. |
-| [015](015-local-petnames-and-address-book.md) | AFK | Blocked by 016 | Add local aliases for identity addresses before human-facing profile/feed work. |
+| [016](016-global-identity-address-v0.md) | AFK | Done | Add canonical `{identity}.jolt` addresses before local petnames. |
+| [015](015-local-petnames-and-address-book.md) | AFK | Ready | Add local aliases for identity addresses before human-facing profile/feed work. |
 | [006](006-profile-and-feed-v0.md) | AFK | Ready | Publish and resolve a minimal profile/feed. |
 | [007](007-home-relay-configuration.md) | AFK | Ready | Configure a user's home relay. |
 | [008](008-owner-signed-pin-protocol.md) | AFK | Blocked by 004, 007 | Define and implement owner-signed pin requests. |

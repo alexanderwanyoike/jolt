@@ -133,6 +133,9 @@ async fn test_status_endpoint() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert!(body["peer_id"].is_string());
     assert!(!body["peer_id"].as_str().unwrap().is_empty());
+    assert!(body["identity_address"].is_string());
+    let identity_address = body["identity_address"].as_str().unwrap();
+    assert!(identity_address.ends_with(".jolt"));
     assert!(body["uptime_secs"].is_number());
     assert_eq!(body["connected_peers"], 0);
 

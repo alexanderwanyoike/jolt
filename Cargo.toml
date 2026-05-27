@@ -76,4 +76,5 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "mul
 # Misc
 directories = "5"
 hex = "0.4"
+data-encoding = "2"
 tempfile = "3"
