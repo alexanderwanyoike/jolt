@@ -88,18 +88,30 @@ DEL  /api/v1/cache/pin/{id}  Unpin content
 ### Run Tests
 
 ```bash
-# Unit + integration tests
+# Deterministic local test suite
+cargo test -p dweb-core -p dweb-identity -p dweb-store -p dweb-node -p dweb-server
 cargo test -p dweb-network --lib
-cargo test -p dweb-network --test nat_traversal
+cargo test -p dweb-network --test integration
 cargo test -p dweb-network --test dht_integration
 cargo test -p dweb-network --test cache_integration
-
-# All crates
-cargo test -p dweb-core
-cargo test -p dweb-identity
-cargo test -p dweb-store
-cargo test -p dweb-node
 ```
+
+The default local tests use the TCP transport where possible. iroh transport is still the runtime transport for real nodes, but iroh-backed tests are kept manual/ignored because they can depend on local network and relay availability.
+
+Manual network checks:
+
+```bash
+# Linux network namespace / patchbay topology tests
+cargo test -p dweb-network --test nat_traversal
+
+# Manual iroh transport smoke test
+cargo test -p dweb-network new_iroh_creates_node_without_error -- --ignored
+
+# Optional Docker topology harness
+cd tests/docker && bash test-all.sh
+```
+
+Real-world release canary remains the strongest confidence test: a public bootstrap/relay node plus two client machines on different networks, including a CGNAT/mobile network when possible.
 
 ## Architecture
 

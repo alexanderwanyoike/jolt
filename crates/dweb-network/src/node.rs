@@ -869,27 +869,40 @@ mod tests {
         ContentStore::open(dir, CacheConfig::default()).unwrap()
     }
 
-    async fn make_node(dir: &std::path::Path) -> NetworkNode {
+    fn make_node(dir: &std::path::Path) -> NetworkNode {
         let identity = NodeIdentity::generate();
         let store = make_store(dir);
-        NetworkNode::new(identity, store, NetworkConfig::test_config())
-            .await
-            .unwrap()
+        NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap()
     }
 
     #[tokio::test]
-    async fn new_creates_node_without_error() {
+    async fn new_tcp_creates_node_without_error() {
         let dir = tempdir().unwrap();
         let identity = NodeIdentity::generate();
         let store = make_store(dir.path());
-        let node = NetworkNode::new(identity, store, NetworkConfig::test_config()).await;
+        let node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config());
         assert!(node.is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "creates an iroh endpoint and may depend on local network/relay availability"]
+    async fn new_iroh_creates_node_without_error() {
+        let dir = tempdir().unwrap();
+        let identity = NodeIdentity::generate();
+        let store = make_store(dir.path());
+        let node = tokio::time::timeout(
+            Duration::from_secs(10),
+            NetworkNode::new(identity, store, NetworkConfig::test_config()),
+        )
+        .await;
+        assert!(node.is_ok(), "iroh transport creation timed out");
+        assert!(node.unwrap().is_ok());
     }
 
     #[tokio::test]
     async fn publish_file_returns_valid_content_id() {
         let dir = tempdir().unwrap();
-        let mut node = make_node(dir.path()).await;
+        let mut node = make_node(dir.path());
 
         let test_file = dir.path().join("test.txt");
         std::fs::write(&test_file, b"hello dweb").unwrap();
@@ -903,7 +916,7 @@ mod tests {
     #[tokio::test]
     async fn test_daemon_command_status() {
         let dir = tempdir().unwrap();
-        let mut node = make_node(dir.path()).await;
+        let mut node = make_node(dir.path());
 
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
         let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx.clone());
@@ -923,7 +936,7 @@ mod tests {
     #[tokio::test]
     async fn test_daemon_handle_publish_fetch_roundtrip() {
         let dir = tempdir().unwrap();
-        let mut node = make_node(dir.path()).await;
+        let mut node = make_node(dir.path());
 
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
         let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx);
@@ -946,7 +959,7 @@ mod tests {
     #[tokio::test]
     async fn test_daemon_handle_shutdown() {
         let dir = tempdir().unwrap();
-        let mut node = make_node(dir.path()).await;
+        let mut node = make_node(dir.path());
 
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
         let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx);
