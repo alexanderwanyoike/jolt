@@ -2,18 +2,18 @@
 
 **Type:** AFK
 **Milestone:** Human addressing / M4.5
-**Status:** Ready after 005
-**Blocked by:** 005
+**Status:** Blocked
+**Blocked by:** 016
 
 ## Why
 
-CIDs and peer IDs are correct machine identifiers, but they are not humane addresses.
+CIDs and identity addresses are correct machine identifiers, but raw identity IDs are not humane addresses.
 
 Users should not need to remember or paste values like:
 
 ```text
-12D3KooW...
 bafkr4i...
+{identity}.jolt
 ```
 
 The next web needs human-scale references. The first honest version is local petnames: names that only mean something on the user's own node.
@@ -21,8 +21,8 @@ The next web needs human-scale references. The first honest version is local pet
 Example:
 
 ```text
-alice -> 12D3KooW...
-bob-work -> 12D3KooW...
+alice -> {identity}.jolt
+bob-work -> {identity}.jolt
 ```
 
 Then a user can resolve and navigate things like:
@@ -37,14 +37,14 @@ This avoids pretending Jolt has global usernames, DNS, or identity governance be
 
 ## What to Build
 
-Add a local address book for peer identities.
+Add a local address book for identity addresses.
 
 The first version should support:
 
-- Store a local alias for a peer ID.
+- Store a local alias for an identity address.
 - List saved aliases.
 - Remove or update an alias.
-- Resolve an alias to a peer ID anywhere the local resolver accepts an identity.
+- Resolve an alias to an identity address anywhere the local resolver accepts an identity address.
 - Show aliases in the dashboard peer list when known.
 - Prefer aliases in profile/feed UI once that exists.
 
@@ -60,20 +60,20 @@ The address book is local-only:
 - [ ] Local storage persists aliases across daemon restarts.
 - [ ] CLI can add, list, update, and remove aliases.
 - [ ] HTTP API exposes address-book operations for the dashboard.
-- [ ] Dashboard can name a connected peer.
-- [ ] Dashboard peer list displays `alias` plus shortened peer ID when an alias exists.
-- [ ] Resolver accepts a raw peer ID and a known alias.
+- [ ] Dashboard can name a known identity.
+- [ ] Dashboard peer list displays `alias` plus shortened identity address when an alias exists.
+- [ ] Resolver accepts a canonical identity address and a known alias.
 - [ ] Unknown aliases fail with a clear error.
 - [ ] Docs explain petnames are local labels, not global usernames.
 
 ## Notes
 
-This card should land after latest-record resolution exists, because aliases become useful when they can be used to resolve a person's signed state.
+This card should land after canonical identity addresses exist, because petnames are local shortcuts for identity addresses.
 
 Keep the model deliberately simple:
 
 ```text
-alias -> peer_id
+alias -> {identity}.jolt
 ```
 
 Later work may add:
