@@ -1,0 +1,35 @@
+# 006: Owner-Signed Pin Protocol
+
+**Type:** AFK  
+**Milestone:** M4.5  
+**Status:** Blocked  
+**Blocked by:** 004, 007
+
+## Why
+
+Relays should only intentionally pin content when the owner asks them to. That keeps authority with the owner's key.
+
+## What to Build
+
+Define and implement an owner-signed pin request.
+
+The request should state:
+
+- Owner identity.
+- Content CID to pin.
+- Optional signed record/update-log CID associated with the content.
+- Signature proving owner intent.
+
+The relay should verify the request before accepting it.
+
+## Acceptance Criteria
+
+- [ ] Pin request type exists and serializes over the chosen wire format.
+- [ ] Owner can sign a pin request.
+- [ ] Relay-side verification accepts valid owner signatures.
+- [ ] Relay-side verification rejects invalid signatures or mismatched owners.
+- [ ] Tests cover valid request, wrong signer, malformed content ID, and tampered request.
+
+## Notes
+
+Do not add relay-to-relay replication. This card is only owner -> selected relay.
