@@ -9,6 +9,7 @@
 #![cfg(target_os = "linux")]
 
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Once;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -19,15 +20,20 @@ use dweb_identity::NodeIdentity;
 use dweb_network::{DaemonHandle, NetworkConfig, NetworkNode};
 use dweb_store::{CacheConfig, ContentStore};
 
-#[ctor::ctor]
-fn init() {
-    patchbay::init_userns().expect("user namespace bootstrap");
+fn init_patchbay() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        patchbay::init_userns().expect("user namespace bootstrap");
+    });
 }
 
 /// Test A: Two devices on the same public network (no NAT).
 /// Verify direct TCP connectivity.
 #[tokio::test(flavor = "current_thread")]
+#[ignore = "manual patchbay test: requires Linux network namespace support"]
 async fn test_lan_direct_transfer() -> Result<()> {
+    init_patchbay();
+
     let lab = Lab::new().await?;
 
     let dc = lab.add_router("dc").build().await?;
@@ -82,7 +88,10 @@ async fn test_lan_direct_transfer() -> Result<()> {
 /// Test B: Two devices behind separate Home NATs.
 /// Outbound TCP from NATed device to public server should work.
 #[tokio::test(flavor = "current_thread")]
+#[ignore = "manual patchbay test: requires Linux network namespace support"]
 async fn test_home_nat_connectivity() -> Result<()> {
+    init_patchbay();
+
     let lab = Lab::new().await?;
 
     let home1 = lab.add_router("home1").nat(Nat::Home).build().await?;
@@ -105,7 +114,11 @@ async fn test_home_nat_connectivity() -> Result<()> {
     assert!(dev2.ip().is_some(), "node2 should have an IP");
 
     // Verify the IPs are different (different NATs)
-    assert_ne!(dev1.ip(), dev2.ip(), "nodes should be on different networks");
+    assert_ne!(
+        dev1.ip(),
+        dev2.ip(),
+        "nodes should be on different networks"
+    );
 
     // Both can reach a server on the public backbone
     let dc = lab.add_router("dc").build().await?;
@@ -164,7 +177,10 @@ async fn test_home_nat_connectivity() -> Result<()> {
 /// Test C: Device behind CGNAT (carrier-grade NAT).
 /// Outbound TCP to public server should still work.
 #[tokio::test(flavor = "current_thread")]
+#[ignore = "manual patchbay test: requires Linux network namespace support"]
 async fn test_cgnat_topology() -> Result<()> {
+    init_patchbay();
+
     let lab = Lab::new().await?;
 
     let isp = lab.add_router("isp").nat(Nat::Cgnat).build().await?;
@@ -216,14 +232,13 @@ async fn test_cgnat_topology() -> Result<()> {
 /// Test D: Corporate symmetric NAT (hardest for hole punching).
 /// TCP outbound should still work.
 #[tokio::test(flavor = "current_thread")]
+#[ignore = "manual patchbay test: requires Linux network namespace support"]
 async fn test_corporate_symmetric_nat() -> Result<()> {
+    init_patchbay();
+
     let lab = Lab::new().await?;
 
-    let corp = lab
-        .add_router("corp")
-        .nat(Nat::Corporate)
-        .build()
-        .await?;
+    let corp = lab.add_router("corp").nat(Nat::Corporate).build().await?;
 
     let dc = lab.add_router("dc").build().await?;
 
@@ -273,7 +288,10 @@ async fn test_corporate_symmetric_nat() -> Result<()> {
 /// Test E: Double NAT -- Home behind CGNAT (common mobile carrier scenario).
 /// Client must traverse two layers of NAT to reach server.
 #[tokio::test(flavor = "current_thread")]
+#[ignore = "manual patchbay test: requires Linux network namespace support"]
 async fn test_double_nat_cgnat_plus_home() -> Result<()> {
+    init_patchbay();
+
     let lab = Lab::new().await?;
 
     // ISP-level CGNAT
@@ -333,7 +351,10 @@ async fn test_double_nat_cgnat_plus_home() -> Result<()> {
 /// Publisher publishes a file, fetcher connects directly and fetches it.
 /// Uses TCP transport (not iroh) since patchbay namespaces have no internet.
 #[tokio::test(flavor = "current_thread")]
+#[ignore = "manual patchbay test: requires Linux network namespace support"]
 async fn test_lan_dweb_content_transfer() -> Result<()> {
+    init_patchbay();
+
     let lab = Lab::new().await?;
 
     let dc = lab.add_router("dc").build().await?;
@@ -361,8 +382,7 @@ async fn test_lan_dweb_content_transfer() -> Result<()> {
         let dir = tempfile::tempdir().unwrap();
         let identity = NodeIdentity::generate();
         let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-        let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config())
-            .unwrap();
+        let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
 
         node.listen_on(&format!("/ip4/{}/tcp/{}", publisher_ip, publisher_port))
             .unwrap();
@@ -394,8 +414,8 @@ async fn test_lan_dweb_content_transfer() -> Result<()> {
             let dir = tempfile::tempdir().unwrap();
             let identity = NodeIdentity::generate();
             let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-            let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config())
-                .unwrap();
+            let mut node =
+                NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
 
             node.listen_on("/ip4/0.0.0.0/tcp/0").unwrap();
             node.dial(publisher_multiaddr.parse::<libp2p::Multiaddr>().unwrap())
@@ -411,11 +431,8 @@ async fn test_lan_dweb_content_transfer() -> Result<()> {
             // Give time for connection to establish
             tokio::time::sleep(Duration::from_secs(2)).await;
 
-            let result = tokio::time::timeout(
-                Duration::from_secs(15),
-                daemon.fetch(content_id_str),
-            )
-            .await;
+            let result =
+                tokio::time::timeout(Duration::from_secs(15), daemon.fetch(content_id_str)).await;
 
             match result {
                 Ok(Ok(fetch_result)) => Some(fetch_result.data),
@@ -444,7 +461,10 @@ async fn test_lan_dweb_content_transfer() -> Result<()> {
 /// announces to DHT via bootstrap. Fetcher discovers content via DHT through bootstrap
 /// and fetches it from the publisher. Tests the full publish-discover-fetch DHT cycle.
 #[tokio::test(flavor = "current_thread")]
+#[ignore = "manual patchbay test: requires Linux network namespace support"]
 async fn test_three_node_dht_discovery() -> Result<()> {
+    init_patchbay();
+
     let lab = Lab::new().await?;
     let dc = lab.add_router("dc").build().await?;
 
@@ -476,8 +496,7 @@ async fn test_three_node_dht_discovery() -> Result<()> {
         let dir = tempfile::tempdir().unwrap();
         let identity = NodeIdentity::generate();
         let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-        let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config())
-            .unwrap();
+        let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
 
         node.listen_on(&format!("/ip4/{}/tcp/{}", bootstrap_ip, bootstrap_port))
             .unwrap();
@@ -508,11 +527,11 @@ async fn test_three_node_dht_discovery() -> Result<()> {
         let dir = tempfile::tempdir().unwrap();
         let identity = NodeIdentity::generate();
         let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-        let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config())
-            .unwrap();
+        let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
 
         node.listen_on("/ip4/0.0.0.0/tcp/0").unwrap();
-        node.dial(baddr.parse::<libp2p::Multiaddr>().unwrap()).unwrap();
+        node.dial(baddr.parse::<libp2p::Multiaddr>().unwrap())
+            .unwrap();
 
         let test_file = dir.path().join("test.txt");
         std::fs::write(&test_file, b"DHT discovery test content").unwrap();
@@ -538,11 +557,12 @@ async fn test_three_node_dht_discovery() -> Result<()> {
             let dir = tempfile::tempdir().unwrap();
             let identity = NodeIdentity::generate();
             let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-            let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config())
-                .unwrap();
+            let mut node =
+                NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
 
             node.listen_on("/ip4/0.0.0.0/tcp/0").unwrap();
-            node.dial(baddr.parse::<libp2p::Multiaddr>().unwrap()).unwrap();
+            node.dial(baddr.parse::<libp2p::Multiaddr>().unwrap())
+                .unwrap();
 
             let (cmd_tx, cmd_rx) = mpsc::channel(16);
             let daemon = DaemonHandle::new(cmd_tx);
@@ -554,11 +574,8 @@ async fn test_three_node_dht_discovery() -> Result<()> {
             // Wait for DHT routing to propagate
             tokio::time::sleep(Duration::from_secs(3)).await;
 
-            let result = tokio::time::timeout(
-                Duration::from_secs(20),
-                daemon.fetch(content_id),
-            )
-            .await;
+            let result =
+                tokio::time::timeout(Duration::from_secs(20), daemon.fetch(content_id)).await;
 
             match result {
                 Ok(Ok(fetch_result)) => Some(fetch_result.data),
