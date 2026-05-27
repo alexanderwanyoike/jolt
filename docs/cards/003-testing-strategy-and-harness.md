@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** Developer experience / Groundwork  
-**Status:** Ready  
+**Status:** Done
 **Blocked by:** None
 
 ## Why
@@ -24,12 +24,12 @@ The goal is to make it obvious which command to run for each layer and which tes
 
 ## Acceptance Criteria
 
-- [ ] `README.md` has a clear test matrix.
-- [ ] A script or documented command runs the normal deterministic test suite.
-- [ ] Network-dependent iroh tests are marked ignored/manual or moved behind a separate command.
-- [ ] Patchbay tests are documented as Linux/network-namespace tests.
-- [ ] Real-world Hetzner/two-device validation is documented as a manual canary, not the normal dev loop.
-- [ ] Existing tests that hang in normal `cargo test --workspace` are fixed, ignored, or documented with a clear reason.
+- [x] `README.md` has a clear test matrix.
+- [x] A script or documented command runs the normal deterministic test suite.
+- [x] Network-dependent iroh tests are marked ignored/manual or moved behind a separate command.
+- [x] Patchbay tests are documented as Linux/network-namespace tests.
+- [x] Real-world Hetzner/two-device validation is documented as a manual canary, not the normal dev loop.
+- [x] Existing tests that hang in normal `cargo test --workspace` are fixed, ignored, or documented with a clear reason.
 
 ## Notes
 
@@ -43,4 +43,3 @@ cargo test -p dweb-network protocol::
 ```
 
 Then expand as the test harness improves.
-

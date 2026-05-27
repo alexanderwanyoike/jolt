@@ -140,22 +140,38 @@ DEL  /api/v1/cache/pin/{id}  Unpin content
 
 ### Run Tests
 
+Normal local development should use the deterministic suite:
+
 ```bash
-# Deterministic local test suite
-cargo test -p dweb-core -p dweb-identity -p dweb-store -p dweb-node -p dweb-server
-cargo test -p dweb-network --lib
-cargo test -p dweb-network --test integration
-cargo test -p dweb-network --test dht_integration
-cargo test -p dweb-network --test cache_integration
+./scripts/test-local.sh
 ```
 
-The default local tests use the TCP transport where possible. iroh transport is still the runtime transport for real nodes, but iroh-backed tests are kept manual/ignored because they can depend on local network and relay availability.
+That script currently runs:
+
+```bash
+cargo test --workspace
+```
+
+`cargo test --workspace` is expected to be boring and repeatable on a normal developer machine. It includes pure protocol/storage/identity tests, server API tests, CLI tests, and TCP-backed local multi-node network tests. It excludes ignored manual tests for iroh transport smoke checks and patchbay network namespaces.
+
+Test matrix:
+
+| Layer | Command | Default? | Notes |
+|---|---|---:|---|
+| Deterministic local suite | `./scripts/test-local.sh` | Yes | Normal pre-PR check. |
+| Pure crates only | `cargo test -p dweb-core -p dweb-identity -p dweb-store` | Yes | Fast protocol, identity, and store feedback. |
+| Local TCP network tests | `cargo test -p dweb-network --lib --tests` | Yes | Uses TCP transport for local determinism. |
+| Daemon/API tests | `cargo test -p dweb-node -p dweb-server` | Yes | Covers CLI parsing, daemon config, and HTTP routes. |
+| iroh smoke test | `cargo test -p dweb-network new_iroh_creates_node_without_error -- --ignored` | No | Manual because it creates an iroh endpoint and may depend on local network or relay availability. |
+| Patchbay topologies | `cargo test -p dweb-network --test nat_traversal -- --ignored` | No | Linux/user-namespace tests for LAN, NAT, CGNAT, and DHT topology simulation. |
+| Docker topology harness | `cd tests/docker && bash test-all.sh` | No | Optional/manual harness for old container topology checks. Not part of the normal dev loop. |
+| Real-world canary | Public relay/bootstrap plus two client machines on different networks | No | Final confidence check for NAT/CGNAT behavior. |
 
 Manual network checks:
 
 ```bash
 # Linux network namespace / patchbay topology tests
-cargo test -p dweb-network --test nat_traversal
+cargo test -p dweb-network --test nat_traversal -- --ignored
 
 # Manual iroh transport smoke test
 cargo test -p dweb-network new_iroh_creates_node_without_error -- --ignored

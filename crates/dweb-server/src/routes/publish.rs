@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -7,6 +9,8 @@ use serde_json::json;
 
 use crate::error::ApiError;
 use crate::state::AppState;
+
+static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub async fn publish_file(
     State(state): State<AppState>,
@@ -50,9 +54,10 @@ pub async fn publish_file(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
+    let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let temp_path = temp_dir.join(format!(
-        "dweb_publish_{}_{unique_id}",
-        std::process::id()
+        "dweb_publish_{}_{unique_id}_{sequence}",
+        std::process::id(),
     ));
     std::fs::write(&temp_path, &data).map_err(|e| ApiError(dweb_network::NetworkError::Io(e)))?;
 

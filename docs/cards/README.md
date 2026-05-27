@@ -48,7 +48,7 @@ The current focus is:
 | [001](001-current-state-and-test-harness.md) | AFK | Ready | Stabilize current test/dev ground and remove stale drift. |
 | [002](002-local-node-dashboard-v0.md) | AFK | Ready | Add localhost dashboard for node/relay debugging. |
 | [014](014-local-multi-node-demo-mode.md) | AFK | Ready after 002 | Make two local dashboard nodes connect and transfer content predictably. |
-| [003](003-testing-strategy-and-harness.md) | AFK | Ready | Define and automate the test layers. |
+| [003](003-testing-strategy-and-harness.md) | AFK | Done | Define and automate the test layers. |
 | [004](004-update-log-core.md) | AFK | Ready | Add signed append-only update log primitives. |
 | [005](005-resolve-latest-record.md) | AFK | Blocked by 004 | Resolve latest signed state for an identity. |
 | [015](015-local-petnames-and-address-book.md) | AFK | Blocked by 005 | Add local aliases for peer IDs before human-facing profile/feed work. |

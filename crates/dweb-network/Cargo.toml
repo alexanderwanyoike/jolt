@@ -23,4 +23,3 @@ tokio = { workspace = true }
 ciborium = { workspace = true }
 tracing-subscriber = { workspace = true }
 patchbay = "0.1"
-ctor = "0.2"
