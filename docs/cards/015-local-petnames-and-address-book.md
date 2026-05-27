@@ -2,8 +2,8 @@
 
 **Type:** AFK
 **Milestone:** Human addressing / M4.5
-**Status:** Ready after 017
-**Blocked by:** 017
+**Status:** Ready after 018
+**Blocked by:** 018
 
 ## Why
 
@@ -68,7 +68,7 @@ The address book is local-only:
 
 ## Notes
 
-This card should land after canonical identity addresses and global `.jolt` resolution are designed, because petnames are local shortcuts for identity addresses.
+This card should land after canonical identity addresses and global update-log discovery, because petnames are local shortcuts for identity addresses.
 
 Keep the model deliberately simple:
 
