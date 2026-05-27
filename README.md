@@ -1,12 +1,40 @@
 # jolt
 
-A peer-to-peer content platform built in Rust. Nodes discover each other, connect across NATs, and transfer content directly -- no central servers, no middlemen. Content spreads through the network via caching: every fetch makes the mesh more resilient.
+A peer-to-peer community substrate built in Rust.
 
-> Your node, your data. Connected to everyone, controlled by no one.
+Jolt lets creators and users run digital communities without surrendering content, identity, or distribution to a central platform. Nodes discover each other, connect across NATs, and transfer signed content directly. Relays help with availability and discovery, but the user's or community's keys remain the authority.
+
+> Your community, your content, your identity. Distributed by the network, owned by no platform.
+
+## Thesis
+
+Central platforms bundle identity, content hosting, distribution, and community coordination. That is why leaving a platform often means losing the audience, history, updates, files, and access relationships that made the community valuable.
+
+Jolt unbundles those pieces:
+
+| Platform Bundle | Jolt Primitive |
+|---|---|
+| Identity tied to an account | Identity owned by keys |
+| Hosted content | Content-addressed, signed, encrypted when needed |
+| Platform distribution | Relays, provider discovery, and peer caching |
+| Platform community tools | Spaces, invites, feeds, membership, and app-specific coordination |
+| Platform UI | Optional apps/interfaces over the same owned data |
+
+Jolt is not trying to be "the web, but decentralized". The web is good at public pages and global search. Jolt is for private, public, and semi-private communities where authorship, access, distribution, and continuity matter more than platform reach.
+
+HTML can still be a useful view of a Jolt space. The distinction is that signed space state is the authority, while HTML is a browseable rendering: tree structure, links, media, and layout for humans.
+
+Example communities:
+
+- A creator community with signed updates, member content, and portable community history.
+- A game community distributing builds, mods, announcements, lobbies, and matchmaking without Steam or Discord owning the graph.
+- A research group sharing datasets, notebooks, provenance, usage rights, and member-only access.
+- A family or local group keeping a shared archive available without handing it to a cloud platform.
+- A project/community publishing releases and announcements through its own identity.
 
 ## Current Status
 
-**Milestones 1-3 + 5 complete.** Validated across three machines, two NATs, and a carrier-grade NAT -- content flowing in every direction over iroh P2P.
+**Transport, content transfer, daemon/API, signed identity addresses, and update-log primitives are in place.** Jolt has validated content flow across three machines, two NATs, and a carrier-grade NAT over iroh P2P. The next proof is higher level: a fresh node should join through bootstrap relays, resolve a `.jolt` community/person address, and fetch signed content while the publisher is offline.
 
 ```
                   Bootstrap Node
@@ -25,13 +53,39 @@ A peer-to-peer content platform built in Rust. Nodes discover each other, connec
 - mDNS for zero-config LAN discovery
 - Content caching with automatic re-sharing (mesh propagation)
 - Daemon architecture with HTTP API
+- Canonical `{identity}.jolt` addresses
+- Signed update-log primitives for mutable identity/community state
+- Network request/response path for update-log sync in deterministic tests
 - 95 tests including simulated NAT topologies (patchbay)
 
 ### Protocol Direction
 
-Jolt separates ownership from availability. A user's key is the authority over identity, content, and permissions. Relays are replaceable nodes that help content stay reachable by providing discovery, NAT assistance, caching, and owner-directed pinning.
+Jolt separates ownership from availability. A user's or community's key is the authority over identity, content, membership, permissions, and signed state. Relays are replaceable nodes that help content stay reachable by providing discovery, NAT assistance, caching, and owner-directed pinning.
 
 Replication should be owner-directed: the user's node chooses which relays intentionally pin content. Relays may cache what they fetch, but durable relay-to-relay mirroring is a future explicit authorization model, not a v0 default.
+
+The emerging model is:
+
+```text
+Identity
+  -> owns signed update logs
+  -> defines a space/community
+  -> grants access and membership
+  -> publishes content references
+
+Content
+  -> immutable blobs addressed by CID
+  -> signed by authors or communities
+  -> encrypted when access-controlled
+
+Distribution
+  -> bootstrap relays for joining the mesh
+  -> DHT/provider discovery for content and update logs
+  -> relay pinning for offline availability
+  -> peer caching for resilience
+```
+
+`.jolt` addresses are identity/content addresses, not first-contact network dial addresses. A fresh node still needs bootstrap relay multiaddrs to enter the mesh. Once connected, it can resolve signed `.jolt` state and fetch content from any authorized provider.
 
 ## Quick Start
 
@@ -218,24 +272,25 @@ dweb node
 | M1: Two Nodes Talking | Done | mDNS discovery, content-addressed file exchange, signatures |
 | M2: Caching | Done | LRU cache, pinning, serve cached content, re-sharing |
 | M3: Daemon + API | Done | Persistent daemon, HTTP API, CLI thin client |
-| M4: Update Logs | Next | Append-only signed logs for mutable content |
-| M4.5: Relays | Next | Home relay, owner-directed pinning, availability checks |
+| M4: Update Logs | Done | Append-only signed logs for mutable content |
+| M4.5: Identity Addresses | Done | Canonical `{identity}.jolt` addresses and signed resolver core |
 | M5: Internet-Wide P2P | Done | Kademlia DHT, iroh NAT traversal, real hardware validated |
-| M6: Encryption | Planned | E2E encryption, group keys, access control |
-| M7: WASM Runtime | Planned | wasmtime sandbox, host API, permissions |
-| M8: App Lifecycle | Planned | Install, update, remove apps from the network |
-| M9: Host API | Planned | Network + identity APIs for WASM apps |
-| M10: Streaming | Planned | Chunked transfer, video/audio streaming |
-| M11: Redundancy | Planned | Groups of nodes keeping content available |
-| M12: Developer SDK | Planned | Rust + JS SDKs, templates, docs |
+| M6: Bootstrap Relay Mesh | Next | Fresh nodes join global discovery through relay multiaddrs |
+| M7: User-Facing `.jolt` Resolution | Next | CLI/API/dashboard resolve and fetch by `.jolt` address |
+| M8: Home Relays | Planned | Owner-directed pinning, availability checks, offline publisher flow |
+| M9: Encryption | Planned | E2E encryption, group keys, access control |
+| M10: Space Apps / WASM | Planned | Portable interfaces over community spaces |
+| M11: Streaming | Planned | Chunked transfer, video/audio streaming |
+| M12: Redundancy | Planned | Groups of nodes keeping content available |
+| M13: Developer SDK | Planned | Rust + JS SDKs, templates, docs |
 
 ## Future Applications
 
-- **jolt-video** -- YouTube without YouTube. Viewers become seeders.
-- **jolt-chat** -- E2E encrypted messaging. No phone number required.
-- **jolt-blog** -- Personal publishing. Your blog, your rules, forever.
-- **jolt-drive** -- File storage and sharing. No cloud required.
-- **jolt-social** -- Social feed without the algorithm.
+- **Creator spaces** -- signed updates, member content, and portable community history.
+- **Game communities** -- distribute builds/mods, coordinate lobbies, publish announcements, and match players without a central platform owning the graph.
+- **Research spaces** -- datasets, notebooks, provenance, usage rights, and member-only access.
+- **Project spaces** -- signed releases, docs, issue artifacts, and community announcements.
+- **Private groups** -- family/local/team archives with relay-backed availability and explicit access.
 
 ## Design Docs
 

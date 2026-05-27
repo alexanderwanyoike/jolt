@@ -17,18 +17,27 @@ The project is currently between two phases:
 ```text
 Done:
   Fetch immutable content from peers.
+  Resolve signed state from verified update logs in deterministic tests.
 
 Next:
-  Resolve a user's latest signed state and keep it reachable through relays.
+  Let a fresh node join the mesh, resolve a .jolt space/community address, and fetch while the publisher is offline.
 ```
 
 The next useful product/protocol bridge is:
 
-> Alice publishes a signed mutable web presence. Her home relay pins it. Bob can resolve Alice and fetch the latest content while Alice's device is offline.
+> Alice creates a signed space/community. Her home relay pins its content and update log. Bob can resolve Alice and fetch authorized content while Alice's device is offline.
+
+There is also a product risk to keep visible while choosing technical slices:
+
+> Why would anyone run or join this network before it has a strong first use case?
+
+The answer should shape the next proof. This is a product discussion, not an implementation card. Jolt should not drift into a general storage-market project before it can demonstrate one concrete thing communities want that centralized platforms make awkward.
 
 ## Current Focus
 
-Do not start with WASM apps, storage markets, payments, or relay-to-relay replication.
+Do not start with WASM apps, storage markets, payments, or storage-market mechanics.
+
+Relay-to-relay communication is now part of the global discovery problem, not a future monetization feature. The v0 version should focus on bootstrapping, DHT/provider discovery, and signed update-log reachability. It should not copy user content between relays without owner intent.
 
 The current focus is:
 
@@ -40,9 +49,12 @@ The current focus is:
 6. Add canonical identity addresses so people can be addressed globally.
 7. Design and implement global `.jolt` resolution through signed reachability.
 8. Add network-backed update-log discovery for global `.jolt` lookup.
-9. Add local petnames so people do not handle raw identity IDs.
-10. Add home relay / owner-directed pinning.
-11. Add basic availability checks.
+9. Add bootstrap relay mesh behavior so fresh nodes can join global discovery.
+10. Wire `.jolt` resolution into CLI, API, and dashboard.
+11. Fetch content by `.jolt` address, not just by CID.
+12. Add home relay / owner-directed pinning.
+13. Prove Alice-offline/Bob-fresh fetch through a relay.
+14. Add local petnames after the global path works.
 
 ## Cards
 
@@ -57,8 +69,12 @@ The current focus is:
 | [016](016-global-identity-address-v0.md) | AFK | Done | Add canonical `{identity}.jolt` addresses before local petnames. |
 | [017](017-global-jolt-resolution-v0.md) | AFK | Done | Define global `.jolt` resolution through signed reachability records. |
 | [018](018-global-update-log-discovery-v0.md) | AFK | Done | Discover, fetch, verify, and cache signed update logs for global `.jolt` lookup. |
-| [015](015-local-petnames-and-address-book.md) | AFK | Ready | Add local aliases for identity addresses before human-facing profile/feed work. |
-| [006](006-profile-and-feed-v0.md) | AFK | Ready | Publish and resolve a minimal profile/feed. |
+| [019](019-bootstrap-relay-mesh-v0.md) | HITL | Ready | Define and implement the first global bootstrap/relay mesh path. |
+| [020](020-jolt-resolve-api-cli-dashboard.md) | AFK | Blocked by 019 | Let users resolve `.jolt` addresses through CLI, API, and dashboard. |
+| [021](021-fetch-by-jolt-address.md) | AFK | Blocked by 006, 020 | Fetch content from a `.jolt` address instead of a raw CID. |
+| [022](022-offline-publisher-through-relay-smoke-test.md) | AFK | Blocked by 009, 021 | Prove Bob can fetch Alice's content while Alice is offline. |
+| [015](015-local-petnames-and-address-book.md) | AFK | Deferred until 020 | Add local aliases for identity addresses after global resolution is usable. |
+| [006](006-profile-and-feed-v0.md) | AFK | Ready | Publish and resolve a minimal signed space/feed. |
 | [007](007-home-relay-configuration.md) | AFK | Ready | Configure a user's home relay. |
 | [008](008-owner-signed-pin-protocol.md) | AFK | Blocked by 004, 007 | Define and implement owner-signed pin requests. |
 | [009](009-relay-pinning-and-provider-announcement.md) | AFK | Blocked by 008 | Relay accepts pins, stores content, announces providers. |

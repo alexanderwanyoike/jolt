@@ -139,3 +139,5 @@ Add a local multi-node test only after the pure selection logic is covered.
 ## Notes
 
 This should happen before local petnames. Petnames improve UX, but this card is what makes canonical identity addresses usable beyond a local or manually supplied record.
+
+This card is still a network primitive, not the whole global product path. It does not prove that a fresh node can join the network from only bootstrap relay addresses, discover candidate update-log providers across the relay mesh, and fetch content through the dashboard or CLI. That work belongs in the bootstrap mesh, `.jolt` UX, and offline relay smoke-test cards.
