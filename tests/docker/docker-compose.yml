@@ -43,7 +43,7 @@ services:
     build:
       context: ../..
       dockerfile: tests/docker/Dockerfile
-    command: ["start", "--port", "4001", "--api-port", "9862", "--api-bind", "0.0.0.0", "--no-bootstrap"]
+    command: ["start", "--p2p-port", "4001", "--api-port", "9862", "--api-bind", "0.0.0.0", "--no-bootstrap"]
     networks:
       internet:
         ipv4_address: 10.100.0.10

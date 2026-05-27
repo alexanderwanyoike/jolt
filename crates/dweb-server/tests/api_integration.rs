@@ -8,9 +8,7 @@ async fn start_test_server() -> (u16, DaemonHandle, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let identity = NodeIdentity::generate();
     let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-    let mut node = NetworkNode::new(identity, store, NetworkConfig::test_config())
-        .await
-        .unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
 
     // Use short fetch timeout for tests
     node.set_fetch_timeout(std::time::Duration::from_secs(2));
