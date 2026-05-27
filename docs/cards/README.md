@@ -38,9 +38,10 @@ The current focus is:
 4. Implement signed mutable records.
 5. Resolve latest state by identity.
 6. Add canonical identity addresses so people can be addressed globally.
-7. Add local petnames so people do not handle raw identity IDs.
-8. Add home relay / owner-directed pinning.
-9. Add basic availability checks.
+7. Design and implement global `.jolt` resolution through signed reachability.
+8. Add local petnames so people do not handle raw identity IDs.
+9. Add home relay / owner-directed pinning.
+10. Add basic availability checks.
 
 ## Cards
 
@@ -53,6 +54,7 @@ The current focus is:
 | [004](004-update-log-core.md) | AFK | Done | Add signed append-only update log primitives. |
 | [005](005-resolve-latest-record.md) | AFK | Done | Resolve latest signed state for an identity. |
 | [016](016-global-identity-address-v0.md) | AFK | Done | Add canonical `{identity}.jolt` addresses before local petnames. |
+| [017](017-global-jolt-resolution-v0.md) | HITL | Ready for design | Define global `.jolt` resolution through signed reachability records. |
 | [015](015-local-petnames-and-address-book.md) | AFK | Ready | Add local aliases for identity addresses before human-facing profile/feed work. |
 | [006](006-profile-and-feed-v0.md) | AFK | Ready | Publish and resolve a minimal profile/feed. |
 | [007](007-home-relay-configuration.md) | AFK | Ready | Configure a user's home relay. |
