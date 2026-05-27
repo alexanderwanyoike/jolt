@@ -34,10 +34,11 @@ The current focus is:
 
 1. Stabilize and clarify the existing proof.
 2. Add a local dashboard so nodes and relays are observable.
-3. Implement signed mutable records.
-4. Resolve latest state by identity.
-5. Add home relay / owner-directed pinning.
-6. Add basic availability checks.
+3. Make a local two-node dashboard demo reliable.
+4. Implement signed mutable records.
+5. Resolve latest state by identity.
+6. Add home relay / owner-directed pinning.
+7. Add basic availability checks.
 
 ## Cards
 
@@ -45,6 +46,7 @@ The current focus is:
 |---|---|---|---|
 | [001](001-current-state-and-test-harness.md) | AFK | Ready | Stabilize current test/dev ground and remove stale drift. |
 | [002](002-local-node-dashboard-v0.md) | AFK | Ready | Add localhost dashboard for node/relay debugging. |
+| [014](014-local-multi-node-demo-mode.md) | AFK | Ready after 002 | Make two local dashboard nodes connect and transfer content predictably. |
 | [003](003-testing-strategy-and-harness.md) | AFK | Ready | Define and automate the test layers. |
 | [004](004-update-log-core.md) | AFK | Ready | Add signed append-only update log primitives. |
 | [005](005-resolve-latest-record.md) | AFK | Blocked by 004 | Resolve latest signed state for an identity. |
