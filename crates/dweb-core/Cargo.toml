@@ -11,6 +11,8 @@ multihash-codetable = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+ed25519-dalek = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+rand = { workspace = true }

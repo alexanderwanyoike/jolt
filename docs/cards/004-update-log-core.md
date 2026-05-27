@@ -1,8 +1,8 @@
-# 002: Add Update Log Core
+# 004: Add Update Log Core
 
 **Type:** AFK  
 **Milestone:** M4  
-**Status:** Ready  
+**Status:** Done
 **Blocked by:** None
 
 ## Why
@@ -29,14 +29,13 @@ This card only needs local data structures and tests. It does not need network s
 
 ## Acceptance Criteria
 
-- [ ] A user identity can create a genesis log entry.
-- [ ] A user identity can append a signed log entry.
-- [ ] Verification rejects entries signed by the wrong key.
-- [ ] Verification rejects broken previous-entry hashes.
-- [ ] Verification rejects out-of-order sequence numbers.
-- [ ] Tests cover publish content, update root, and profile update actions.
+- [x] A user identity can create a genesis log entry.
+- [x] A user identity can append a signed log entry.
+- [x] Verification rejects entries signed by the wrong key.
+- [x] Verification rejects broken previous-entry hashes.
+- [x] Verification rejects out-of-order sequence numbers.
+- [x] Tests cover publish content, update root, and profile update actions.
 
 ## Notes
 
 Prefer putting shared primitives in `dweb-core` unless implementation pressure shows a better crate boundary.
-
