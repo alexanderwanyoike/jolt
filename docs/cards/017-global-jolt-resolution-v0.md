@@ -88,12 +88,12 @@ Network-wide lookup can be staged:
 ## Acceptance Criteria
 
 - [x] The signed data model for reachability is documented.
-- [ ] Bob never accepts reachability records unless they verify against Alice's identity.
-- [ ] Newer signed reachability supersedes older reachability.
-- [ ] `{identity}.jolt/path` can resolve to a `ContentId` from verified signed state.
-- [ ] Resolver returns reachability hints separately from content identity.
-- [ ] Tests cover valid reachability, stale replacement, invalid signature rejection, and missing path.
-- [ ] Docs explain why `.jolt` is not DNS and why relays are carriers, not authorities.
+- [x] Bob never accepts reachability records unless they verify against Alice's identity.
+- [x] Newer signed reachability supersedes older reachability.
+- [x] `{identity}.jolt/path` can resolve to a `ContentId` from verified signed state.
+- [x] Resolver returns reachability hints separately from content identity.
+- [x] Tests cover valid reachability, stale replacement, invalid signature rejection, and missing path.
+- [x] Docs explain why `.jolt` is not DNS and why relays are carriers, not authorities.
 
 ## Notes
 

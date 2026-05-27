@@ -4,7 +4,7 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::content_id::ContentId;
+use crate::{content_id::ContentId, IdentityId, JoltAddress};
 
 const DOMAIN_SEPARATOR: &[u8] = b"jolt:update-log-entry:v1\0";
 const PUBLIC_KEY_LEN: usize = 32;
@@ -42,6 +42,12 @@ pub enum UpdateLogError {
 
     #[error("cannot resolve latest state from an empty update log")]
     EmptyLog,
+
+    #[error("requested address identity does not match update log owner")]
+    IdentityMismatch,
+
+    #[error("no content path found for {path}")]
+    PathNotFound { path: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -54,6 +60,7 @@ pub enum UpdateAction {
     UpdateProfile { profile: UpdateProfile },
     SetPath { path: String, content_id: ContentId },
     RemovePath { path: String },
+    SetReachability { relays: Vec<RelayHint> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +68,22 @@ pub struct UpdateProfile {
     pub display_name: Option<String>,
     pub bio: Option<String>,
     pub avatar: Option<ContentId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RelayCapability {
+    Discovery,
+    Pinning,
+    Serving,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RelayHint {
+    pub identity: IdentityId,
+    pub peer_id: String,
+    pub addresses: Vec<String>,
+    pub capabilities: Vec<RelayCapability>,
+    pub expires_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,6 +107,15 @@ pub struct ResolvedLatestRecord {
     pub latest_root: Option<ContentId>,
     pub profile: Option<UpdateProfile>,
     pub paths: BTreeMap<String, ContentId>,
+    pub reachability: Vec<RelayHint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedJoltTarget {
+    pub identity: IdentityId,
+    pub path: String,
+    pub content_id: ContentId,
+    pub reachability: Vec<RelayHint>,
 }
 
 impl UpdateLogEntry {
@@ -185,6 +217,39 @@ impl UpdateAction {
                 bytes.push(4);
                 put_string(bytes, path);
             }
+            Self::SetReachability { relays } => {
+                bytes.push(5);
+                bytes.extend_from_slice(&(relays.len() as u64).to_be_bytes());
+                for relay in relays {
+                    relay.encode(bytes);
+                }
+            }
+        }
+    }
+}
+
+impl RelayHint {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        put_string(bytes, &self.identity.to_string());
+        put_string(bytes, &self.peer_id);
+        bytes.extend_from_slice(&(self.addresses.len() as u64).to_be_bytes());
+        for address in &self.addresses {
+            put_string(bytes, address);
+        }
+        bytes.extend_from_slice(&(self.capabilities.len() as u64).to_be_bytes());
+        for capability in &self.capabilities {
+            bytes.push(match capability {
+                RelayCapability::Discovery => 0,
+                RelayCapability::Pinning => 1,
+                RelayCapability::Serving => 2,
+            });
+        }
+        match self.expires_at {
+            Some(expires_at) => {
+                bytes.push(1);
+                bytes.extend_from_slice(&expires_at.to_be_bytes());
+            }
+            None => bytes.push(0),
         }
     }
 }
@@ -240,6 +305,7 @@ pub fn resolve_latest_record(
         latest_root: None,
         profile: None,
         paths: BTreeMap::new(),
+        reachability: Vec::new(),
     };
 
     for entry in entries {
@@ -258,10 +324,59 @@ pub fn resolve_latest_record(
             UpdateAction::RemovePath { path } => {
                 resolved.paths.remove(path);
             }
+            UpdateAction::SetReachability { relays } => {
+                resolved.reachability = relays.clone();
+            }
         }
     }
 
     Ok(resolved)
+}
+
+pub fn resolve_jolt_address(
+    address: &JoltAddress,
+    entries: &[UpdateLogEntry],
+    now: Option<u64>,
+) -> Result<ResolvedJoltTarget, UpdateLogError> {
+    let resolved = resolve_latest_record(entries)?;
+    let identity = IdentityId::from_public_key(
+        resolved
+            .owner_public_key
+            .as_slice()
+            .try_into()
+            .map_err(|_| UpdateLogError::InvalidOwnerPublicKey)?,
+    );
+
+    if address.identity() != &identity {
+        return Err(UpdateLogError::IdentityMismatch);
+    }
+
+    let path = address.path().to_string();
+    let content_id = resolved
+        .paths
+        .get(address.path())
+        .cloned()
+        .ok_or_else(|| UpdateLogError::PathNotFound { path: path.clone() })?;
+    let reachability = match now {
+        Some(now) => resolved
+            .reachability
+            .into_iter()
+            .filter(|relay| {
+                relay
+                    .expires_at
+                    .map(|expires_at| expires_at > now)
+                    .unwrap_or(true)
+            })
+            .collect(),
+        None => resolved.reachability,
+    };
+
+    Ok(ResolvedJoltTarget {
+        identity,
+        path,
+        content_id,
+        reachability,
+    })
 }
 
 fn verify_signature(
@@ -343,8 +458,26 @@ mod tests {
         key.verifying_key().to_bytes()
     }
 
+    fn identity_id(key: &SigningKey) -> IdentityId {
+        IdentityId::from_public_key(public_key(key))
+    }
+
+    fn jolt_address(key: &SigningKey, path: &str) -> JoltAddress {
+        JoltAddress::new(identity_id(key), path).unwrap()
+    }
+
     fn content_id(label: &[u8]) -> ContentId {
         ContentId::from_bytes(label)
+    }
+
+    fn relay_hint(key: &SigningKey, expires_at: Option<u64>) -> RelayHint {
+        RelayHint {
+            identity: identity_id(key),
+            peer_id: "12D3KooWRelayPeer".to_string(),
+            addresses: vec!["/ip4/127.0.0.1/tcp/4001".to_string()],
+            capabilities: vec![RelayCapability::Discovery, RelayCapability::Serving],
+            expires_at,
+        }
     }
 
     #[test]
@@ -736,5 +869,167 @@ mod tests {
                 avatar: None,
             })
         );
+    }
+
+    #[test]
+    fn latest_record_replays_signed_reachability() {
+        let owner = signing_key();
+        let relay_a = signing_key();
+        let relay_b = signing_key();
+        let genesis = UpdateLogEntry::genesis(
+            public_key(&owner),
+            UpdateAction::SetReachability {
+                relays: vec![relay_hint(&relay_a, None)],
+            },
+            |bytes| sign(&owner, bytes),
+        )
+        .unwrap();
+        let updated = genesis
+            .append(
+                UpdateAction::SetReachability {
+                    relays: vec![relay_hint(&relay_b, Some(200))],
+                },
+                |bytes| sign(&owner, bytes),
+            )
+            .unwrap();
+
+        let resolved = resolve_latest_record(&[genesis, updated]).unwrap();
+
+        assert_eq!(resolved.reachability, vec![relay_hint(&relay_b, Some(200))]);
+    }
+
+    #[test]
+    fn resolves_jolt_address_to_content_and_reachability() {
+        let owner = signing_key();
+        let relay = signing_key();
+        let content = content_id(b"profile content");
+        let genesis = UpdateLogEntry::genesis(
+            public_key(&owner),
+            UpdateAction::SetPath {
+                path: "/profile".to_string(),
+                content_id: content.clone(),
+            },
+            |bytes| sign(&owner, bytes),
+        )
+        .unwrap();
+        let reachable = genesis
+            .append(
+                UpdateAction::SetReachability {
+                    relays: vec![relay_hint(&relay, None)],
+                },
+                |bytes| sign(&owner, bytes),
+            )
+            .unwrap();
+
+        let target = resolve_jolt_address(
+            &jolt_address(&owner, "/profile"),
+            &[genesis, reachable],
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(target.identity, identity_id(&owner));
+        assert_eq!(target.path, "/profile");
+        assert_eq!(target.content_id, content);
+        assert_eq!(target.reachability, vec![relay_hint(&relay, None)]);
+    }
+
+    #[test]
+    fn jolt_resolver_rejects_identity_mismatch() {
+        let owner = signing_key();
+        let other = signing_key();
+        let genesis = UpdateLogEntry::genesis(
+            public_key(&owner),
+            UpdateAction::SetPath {
+                path: "/profile".to_string(),
+                content_id: content_id(b"profile"),
+            },
+            |bytes| sign(&owner, bytes),
+        )
+        .unwrap();
+
+        assert_eq!(
+            resolve_jolt_address(&jolt_address(&other, "/profile"), &[genesis], None),
+            Err(UpdateLogError::IdentityMismatch)
+        );
+    }
+
+    #[test]
+    fn jolt_resolver_rejects_invalid_signatures() {
+        let owner = signing_key();
+        let attacker = signing_key();
+        let entry = UpdateLogEntry::genesis(
+            public_key(&owner),
+            UpdateAction::SetPath {
+                path: "/profile".to_string(),
+                content_id: content_id(b"profile"),
+            },
+            |bytes| sign(&attacker, bytes),
+        )
+        .unwrap();
+
+        assert_eq!(
+            resolve_jolt_address(&jolt_address(&owner, "/profile"), &[entry], None),
+            Err(UpdateLogError::InvalidSignature)
+        );
+    }
+
+    #[test]
+    fn jolt_resolver_rejects_missing_path() {
+        let owner = signing_key();
+        let genesis = UpdateLogEntry::genesis(
+            public_key(&owner),
+            UpdateAction::SetPath {
+                path: "/profile".to_string(),
+                content_id: content_id(b"profile"),
+            },
+            |bytes| sign(&owner, bytes),
+        )
+        .unwrap();
+
+        assert_eq!(
+            resolve_jolt_address(&jolt_address(&owner, "/missing"), &[genesis], None),
+            Err(UpdateLogError::PathNotFound {
+                path: "/missing".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn jolt_resolver_filters_expired_reachability_hints() {
+        let owner = signing_key();
+        let expired = signing_key();
+        let current = signing_key();
+        let content = content_id(b"profile");
+        let genesis = UpdateLogEntry::genesis(
+            public_key(&owner),
+            UpdateAction::SetPath {
+                path: "/profile".to_string(),
+                content_id: content.clone(),
+            },
+            |bytes| sign(&owner, bytes),
+        )
+        .unwrap();
+        let reachable = genesis
+            .append(
+                UpdateAction::SetReachability {
+                    relays: vec![
+                        relay_hint(&expired, Some(100)),
+                        relay_hint(&current, Some(300)),
+                    ],
+                },
+                |bytes| sign(&owner, bytes),
+            )
+            .unwrap();
+
+        let target = resolve_jolt_address(
+            &jolt_address(&owner, "/profile"),
+            &[genesis, reachable],
+            Some(200),
+        )
+        .unwrap();
+
+        assert_eq!(target.content_id, content);
+        assert_eq!(target.reachability, vec![relay_hint(&current, Some(300))]);
     }
 }
