@@ -39,9 +39,10 @@ The current focus is:
 5. Resolve latest state by identity.
 6. Add canonical identity addresses so people can be addressed globally.
 7. Design and implement global `.jolt` resolution through signed reachability.
-8. Add local petnames so people do not handle raw identity IDs.
-9. Add home relay / owner-directed pinning.
-10. Add basic availability checks.
+8. Add network-backed update-log discovery for global `.jolt` lookup.
+9. Add local petnames so people do not handle raw identity IDs.
+10. Add home relay / owner-directed pinning.
+11. Add basic availability checks.
 
 ## Cards
 
@@ -54,8 +55,9 @@ The current focus is:
 | [004](004-update-log-core.md) | AFK | Done | Add signed append-only update log primitives. |
 | [005](005-resolve-latest-record.md) | AFK | Done | Resolve latest signed state for an identity. |
 | [016](016-global-identity-address-v0.md) | AFK | Done | Add canonical `{identity}.jolt` addresses before local petnames. |
-| [017](017-global-jolt-resolution-v0.md) | HITL | Ready for design | Define global `.jolt` resolution through signed reachability records. |
-| [015](015-local-petnames-and-address-book.md) | AFK | Ready | Add local aliases for identity addresses before human-facing profile/feed work. |
+| [017](017-global-jolt-resolution-v0.md) | AFK | Ready for implementation | Define global `.jolt` resolution through signed reachability records. |
+| [018](018-global-update-log-discovery-v0.md) | AFK | Ready after 017 | Discover, fetch, verify, and cache signed update logs for global `.jolt` lookup. |
+| [015](015-local-petnames-and-address-book.md) | AFK | Ready after 018 | Add local aliases for identity addresses before human-facing profile/feed work. |
 | [006](006-profile-and-feed-v0.md) | AFK | Ready | Publish and resolve a minimal profile/feed. |
 | [007](007-home-relay-configuration.md) | AFK | Ready | Configure a user's home relay. |
 | [008](008-owner-signed-pin-protocol.md) | AFK | Blocked by 004, 007 | Define and implement owner-signed pin requests. |
