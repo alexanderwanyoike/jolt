@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use dweb_core::{IdentityId, UpdateLogEntry};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentRequest {
     pub content_id: String,
@@ -12,9 +14,22 @@ pub struct ContentResponse {
     pub publisher_key: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateLogRequest {
+    pub identity: IdentityId,
+    pub since: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateLogResponse {
+    pub entries: Vec<UpdateLogEntry>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dweb_core::{ContentId, IdentityId, UpdateAction, UpdateLogEntry};
+    use dweb_identity::NodeIdentity;
 
     #[test]
     fn content_request_cbor_round_trip() {
@@ -42,5 +57,44 @@ mod tests {
         assert_eq!(response.data, decoded.data);
         assert_eq!(response.signature, decoded.signature);
         assert_eq!(response.publisher_key, decoded.publisher_key);
+    }
+
+    #[test]
+    fn update_log_request_cbor_round_trip() {
+        let identity = IdentityId::from_public_key([9; 32]);
+        let request = UpdateLogRequest {
+            identity: identity.clone(),
+            since: Some(7),
+        };
+
+        let mut buf = Vec::new();
+        ciborium::into_writer(&request, &mut buf).unwrap();
+        let decoded: UpdateLogRequest = ciborium::from_reader(&buf[..]).unwrap();
+
+        assert_eq!(decoded.identity, identity);
+        assert_eq!(decoded.since, Some(7));
+    }
+
+    #[test]
+    fn update_log_response_cbor_round_trip() {
+        let identity = NodeIdentity::generate();
+        let entry = UpdateLogEntry::genesis(
+            identity.public_key_bytes(),
+            UpdateAction::SetPath {
+                path: "/profile".to_string(),
+                content_id: ContentId::from_bytes(b"profile"),
+            },
+            |bytes| identity.sign(bytes),
+        )
+        .unwrap();
+        let response = UpdateLogResponse {
+            entries: vec![entry.clone()],
+        };
+
+        let mut buf = Vec::new();
+        ciborium::into_writer(&response, &mut buf).unwrap();
+        let decoded: UpdateLogResponse = ciborium::from_reader(&buf[..]).unwrap();
+
+        assert_eq!(decoded.entries, vec![entry]);
     }
 }

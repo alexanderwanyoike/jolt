@@ -2,8 +2,8 @@
 
 **Type:** AFK
 **Milestone:** Human addressing / M4.5
-**Status:** Ready after 018
-**Blocked by:** 018
+**Status:** Ready
+**Blocked by:** None
 
 ## Why
 

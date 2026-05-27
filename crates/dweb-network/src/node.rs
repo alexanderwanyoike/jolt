@@ -9,19 +9,22 @@ use libp2p::{Multiaddr, StreamProtocol, Swarm, Transport};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, warn};
 
-use dweb_core::{ContentId, ContentManifest};
+use dweb_core::{
+    resolve_jolt_address, verify_update_log_for_identity, ContentId, ContentManifest, IdentityId,
+    JoltAddress, ResolvedJoltTarget, UpdateLogEntry,
+};
 use dweb_identity::NodeIdentity;
 use dweb_store::ContentStore;
 
 use crate::behaviour::{DwebBehaviour, DwebBehaviourEvent};
 use crate::command::{
-    CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus, PeerInfo,
-    PeerConnectResponse, PublishResponse,
+    CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
+    PeerConnectResponse, PeerInfo, PublishResponse,
 };
 use crate::config::NetworkConfig;
 use crate::error::NetworkError;
 use crate::fetch_manager::FetchManager;
-use crate::protocol::{ContentRequest, ContentResponse};
+use crate::protocol::{ContentRequest, ContentResponse, UpdateLogRequest, UpdateLogResponse};
 
 /// Tracks connection quality for a connected peer.
 #[derive(Debug, Clone)]
@@ -34,12 +37,14 @@ pub struct PeerConnectionInfo {
 impl PeerConnectionInfo {
     fn from_endpoint(endpoint: &libp2p::core::ConnectedPoint) -> Self {
         let (remote_addr, is_relayed) = match endpoint {
-            libp2p::core::ConnectedPoint::Dialer { address, .. } => {
-                (address.to_string(), address.to_string().contains("p2p-circuit"))
-            }
-            libp2p::core::ConnectedPoint::Listener { send_back_addr, .. } => {
-                (send_back_addr.to_string(), send_back_addr.to_string().contains("p2p-circuit"))
-            }
+            libp2p::core::ConnectedPoint::Dialer { address, .. } => (
+                address.to_string(),
+                address.to_string().contains("p2p-circuit"),
+            ),
+            libp2p::core::ConnectedPoint::Listener { send_back_addr, .. } => (
+                send_back_addr.to_string(),
+                send_back_addr.to_string().contains("p2p-circuit"),
+            ),
         };
 
         // With iroh transport, connections are QUIC-based
@@ -65,10 +70,30 @@ pub struct NetworkNode {
     store: ContentStore,
     pending_fetches: HashMap<
         OutboundRequestId,
-        (String, oneshot::Sender<Result<ContentResponse, NetworkError>>),
+        (
+            String,
+            oneshot::Sender<Result<ContentResponse, NetworkError>>,
+        ),
+    >,
+    pending_update_log_requests: HashMap<
+        OutboundRequestId,
+        (
+            IdentityId,
+            oneshot::Sender<Result<UpdateLogResponse, NetworkError>>,
+        ),
+    >,
+    pending_jolt_resolutions: HashMap<
+        OutboundRequestId,
+        (
+            JoltAddress,
+            Option<u64>,
+            oneshot::Sender<Result<ResolvedJoltTarget, NetworkError>>,
+        ),
     >,
     /// Providers discovered via DHT: content_id string -> provider PeerIds
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
+    /// Verified update logs by owner identity.
+    update_logs: HashMap<IdentityId, Vec<UpdateLogEntry>>,
     /// Connection quality tracking: peer -> connection info
     peer_connections: HashMap<libp2p::PeerId, PeerConnectionInfo>,
     /// When the node was created (for uptime reporting)
@@ -93,7 +118,10 @@ impl NetworkNode {
 
         // Create iroh transport (handles NAT traversal, DERP relay, hole punching)
         let transport = if config.p2p_port > 0 {
-            info!("Binding iroh transport to fixed UDP port {}", config.p2p_port);
+            info!(
+                "Binding iroh transport to fixed UDP port {}",
+                config.p2p_port
+            );
             libp2p_iroh::Transport::new_with_port(Some(&libp2p_keypair), config.p2p_port)
                 .await
                 .map_err(|e| NetworkError::Swarm(format!("Failed to create iroh transport: {e}")))?
@@ -107,10 +135,8 @@ impl NetworkNode {
         let iroh_endpoint = transport.endpoint().ok();
 
         // Build behaviours (only 4 -- iroh handles all NAT/relay)
-        let mdns = libp2p::mdns::tokio::Behaviour::new(
-            libp2p::mdns::Config::default(),
-            peer_id,
-        ).map_err(|e| NetworkError::Swarm(e.to_string()))?;
+        let mdns = libp2p::mdns::tokio::Behaviour::new(libp2p::mdns::Config::default(), peer_id)
+            .map_err(|e| NetworkError::Swarm(e.to_string()))?;
 
         let content_fetch = request_response::cbor::Behaviour::new(
             [(
@@ -119,24 +145,28 @@ impl NetworkNode {
             )],
             request_response::Config::default(),
         );
-
-        let mut kad_config = libp2p::kad::Config::new(
-            StreamProtocol::new("/dweb/kad/1.0.0"),
+        let update_log_sync = request_response::cbor::Behaviour::new(
+            [(
+                StreamProtocol::new("/dweb/update-log/1.0.0"),
+                ProtocolSupport::Full,
+            )],
+            request_response::Config::default(),
         );
+
+        let mut kad_config = libp2p::kad::Config::new(StreamProtocol::new("/dweb/kad/1.0.0"));
         kad_config.set_query_timeout(Duration::from_secs(60));
         let kad_store = libp2p::kad::store::MemoryStore::new(peer_id);
         let kademlia = libp2p::kad::Behaviour::with_config(peer_id, kad_store, kad_config);
 
-        let identify = libp2p::identify::Behaviour::new(
-            libp2p::identify::Config::new(
-                "/dweb/id/1.0.0".to_string(),
-                libp2p_keypair.public(),
-            ),
-        );
+        let identify = libp2p::identify::Behaviour::new(libp2p::identify::Config::new(
+            "/dweb/id/1.0.0".to_string(),
+            libp2p_keypair.public(),
+        ));
 
         let behaviour = DwebBehaviour {
             mdns,
             content_fetch,
+            update_log_sync,
             kademlia,
             identify,
         };
@@ -154,7 +184,10 @@ impl NetworkNode {
             identity,
             store,
             pending_fetches: HashMap::new(),
+            pending_update_log_requests: HashMap::new(),
+            pending_jolt_resolutions: HashMap::new(),
             discovered_providers: HashMap::new(),
+            update_logs: HashMap::new(),
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
@@ -177,15 +210,15 @@ impl NetworkNode {
 
         let transport = libp2p::tcp::tokio::Transport::default()
             .upgrade(libp2p::core::upgrade::Version::V1)
-            .authenticate(libp2p::noise::Config::new(&libp2p_keypair)
-                .map_err(|e| NetworkError::Swarm(e.to_string()))?)
+            .authenticate(
+                libp2p::noise::Config::new(&libp2p_keypair)
+                    .map_err(|e| NetworkError::Swarm(e.to_string()))?,
+            )
             .multiplex(libp2p::yamux::Config::default())
             .boxed();
 
-        let mdns = libp2p::mdns::tokio::Behaviour::new(
-            libp2p::mdns::Config::default(),
-            peer_id,
-        ).map_err(|e| NetworkError::Swarm(e.to_string()))?;
+        let mdns = libp2p::mdns::tokio::Behaviour::new(libp2p::mdns::Config::default(), peer_id)
+            .map_err(|e| NetworkError::Swarm(e.to_string()))?;
 
         let content_fetch = request_response::cbor::Behaviour::new(
             [(
@@ -194,24 +227,28 @@ impl NetworkNode {
             )],
             request_response::Config::default(),
         );
-
-        let mut kad_config = libp2p::kad::Config::new(
-            StreamProtocol::new("/dweb/kad/1.0.0"),
+        let update_log_sync = request_response::cbor::Behaviour::new(
+            [(
+                StreamProtocol::new("/dweb/update-log/1.0.0"),
+                ProtocolSupport::Full,
+            )],
+            request_response::Config::default(),
         );
+
+        let mut kad_config = libp2p::kad::Config::new(StreamProtocol::new("/dweb/kad/1.0.0"));
         kad_config.set_query_timeout(Duration::from_secs(60));
         let kad_store = libp2p::kad::store::MemoryStore::new(peer_id);
         let kademlia = libp2p::kad::Behaviour::with_config(peer_id, kad_store, kad_config);
 
-        let identify = libp2p::identify::Behaviour::new(
-            libp2p::identify::Config::new(
-                "/dweb/id/1.0.0".to_string(),
-                libp2p_keypair.public(),
-            ),
-        );
+        let identify = libp2p::identify::Behaviour::new(libp2p::identify::Config::new(
+            "/dweb/id/1.0.0".to_string(),
+            libp2p_keypair.public(),
+        ));
 
         let behaviour = DwebBehaviour {
             mdns,
             content_fetch,
+            update_log_sync,
             kademlia,
             identify,
         };
@@ -229,7 +266,10 @@ impl NetworkNode {
             identity,
             store,
             pending_fetches: HashMap::new(),
+            pending_update_log_requests: HashMap::new(),
+            pending_jolt_resolutions: HashMap::new(),
             discovered_providers: HashMap::new(),
+            update_logs: HashMap::new(),
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
@@ -323,6 +363,59 @@ impl NetworkNode {
         Ok(rx)
     }
 
+    /// Request a signed update log for an identity from a specific peer.
+    pub fn request_update_log_from(
+        &mut self,
+        identity: &IdentityId,
+        since: Option<u64>,
+        peer: &libp2p::PeerId,
+    ) -> Result<oneshot::Receiver<Result<UpdateLogResponse, NetworkError>>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        let request = UpdateLogRequest {
+            identity: identity.clone(),
+            since,
+        };
+
+        let request_id = self
+            .swarm
+            .behaviour_mut()
+            .update_log_sync
+            .send_request(peer, request);
+        self.pending_update_log_requests
+            .insert(request_id, (identity.clone(), tx));
+
+        Ok(rx)
+    }
+
+    /// Resolve a Jolt address by requesting its identity update log from a specific peer.
+    pub fn request_jolt_address_from_peer(
+        &mut self,
+        address: &JoltAddress,
+        now: Option<u64>,
+        peer: &libp2p::PeerId,
+    ) -> Result<oneshot::Receiver<Result<ResolvedJoltTarget, NetworkError>>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        let request = UpdateLogRequest {
+            identity: address.identity().clone(),
+            since: self
+                .update_logs
+                .get(address.identity())
+                .and_then(|entries| {
+                    verify_update_log_for_identity(address.identity(), entries).ok()
+                }),
+        };
+
+        let request_id = self
+            .swarm
+            .behaviour_mut()
+            .update_log_sync
+            .send_request(peer, request);
+        self.pending_jolt_resolutions
+            .insert(request_id, (address.clone(), now, tx));
+
+        Ok(rx)
+    }
+
     /// Get a reference to the content store.
     pub fn store(&self) -> &ContentStore {
         &self.store
@@ -333,11 +426,52 @@ impl NetworkNode {
         &mut self.store
     }
 
-    /// Add bootstrap peers to Kademlia, dial them, and initiate DHT bootstrap.
-    pub fn bootstrap_dht(
+    /// Store a verified update log for an identity, ignoring stale valid logs.
+    pub fn store_verified_update_log(
         &mut self,
-        bootstrap_addrs: &[Multiaddr],
+        identity: IdentityId,
+        entries: Vec<UpdateLogEntry>,
     ) -> Result<(), NetworkError> {
+        let candidate_sequence = verify_update_log_for_identity(&identity, &entries)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let current_sequence = self
+            .update_logs
+            .get(&identity)
+            .and_then(|current| verify_update_log_for_identity(&identity, current).ok());
+
+        if current_sequence
+            .map(|current| candidate_sequence > current)
+            .unwrap_or(true)
+        {
+            self.update_logs.insert(identity, entries);
+        }
+
+        Ok(())
+    }
+
+    /// Return the verified update log entries this node knows for an identity.
+    pub fn update_log_entries(&self, identity: &IdentityId) -> Option<&[UpdateLogEntry]> {
+        self.update_logs.get(identity).map(Vec::as_slice)
+    }
+
+    /// Resolve a Jolt address from this node's verified update-log cache.
+    pub fn resolve_cached_jolt_address(
+        &self,
+        address: &JoltAddress,
+        now: Option<u64>,
+    ) -> Result<ResolvedJoltTarget, NetworkError> {
+        let entries = self.update_logs.get(address.identity()).ok_or_else(|| {
+            NetworkError::Protocol(format!(
+                "No verified update log cached for {}",
+                address.identity()
+            ))
+        })?;
+        resolve_jolt_address(address, entries, now)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))
+    }
+
+    /// Add bootstrap peers to Kademlia, dial them, and initiate DHT bootstrap.
+    pub fn bootstrap_dht(&mut self, bootstrap_addrs: &[Multiaddr]) -> Result<(), NetworkError> {
         for addr in bootstrap_addrs {
             let (peer_id, transport) = crate::bootstrap::parse_bootstrap_addr(&addr.to_string())?;
             // Add address to Kademlia routing table
@@ -409,9 +543,46 @@ impl NetworkNode {
         Ok(())
     }
 
+    /// Deterministic DHT provider key for peers that may serve an identity's update log.
+    pub fn update_log_provider_key(identity: &IdentityId) -> String {
+        format!("jolt:update-log:{identity}")
+    }
+
+    /// Announce this node as a provider for an identity's update log in the DHT.
+    pub fn announce_update_log_provider(
+        &mut self,
+        identity: &IdentityId,
+    ) -> Result<(), NetworkError> {
+        let key_str = Self::update_log_provider_key(identity);
+        let key = libp2p::kad::RecordKey::new(&key_str.clone().into_bytes());
+        self.swarm
+            .behaviour_mut()
+            .kademlia
+            .start_providing(key)
+            .map_err(|e| {
+                NetworkError::Dht(format!("Failed to announce update-log provider: {e:?}"))
+            })?;
+        info!("Announcing as update-log provider for: {identity}");
+        Ok(())
+    }
+
     /// Take the first discovered provider for the given content.
     pub fn take_discovered_provider(&mut self, content_id: &ContentId) -> Option<libp2p::PeerId> {
         let key = content_id.to_string();
+        if let Some(providers) = self.discovered_providers.get_mut(&key) {
+            if !providers.is_empty() {
+                return Some(providers.remove(0));
+            }
+        }
+        None
+    }
+
+    /// Take the first discovered provider for the given identity's update log.
+    pub fn take_discovered_update_log_provider(
+        &mut self,
+        identity: &IdentityId,
+    ) -> Option<libp2p::PeerId> {
+        let key = Self::update_log_provider_key(identity);
         if let Some(providers) = self.discovered_providers.get_mut(&key) {
             if !providers.is_empty() {
                 return Some(providers.remove(0));
@@ -426,13 +597,20 @@ impl NetworkNode {
         self.swarm.behaviour_mut().kademlia.get_providers(key)
     }
 
+    /// Query the DHT for providers of an identity's update log.
+    pub fn find_update_log_providers(&mut self, identity: &IdentityId) -> libp2p::kad::QueryId {
+        let key =
+            libp2p::kad::RecordKey::new(&Self::update_log_provider_key(identity).into_bytes());
+        self.swarm.behaviour_mut().kademlia.get_providers(key)
+    }
+
     /// Handle a single swarm event.
     pub fn handle_swarm_event(&mut self, event: SwarmEvent<DwebBehaviourEvent>) {
         match event {
             // --- mDNS ---
-            SwarmEvent::Behaviour(DwebBehaviourEvent::Mdns(
-                libp2p::mdns::Event::Discovered(peers),
-            )) => {
+            SwarmEvent::Behaviour(DwebBehaviourEvent::Mdns(libp2p::mdns::Event::Discovered(
+                peers,
+            ))) => {
                 for (peer_id, addr) in peers {
                     info!("mDNS discovered peer: {peer_id} at {addr}");
                     self.swarm.add_peer_address(peer_id, addr.clone());
@@ -442,9 +620,9 @@ impl NetworkNode {
                 }
             }
 
-            SwarmEvent::Behaviour(DwebBehaviourEvent::Mdns(
-                libp2p::mdns::Event::Expired(peers),
-            )) => {
+            SwarmEvent::Behaviour(DwebBehaviourEvent::Mdns(libp2p::mdns::Event::Expired(
+                peers,
+            ))) => {
                 for (peer_id, _addr) in peers {
                     debug!("mDNS peer expired: {peer_id}");
                 }
@@ -502,7 +680,10 @@ impl NetworkNode {
 
                 // Try fetch manager first (daemon-managed fetches)
                 if !response.data.is_empty() {
-                    if let Some(content_id_str) = self.fetch_manager.on_content_response(request_id, response.clone()) {
+                    if let Some(content_id_str) = self
+                        .fetch_manager
+                        .on_content_response(request_id, response.clone())
+                    {
                         // Cache the fetched content for re-sharing
                         if let Err(e) = self.store.cache_content(
                             &content_id_str,
@@ -552,11 +733,101 @@ impl NetworkNode {
                 }
             }
 
+            // --- Update Log Sync ---
+            SwarmEvent::Behaviour(DwebBehaviourEvent::UpdateLogSync(
+                request_response::Event::Message {
+                    message:
+                        request_response::Message::Request {
+                            request, channel, ..
+                        },
+                    ..
+                },
+            )) => {
+                info!("Received update-log request for: {}", request.identity);
+
+                let response = UpdateLogResponse {
+                    entries: self
+                        .update_logs
+                        .get(&request.identity)
+                        .cloned()
+                        .unwrap_or_default(),
+                };
+
+                if let Err(e) = self
+                    .swarm
+                    .behaviour_mut()
+                    .update_log_sync
+                    .send_response(channel, response)
+                {
+                    warn!("Failed to send update-log response: {e:?}");
+                }
+            }
+
+            SwarmEvent::Behaviour(DwebBehaviourEvent::UpdateLogSync(
+                request_response::Event::Message {
+                    message:
+                        request_response::Message::Response {
+                            request_id,
+                            response,
+                        },
+                    ..
+                },
+            )) => {
+                info!(
+                    "Received update-log response ({} entries)",
+                    response.entries.len()
+                );
+
+                if let Some((identity, tx)) = self.pending_update_log_requests.remove(&request_id) {
+                    let result = if response.entries.is_empty() {
+                        Ok(response)
+                    } else {
+                        self.store_verified_update_log(identity, response.entries.clone())
+                            .map(|_| response)
+                    };
+                    let _ = tx.send(result);
+                } else if let Some((address, now, tx)) =
+                    self.pending_jolt_resolutions.remove(&request_id)
+                {
+                    let result = if response.entries.is_empty() {
+                        Err(NetworkError::Protocol(format!(
+                            "No update log entries returned for {}",
+                            address.identity()
+                        )))
+                    } else {
+                        self.store_verified_update_log(address.identity().clone(), response.entries)
+                            .and_then(|_| self.resolve_cached_jolt_address(&address, now))
+                    };
+                    let _ = tx.send(result);
+                }
+            }
+
+            SwarmEvent::Behaviour(DwebBehaviourEvent::UpdateLogSync(
+                request_response::Event::OutboundFailure {
+                    request_id, error, ..
+                },
+            )) => {
+                warn!("Outbound update-log request failed: {error}");
+
+                if let Some((_identity, tx)) = self.pending_update_log_requests.remove(&request_id)
+                {
+                    let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                }
+                if let Some((_address, _now, tx)) =
+                    self.pending_jolt_resolutions.remove(&request_id)
+                {
+                    let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                }
+            }
+
             // --- Identify ---
             SwarmEvent::Behaviour(DwebBehaviourEvent::Identify(
                 libp2p::identify::Event::Received { peer_id, info, .. },
             )) => {
-                debug!("Identified peer {peer_id}: {} protocols", info.protocols.len());
+                debug!(
+                    "Identified peer {peer_id}: {} protocols",
+                    info.protocols.len()
+                );
                 for addr in &info.listen_addrs {
                     self.swarm
                         .behaviour_mut()
@@ -637,12 +908,19 @@ impl NetworkNode {
                 info!("Listening on {address}");
             }
 
-            SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
+            SwarmEvent::ConnectionEstablished {
+                peer_id, endpoint, ..
+            } => {
                 let conn_info = PeerConnectionInfo::from_endpoint(&endpoint);
-                info!("Connected to peer: {peer_id} (relayed: {}, transport: {})", conn_info.is_relayed, conn_info.transport);
+                info!(
+                    "Connected to peer: {peer_id} (relayed: {}, transport: {})",
+                    conn_info.is_relayed, conn_info.transport
+                );
 
                 // Track connection quality (keep best: direct > relayed)
-                let dominated = self.peer_connections.get(&peer_id)
+                let dominated = self
+                    .peer_connections
+                    .get(&peer_id)
                     .map(|existing| existing.is_relayed && !conn_info.is_relayed)
                     .unwrap_or(true);
                 if dominated {
@@ -727,9 +1005,7 @@ impl NetworkNode {
                 response_tx,
             } => {
                 let result = self.publish_file(&file_path).map(|content_id| {
-                    let size = std::fs::metadata(&file_path)
-                        .map(|m| m.len())
-                        .unwrap_or(0);
+                    let size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
                     PublishResponse {
                         content_id: content_id.to_string(),
                         size,
@@ -753,7 +1029,10 @@ impl NetworkNode {
 
                 // Try connected peers first
                 let peers: Vec<_> = self.swarm.connected_peers().cloned().collect();
-                info!("Fetch {content_id}: {} connected peers, querying them first", peers.len());
+                info!(
+                    "Fetch {content_id}: {} connected peers, querying them first",
+                    peers.len()
+                );
                 let mut request_ids = Vec::new();
                 let request = ContentRequest {
                     content_id: content_id.clone(),
@@ -788,8 +1067,16 @@ impl NetworkNode {
                 let _ = response_tx.send(result);
             }
             DaemonCommand::GetStatus { response_tx } => {
-                let direct = self.peer_connections.values().filter(|c| !c.is_relayed).count();
-                let relayed = self.peer_connections.values().filter(|c| c.is_relayed).count();
+                let direct = self
+                    .peer_connections
+                    .values()
+                    .filter(|c| !c.is_relayed)
+                    .count();
+                let relayed = self
+                    .peer_connections
+                    .values()
+                    .filter(|c| c.is_relayed)
+                    .count();
                 let status = NodeStatus {
                     peer_id: self.swarm.local_peer_id().to_string(),
                     identity_address: self.identity.jolt_address().to_string(),
@@ -814,7 +1101,9 @@ impl NetworkNode {
                         PeerInfo {
                             peer_id: p.to_string(),
                             is_relayed: conn.map(|c| c.is_relayed).unwrap_or(false),
-                            transport: conn.map(|c| c.transport.clone()).unwrap_or_else(|| self.transport_name.to_string()),
+                            transport: conn
+                                .map(|c| c.transport.clone())
+                                .unwrap_or_else(|| self.transport_name.to_string()),
                             remote_addr: conn.map(|c| c.remote_addr.clone()).unwrap_or_default(),
                         }
                     })
@@ -907,6 +1196,7 @@ impl NetworkNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dweb_core::{UpdateAction, UpdateLogEntry};
     use dweb_store::CacheConfig;
     use tempfile::tempdir;
 
@@ -920,6 +1210,18 @@ mod tests {
         NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap()
     }
 
+    fn signed_profile_log(identity: &NodeIdentity, label: &[u8]) -> Vec<UpdateLogEntry> {
+        vec![UpdateLogEntry::genesis(
+            identity.public_key_bytes(),
+            UpdateAction::SetPath {
+                path: "/profile".to_string(),
+                content_id: ContentId::from_bytes(label),
+            },
+            |bytes| identity.sign(bytes),
+        )
+        .unwrap()]
+    }
+
     #[tokio::test]
     async fn new_tcp_creates_node_without_error() {
         let dir = tempdir().unwrap();
@@ -927,6 +1229,62 @@ mod tests {
         let store = make_store(dir.path());
         let node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config());
         assert!(node.is_ok());
+    }
+
+    #[tokio::test]
+    async fn node_stores_only_newer_verified_update_logs_for_identity() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let owner = NodeIdentity::generate();
+        let attacker = NodeIdentity::generate();
+        let identity = owner.identity_id();
+        let genesis = signed_profile_log(&owner, b"profile-v1")[0].clone();
+        let newer = genesis
+            .append(
+                UpdateAction::SetPath {
+                    path: "/profile".to_string(),
+                    content_id: ContentId::from_bytes(b"profile-v2"),
+                },
+                |bytes| owner.sign(bytes),
+            )
+            .unwrap();
+        let attacker_log = signed_profile_log(&attacker, b"attacker-profile");
+
+        node.store_verified_update_log(identity.clone(), vec![genesis.clone()])
+            .unwrap();
+        node.store_verified_update_log(identity.clone(), attacker_log)
+            .unwrap_err();
+        let expected = vec![genesis.clone(), newer.clone()];
+
+        node.store_verified_update_log(identity.clone(), expected.clone())
+            .unwrap();
+        node.store_verified_update_log(identity.clone(), vec![genesis])
+            .unwrap();
+
+        assert_eq!(
+            node.update_log_entries(&identity),
+            Some(expected.as_slice())
+        );
+    }
+
+    #[tokio::test]
+    async fn update_log_provider_key_is_derived_from_identity() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let owner = NodeIdentity::generate();
+        let identity = owner.identity_id();
+        let expected_key = format!("jolt:update-log:{identity}");
+
+        assert_eq!(
+            NetworkNode::update_log_provider_key(&identity),
+            expected_key
+        );
+
+        node.announce_update_log_provider(&identity).unwrap();
+        node.find_update_log_providers(&identity);
+        assert!(node
+            .take_discovered_update_log_provider(&identity)
+            .is_none());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
