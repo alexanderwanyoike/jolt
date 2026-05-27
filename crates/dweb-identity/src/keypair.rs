@@ -185,4 +185,45 @@ mod tests {
             crate::signing::verify_signature(&identity2.public_key_bytes(), data, &signature);
         assert!(!result.unwrap());
     }
+
+    #[test]
+    fn identity_can_create_and_append_signed_update_log_entries() {
+        use dweb_core::{
+            verify_update_log, ContentId, UpdateAction, UpdateLogEntry, UpdateProfile,
+        };
+
+        let identity = NodeIdentity::generate();
+        let genesis = UpdateLogEntry::genesis(
+            identity.public_key_bytes(),
+            UpdateAction::PublishContent {
+                content_id: ContentId::from_bytes(b"first post"),
+            },
+            |bytes| identity.sign(bytes),
+        )
+        .unwrap();
+
+        let root = genesis
+            .append(
+                UpdateAction::UpdateRoot {
+                    content_id: ContentId::from_bytes(b"site root"),
+                },
+                |bytes| identity.sign(bytes),
+            )
+            .unwrap();
+
+        let profile = root
+            .append(
+                UpdateAction::UpdateProfile {
+                    profile: UpdateProfile {
+                        display_name: Some("Alice".to_string()),
+                        bio: Some("Jolt publisher".to_string()),
+                        avatar: None,
+                    },
+                },
+                |bytes| identity.sign(bytes),
+            )
+            .unwrap();
+
+        verify_update_log(&[genesis, root, profile]).unwrap();
+    }
 }
