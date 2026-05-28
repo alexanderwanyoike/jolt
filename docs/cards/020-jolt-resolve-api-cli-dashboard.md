@@ -2,8 +2,8 @@
 
 **Type:** AFK
 **Milestone:** Human addressing / M5
-**Status:** Blocked by 019
-**Blocked by:** 019
+**Status:** Blocked by 024
+**Blocked by:** 024
 
 ## Why
 
@@ -31,7 +31,7 @@ The flow should:
 
 1. Parse the `.jolt` address.
 2. Check the verified update-log cache.
-3. Discover update-log providers through the bootstrap/relay mesh.
+3. Discover update-log providers through the configured bootstrap relay and DHT path.
 4. Request candidate update logs.
 5. Verify signatures and sequence continuity.
 6. Select the newest valid state.

@@ -49,12 +49,17 @@ The current focus is:
 6. Add canonical identity addresses so people can be addressed globally.
 7. Design and implement global `.jolt` resolution through signed reachability.
 8. Add network-backed update-log discovery for global `.jolt` lookup.
-9. Add bootstrap relay mesh behavior so fresh nodes can join global discovery.
-10. Wire `.jolt` resolution into CLI, API, and dashboard.
-11. Fetch content by `.jolt` address, not just by CID.
-12. Add home relay / owner-directed pinning.
-13. Prove Alice-offline/Bob-fresh fetch through a relay.
-14. Add local petnames after the global path works.
+9. Add bootstrap config and relay mode so fresh nodes can have durable entry points.
+10. Add bootstrap management UX.
+11. Prove DHT-backed update-log discovery through a configured bootstrap relay.
+12. Cache discovered relay/peer addresses after a successful join.
+13. Make bootstrap/discovery state observable in status and dashboard.
+14. Wire `.jolt` resolution into CLI, API, and dashboard.
+15. Fetch content by `.jolt` address, not just by CID.
+16. Add home relay / owner-directed pinning.
+17. Prove Alice-offline/Bob-fresh fetch through a relay.
+18. Add relay gossip only after the DHT-first path is understood.
+19. Add local petnames after the global path works.
 
 ## Cards
 
@@ -69,8 +74,14 @@ The current focus is:
 | [016](016-global-identity-address-v0.md) | AFK | Done | Add canonical `{identity}.jolt` addresses before local petnames. |
 | [017](017-global-jolt-resolution-v0.md) | AFK | Done | Define global `.jolt` resolution through signed reachability records. |
 | [018](018-global-update-log-discovery-v0.md) | AFK | Done | Discover, fetch, verify, and cache signed update logs for global `.jolt` lookup. |
-| [019](019-bootstrap-relay-mesh-v0.md) | HITL | Ready | Define and implement the first global bootstrap/relay mesh path. |
-| [020](020-jolt-resolve-api-cli-dashboard.md) | AFK | Blocked by 019 | Let users resolve `.jolt` addresses through CLI, API, and dashboard. |
+| [019](019-bootstrap-config-and-relay-mode-v0.md) | AFK | Ready | Add persistent bootstrap config and explicit bootstrap/discovery relay mode. |
+| [023](023-bootstrap-management-ux.md) | AFK | Blocked by 019 | Add CLI UX for listing, adding, and removing bootstrap relay addresses. |
+| [024](024-dht-bootstrap-discovery-path.md) | AFK | Blocked by 019 | Prove Bob can discover Alice's update-log provider through a configured relay and DHT. |
+| [025](025-discovered-relay-peer-cache.md) | AFK | Blocked by 024 | Cache useful discovered relay/node addresses for future starts. |
+| [026](026-bootstrap-observability.md) | AFK | Blocked by 019 | Expose bootstrap state through status/API/dashboard. |
+| [027](027-relay-gossip-v0.md) | HITL | Blocked by 024 | Add relay-to-relay discovery-hint gossip after the DHT-first path is proven. |
+| [028](028-three-node-canary-harness.md) | AFK | Blocked by 024 | Document/run Alice -> Relay -> Bob local test and real-world canary. |
+| [020](020-jolt-resolve-api-cli-dashboard.md) | AFK | Blocked by 024 | Let users resolve `.jolt` addresses through CLI, API, and dashboard. |
 | [021](021-fetch-by-jolt-address.md) | AFK | Blocked by 006, 020 | Fetch content from a `.jolt` address instead of a raw CID. |
 | [022](022-offline-publisher-through-relay-smoke-test.md) | AFK | Blocked by 009, 021 | Prove Bob can fetch Alice's content while Alice is offline. |
 | [015](015-local-petnames-and-address-book.md) | AFK | Deferred until 020 | Add local aliases for identity addresses after global resolution is usable. |
