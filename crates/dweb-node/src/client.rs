@@ -70,11 +70,11 @@ impl DaemonClient {
         Ok(body)
     }
 
-    pub async fn fetch(&self, content_id: &str) -> Result<serde_json::Value> {
+    pub async fn fetch(&self, target: &str) -> Result<serde_json::Value> {
         let resp = self
             .client
             .post(format!("{}/api/v1/fetch", self.base_url))
-            .json(&serde_json::json!({ "content_id": content_id }))
+            .json(&serde_json::json!({ "target": target }))
             .send()
             .await
             .context("Failed to connect to daemon")?;

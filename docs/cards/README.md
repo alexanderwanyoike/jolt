@@ -82,8 +82,8 @@ The current focus is:
 | [027](027-relay-gossip-v0.md) | HITL | Ready | Add relay-to-relay discovery-hint gossip after the DHT-first path is proven. |
 | [028](028-three-node-canary-harness.md) | AFK | Ready | Document/run Alice -> Relay -> Bob local test and real-world canary. |
 | [020](020-jolt-resolve-api-cli-dashboard.md) | AFK | Done | Let users resolve `.jolt` addresses through CLI, API, and dashboard. |
-| [021](021-fetch-by-jolt-address.md) | AFK | Ready | Fetch content from a `.jolt` address instead of a raw CID. |
-| [022](022-offline-publisher-through-relay-smoke-test.md) | AFK | Blocked by 009, 021 | Prove Bob can fetch Alice's content while Alice is offline. |
+| [021](021-fetch-by-jolt-address.md) | AFK | Done | Fetch content from a `.jolt` address instead of a raw CID. |
+| [022](022-offline-publisher-through-relay-smoke-test.md) | AFK | Blocked by 009 | Prove Bob can fetch Alice's content while Alice is offline. |
 | [015](015-local-petnames-and-address-book.md) | AFK | Deferred until 020 | Add local aliases for identity addresses after global resolution is usable. |
 | [006](006-signed-path-publishing-v0.md) | AFK | Done | Publish and resolve generic signed path bindings. |
 | [007](007-home-relay-configuration.md) | AFK | Ready | Configure a user's home relay. |

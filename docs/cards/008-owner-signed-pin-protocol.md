@@ -1,9 +1,10 @@
-# 006: Owner-Signed Pin Protocol
+# 008: Owner-Signed Pin Protocol
 
 **Type:** AFK  
 **Milestone:** M4.5  
-**Status:** Blocked  
-**Blocked by:** 004, 007
+**Status:** Done
+
+**Blocked by:** None
 
 ## Why
 
@@ -24,12 +25,14 @@ The relay should verify the request before accepting it.
 
 ## Acceptance Criteria
 
-- [ ] Pin request type exists and serializes over the chosen wire format.
-- [ ] Owner can sign a pin request.
-- [ ] Relay-side verification accepts valid owner signatures.
-- [ ] Relay-side verification rejects invalid signatures or mismatched owners.
-- [ ] Tests cover valid request, wrong signer, malformed content ID, and tampered request.
+- [x] Pin request type exists and serializes over the chosen wire format.
+- [x] Owner can sign a pin request.
+- [x] Relay-side verification accepts valid owner signatures.
+- [x] Relay-side verification rejects invalid signatures or mismatched owners.
+- [x] Tests cover valid request, wrong signer, malformed content ID, and tampered request.
 
 ## Notes
 
 Do not add relay-to-relay replication. This card is only owner -> selected relay.
+
+Implemented as `PinRequest` in `dweb-core`, signed over canonical bytes with the owner's identity key.
