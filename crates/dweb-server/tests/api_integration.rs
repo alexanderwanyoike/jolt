@@ -119,6 +119,7 @@ async fn test_dashboard_root_endpoint() {
     assert!(body.contains("/api/v1/status"));
     assert!(body.contains("/api/v1/publish"));
     assert!(body.contains("publish-path"));
+    assert!(body.contains("fetch-target"));
     assert!(body.contains("/api/v1/peers/connect"));
     assert!(body.contains("/api/v1/resolve"));
 
@@ -428,6 +429,28 @@ async fn test_resolve_endpoint_discovers_path_published_through_http() {
     assert_eq!(resolved["content_id"], content_id.to_string());
     assert_eq!(resolved["source"], "network");
 
+    let fetch_resp = client
+        .post(format!("{}/api/v1/fetch", base_url(bob_api)))
+        .json(&serde_json::json!({ "target": address }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(fetch_resp.status(), 200);
+    let fetched: serde_json::Value = fetch_resp.json().await.unwrap();
+    assert_eq!(fetched["content_id"], content_id.to_string());
+    assert_eq!(fetched["size"], 19);
+    let fetched_data: Vec<u8> = fetched["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(fetched_data, b"network signed path");
+
+    let bob_status = bob_handle.status().await.unwrap();
+    assert_eq!(bob_status.cached_count, 1);
+
     relay_handle.shutdown().await.ok();
     alice_handle.shutdown().await.ok();
     bob_handle.shutdown().await.ok();
@@ -706,6 +729,138 @@ async fn test_fetch_endpoint() {
     let data = body["data"].as_array().unwrap();
     let bytes: Vec<u8> = data.iter().map(|v| v.as_u64().unwrap() as u8).collect();
     assert_eq!(bytes, b"fetch me via http");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_fetch_endpoint_accepts_jolt_address() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let original_data = b"fetch me through a jolt address";
+
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(original_data.to_vec()).file_name("address.txt"),
+        )
+        .text("path", "/address-test");
+
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(port)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    let address = published["address"].as_str().unwrap();
+
+    let fetch_resp = client
+        .post(format!("{}/api/v1/fetch", base_url(port)))
+        .json(&serde_json::json!({ "target": address }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(fetch_resp.status(), 200);
+    let fetched: serde_json::Value = fetch_resp.json().await.unwrap();
+    assert_eq!(fetched["content_id"], published["content_id"]);
+    assert_eq!(fetched["size"], original_data.len() as u64);
+    let data: Vec<u8> = fetched["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(data, original_data);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_fetch_endpoint_distinguishes_unresolved_jolt_address() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let unknown_owner = NodeIdentity::generate();
+    let address = JoltAddress::new(unknown_owner.identity_id(), "/missing").unwrap();
+
+    let resp = client
+        .post(format!("{}/api/v1/fetch", base_url(port)))
+        .json(&serde_json::json!({ "target": address.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("jolt:update-log"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_fetch_endpoint_rejects_malformed_jolt_address() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/fetch", base_url(port)))
+        .json(&serde_json::json!({ "target": "alice.jolt/profile" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("identity"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_fetch_endpoint_distinguishes_resolved_but_unavailable_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = NodeIdentity::generate();
+    let identity_id = owner.identity_id();
+    let address = JoltAddress::new(identity_id.clone(), "/missing-content").unwrap();
+    let missing_content = ContentId::from_bytes(b"content not held by any node");
+    let update_log = vec![UpdateLogEntry::genesis(
+        owner.public_key_bytes(),
+        UpdateAction::SetPath {
+            path: "/missing-content".to_string(),
+            content_id: missing_content.clone(),
+        },
+        |bytes| owner.sign(bytes),
+    )
+    .unwrap()];
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut node = NetworkNode::new_tcp(owner, store, NetworkConfig::test_config()).unwrap();
+    node.store_verified_update_log(identity_id, update_log)
+        .unwrap();
+
+    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/fetch", base_url(port)))
+        .json(&serde_json::json!({ "target": address.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    let status = resp.status().as_u16();
+    assert!(
+        status == 404 || status == 504,
+        "Expected content fetch failure, got {status}"
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let error = body["error"].as_str().unwrap();
+    assert!(
+        error.contains(&missing_content.to_string()) || error.contains("timed out"),
+        "expected content fetch error, got {error}"
+    );
+    assert!(!error.contains("jolt:update-log"));
 
     handle.shutdown().await.ok();
 }

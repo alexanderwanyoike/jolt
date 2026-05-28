@@ -2,8 +2,8 @@
 
 **Type:** AFK
 **Milestone:** M5 / Relay Availability
-**Status:** Blocked by 009, 021
-**Blocked by:** 009, 021
+**Status:** Blocked by 009
+**Blocked by:** 009
 
 ## Why
 

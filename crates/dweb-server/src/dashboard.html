@@ -616,8 +616,8 @@
           </div>
           <div class="panel-body forms">
             <div class="field">
-              <label for="fetch-cid">Content ID</label>
-              <input id="fetch-cid" class="mono" type="text" autocomplete="off" spellcheck="false">
+              <label for="fetch-target">Target</label>
+              <input id="fetch-target" class="mono" type="text" autocomplete="off" spellcheck="false" placeholder="CID or {identity}.jolt/path">
             </div>
             <div class="button-row">
               <button class="primary" id="fetch-button" type="button">Fetch</button>
@@ -801,15 +801,15 @@
 
     function applyPublishResult(result) {
       setResult("publish-result", "ok", renderPublishResult(result));
-      $("fetch-cid").value = result.content_id;
+      $("fetch-target").value = result.address || result.content_id;
       if (result.address) $("resolve-address").value = result.address;
     }
 
-    async function fetchContent(contentId) {
+    async function fetchContent(target) {
       const response = await fetch("/api/v1/fetch", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({ content_id: contentId })
+        body: JSON.stringify({ target })
       });
       const body = await readResponse(response);
       if (!response.ok) throw new Error(body);
@@ -919,7 +919,7 @@
           "ok",
           `Resolved ${result.source}\n${result.identity}${result.path}\nsequence ${result.latest_sequence}\n${result.content_id}\nreachability hints ${result.reachability_hints.length}`
         );
-        $("fetch-cid").value = result.content_id;
+        $("fetch-target").value = result.address;
         await refresh();
       } catch (error) {
         setResult("resolve-result", "err", error.message);
@@ -932,13 +932,13 @@
     });
 
     $("fetch-button").addEventListener("click", async () => {
-      const contentId = $("fetch-cid").value.trim();
-      if (!contentId) {
-        setResult("fetch-result", "err", "No content ID entered.");
+      const target = $("fetch-target").value.trim();
+      if (!target) {
+        setResult("fetch-result", "err", "No fetch target entered.");
         return;
       }
       try {
-        const result = await fetchContent(contentId);
+        const result = await fetchContent(target);
         const bytes = result.data || [];
         const preview = new TextDecoder().decode(new Uint8Array(bytes.slice(0, 512)));
         setResult("fetch-result", "ok", `Fetched ${result.size} bytes\n${result.content_id}\n\n${preview}`);
@@ -949,7 +949,7 @@
     });
 
     $("clear-fetch-button").addEventListener("click", () => {
-      $("fetch-cid").value = "";
+      $("fetch-target").value = "";
       setResult("fetch-result", "", "No fetch request yet.");
     });
 

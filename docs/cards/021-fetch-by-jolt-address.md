@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** Human addressing / M5
-**Status:** Ready
+**Status:** Done
 **Blocked by:** None
 
 ## Why
@@ -33,13 +33,13 @@ The dashboard fetch box should accept the same values.
 
 ## Acceptance Criteria
 
-- [ ] CLI `dweb fetch <target>` accepts either a CID or `.jolt` address.
-- [ ] HTTP fetch API accepts either a CID or `.jolt` address.
-- [ ] Dashboard fetch input accepts either a CID or `.jolt` address.
-- [ ] Fetch-by-address uses the same signature verification path as `dweb resolve`.
-- [ ] Successful fetch caches the content locally.
-- [ ] Errors distinguish resolve failure from content-provider/fetch failure.
-- [ ] Tests cover CID fetch, `.jolt` fetch, unresolved `.jolt`, and resolved-but-unavailable content.
+- [x] CLI `dweb fetch <target>` accepts either a CID or `.jolt` address.
+- [x] HTTP fetch API accepts either a CID or `.jolt` address.
+- [x] Dashboard fetch input accepts either a CID or `.jolt` address.
+- [x] Fetch-by-address uses the same signature verification path as `dweb resolve`.
+- [x] Successful fetch caches the content locally.
+- [x] Errors distinguish resolve failure from content-provider/fetch failure.
+- [x] Tests cover CID fetch, `.jolt` fetch, unresolved `.jolt`, and resolved-but-unavailable content.
 
 ## Non-Goals
 

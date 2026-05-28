@@ -54,10 +54,10 @@ pub enum Commands {
         path: Option<String>,
     },
 
-    /// Fetch content by its ContentId
+    /// Fetch content by ContentId or .jolt address
     Fetch {
-        /// The ContentId to fetch
-        content_id: String,
+        /// The ContentId or .jolt address to fetch
+        target: String,
 
         /// Output file path (defaults to content ID in current directory)
         #[arg(short, long)]
@@ -197,10 +197,20 @@ mod tests {
     fn parse_fetch_command() {
         let cli = Cli::parse_from(["dweb", "fetch", "bafk_test_id"]);
         match cli.command {
-            Commands::Fetch {
-                content_id, output, ..
-            } => {
-                assert_eq!(content_id, "bafk_test_id");
+            Commands::Fetch { target, output, .. } => {
+                assert_eq!(target, "bafk_test_id");
+                assert!(output.is_none());
+            }
+            _ => panic!("expected Fetch command"),
+        }
+    }
+
+    #[test]
+    fn parse_fetch_command_with_jolt_address() {
+        let cli = Cli::parse_from(["dweb", "fetch", "alice.jolt/profile"]);
+        match cli.command {
+            Commands::Fetch { target, output, .. } => {
+                assert_eq!(target, "alice.jolt/profile");
                 assert!(output.is_none());
             }
             _ => panic!("expected Fetch command"),
@@ -211,10 +221,8 @@ mod tests {
     fn parse_fetch_command_with_output() {
         let cli = Cli::parse_from(["dweb", "fetch", "bafk_test_id", "-o", "/tmp/out.bin"]);
         match cli.command {
-            Commands::Fetch {
-                content_id, output, ..
-            } => {
-                assert_eq!(content_id, "bafk_test_id");
+            Commands::Fetch { target, output, .. } => {
+                assert_eq!(target, "bafk_test_id");
                 assert_eq!(output, Some(PathBuf::from("/tmp/out.bin")));
             }
             _ => panic!("expected Fetch command"),
