@@ -1,13 +1,51 @@
 use std::time::Duration;
 
-use dweb_core::ContentId;
+use dweb_core::{ContentId, UpdateAction, UpdateLogEntry};
 use dweb_identity::{verify_signature, NodeIdentity};
 use dweb_network::{NetworkConfig, NetworkNode};
 use dweb_store::{CacheConfig, ContentStore};
+use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use tempfile::tempdir;
 
 fn make_store(dir: &std::path::Path) -> ContentStore {
     ContentStore::open(dir, CacheConfig::default()).unwrap()
+}
+
+fn no_mdns_config() -> NetworkConfig {
+    NetworkConfig {
+        enable_mdns: false,
+        ..NetworkConfig::test_config()
+    }
+}
+
+fn signed_profile_log(identity: &NodeIdentity, label: &[u8]) -> Vec<UpdateLogEntry> {
+    vec![UpdateLogEntry::genesis(
+        identity.public_key_bytes(),
+        UpdateAction::SetPath {
+            path: "/profile".to_string(),
+            content_id: ContentId::from_bytes(label),
+        },
+        |bytes| identity.sign(bytes),
+    )
+    .unwrap()]
+}
+
+async fn wait_for_listener(mut node: NetworkNode) -> NetworkNode {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = node.next_event().await;
+            node.handle_swarm_event(event);
+            if !node.listeners().is_empty() {
+                return node;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for listener")
+}
+
+fn listener_with_peer(addr: &Multiaddr, peer: &PeerId) -> Multiaddr {
+    addr.clone().with(Protocol::P2p(*peer))
 }
 
 /// Test that two nodes can exchange content when connected directly.
@@ -15,9 +53,7 @@ fn make_store(dir: &std::path::Path) -> ContentStore {
 /// Node B connects to A, discovers provider via Kademlia, and fetches content.
 #[tokio::test]
 async fn two_nodes_dht_provider_announce_and_fetch() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .try_init();
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
 
     let dir_a = tempdir().unwrap();
     let dir_b = tempdir().unwrap();
@@ -28,8 +64,8 @@ async fn two_nodes_dht_provider_announce_and_fetch() {
 
     // Create Node A, publish content
     let store_a = make_store(dir_a.path());
-    let mut node_a = NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config())
-        .unwrap();
+    let mut node_a =
+        NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config()).unwrap();
     node_a.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
 
     let test_data = b"Content discovered via DHT provider records!";
@@ -58,8 +94,8 @@ async fn two_nodes_dht_provider_announce_and_fetch() {
 
     // Create Node B, connect to A
     let store_b = make_store(dir_b.path());
-    let mut node_b = NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config())
-        .unwrap();
+    let mut node_b =
+        NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config()).unwrap();
     node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     node_b.dial(addr_a).unwrap();
 
@@ -153,9 +189,7 @@ async fn two_nodes_dht_provider_announce_and_fetch() {
 /// This tests the Kademlia provider record flow specifically.
 #[tokio::test]
 async fn dht_provider_announce_is_queryable() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .try_init();
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
 
     let dir_a = tempdir().unwrap();
     let dir_b = tempdir().unwrap();
@@ -164,8 +198,8 @@ async fn dht_provider_announce_is_queryable() {
     let identity_b = NodeIdentity::generate();
 
     let store_a = make_store(dir_a.path());
-    let mut node_a = NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config())
-        .unwrap();
+    let mut node_a =
+        NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config()).unwrap();
     node_a.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
 
     // Publish content on A (which also announces to DHT)
@@ -194,8 +228,8 @@ async fn dht_provider_announce_is_queryable() {
 
     // Create Node B and connect to A
     let store_b = make_store(dir_b.path());
-    let mut node_b = NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config())
-        .unwrap();
+    let mut node_b =
+        NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config()).unwrap();
     node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     node_b.dial(addr_a).unwrap();
 
@@ -256,4 +290,148 @@ async fn dht_provider_announce_is_queryable() {
 
     node_a_handle.abort();
     node_b_handle.abort();
+}
+
+/// Alice and Bob only know the relay address. Bob discovers Alice's update-log
+/// provider record through the DHT, requests the candidate log, and stores it
+/// only after identity verification succeeds.
+#[tokio::test]
+async fn bob_discovers_alice_update_log_provider_through_bootstrap_relay() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+
+    let dir_relay = tempdir().unwrap();
+    let dir_alice = tempdir().unwrap();
+    let dir_bob = tempdir().unwrap();
+
+    let relay_identity = NodeIdentity::generate();
+    let alice_identity = NodeIdentity::generate();
+    let alice_jolt_identity = alice_identity.identity_id();
+    let alice_update_log = signed_profile_log(&alice_identity, b"profile via relay dht");
+    let bob_identity = NodeIdentity::generate();
+
+    let relay_store = make_store(dir_relay.path());
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, no_mdns_config()).unwrap();
+    relay.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut relay = wait_for_listener(relay).await;
+    let relay_addr = listener_with_peer(&relay.listeners()[0], relay.local_peer_id());
+
+    let relay_handle = tokio::spawn(async move {
+        relay.run_event_loop().await;
+    });
+
+    let alice_store = make_store(dir_alice.path());
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, no_mdns_config()).unwrap();
+    alice
+        .store_verified_update_log(alice_jolt_identity.clone(), alice_update_log.clone())
+        .unwrap();
+    alice.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut alice = wait_for_listener(alice).await;
+    let alice_peer_id = *alice.local_peer_id();
+    alice.bootstrap_dht(&[relay_addr.clone()]).unwrap();
+    alice
+        .announce_update_log_provider(&alice_jolt_identity)
+        .unwrap();
+
+    let alice_handle = tokio::spawn(async move {
+        alice.run_event_loop().await;
+    });
+
+    let bob_store = make_store(dir_bob.path());
+    let mut bob = NetworkNode::new_tcp(bob_identity, bob_store, no_mdns_config()).unwrap();
+    bob.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut bob = wait_for_listener(bob).await;
+    bob.bootstrap_dht(&[relay_addr]).unwrap();
+
+    let expected_log = alice_update_log.clone();
+    let expected_identity = alice_jolt_identity.clone();
+    let expected_provider = alice_peer_id;
+    let (tx_result, rx_result) = tokio::sync::oneshot::channel();
+
+    let bob_handle = tokio::spawn(async move {
+        assert!(
+            bob.update_log_entries(&expected_identity).is_none(),
+            "Bob must start without Alice's update log"
+        );
+
+        let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        while tokio::time::Instant::now() < settle_deadline {
+            if let Ok(event) =
+                tokio::time::timeout(Duration::from_millis(100), bob.next_event()).await
+            {
+                bob.handle_swarm_event(event);
+            }
+        }
+
+        bob.find_update_log_providers(&expected_identity);
+
+        let provider = loop {
+            let event = tokio::time::timeout(Duration::from_secs(1), bob.next_event()).await;
+            match event {
+                Ok(event) => bob.handle_swarm_event(event),
+                Err(_) => {
+                    let _ =
+                        tx_result.send(Err("timed out finding update-log provider".to_string()));
+                    return;
+                }
+            }
+
+            if let Some(provider) = bob.take_discovered_update_log_provider(&expected_identity) {
+                if provider != expected_provider {
+                    let _ =
+                        tx_result.send(Err(format!("expected Alice as provider, got {provider}")));
+                    return;
+                }
+                break provider;
+            }
+        };
+
+        let rx = match bob.request_update_log_from(&expected_identity, None, &provider) {
+            Ok(rx) => rx,
+            Err(e) => {
+                let _ = tx_result.send(Err(format!("failed to request update log: {e}")));
+                return;
+            }
+        };
+
+        let mut rx = rx;
+        loop {
+            tokio::select! {
+                result = &mut rx => {
+                    match result {
+                        Ok(Ok(response)) => {
+                            let cached = bob.update_log_entries(&expected_identity)
+                                .map(|entries| entries.to_vec());
+                            let _ = tx_result.send(Ok((response.entries, cached)));
+                            return;
+                        }
+                        Ok(Err(e)) => {
+                            let _ = tx_result.send(Err(format!("update-log request failed: {e}")));
+                            return;
+                        }
+                        Err(_) => {
+                            let _ = tx_result.send(Err("update-log response channel closed".to_string()));
+                            return;
+                        }
+                    }
+                }
+                event = bob.next_event() => {
+                    bob.handle_swarm_event(event);
+                }
+            }
+        }
+    });
+
+    let (response_entries, cached_entries) =
+        tokio::time::timeout(Duration::from_secs(20), rx_result)
+            .await
+            .expect("timed out")
+            .expect("channel closed")
+            .expect("provider discovery failed");
+
+    assert_eq!(response_entries, expected_log);
+    assert_eq!(cached_entries, Some(expected_log));
+
+    relay_handle.abort();
+    alice_handle.abort();
+    bob_handle.abort();
 }
