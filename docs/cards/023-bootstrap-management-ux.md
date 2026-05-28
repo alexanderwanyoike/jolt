@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** M5
-**Status:** Blocked by 019
+**Status:** Done
 **Blocked by:** 019
 
 ## Why
@@ -41,13 +41,13 @@ The command output should distinguish:
 
 ## Acceptance Criteria
 
-- [ ] CLI can list configured bootstrap relays.
-- [ ] CLI can add a bootstrap relay multiaddr.
-- [ ] CLI rejects malformed bootstrap relay multiaddrs with a clear error.
-- [ ] CLI does not add duplicate relay addresses.
-- [ ] CLI can remove a configured bootstrap relay multiaddr.
-- [ ] CLI list output distinguishes configured relays from built-in defaults.
-- [ ] Tests cover add, list, remove, duplicates, and malformed addresses.
+- [x] CLI can list configured bootstrap relays.
+- [x] CLI can add a bootstrap relay multiaddr.
+- [x] CLI rejects malformed bootstrap relay multiaddrs with a clear error.
+- [x] CLI does not add duplicate relay addresses.
+- [x] CLI can remove a configured bootstrap relay multiaddr.
+- [x] CLI list output distinguishes configured relays from built-in defaults.
+- [x] Tests cover add, list, remove, duplicates, and malformed addresses.
 
 ## Non-Goals
 

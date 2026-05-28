@@ -65,6 +65,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: CacheCommands,
     },
+
+    /// Manage persistent bootstrap relays
+    Bootstrap {
+        #[command(subcommand)]
+        command: BootstrapCommands,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -91,6 +97,24 @@ pub enum CacheCommands {
     Unpin {
         /// The ContentId to unpin
         content_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum BootstrapCommands {
+    /// List configured, built-in, and effective bootstrap relays
+    List,
+
+    /// Add a configured bootstrap relay multiaddr
+    Add {
+        /// Bootstrap relay multiaddr with /p2p/<peer_id>
+        multiaddr: String,
+    },
+
+    /// Remove a configured bootstrap relay multiaddr
+    Remove {
+        /// Bootstrap relay multiaddr to remove
+        multiaddr: String,
     },
 }
 
@@ -150,7 +174,9 @@ mod tests {
     fn parse_fetch_command() {
         let cli = Cli::parse_from(["dweb", "fetch", "bafk_test_id"]);
         match cli.command {
-            Commands::Fetch { content_id, output, .. } => {
+            Commands::Fetch {
+                content_id, output, ..
+            } => {
                 assert_eq!(content_id, "bafk_test_id");
                 assert!(output.is_none());
             }
@@ -162,7 +188,9 @@ mod tests {
     fn parse_fetch_command_with_output() {
         let cli = Cli::parse_from(["dweb", "fetch", "bafk_test_id", "-o", "/tmp/out.bin"]);
         match cli.command {
-            Commands::Fetch { content_id, output, .. } => {
+            Commands::Fetch {
+                content_id, output, ..
+            } => {
                 assert_eq!(content_id, "bafk_test_id");
                 assert_eq!(output, Some(PathBuf::from("/tmp/out.bin")));
             }
@@ -215,6 +243,49 @@ mod tests {
                 assert_eq!(content_id, "bafk_test");
             }
             _ => panic!("expected Cache Unpin command"),
+        }
+    }
+
+    #[test]
+    fn parse_bootstrap_list_command() {
+        let cli = Cli::parse_from(["dweb", "bootstrap", "list"]);
+        assert!(matches!(
+            cli.command,
+            Commands::Bootstrap {
+                command: BootstrapCommands::List
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_bootstrap_add_command() {
+        let cli = Cli::parse_from([
+            "dweb",
+            "bootstrap",
+            "add",
+            "/ip4/127.0.0.1/tcp/4001/p2p/12D3Relay",
+        ]);
+        match cli.command {
+            Commands::Bootstrap {
+                command: BootstrapCommands::Add { multiaddr },
+            } => assert_eq!(multiaddr, "/ip4/127.0.0.1/tcp/4001/p2p/12D3Relay"),
+            _ => panic!("expected Bootstrap Add command"),
+        }
+    }
+
+    #[test]
+    fn parse_bootstrap_remove_command() {
+        let cli = Cli::parse_from([
+            "dweb",
+            "bootstrap",
+            "remove",
+            "/ip4/127.0.0.1/tcp/4001/p2p/12D3Relay",
+        ]);
+        match cli.command {
+            Commands::Bootstrap {
+                command: BootstrapCommands::Remove { multiaddr },
+            } => assert_eq!(multiaddr, "/ip4/127.0.0.1/tcp/4001/p2p/12D3Relay"),
+            _ => panic!("expected Bootstrap Remove command"),
         }
     }
 }
