@@ -1,11 +1,67 @@
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Clone)]
 pub struct NodeConfig {
     pub data_dir: PathBuf,
     pub identity_dir: PathBuf,
     pub content_store_dir: PathBuf,
     pub cache_dir: PathBuf,
+    pub settings_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NodeSettings {
+    #[serde(default)]
+    pub bootstrap_relays: Vec<String>,
+    #[serde(default = "default_use_builtin_bootstrap_relays")]
+    pub use_builtin_bootstrap_relays: bool,
+    #[serde(default)]
+    pub bootstrap_relay: bool,
+}
+
+impl Default for NodeSettings {
+    fn default() -> Self {
+        Self {
+            bootstrap_relays: Vec::new(),
+            use_builtin_bootstrap_relays: true,
+            bootstrap_relay: false,
+        }
+    }
+}
+
+impl NodeSettings {
+    pub fn effective_bootstrap_relays(
+        &self,
+        cli_bootstrap_relays: &[String],
+        builtin_bootstrap_relays: &[String],
+    ) -> Vec<String> {
+        let mut relays = Vec::new();
+        for relay in self
+            .bootstrap_relays
+            .iter()
+            .chain(cli_bootstrap_relays.iter())
+        {
+            if !relays.contains(relay) {
+                relays.push(relay.clone());
+            }
+        }
+
+        if relays.is_empty() && self.use_builtin_bootstrap_relays {
+            for relay in builtin_bootstrap_relays {
+                if !relays.contains(relay) {
+                    relays.push(relay.clone());
+                }
+            }
+        }
+
+        relays
+    }
+}
+
+fn default_use_builtin_bootstrap_relays() -> bool {
+    true
 }
 
 impl NodeConfig {
@@ -22,6 +78,7 @@ impl NodeConfig {
             identity_dir: base.join("identity"),
             content_store_dir: base.join("data"),
             cache_dir: base.join("data").join("cache"),
+            settings_path: base.join("config.json"),
             data_dir: base,
         }
     }
@@ -32,6 +89,7 @@ impl NodeConfig {
             identity_dir: base.join("identity"),
             content_store_dir: base.join("data"),
             cache_dir: base.join("data").join("cache"),
+            settings_path: base.join("config.json"),
             data_dir: base,
         }
     }
@@ -42,6 +100,22 @@ impl NodeConfig {
         std::fs::create_dir_all(&self.content_store_dir)?;
         std::fs::create_dir_all(&self.cache_dir)?;
         Ok(())
+    }
+
+    pub fn load_settings(&self) -> std::io::Result<NodeSettings> {
+        match std::fs::read_to_string(&self.settings_path) {
+            Ok(raw) => serde_json::from_str(&raw).map_err(std::io::Error::other),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(NodeSettings::default()),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn save_settings(&self, settings: &NodeSettings) -> std::io::Result<()> {
+        if let Some(parent) = self.settings_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let raw = serde_json::to_string_pretty(settings).map_err(std::io::Error::other)?;
+        std::fs::write(&self.settings_path, raw)
     }
 }
 
@@ -67,6 +141,7 @@ mod tests {
         assert!(config.identity_dir.starts_with(&config.data_dir));
         assert!(config.content_store_dir.starts_with(&config.data_dir));
         assert!(config.cache_dir.starts_with(&config.data_dir));
+        assert!(config.settings_path.starts_with(&config.data_dir));
     }
 
     #[test]
@@ -74,5 +149,56 @@ mod tests {
         let dir = tempdir().unwrap();
         let config = NodeConfig::with_base_dir(dir.path().to_path_buf());
         assert!(config.cache_dir.to_string_lossy().contains("cache"));
+    }
+
+    #[test]
+    fn node_settings_round_trip_bootstrap_relays_and_relay_mode() {
+        let dir = tempdir().unwrap();
+        let config = NodeConfig::with_base_dir(dir.path().to_path_buf());
+        config.ensure_dirs().unwrap();
+        let settings = NodeSettings {
+            bootstrap_relays: vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWExample".to_string()],
+            use_builtin_bootstrap_relays: false,
+            bootstrap_relay: true,
+        };
+
+        config.save_settings(&settings).unwrap();
+        let loaded = config.load_settings().unwrap();
+
+        assert_eq!(loaded, settings);
+    }
+
+    #[test]
+    fn missing_node_settings_loads_defaults() {
+        let dir = tempdir().unwrap();
+        let config = NodeConfig::with_base_dir(dir.path().to_path_buf());
+
+        let settings = config.load_settings().unwrap();
+
+        assert_eq!(settings, NodeSettings::default());
+    }
+
+    #[test]
+    fn effective_bootstrap_relays_use_explicit_then_defaults() {
+        let settings = NodeSettings {
+            bootstrap_relays: vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string()],
+            use_builtin_bootstrap_relays: true,
+            bootstrap_relay: false,
+        };
+        let cli = vec!["/ip4/127.0.0.1/tcp/4002/p2p/12D3Cli".to_string()];
+        let defaults = vec!["/dns4/bootstrap.jolt.test/tcp/4001/p2p/12D3Default".to_string()];
+
+        assert_eq!(
+            settings.effective_bootstrap_relays(&cli, &defaults),
+            vec![
+                "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string(),
+                "/ip4/127.0.0.1/tcp/4002/p2p/12D3Cli".to_string(),
+            ]
+        );
+
+        assert_eq!(
+            NodeSettings::default().effective_bootstrap_relays(&[], &defaults),
+            defaults
+        );
     }
 }

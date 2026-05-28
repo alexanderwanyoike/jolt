@@ -104,6 +104,12 @@ pub struct NetworkNode {
     iroh_endpoint: Option<iroh::Endpoint>,
     /// Transport label reported through status endpoints.
     transport_name: &'static str,
+    /// Bootstrap relays saved in persistent node config.
+    configured_bootstrap_relays: Vec<String>,
+    /// Bootstrap relays used for this daemon start.
+    effective_bootstrap_relays: Vec<String>,
+    /// Whether this node is intentionally acting as a bootstrap/discovery relay.
+    bootstrap_relay: bool,
 }
 
 impl NetworkNode {
@@ -193,6 +199,9 @@ impl NetworkNode {
             fetch_manager: FetchManager::new(),
             iroh_endpoint,
             transport_name: "iroh",
+            configured_bootstrap_relays: config.configured_bootstrap_relays,
+            effective_bootstrap_relays: config.effective_bootstrap_relays,
+            bootstrap_relay: config.bootstrap_relay,
         })
     }
 
@@ -203,7 +212,7 @@ impl NetworkNode {
     pub fn new_tcp(
         identity: NodeIdentity,
         store: ContentStore,
-        _config: NetworkConfig,
+        config: NetworkConfig,
     ) -> Result<Self, NetworkError> {
         let libp2p_keypair = identity.to_libp2p_keypair();
         let peer_id = libp2p_keypair.public().to_peer_id();
@@ -275,6 +284,9 @@ impl NetworkNode {
             fetch_manager: FetchManager::new(),
             iroh_endpoint: None,
             transport_name: "tcp",
+            configured_bootstrap_relays: config.configured_bootstrap_relays,
+            effective_bootstrap_relays: config.effective_bootstrap_relays,
+            bootstrap_relay: config.bootstrap_relay,
         })
     }
 
@@ -1089,6 +1101,9 @@ impl NetworkNode {
                     published_count: self.store.published_ids().len(),
                     cached_count: self.store.list_entries().len(),
                     listen_addresses: self.swarm.listeners().map(|a| a.to_string()).collect(),
+                    bootstrap_relay: self.bootstrap_relay,
+                    configured_bootstrap_relays: self.configured_bootstrap_relays.clone(),
+                    effective_bootstrap_relays: self.effective_bootstrap_relays.clone(),
                 };
                 let _ = response_tx.send(status);
             }
@@ -1208,6 +1223,12 @@ mod tests {
         let identity = NodeIdentity::generate();
         let store = make_store(dir);
         NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap()
+    }
+
+    fn make_node_with_config(dir: &std::path::Path, config: NetworkConfig) -> NetworkNode {
+        let identity = NodeIdentity::generate();
+        let store = make_store(dir);
+        NetworkNode::new_tcp(identity, store, config).unwrap()
     }
 
     fn signed_profile_log(identity: &NodeIdentity, label: &[u8]) -> Vec<UpdateLogEntry> {
@@ -1331,6 +1352,44 @@ mod tests {
         let status = handle.status().await.unwrap();
         assert!(!status.peer_id.is_empty());
         assert_eq!(status.connected_peers, 0);
+
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_daemon_status_reports_bootstrap_config_and_relay_mode() {
+        let dir = tempdir().unwrap();
+        let mut config = NetworkConfig::test_config();
+        config.configured_bootstrap_relays =
+            vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string()];
+        config.effective_bootstrap_relays = vec![
+            "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string(),
+            "/ip4/127.0.0.1/tcp/4002/p2p/12D3Cli".to_string(),
+        ];
+        config.bootstrap_relay = true;
+        let mut node = make_node_with_config(dir.path(), config);
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx.clone());
+
+        let daemon = tokio::spawn(async move {
+            node.run_daemon_loop(cmd_rx).await;
+        });
+
+        let status = handle.status().await.unwrap();
+        assert!(status.bootstrap_relay);
+        assert_eq!(
+            status.configured_bootstrap_relays,
+            vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured"]
+        );
+        assert_eq!(
+            status.effective_bootstrap_relays,
+            vec![
+                "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured",
+                "/ip4/127.0.0.1/tcp/4002/p2p/12D3Cli",
+            ]
+        );
 
         handle.shutdown().await.unwrap();
         daemon.await.unwrap();

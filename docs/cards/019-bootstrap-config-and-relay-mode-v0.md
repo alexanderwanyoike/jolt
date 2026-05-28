@@ -44,15 +44,15 @@ The first implementation can keep current `--bootstrap` behavior working. Persis
 
 ## Acceptance Criteria
 
-- [ ] Node config has explicit bootstrap relay multiaddrs.
-- [ ] Startup uses configured bootstrap relay multiaddrs.
-- [ ] Startup can also include optional built-in defaults when configured relays are absent.
-- [ ] There are no hardcoded public production relay addresses.
-- [ ] Config can mark a node as a bootstrap/discovery relay.
-- [ ] Status/API reports configured bootstrap relays and effective bootstrap relays.
-- [ ] Existing `--bootstrap` startup still works.
-- [ ] Tests cover config load/save, effective relay selection, and relay-mode status.
-- [ ] Docs explain bootstrap multiaddrs are entry points, while `.jolt` addresses are identity/content addresses.
+- [x] Node config has explicit bootstrap relay multiaddrs.
+- [x] Startup uses configured bootstrap relay multiaddrs.
+- [x] Startup can also include optional built-in defaults when configured relays are absent.
+- [x] There are no hardcoded public production relay addresses.
+- [x] Config can mark a node as a bootstrap/discovery relay.
+- [x] Status/API reports configured bootstrap relays and effective bootstrap relays.
+- [x] Existing `--bootstrap` startup still works.
+- [x] Tests cover config load/save, effective relay selection, and relay-mode status.
+- [x] Docs explain bootstrap multiaddrs are entry points, while `.jolt` addresses are identity/content addresses.
 
 ## Non-Goals
 
