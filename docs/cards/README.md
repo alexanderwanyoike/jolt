@@ -74,11 +74,11 @@ The current focus is:
 | [016](016-global-identity-address-v0.md) | AFK | Done | Add canonical `{identity}.jolt` addresses before local petnames. |
 | [017](017-global-jolt-resolution-v0.md) | AFK | Done | Define global `.jolt` resolution through signed reachability records. |
 | [018](018-global-update-log-discovery-v0.md) | AFK | Done | Discover, fetch, verify, and cache signed update logs for global `.jolt` lookup. |
-| [019](019-bootstrap-config-and-relay-mode-v0.md) | AFK | Ready | Add persistent bootstrap config and explicit bootstrap/discovery relay mode. |
-| [023](023-bootstrap-management-ux.md) | AFK | Blocked by 019 | Add CLI UX for listing, adding, and removing bootstrap relay addresses. |
-| [024](024-dht-bootstrap-discovery-path.md) | AFK | Blocked by 019 | Prove Bob can discover Alice's update-log provider through a configured relay and DHT. |
+| [019](019-bootstrap-config-and-relay-mode-v0.md) | AFK | Done | Add persistent bootstrap config and explicit bootstrap/discovery relay mode. |
+| [023](023-bootstrap-management-ux.md) | AFK | Done | Add CLI UX for listing, adding, and removing bootstrap relay addresses. |
+| [024](024-dht-bootstrap-discovery-path.md) | AFK | Ready | Prove Bob can discover Alice's update-log provider through a configured relay and DHT. |
 | [025](025-discovered-relay-peer-cache.md) | AFK | Blocked by 024 | Cache useful discovered relay/node addresses for future starts. |
-| [026](026-bootstrap-observability.md) | AFK | Blocked by 019 | Expose bootstrap state through status/API/dashboard. |
+| [026](026-bootstrap-observability.md) | AFK | Ready | Expose bootstrap state through status/API/dashboard. |
 | [027](027-relay-gossip-v0.md) | HITL | Blocked by 024 | Add relay-to-relay discovery-hint gossip after the DHT-first path is proven. |
 | [028](028-three-node-canary-harness.md) | AFK | Blocked by 024 | Document/run Alice -> Relay -> Bob local test and real-world canary. |
 | [020](020-jolt-resolve-api-cli-dashboard.md) | AFK | Blocked by 024 | Let users resolve `.jolt` addresses through CLI, API, and dashboard. |

@@ -7,7 +7,7 @@ mod daemon;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use cli::{CacheCommands, Cli, Commands};
+use cli::{BootstrapCommands, CacheCommands, Cli, Commands};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -41,15 +41,19 @@ async fn main() -> anyhow::Result<()> {
         Commands::Stop => commands::stop::run().await?,
         Commands::Status => commands::status::run().await?,
         Commands::Publish { file } => commands::publish::run(&file).await?,
-        Commands::Fetch {
-            content_id,
-            output,
-        } => commands::fetch::run(&content_id, output).await?,
+        Commands::Fetch { content_id, output } => commands::fetch::run(&content_id, output).await?,
         Commands::Cache { command } => match command {
             CacheCommands::Stats => commands::cache::stats().await?,
             CacheCommands::List => commands::cache::list().await?,
             CacheCommands::Pin { content_id } => commands::cache::pin(&content_id).await?,
             CacheCommands::Unpin { content_id } => commands::cache::unpin(&content_id).await?,
+        },
+        Commands::Bootstrap { command } => match command {
+            BootstrapCommands::List => commands::bootstrap::list().await?,
+            BootstrapCommands::Add { multiaddr } => commands::bootstrap::add(&multiaddr).await?,
+            BootstrapCommands::Remove { multiaddr } => {
+                commands::bootstrap::remove(&multiaddr).await?
+            }
         },
     }
 
