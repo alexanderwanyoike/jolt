@@ -2,7 +2,48 @@
 
 ## Overview
 
-dweb apps are distributed software packages. A developer compiles their app to WASM, publishes it to the dweb network, and users install it on their nodes. Apps run locally, store data locally, and communicate with other users peer-to-peer.
+Jolt apps are portable interfaces for Jolt spaces.
+
+The protocol owns the hard parts: identity, signed state, content addressing, access control, relays, provider discovery, and peer caching. Apps sit above that substrate and give a space a useful experience.
+
+Examples:
+
+- A game community app renders releases, mods, announcements, lobbies, and matchmaking.
+- A creator app renders member feeds, media, comments, and recommendations.
+- A research app renders datasets, notebooks, citations, and usage rights.
+- A legal workspace app renders documents, signatures, versions, and evidence graphs.
+
+WASM is useful because it lets a space carry or reference its preferred interface without forcing everyone through a central SaaS backend. But WASM is not the core product. The core product is owned community state that any authorized client can verify.
+
+Apps are distributed software packages. A developer compiles an app to WASM, publishes it to the Jolt network, and users install it on their nodes. Apps run locally, store data in scoped local namespaces, and communicate with other users peer-to-peer through node capabilities.
+
+## Role in the Stack
+
+```text
+Jolt Protocol
+  identity, CIDs, update logs, encryption, relays, access
+
+Jolt Space
+  signed community state: members, feeds, content refs, permissions
+
+Jolt App
+  renderer/editor/tool for a kind of space
+```
+
+The app should receive capability-limited access to the space. It should not become the authority over the space.
+
+## HTML as a Space View
+
+HTML remains a valid interface format for browsing a space.
+
+The important distinction is:
+
+```text
+Signed space state = authority
+HTML = view
+```
+
+A space may publish a generated HTML tree for easy browsing, linking, and media layout. A client should still verify the signed records and content IDs that produced the view. This gives Jolt a familiar browseable surface without reducing the protocol to "web pages on P2P".
 
 ## App Manifest
 
@@ -11,11 +52,11 @@ Every app has a manifest that describes it:
 ```toml
 [app]
 id = "bafk..."                          # ContentId of the initial version
-name = "dweb-chat"
-description = "End-to-end encrypted peer-to-peer chat"
+name = "jolt-community"
+description = "Community space interface"
 version = "1.0.0"
 developer = "ed25519:a1b2c3d4..."       # developer's public key
-homepage = "dweb://a1b2c3d4/apps/chat"  # optional
+homepage = "jolt://a1b2c3d4/apps/community"  # optional
 license = "MIT"
 
 [app.type]
@@ -69,13 +110,13 @@ flowchart TD
 
 Users find apps through:
 
-1. **Direct link** -- a dweb:// URI shared by someone
-2. **Developer's profile** -- browse a developer's published apps
-3. **Search** -- query the DHT for app manifests matching keywords
-4. **App directory** -- community-maintained curated lists (themselves dweb apps)
-5. **Recommendation** -- apps can suggest related apps
+1. **Space preference** -- a space's signed state can reference a preferred app.
+2. **Direct link** -- a `jolt://` URI shared by someone.
+3. **Developer's profile** -- browse a developer's published apps.
+4. **Community recommendation** -- spaces can recommend apps for their members.
+5. **Curated directories** -- community-maintained app lists, themselves published through Jolt.
 
-There is no centralized app store. Discovery is decentralized, but curated directories can emerge organically.
+There is no centralized app store. Discovery can be decentralized and community-curated, but v0 should not require global app search.
 
 ### Installation
 

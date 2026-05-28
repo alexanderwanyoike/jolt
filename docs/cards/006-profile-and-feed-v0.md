@@ -1,35 +1,38 @@
-# 004: Profile and Feed v0
+# 006: Space and Feed v0
 
 **Type:** AFK  
-**Milestone:** M4  
-**Status:** Blocked  
+**Milestone:** M4 / Community substrate
+**Status:** Ready
 **Blocked by:** 005
 
 ## Why
 
-The simplest product slice for mutable content is a profile/feed. It demonstrates user-owned mutable web presence without needing WASM apps.
+The simplest product slice for mutable content is a signed space with a feed.
+
+This demonstrates the new core thesis: Jolt is not a file browser or generic web clone. A user or community identity owns a space, publishes signed updates into it, and grants other identities access to the parts they should see.
 
 ## What to Build
 
-Add a minimal profile/feed model on top of update logs.
+Add a minimal space/feed model on top of update logs.
 
-A user should be able to publish:
+A space should be able to publish:
 
-- Display name.
-- Bio.
+- Title.
+- Description.
 - Optional avatar CID.
 - Feed entries pointing to content CIDs.
+- A visibility marker for v0: public or members-only.
 
-Another node should be able to resolve that state from the user's signed log.
+Another node should be able to resolve that state from the identity's signed log.
 
 ## Acceptance Criteria
 
-- [ ] A profile update can be represented in the update log.
+- [ ] A space metadata update can be represented in the update log.
 - [ ] A feed item can point to a content CID.
-- [ ] Current profile/feed state can be resolved from signed entries.
-- [ ] Tests show publish profile v1, update profile v2, publish two feed items, resolve latest state.
-- [ ] Docs show a simple Alice/Bob profile/feed flow.
+- [ ] Current space/feed state can be resolved from signed entries.
+- [ ] Tests show publish space v1, update space v2, publish two feed items, resolve latest state.
+- [ ] Docs show a simple Alice/Bob space/feed flow.
 
 ## Notes
 
-This is intentionally not a social network. It is a protocol proof for mutable user-owned state.
+This is intentionally not a social network. It is a protocol proof for mutable user-owned or community-owned state.

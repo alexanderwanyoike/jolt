@@ -2,8 +2,8 @@
 
 **Type:** AFK
 **Milestone:** Human addressing / M4.5
-**Status:** Ready
-**Blocked by:** None
+**Status:** Deferred until 020
+**Blocked by:** 020
 
 ## Why
 
@@ -16,7 +16,7 @@ bafkr4i...
 {identity}.jolt
 ```
 
-The next web needs human-scale references. The first honest version is local petnames: names that only mean something on the user's own node.
+Jolt needs human-scale references. The first honest version is local petnames: names that only mean something on the user's own node.
 
 Example:
 
@@ -68,7 +68,7 @@ The address book is local-only:
 
 ## Notes
 
-This card should land after canonical identity addresses and global update-log discovery, because petnames are local shortcuts for identity addresses.
+This card should land after canonical identity addresses, global update-log discovery, and user-facing `.jolt` resolution. Petnames improve UX, but they do not solve the harder problem of letting a fresh node resolve a real `.jolt` address through the network.
 
 Keep the model deliberately simple:
 
