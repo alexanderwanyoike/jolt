@@ -2,8 +2,8 @@
 
 **Type:** AFK
 **Milestone:** Human addressing / M5
-**Status:** Blocked by 006, 020
-**Blocked by:** 006, 020
+**Status:** Ready
+**Blocked by:** None
 
 ## Why
 

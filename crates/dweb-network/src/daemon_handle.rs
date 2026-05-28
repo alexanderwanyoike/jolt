@@ -23,11 +23,16 @@ impl DaemonHandle {
     }
 
     /// Publish a file. Returns the content ID and size.
-    pub async fn publish(&self, file_path: PathBuf) -> Result<PublishResponse, NetworkError> {
+    pub async fn publish(
+        &self,
+        file_path: PathBuf,
+        path: Option<String>,
+    ) -> Result<PublishResponse, NetworkError> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
             .send(DaemonCommand::Publish {
                 file_path,
+                path,
                 response_tx: tx,
             })
             .await

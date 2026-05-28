@@ -37,7 +37,7 @@ impl DaemonClient {
         Ok(body)
     }
 
-    pub async fn publish(&self, file_path: &Path) -> Result<serde_json::Value> {
+    pub async fn publish(&self, file_path: &Path, path: Option<&str>) -> Result<serde_json::Value> {
         let data = std::fs::read(file_path)
             .with_context(|| format!("Failed to read file: {}", file_path.display()))?;
 
@@ -47,7 +47,10 @@ impl DaemonClient {
             .unwrap_or_else(|| "file".to_string());
 
         let part = reqwest::multipart::Part::bytes(data).file_name(file_name);
-        let form = reqwest::multipart::Form::new().part("file", part);
+        let mut form = reqwest::multipart::Form::new().part("file", part);
+        if let Some(path) = path {
+            form = form.text("path", path.to_string());
+        }
 
         let resp = self
             .client

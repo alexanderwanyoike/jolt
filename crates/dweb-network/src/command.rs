@@ -11,6 +11,7 @@ use crate::error::NetworkError;
 pub enum DaemonCommand {
     Publish {
         file_path: PathBuf,
+        path: Option<String>,
         response_tx: oneshot::Sender<Result<PublishResponse, NetworkError>>,
     },
     Fetch {
@@ -54,6 +55,12 @@ pub enum DaemonCommand {
 pub struct PublishResponse {
     pub content_id: String,
     pub size: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_sequence: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

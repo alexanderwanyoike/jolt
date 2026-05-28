@@ -18,13 +18,13 @@ pub async fn publish_file(
 ) -> Result<impl IntoResponse, ApiError> {
     // Extract the file from multipart
     let mut file_data = None;
+    let mut path = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
-        if field.name() == Some("file") {
-            match field.bytes().await {
+        match field.name() {
+            Some("file") => match field.bytes().await {
                 Ok(bytes) => {
                     file_data = Some(bytes);
-                    break;
                 }
                 Err(e) => {
                     return Ok((
@@ -33,7 +33,21 @@ pub async fn publish_file(
                     )
                         .into_response());
                 }
-            }
+            },
+            Some("path") => match field.text().await {
+                Ok(value) if !value.trim().is_empty() => {
+                    path = Some(value);
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    return Ok((
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({ "error": format!("Failed to read path: {e}") })),
+                    )
+                        .into_response());
+                }
+            },
+            _ => {}
         }
     }
 
@@ -61,7 +75,7 @@ pub async fn publish_file(
     ));
     std::fs::write(&temp_path, &data).map_err(|e| ApiError(dweb_network::NetworkError::Io(e)))?;
 
-    let result = state.daemon.publish(temp_path.clone()).await;
+    let result = state.daemon.publish(temp_path.clone(), path).await;
 
     // Clean up temp file
     let _ = std::fs::remove_file(&temp_path);

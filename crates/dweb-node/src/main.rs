@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Stop => commands::stop::run().await?,
         Commands::Status => commands::status::run().await?,
-        Commands::Publish { file } => commands::publish::run(&file).await?,
+        Commands::Publish { file, path } => commands::publish::run(&file, path.as_deref()).await?,
         Commands::Fetch { content_id, output } => commands::fetch::run(&content_id, output).await?,
         Commands::Resolve { address } => commands::resolve::run(&address).await?,
         Commands::Cache { command } => match command {
