@@ -1,5 +1,6 @@
+use dweb_core::{ContentId, JoltAddress, UpdateAction, UpdateLogEntry};
 use dweb_identity::NodeIdentity;
-use dweb_network::{DaemonHandle, NetworkConfig, NetworkNode};
+use dweb_network::{DaemonHandle, Multiaddr, NetworkConfig, NetworkNode};
 use dweb_store::{CacheConfig, ContentStore};
 use tokio::sync::mpsc;
 
@@ -25,8 +26,16 @@ async fn start_test_server_with_node(
             .unwrap();
     }
 
+    start_test_server_from_node(node, dir).await
+}
+
+async fn start_test_server_from_node(
+    mut node: NetworkNode,
+    dir: tempfile::TempDir,
+) -> (u16, DaemonHandle, tempfile::TempDir) {
     // Use short fetch timeout for tests
     node.set_fetch_timeout(std::time::Duration::from_secs(2));
+    node.set_resolve_timeout(std::time::Duration::from_secs(2));
 
     let (cmd_tx, cmd_rx) = mpsc::channel(64);
     let handle = DaemonHandle::new(cmd_tx);
@@ -44,6 +53,18 @@ async fn start_test_server_with_node(
     (port, handle, dir)
 }
 
+fn signed_profile_log(identity: &NodeIdentity, label: &[u8]) -> Vec<UpdateLogEntry> {
+    vec![UpdateLogEntry::genesis(
+        identity.public_key_bytes(),
+        UpdateAction::SetPath {
+            path: "/profile".to_string(),
+            content_id: ContentId::from_bytes(label),
+        },
+        |bytes| identity.sign(bytes),
+    )
+    .unwrap()]
+}
+
 fn base_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
@@ -54,6 +75,27 @@ fn free_tcp_port() -> u16 {
         .local_addr()
         .unwrap()
         .port()
+}
+
+fn no_mdns_config() -> NetworkConfig {
+    NetworkConfig {
+        enable_mdns: false,
+        ..NetworkConfig::test_config()
+    }
+}
+
+async fn wait_for_connected_peers(handle: &DaemonHandle, expected: usize) {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let status = handle.status().await.unwrap();
+            if status.connected_peers >= expected {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("timed out waiting for connected peers");
 }
 
 #[tokio::test]
@@ -77,6 +119,7 @@ async fn test_dashboard_root_endpoint() {
     assert!(body.contains("/api/v1/status"));
     assert!(body.contains("/api/v1/publish"));
     assert!(body.contains("/api/v1/peers/connect"));
+    assert!(body.contains("/api/v1/resolve"));
 
     handle.shutdown().await.ok();
 }
@@ -96,6 +139,7 @@ async fn test_dashboard_path_endpoint() {
     let body = resp.text().await.unwrap();
     assert!(body.contains("Jolt Node Console"));
     assert!(body.contains("/api/v1/cache/entries"));
+    assert!(body.contains("Resolve"));
 
     handle.shutdown().await.ok();
 }
@@ -169,6 +213,157 @@ async fn test_peers_endpoint() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert!(body.is_array());
     assert_eq!(body.as_array().unwrap().len(), 0);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_resolve_endpoint_uses_verified_update_log_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = NodeIdentity::generate();
+    let identity_id = owner.identity_id();
+    let address = JoltAddress::new(identity_id.clone(), "/profile").unwrap();
+    let content_id = ContentId::from_bytes(b"cached profile");
+    let update_log = signed_profile_log(&owner, b"cached profile");
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut node = NetworkNode::new_tcp(owner, store, NetworkConfig::test_config()).unwrap();
+    node.store_verified_update_log(identity_id.clone(), update_log)
+        .unwrap();
+
+    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/resolve", base_url(port)))
+        .json(&serde_json::json!({ "address": address.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["address"], address.to_string());
+    assert_eq!(body["identity"], identity_id.to_string());
+    assert_eq!(body["path"], "/profile");
+    assert_eq!(body["latest_sequence"], 0);
+    assert_eq!(body["content_id"], content_id.to_string());
+    assert_eq!(body["reachability_hints"].as_array().unwrap().len(), 0);
+    assert_eq!(body["source"], "cache");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_resolve_endpoint_rejects_malformed_jolt_address() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/resolve", base_url(port)))
+        .json(&serde_json::json!({ "address": "alice" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains(".jolt"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_resolve_endpoint_discovers_update_log_provider_through_bootstrap_relay() {
+    let relay_dir = tempfile::tempdir().unwrap();
+    let alice_dir = tempfile::tempdir().unwrap();
+    let bob_dir = tempfile::tempdir().unwrap();
+    let relay_p2p = free_tcp_port();
+    let alice_p2p = free_tcp_port();
+    let bob_p2p = free_tcp_port();
+
+    let relay_identity = NodeIdentity::generate();
+    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, no_mdns_config()).unwrap();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+        .unwrap();
+    let (_relay_api, relay_handle, _relay_dir) =
+        start_test_server_from_node(relay, relay_dir).await;
+    let relay_peer = relay_handle.status().await.unwrap().peer_id;
+    let relay_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}")
+        .parse()
+        .unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_identity_id = alice_identity.identity_id();
+    let address = JoltAddress::new(alice_identity_id.clone(), "/profile").unwrap();
+    let content_id = ContentId::from_bytes(b"alice profile via dht resolve");
+    let update_log = signed_profile_log(&alice_identity, b"alice profile via dht resolve");
+    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, no_mdns_config()).unwrap();
+    alice
+        .store_verified_update_log(alice_identity_id.clone(), update_log)
+        .unwrap();
+    alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
+        .unwrap();
+    alice.bootstrap_dht(&[relay_addr.clone()]).unwrap();
+    alice
+        .announce_update_log_provider(&alice_identity_id)
+        .unwrap();
+    let (_alice_api, alice_handle, _alice_dir) =
+        start_test_server_from_node(alice, alice_dir).await;
+
+    let bob_identity = NodeIdentity::generate();
+    let bob_store = ContentStore::open(bob_dir.path(), CacheConfig::default()).unwrap();
+    let mut bob = NetworkNode::new_tcp(bob_identity, bob_store, no_mdns_config()).unwrap();
+    bob.listen_on(&format!("/ip4/127.0.0.1/tcp/{bob_p2p}"))
+        .unwrap();
+    bob.bootstrap_dht(&[relay_addr]).unwrap();
+    let (bob_api, bob_handle, _bob_dir) = start_test_server_from_node(bob, bob_dir).await;
+
+    wait_for_connected_peers(&alice_handle, 1).await;
+    wait_for_connected_peers(&bob_handle, 1).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/api/v1/resolve", base_url(bob_api)))
+        .json(&serde_json::json!({ "address": address.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["address"], address.to_string());
+    assert_eq!(body["identity"], alice_identity_id.to_string());
+    assert_eq!(body["path"], "/profile");
+    assert_eq!(body["latest_sequence"], 0);
+    assert_eq!(body["content_id"], content_id.to_string());
+    assert_eq!(body["source"], "network");
+
+    relay_handle.shutdown().await.ok();
+    alice_handle.shutdown().await.ok();
+    bob_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_resolve_endpoint_reports_no_update_log_provider_candidates() {
+    let (port, handle, _dir) = start_test_server().await;
+    let missing_identity = NodeIdentity::generate().identity_id();
+    let address = JoltAddress::new(missing_identity, "/profile").unwrap();
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/resolve", base_url(port)))
+        .json(&serde_json::json!({ "address": address.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("jolt:update-log"));
 
     handle.shutdown().await.ok();
 }

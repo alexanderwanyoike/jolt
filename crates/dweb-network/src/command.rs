@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
+use dweb_core::RelayHint;
+
 use crate::error::NetworkError;
 
 /// Commands sent from HTTP handlers / CLI to the daemon event loop.
@@ -14,6 +16,10 @@ pub enum DaemonCommand {
     Fetch {
         content_id: String,
         response_tx: oneshot::Sender<Result<FetchResult, NetworkError>>,
+    },
+    Resolve {
+        address: String,
+        response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
     },
     ConnectPeer {
         multiaddr: String,
@@ -55,6 +61,17 @@ pub struct FetchResult {
     pub data: Vec<u8>,
     pub content_id: String,
     pub size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolveResponse {
+    pub address: String,
+    pub identity: String,
+    pub path: String,
+    pub latest_sequence: u64,
+    pub content_id: String,
+    pub reachability_hints: Vec<RelayHint>,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

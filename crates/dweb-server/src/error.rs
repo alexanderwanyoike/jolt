@@ -25,6 +25,7 @@ impl IntoResponse for ApiError {
                 StatusCode::NOT_FOUND,
                 format!("No provider found for: {id}"),
             ),
+            NetworkError::InvalidInput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             NetworkError::Io(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("IO error: {e}"),

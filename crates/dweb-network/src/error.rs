@@ -8,6 +8,9 @@ pub enum NetworkError {
     #[error("Protocol error: {0}")]
     Protocol(String),
 
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     #[error("Content not found: {0}")]
     ContentNotFound(String),
 

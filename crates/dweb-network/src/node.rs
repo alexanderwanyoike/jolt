@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use libp2p::futures::StreamExt;
@@ -19,12 +20,18 @@ use dweb_store::ContentStore;
 use crate::behaviour::{DwebBehaviour, DwebBehaviourEvent};
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
-    PeerConnectResponse, PeerInfo, PublishResponse,
+    PeerConnectResponse, PeerInfo, PublishResponse, ResolveResponse,
 };
 use crate::config::NetworkConfig;
 use crate::error::NetworkError;
 use crate::fetch_manager::FetchManager;
 use crate::protocol::{ContentRequest, ContentResponse, UpdateLogRequest, UpdateLogResponse};
+
+struct PendingResolve {
+    address: JoltAddress,
+    response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
+    deadline: Instant,
+}
 
 /// Tracks connection quality for a connected peer.
 #[derive(Debug, Clone)]
@@ -90,6 +97,15 @@ pub struct NetworkNode {
             oneshot::Sender<Result<ResolvedJoltTarget, NetworkError>>,
         ),
     >,
+    pending_daemon_resolutions: HashMap<
+        OutboundRequestId,
+        (
+            JoltAddress,
+            Option<u64>,
+            oneshot::Sender<Result<ResolveResponse, NetworkError>>,
+        ),
+    >,
+    pending_resolves: HashMap<IdentityId, Vec<PendingResolve>>,
     /// Providers discovered via DHT: content_id string -> provider PeerIds
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
     /// Verified update logs by owner identity.
@@ -100,6 +116,8 @@ pub struct NetworkNode {
     started_at: Instant,
     /// Manages in-flight fetch operations for the daemon loop
     fetch_manager: FetchManager,
+    /// Maximum time to wait for `.jolt` provider discovery.
+    resolve_timeout: Duration,
     /// iroh endpoint for pre-populating peer addresses before dialing
     iroh_endpoint: Option<iroh::Endpoint>,
     /// Transport label reported through status endpoints.
@@ -199,11 +217,14 @@ impl NetworkNode {
             pending_fetches: HashMap::new(),
             pending_update_log_requests: HashMap::new(),
             pending_jolt_resolutions: HashMap::new(),
+            pending_daemon_resolutions: HashMap::new(),
+            pending_resolves: HashMap::new(),
             discovered_providers: HashMap::new(),
             update_logs: HashMap::new(),
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
+            resolve_timeout: Duration::from_secs(10),
             iroh_endpoint,
             transport_name: "iroh",
             configured_bootstrap_relays: config.configured_bootstrap_relays,
@@ -291,11 +312,14 @@ impl NetworkNode {
             pending_fetches: HashMap::new(),
             pending_update_log_requests: HashMap::new(),
             pending_jolt_resolutions: HashMap::new(),
+            pending_daemon_resolutions: HashMap::new(),
+            pending_resolves: HashMap::new(),
             discovered_providers: HashMap::new(),
             update_logs: HashMap::new(),
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
+            resolve_timeout: Duration::from_secs(10),
             iroh_endpoint: None,
             transport_name: "tcp",
             configured_bootstrap_relays: config.configured_bootstrap_relays,
@@ -494,6 +518,105 @@ impl NetworkNode {
         })?;
         resolve_jolt_address(address, entries, now)
             .map_err(|e| NetworkError::Protocol(e.to_string()))
+    }
+
+    fn resolve_response_from_cache(
+        &self,
+        address: &JoltAddress,
+        now: Option<u64>,
+        source: impl Into<String>,
+    ) -> Result<ResolveResponse, NetworkError> {
+        let entries = self.update_logs.get(address.identity()).ok_or_else(|| {
+            NetworkError::Protocol(format!(
+                "No verified update log cached for {}",
+                address.identity()
+            ))
+        })?;
+        let latest_sequence = verify_update_log_for_identity(address.identity(), entries)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let target = resolve_jolt_address(address, entries, now)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+
+        Ok(ResolveResponse {
+            address: address.to_string(),
+            identity: target.identity.to_string(),
+            path: target.path,
+            latest_sequence,
+            content_id: target.content_id.to_string(),
+            reachability_hints: target.reachability,
+            source: source.into(),
+        })
+    }
+
+    fn request_daemon_resolve_from_provider(
+        &mut self,
+        address: JoltAddress,
+        now: Option<u64>,
+        provider: &libp2p::PeerId,
+        response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
+    ) {
+        let request = UpdateLogRequest {
+            identity: address.identity().clone(),
+            since: self
+                .update_logs
+                .get(address.identity())
+                .and_then(|entries| {
+                    verify_update_log_for_identity(address.identity(), entries).ok()
+                }),
+        };
+
+        let request_id = self
+            .swarm
+            .behaviour_mut()
+            .update_log_sync
+            .send_request(provider, request);
+        self.pending_daemon_resolutions
+            .insert(request_id, (address, now, response_tx));
+    }
+
+    fn request_pending_resolves_from_provider(
+        &mut self,
+        identity: &IdentityId,
+        provider: &libp2p::PeerId,
+    ) {
+        let Some(pending) = self.pending_resolves.remove(identity) else {
+            return;
+        };
+
+        for pending in pending {
+            self.request_daemon_resolve_from_provider(
+                pending.address,
+                None,
+                provider,
+                pending.response_tx,
+            );
+        }
+    }
+
+    fn check_resolve_timeouts(&mut self) {
+        let now = Instant::now();
+        let mut empty = Vec::new();
+
+        for (identity, pending) in &mut self.pending_resolves {
+            let mut still_waiting = Vec::new();
+            for pending in pending.drain(..) {
+                if pending.deadline <= now {
+                    let _ = pending.response_tx.send(Err(NetworkError::ProviderNotFound(
+                        Self::update_log_provider_key(identity),
+                    )));
+                } else {
+                    still_waiting.push(pending);
+                }
+            }
+            *pending = still_waiting;
+            if pending.is_empty() {
+                empty.push(identity.clone());
+            }
+        }
+
+        for identity in empty {
+            self.pending_resolves.remove(&identity);
+        }
     }
 
     /// Add bootstrap peers to Kademlia, dial them, and initiate DHT bootstrap.
@@ -825,6 +948,21 @@ impl NetworkNode {
                             .and_then(|_| self.resolve_cached_jolt_address(&address, now))
                     };
                     let _ = tx.send(result);
+                } else if let Some((address, now, tx)) =
+                    self.pending_daemon_resolutions.remove(&request_id)
+                {
+                    let result = if response.entries.is_empty() {
+                        Err(NetworkError::Protocol(format!(
+                            "No update log entries returned for {}",
+                            address.identity()
+                        )))
+                    } else {
+                        self.store_verified_update_log(address.identity().clone(), response.entries)
+                            .and_then(|_| {
+                                self.resolve_response_from_cache(&address, now, "network")
+                            })
+                    };
+                    let _ = tx.send(result);
                 }
             }
 
@@ -841,6 +979,11 @@ impl NetworkNode {
                 }
                 if let Some((_address, _now, tx)) =
                     self.pending_jolt_resolutions.remove(&request_id)
+                {
+                    let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                }
+                if let Some((_address, _now, tx)) =
+                    self.pending_daemon_resolutions.remove(&request_id)
                 {
                     let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
                 }
@@ -886,6 +1029,13 @@ impl NetworkNode {
                                         key, providers, ..
                                     } => {
                                         let key_str = String::from_utf8_lossy(key.as_ref()).to_string();
+                                        let pending_identity = self
+                                            .pending_resolves
+                                            .keys()
+                                            .find(|identity| {
+                                                Self::update_log_provider_key(identity) == key_str
+                                            })
+                                            .cloned();
                                         for provider in providers {
                                             if provider != *self.swarm.local_peer_id() {
                                                 info!("DHT found provider {provider} for {key_str}");
@@ -905,6 +1055,13 @@ impl NetworkNode {
                                                 // Dial the provider (iroh handles NAT traversal automatically)
                                                 if let Err(e) = self.swarm.dial(provider) {
                                                     debug!("Failed to dial provider {provider}: {e}");
+                                                }
+
+                                                if let Some(identity) = &pending_identity {
+                                                    self.request_pending_resolves_from_provider(
+                                                        identity,
+                                                        &provider,
+                                                    );
                                                 }
                                             }
                                         }
@@ -1003,6 +1160,7 @@ impl NetworkNode {
                 }
                 _ = timeout_interval.tick() => {
                     self.fetch_manager.check_timeouts();
+                    self.check_resolve_timeouts();
 
                     // Send content requests for providers that have connected
                     let ready = self.fetch_manager.ready_to_request();
@@ -1079,6 +1237,46 @@ impl NetworkNode {
 
                 self.fetch_manager
                     .start_fetch(content_id, response_tx, request_ids);
+            }
+            DaemonCommand::Resolve {
+                address,
+                response_tx,
+            } => {
+                let address = match JoltAddress::from_str(&address) {
+                    Ok(address) => address,
+                    Err(e) => {
+                        let _ = response_tx.send(Err(NetworkError::InvalidInput(e.to_string())));
+                        return;
+                    }
+                };
+
+                match self.resolve_response_from_cache(&address, None, "cache") {
+                    Ok(response) => {
+                        let _ = response_tx.send(Ok(response));
+                    }
+                    Err(_) => {
+                        let identity = address.identity().clone();
+                        self.find_update_log_providers(&identity);
+
+                        if let Some(provider) = self.take_discovered_update_log_provider(&identity)
+                        {
+                            self.request_daemon_resolve_from_provider(
+                                address,
+                                None,
+                                &provider,
+                                response_tx,
+                            );
+                        } else {
+                            self.pending_resolves.entry(identity).or_default().push(
+                                PendingResolve {
+                                    address,
+                                    response_tx,
+                                    deadline: Instant::now() + self.resolve_timeout,
+                                },
+                            );
+                        }
+                    }
+                }
             }
             DaemonCommand::ConnectPeer {
                 multiaddr,
@@ -1219,6 +1417,11 @@ impl NetworkNode {
     /// Set the fetch timeout for the daemon's fetch manager.
     pub fn set_fetch_timeout(&mut self, timeout: Duration) {
         self.fetch_manager = FetchManager::with_timeout(timeout);
+    }
+
+    /// Set the timeout for daemon `.jolt` provider discovery.
+    pub fn set_resolve_timeout(&mut self, timeout: Duration) {
+        self.resolve_timeout = timeout;
     }
 }
 

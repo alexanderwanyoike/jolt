@@ -86,6 +86,25 @@ impl DaemonClient {
         Ok(body)
     }
 
+    pub async fn resolve(&self, address: &str) -> Result<serde_json::Value> {
+        let resp = self
+            .client
+            .post(format!("{}/api/v1/resolve", self.base_url))
+            .json(&serde_json::json!({ "address": address }))
+            .send()
+            .await
+            .context("Failed to connect to daemon")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Resolve failed ({status}): {body}");
+        }
+
+        let body = resp.json().await?;
+        Ok(body)
+    }
+
     pub async fn cache_stats(&self) -> Result<serde_json::Value> {
         let resp = self
             .client

@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
-    PeerConnectResponse, PeerInfo, PublishResponse,
+    PeerConnectResponse, PeerInfo, PublishResponse, ResolveResponse,
 };
 use crate::error::NetworkError;
 
@@ -42,6 +42,20 @@ impl DaemonHandle {
         self.cmd_tx
             .send(DaemonCommand::Fetch {
                 content_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Resolve a `.jolt` address to its current content target.
+    pub async fn resolve(&self, address: String) -> Result<ResolveResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::Resolve {
+                address,
                 response_tx: tx,
             })
             .await
