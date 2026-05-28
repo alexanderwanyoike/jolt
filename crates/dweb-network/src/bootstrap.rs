@@ -43,7 +43,7 @@ pub fn quic_variant(addr: &Multiaddr) -> Option<Multiaddr> {
     }
 
     // Find the TCP port and build a QUIC addr
-    let mut components: Vec<libp2p::multiaddr::Protocol> = addr.iter().collect();
+    let components: Vec<libp2p::multiaddr::Protocol> = addr.iter().collect();
     let mut quic_components = Vec::new();
 
     for component in &components {
@@ -64,7 +64,9 @@ pub fn quic_variant(addr: &Multiaddr) -> Option<Multiaddr> {
 
 /// Parse a bootstrap addr and return both the original and its QUIC variant.
 /// This ensures nodes connect via both TCP and QUIC for better address discovery.
-pub fn parse_bootstrap_addr_with_quic(addr: &str) -> Result<Vec<(PeerId, Multiaddr)>, NetworkError> {
+pub fn parse_bootstrap_addr_with_quic(
+    addr: &str,
+) -> Result<Vec<(PeerId, Multiaddr)>, NetworkError> {
     let (peer_id, transport) = parse_bootstrap_addr(addr)?;
     let mut results = vec![(peer_id, transport.clone())];
 
@@ -75,8 +77,10 @@ pub fn parse_bootstrap_addr_with_quic(addr: &str) -> Result<Vec<(PeerId, Multiad
     Ok(results)
 }
 
-/// Default bootstrap peer addresses.
-/// These are well-known public dweb nodes that help new nodes join the DHT.
+/// Optional built-in bootstrap peer addresses.
+///
+/// Keep this empty until there are intentionally managed bootstrap nodes. Public
+/// production relays should not appear here by accident.
 pub fn default_bootstrap_peers() -> Vec<String> {
     // Will be populated when bootstrap nodes are deployed
     vec![]
@@ -88,7 +92,8 @@ mod tests {
 
     #[test]
     fn parse_bootstrap_multiaddr_extracts_peer_id() {
-        let addr = "/ip4/89.167.68.65/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
+        let addr =
+            "/ip4/89.167.68.65/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
         let (peer_id, transport) = parse_bootstrap_addr(addr).unwrap();
         assert_eq!(
             peer_id.to_string(),
@@ -106,8 +111,7 @@ mod tests {
 
     #[test]
     fn default_bootstrap_list_exists() {
-        // Currently empty, but the function exists
-        let _peers = default_bootstrap_peers();
+        assert!(default_bootstrap_peers().is_empty());
     }
 
     #[test]
@@ -125,7 +129,8 @@ mod tests {
 
     #[test]
     fn parse_bootstrap_with_quic_returns_both() {
-        let addr = "/ip4/89.167.68.65/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
+        let addr =
+            "/ip4/89.167.68.65/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
         let results = parse_bootstrap_addr_with_quic(addr).unwrap();
         assert_eq!(results.len(), 2);
         // First is original TCP

@@ -3,11 +3,13 @@ use tokio::sync::mpsc;
 use tracing::info;
 
 use dweb_identity::NodeIdentity;
-use dweb_network::{DaemonHandle, Multiaddr, NetworkConfig, NetworkNode};
+use dweb_network::{
+    bootstrap::default_bootstrap_peers, DaemonHandle, Multiaddr, NetworkConfig, NetworkNode,
+};
 use dweb_store::{CacheConfig, ContentStore};
 
 use crate::cli::TransportMode;
-use crate::config::NodeConfig;
+use crate::config::{NodeConfig, NodeSettings};
 use crate::daemon;
 
 pub async fn run(
@@ -34,15 +36,10 @@ pub async fn run(
 
     let identity = NodeIdentity::load_or_generate(&config.identity_dir)?;
     info!("Peer ID: {}", identity.peer_id());
-
-    let mut net_config = NetworkConfig::default();
-    net_config.p2p_port = p2p_port;
-    if !bootstrap.is_empty() {
-        net_config.bootstrap_peers = bootstrap
-            .iter()
-            .filter_map(|s| s.parse().ok())
-            .collect();
-    }
+    let settings = config.load_settings()?;
+    let builtin_bootstrap = default_bootstrap_peers();
+    let (net_config, effective_bootstrap) =
+        build_network_config(&settings, &bootstrap, &builtin_bootstrap, p2p_port);
 
     let store = ContentStore::open(&config.content_store_dir, CacheConfig::default())?;
     let published_ids: Vec<String> = store.published_ids();
@@ -72,8 +69,11 @@ pub async fn run(
     }
 
     // Bootstrap into DHT (must happen before daemon loop starts so swarm has peers)
-    if !no_bootstrap && !bootstrap.is_empty() {
-        let addrs: Vec<Multiaddr> = bootstrap.iter().filter_map(|s| s.parse().ok()).collect();
+    if !no_bootstrap && !effective_bootstrap.is_empty() {
+        let addrs: Vec<Multiaddr> = effective_bootstrap
+            .iter()
+            .filter_map(|s| s.parse().ok())
+            .collect();
         match node.bootstrap_dht(&addrs) {
             Ok(()) => info!("DHT bootstrap initiated with {} peers", addrs.len()),
             Err(e) => info!("DHT bootstrap skipped: {e}"),
@@ -95,6 +95,12 @@ pub async fn run(
 
     info!("mDNS discovery active on LAN");
     info!("Published content: {} items", published_ids.len());
+    info!(
+        "Configured bootstrap relays: {}",
+        settings.bootstrap_relays.len()
+    );
+    info!("Effective bootstrap relays: {}", effective_bootstrap.len());
+    info!("Bootstrap relay mode: {}", settings.bootstrap_relay);
     info!("HTTP API: http://{api_bind}:{api_port}");
     info!("PID: {pid}");
     match transport {
@@ -117,4 +123,71 @@ pub async fn run(
     }
 
     Ok(())
+}
+
+fn build_network_config(
+    settings: &NodeSettings,
+    cli_bootstrap: &[String],
+    builtin_bootstrap: &[String],
+    p2p_port: u16,
+) -> (NetworkConfig, Vec<String>) {
+    let effective_bootstrap = settings.effective_bootstrap_relays(cli_bootstrap, builtin_bootstrap);
+    let mut net_config = NetworkConfig::default();
+    net_config.p2p_port = p2p_port;
+    net_config.configured_bootstrap_relays = settings.bootstrap_relays.clone();
+    net_config.effective_bootstrap_relays = effective_bootstrap.clone();
+    net_config.bootstrap_relay = settings.bootstrap_relay;
+    net_config.bootstrap_peers = effective_bootstrap
+        .iter()
+        .filter_map(|s| s.parse().ok())
+        .collect();
+
+    (net_config, effective_bootstrap)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CONFIGURED: &str =
+        "/ip4/89.167.68.65/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
+    const CLI: &str =
+        "/ip4/89.167.68.66/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
+    const BUILTIN: &str =
+        "/dns4/bootstrap.jolt.test/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
+
+    #[test]
+    fn build_network_config_uses_configured_and_cli_bootstrap_relays() {
+        let settings = NodeSettings {
+            bootstrap_relays: vec![CONFIGURED.to_string()],
+            use_builtin_bootstrap_relays: true,
+            bootstrap_relay: true,
+        };
+        let cli = vec![CLI.to_string()];
+        let builtins = vec![BUILTIN.to_string()];
+
+        let (config, effective) = build_network_config(&settings, &cli, &builtins, 4001);
+
+        assert_eq!(effective, vec![CONFIGURED.to_string(), CLI.to_string()]);
+        assert_eq!(config.bootstrap_peers.len(), 2);
+        assert_eq!(config.configured_bootstrap_relays, vec![CONFIGURED]);
+        assert_eq!(
+            config.effective_bootstrap_relays,
+            vec![CONFIGURED.to_string(), CLI.to_string()]
+        );
+        assert!(config.bootstrap_relay);
+        assert_eq!(config.p2p_port, 4001);
+    }
+
+    #[test]
+    fn build_network_config_uses_builtin_defaults_when_explicit_relays_absent() {
+        let settings = NodeSettings::default();
+        let builtins = vec![BUILTIN.to_string()];
+
+        let (config, effective) = build_network_config(&settings, &[], &builtins, 0);
+
+        assert_eq!(effective, vec![BUILTIN.to_string()]);
+        assert_eq!(config.bootstrap_peers.len(), 1);
+        assert_eq!(config.effective_bootstrap_relays, vec![BUILTIN]);
+    }
 }

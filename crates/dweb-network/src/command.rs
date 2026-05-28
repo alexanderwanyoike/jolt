@@ -76,6 +76,9 @@ pub struct NodeStatus {
     pub published_count: usize,
     pub cached_count: usize,
     pub listen_addresses: Vec<String>,
+    pub bootstrap_relay: bool,
+    pub configured_bootstrap_relays: Vec<String>,
+    pub effective_bootstrap_relays: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

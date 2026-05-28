@@ -138,6 +138,18 @@ async fn test_status_endpoint() {
     assert!(identity_address.ends_with(".jolt"));
     assert!(body["uptime_secs"].is_number());
     assert_eq!(body["connected_peers"], 0);
+    assert_eq!(body["bootstrap_relay"], false);
+    assert_eq!(
+        body["configured_bootstrap_relays"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        body["effective_bootstrap_relays"].as_array().unwrap().len(),
+        0
+    );
 
     handle.shutdown().await.ok();
 }
