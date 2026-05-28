@@ -1429,7 +1429,12 @@ impl NetworkNode {
                 let result = self
                     .store
                     .pin(&content_id)
-                    .map_err(|e| NetworkError::Protocol(e.to_string()));
+                    .map_err(|e| NetworkError::Protocol(e.to_string()))
+                    .and_then(|_| {
+                        let content_id = ContentId::from_str(&content_id)
+                            .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+                        self.announce_provider(&content_id)
+                    });
                 let _ = response_tx.send(result);
             }
             DaemonCommand::Unpin {

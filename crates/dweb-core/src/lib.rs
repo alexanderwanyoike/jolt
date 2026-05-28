@@ -1,12 +1,14 @@
 pub mod content_id;
 pub mod error;
 pub mod identity_address;
+pub mod pin_request;
 pub mod types;
 pub mod update_log;
 
 pub use content_id::ContentId;
 pub use error::DwebError;
 pub use identity_address::{IdentityId, JoltAddress};
+pub use pin_request::{PinRequest, PinRequestBody, PinRequestError};
 pub use types::ContentManifest;
 pub use update_log::{
     resolve_jolt_address, resolve_latest_record, select_newest_verified_update_log,
