@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** M5
-**Status:** Blocked by 019
+**Status:** Done
 **Blocked by:** 019
 
 ## Why
@@ -39,13 +39,13 @@ Bob
 
 ## Acceptance Criteria
 
-- [ ] A node can announce itself as an update-log provider under `jolt:update-log:{identity}`.
-- [ ] A fresh node can bootstrap through a configured relay.
-- [ ] Bob can discover an update-log provider through the DHT after bootstrapping through the relay.
-- [ ] Bob can request the candidate update log after provider discovery.
-- [ ] Bob verifies the update log before storing it.
-- [ ] Test covers Alice -> Relay -> Bob with Bob starting from no Alice state.
-- [ ] Invalid candidate logs are rejected in the discovery path.
+- [x] A node can announce itself as an update-log provider under `jolt:update-log:{identity}`.
+- [x] A fresh node can bootstrap through a configured relay.
+- [x] Bob can discover an update-log provider through the DHT after bootstrapping through the relay.
+- [x] Bob can request the candidate update log after provider discovery.
+- [x] Bob verifies the update log before storing it.
+- [x] Test covers Alice -> Relay -> Bob with Bob starting from no Alice state.
+- [x] Invalid candidate logs are rejected in the discovery path.
 
 ## Non-Goals
 

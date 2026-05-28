@@ -141,8 +141,15 @@ impl NetworkNode {
         let iroh_endpoint = transport.endpoint().ok();
 
         // Build behaviours (only 4 -- iroh handles all NAT/relay)
-        let mdns = libp2p::mdns::tokio::Behaviour::new(libp2p::mdns::Config::default(), peer_id)
-            .map_err(|e| NetworkError::Swarm(e.to_string()))?;
+        let mdns = if config.enable_mdns {
+            Some(
+                libp2p::mdns::tokio::Behaviour::new(libp2p::mdns::Config::default(), peer_id)
+                    .map_err(|e| NetworkError::Swarm(e.to_string()))?,
+            )
+        } else {
+            None
+        }
+        .into();
 
         let content_fetch = request_response::cbor::Behaviour::new(
             [(
@@ -226,8 +233,15 @@ impl NetworkNode {
             .multiplex(libp2p::yamux::Config::default())
             .boxed();
 
-        let mdns = libp2p::mdns::tokio::Behaviour::new(libp2p::mdns::Config::default(), peer_id)
-            .map_err(|e| NetworkError::Swarm(e.to_string()))?;
+        let mdns = if config.enable_mdns {
+            Some(
+                libp2p::mdns::tokio::Behaviour::new(libp2p::mdns::Config::default(), peer_id)
+                    .map_err(|e| NetworkError::Swarm(e.to_string()))?,
+            )
+        } else {
+            None
+        }
+        .into();
 
         let content_fetch = request_response::cbor::Behaviour::new(
             [(

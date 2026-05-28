@@ -76,12 +76,12 @@ The current focus is:
 | [018](018-global-update-log-discovery-v0.md) | AFK | Done | Discover, fetch, verify, and cache signed update logs for global `.jolt` lookup. |
 | [019](019-bootstrap-config-and-relay-mode-v0.md) | AFK | Done | Add persistent bootstrap config and explicit bootstrap/discovery relay mode. |
 | [023](023-bootstrap-management-ux.md) | AFK | Done | Add CLI UX for listing, adding, and removing bootstrap relay addresses. |
-| [024](024-dht-bootstrap-discovery-path.md) | AFK | Ready | Prove Bob can discover Alice's update-log provider through a configured relay and DHT. |
-| [025](025-discovered-relay-peer-cache.md) | AFK | Blocked by 024 | Cache useful discovered relay/node addresses for future starts. |
+| [024](024-dht-bootstrap-discovery-path.md) | AFK | Done | Prove Bob can discover Alice's update-log provider through a configured relay and DHT. |
+| [025](025-discovered-relay-peer-cache.md) | AFK | Ready | Cache useful discovered relay/node addresses for future starts. |
 | [026](026-bootstrap-observability.md) | AFK | Ready | Expose bootstrap state through status/API/dashboard. |
-| [027](027-relay-gossip-v0.md) | HITL | Blocked by 024 | Add relay-to-relay discovery-hint gossip after the DHT-first path is proven. |
-| [028](028-three-node-canary-harness.md) | AFK | Blocked by 024 | Document/run Alice -> Relay -> Bob local test and real-world canary. |
-| [020](020-jolt-resolve-api-cli-dashboard.md) | AFK | Blocked by 024 | Let users resolve `.jolt` addresses through CLI, API, and dashboard. |
+| [027](027-relay-gossip-v0.md) | HITL | Ready | Add relay-to-relay discovery-hint gossip after the DHT-first path is proven. |
+| [028](028-three-node-canary-harness.md) | AFK | Ready | Document/run Alice -> Relay -> Bob local test and real-world canary. |
+| [020](020-jolt-resolve-api-cli-dashboard.md) | AFK | Ready | Let users resolve `.jolt` addresses through CLI, API, and dashboard. |
 | [021](021-fetch-by-jolt-address.md) | AFK | Blocked by 006, 020 | Fetch content from a `.jolt` address instead of a raw CID. |
 | [022](022-offline-publisher-through-relay-smoke-test.md) | AFK | Blocked by 009, 021 | Prove Bob can fetch Alice's content while Alice is offline. |
 | [015](015-local-petnames-and-address-book.md) | AFK | Deferred until 020 | Add local aliases for identity addresses after global resolution is usable. |
