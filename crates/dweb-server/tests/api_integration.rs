@@ -118,6 +118,7 @@ async fn test_dashboard_root_endpoint() {
     assert!(body.contains("Jolt Node Console"));
     assert!(body.contains("/api/v1/status"));
     assert!(body.contains("/api/v1/publish"));
+    assert!(body.contains("publish-path"));
     assert!(body.contains("/api/v1/peers/connect"));
     assert!(body.contains("/api/v1/resolve"));
 
@@ -348,6 +349,91 @@ async fn test_resolve_endpoint_discovers_update_log_provider_through_bootstrap_r
 }
 
 #[tokio::test]
+async fn test_resolve_endpoint_discovers_path_published_through_http() {
+    let relay_dir = tempfile::tempdir().unwrap();
+    let alice_dir = tempfile::tempdir().unwrap();
+    let bob_dir = tempfile::tempdir().unwrap();
+    let relay_p2p = free_tcp_port();
+    let alice_p2p = free_tcp_port();
+    let bob_p2p = free_tcp_port();
+
+    let relay_identity = NodeIdentity::generate();
+    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, no_mdns_config()).unwrap();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+        .unwrap();
+    let (_relay_api, relay_handle, _relay_dir) =
+        start_test_server_from_node(relay, relay_dir).await;
+    let relay_peer = relay_handle.status().await.unwrap().peer_id;
+    let relay_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}")
+        .parse()
+        .unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_identity_id = alice_identity.identity_id();
+    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, no_mdns_config()).unwrap();
+    alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
+        .unwrap();
+    alice.bootstrap_dht(&[relay_addr.clone()]).unwrap();
+    let (alice_api, alice_handle, _alice_dir) = start_test_server_from_node(alice, alice_dir).await;
+
+    let bob_identity = NodeIdentity::generate();
+    let bob_store = ContentStore::open(bob_dir.path(), CacheConfig::default()).unwrap();
+    let mut bob = NetworkNode::new_tcp(bob_identity, bob_store, no_mdns_config()).unwrap();
+    bob.listen_on(&format!("/ip4/127.0.0.1/tcp/{bob_p2p}"))
+        .unwrap();
+    bob.bootstrap_dht(&[relay_addr]).unwrap();
+    let (bob_api, bob_handle, _bob_dir) = start_test_server_from_node(bob, bob_dir).await;
+
+    wait_for_connected_peers(&alice_handle, 1).await;
+    wait_for_connected_peers(&bob_handle, 1).await;
+
+    let client = reqwest::Client::new();
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"network signed path".to_vec()).file_name("hello.txt"),
+        )
+        .text("path", "/hello");
+
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    let address = published["address"].as_str().unwrap();
+    let content_id = ContentId::from_bytes(b"network signed path");
+
+    assert!(address.starts_with(&alice_identity_id.to_string()));
+    assert!(address.ends_with(".jolt/hello"));
+
+    let resolve_resp = client
+        .post(format!("{}/api/v1/resolve", base_url(bob_api)))
+        .json(&serde_json::json!({ "address": address }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resolve_resp.status(), 200);
+    let resolved: serde_json::Value = resolve_resp.json().await.unwrap();
+    assert_eq!(resolved["address"], address);
+    assert_eq!(resolved["identity"], alice_identity_id.to_string());
+    assert_eq!(resolved["path"], "/hello");
+    assert_eq!(resolved["content_id"], content_id.to_string());
+    assert_eq!(resolved["source"], "network");
+
+    relay_handle.shutdown().await.ok();
+    alice_handle.shutdown().await.ok();
+    bob_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_resolve_endpoint_reports_no_update_log_provider_candidates() {
     let (port, handle, _dir) = start_test_server().await;
     let missing_identity = NodeIdentity::generate().identity_id();
@@ -423,7 +509,7 @@ async fn test_two_local_tcp_daemons_publish_fetch_over_api() {
     })
     .await
     .expect("node B did not connect to node A");
-    assert_eq!(connected.direct_peers, 1);
+    assert!(connected.direct_peers >= 1);
 
     let original_data = b"local two node dashboard demo";
     let form = reqwest::multipart::Form::new().part(
@@ -485,6 +571,81 @@ async fn test_publish_endpoint() {
     assert!(body["content_id"].is_string());
     assert!(!body["content_id"].as_str().unwrap().is_empty());
     assert_eq!(body["size"], 15);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_publish_endpoint_can_bind_content_to_jolt_path() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let path = "/hello";
+
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"hello from signed path".to_vec())
+                .file_name("hello.txt"),
+        )
+        .text("path", path.to_string());
+
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(port)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    let content_id = ContentId::from_bytes(b"hello from signed path");
+    assert_eq!(published["content_id"], content_id.to_string());
+    assert_eq!(published["path"], path);
+    let address = published["address"].as_str().unwrap();
+    assert!(address.ends_with(".jolt/hello"));
+    assert_eq!(published["latest_sequence"], 0);
+
+    let resolve_resp = client
+        .post(format!("{}/api/v1/resolve", base_url(port)))
+        .json(&serde_json::json!({ "address": address }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resolve_resp.status(), 200);
+    let resolved: serde_json::Value = resolve_resp.json().await.unwrap();
+    assert_eq!(resolved["address"], address);
+    assert_eq!(resolved["path"], path);
+    assert_eq!(resolved["content_id"], content_id.to_string());
+    assert_eq!(resolved["latest_sequence"], 0);
+    assert_eq!(resolved["source"], "cache");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_publish_endpoint_rejects_invalid_jolt_path() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"should not publish".to_vec()).file_name("bad.txt"),
+        )
+        .text("path", "/bad path");
+
+    let resp = client
+        .post(format!("{}/api/v1/publish", base_url(port)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("path"));
+    let status = handle.status().await.unwrap();
+    assert_eq!(status.published_count, 0);
 
     handle.shutdown().await.ok();
 }

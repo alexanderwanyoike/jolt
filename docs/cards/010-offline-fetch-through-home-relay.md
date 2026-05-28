@@ -3,7 +3,7 @@
 **Type:** AFK  
 **Milestone:** M4.5  
 **Status:** Blocked  
-**Blocked by:** 006, 009
+**Blocked by:** 009
 
 ## Why
 

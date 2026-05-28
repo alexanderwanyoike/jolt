@@ -7,7 +7,7 @@ use crate::client::DaemonClient;
 use crate::config::NodeConfig;
 use crate::daemon;
 
-pub async fn run(file: &Path) -> Result<()> {
+pub async fn run(file: &Path, path: Option<&str>) -> Result<()> {
     if !file.exists() {
         anyhow::bail!("File not found: {}", file.display());
     }
@@ -27,12 +27,13 @@ pub async fn run(file: &Path) -> Result<()> {
     info!("Publishing: {}", file.display());
     info!("Size: {} bytes", metadata.len());
 
-    let response = client.publish(file).await?;
+    let response = client.publish(file, path).await?;
 
-    let content_id = response["content_id"]
-        .as_str()
-        .unwrap_or("unknown");
+    let content_id = response["content_id"].as_str().unwrap_or("unknown");
     println!("{content_id}");
+    if let Some(address) = response["address"].as_str() {
+        println!("{address}");
+    }
     info!("Content is now being served by the daemon");
 
     Ok(())

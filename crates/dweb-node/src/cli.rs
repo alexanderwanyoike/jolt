@@ -48,6 +48,10 @@ pub enum Commands {
     Publish {
         /// Path to the file to publish
         file: PathBuf,
+
+        /// Optional .jolt namespace path to bind to the published CID
+        #[arg(long)]
+        path: Option<String>,
     },
 
     /// Fetch content by its ContentId
@@ -169,8 +173,21 @@ mod tests {
     fn parse_publish_command() {
         let cli = Cli::parse_from(["dweb", "publish", "/tmp/test.txt"]);
         match cli.command {
-            Commands::Publish { file } => {
+            Commands::Publish { file, path } => {
                 assert_eq!(file, PathBuf::from("/tmp/test.txt"));
+                assert!(path.is_none());
+            }
+            _ => panic!("expected Publish command"),
+        }
+    }
+
+    #[test]
+    fn parse_publish_command_with_jolt_path() {
+        let cli = Cli::parse_from(["dweb", "publish", "/tmp/test.txt", "--path", "/hello"]);
+        match cli.command {
+            Commands::Publish { file, path } => {
+                assert_eq!(file, PathBuf::from("/tmp/test.txt"));
+                assert_eq!(path.as_deref(), Some("/hello"));
             }
             _ => panic!("expected Publish command"),
         }

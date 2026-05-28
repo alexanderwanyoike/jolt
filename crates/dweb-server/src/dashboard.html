@@ -565,6 +565,10 @@
               <label for="publish-text">Text</label>
               <textarea id="publish-text" spellcheck="false"></textarea>
             </div>
+            <div class="field">
+              <label for="publish-path">Jolt path</label>
+              <input id="publish-path" class="mono" type="text" autocomplete="off" spellcheck="false" placeholder="/hello">
+            </div>
             <div class="button-row">
               <button class="primary" id="publish-file-button" type="button">Publish File</button>
               <button id="publish-text-button" type="button">Publish Text</button>
@@ -781,10 +785,24 @@
     async function publishFile(file) {
       const form = new FormData();
       form.append("file", file, file.name || "jolt-content.txt");
+      const path = $("publish-path").value.trim();
+      if (path) form.append("path", path);
       const response = await fetch("/api/v1/publish", { method: "POST", body: form });
       const body = await readResponse(response);
       if (!response.ok) throw new Error(body);
       return JSON.parse(body);
+    }
+
+    function renderPublishResult(result) {
+      const lines = [`Published ${result.size} bytes`, result.content_id];
+      if (result.address) lines.push(result.address);
+      return lines.join("\n");
+    }
+
+    function applyPublishResult(result) {
+      setResult("publish-result", "ok", renderPublishResult(result));
+      $("fetch-cid").value = result.content_id;
+      if (result.address) $("resolve-address").value = result.address;
     }
 
     async function fetchContent(contentId) {
@@ -850,8 +868,7 @@
       }
       try {
         const result = await publishFile(file);
-        setResult("publish-result", "ok", `Published ${result.size} bytes\n${result.content_id}`);
-        $("fetch-cid").value = result.content_id;
+        applyPublishResult(result);
         await refresh();
       } catch (error) {
         setResult("publish-result", "err", error.message);
@@ -867,8 +884,7 @@
       try {
         const file = new File([text], "jolt-text.txt", { type: "text/plain" });
         const result = await publishFile(file);
-        setResult("publish-result", "ok", `Published ${result.size} bytes\n${result.content_id}`);
-        $("fetch-cid").value = result.content_id;
+        applyPublishResult(result);
         await refresh();
       } catch (error) {
         setResult("publish-result", "err", error.message);

@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 
 use dweb_core::{
     resolve_jolt_address, verify_update_log_for_identity, ContentId, ContentManifest, IdentityId,
-    JoltAddress, ResolvedJoltTarget, UpdateLogEntry,
+    JoltAddress, ResolvedJoltTarget, UpdateAction, UpdateLogEntry,
 };
 use dweb_identity::NodeIdentity;
 use dweb_store::ContentStore;
@@ -377,6 +377,48 @@ impl NetworkNode {
         }
 
         Ok(content_id)
+    }
+
+    /// Publish a file and bind the resulting CID to an opaque path in this
+    /// node's signed identity namespace.
+    pub fn publish_file_at_path(
+        &mut self,
+        file_path: &Path,
+        path: &str,
+    ) -> Result<(ContentId, JoltAddress, u64), NetworkError> {
+        let identity = self.identity.identity_id();
+        let address = JoltAddress::new(identity.clone(), path)
+            .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        let content_id = self.publish_file(file_path)?;
+        let action = UpdateAction::SetPath {
+            path: address.path().to_string(),
+            content_id: content_id.clone(),
+        };
+
+        let entry = match self
+            .update_logs
+            .get(&identity)
+            .and_then(|entries| entries.last())
+        {
+            Some(previous) => previous
+                .append(action, |bytes| self.identity.sign(bytes))
+                .map_err(|e| NetworkError::Protocol(e.to_string()))?,
+            None => UpdateLogEntry::genesis(self.identity.public_key_bytes(), action, |bytes| {
+                self.identity.sign(bytes)
+            })
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?,
+        };
+        let latest_sequence = entry.body.sequence;
+        self.update_logs
+            .entry(identity.clone())
+            .or_default()
+            .push(entry);
+
+        if let Err(e) = self.announce_update_log_provider(&identity) {
+            debug!("Update-log DHT announcement skipped: {e}");
+        }
+
+        Ok((content_id, address, latest_sequence))
     }
 
     /// Request content from connected peers by ContentId.
@@ -1186,15 +1228,30 @@ impl NetworkNode {
         match command {
             DaemonCommand::Publish {
                 file_path,
+                path,
                 response_tx,
             } => {
-                let result = self.publish_file(&file_path).map(|content_id| {
-                    let size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
-                    PublishResponse {
-                        content_id: content_id.to_string(),
-                        size,
-                    }
-                });
+                let size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
+                let result = match path {
+                    Some(path) => self.publish_file_at_path(&file_path, &path).map(
+                        |(content_id, address, latest_sequence)| PublishResponse {
+                            content_id: content_id.to_string(),
+                            size,
+                            path: Some(address.path().to_string()),
+                            address: Some(address.to_string()),
+                            latest_sequence: Some(latest_sequence),
+                        },
+                    ),
+                    None => self
+                        .publish_file(&file_path)
+                        .map(|content_id| PublishResponse {
+                            content_id: content_id.to_string(),
+                            size,
+                            path: None,
+                            address: None,
+                            latest_sequence: None,
+                        }),
+                };
                 let _ = response_tx.send(result);
             }
             DaemonCommand::Fetch {
@@ -1626,7 +1683,7 @@ mod tests {
 
         let test_file = dir.path().join("roundtrip.txt");
         std::fs::write(&test_file, b"roundtrip data").unwrap();
-        let pub_resp = handle.publish(test_file).await.unwrap();
+        let pub_resp = handle.publish(test_file, None).await.unwrap();
 
         let fetch_resp = handle.fetch(pub_resp.content_id.clone()).await.unwrap();
         assert_eq!(fetch_resp.data, b"roundtrip data");
