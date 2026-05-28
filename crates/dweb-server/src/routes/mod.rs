@@ -4,5 +4,6 @@ pub mod fetch;
 pub mod health;
 pub mod peers;
 pub mod publish;
+pub mod relay;
 pub mod resolve;
 pub mod status;

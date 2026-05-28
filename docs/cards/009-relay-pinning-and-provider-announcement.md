@@ -1,9 +1,10 @@
-# 007: Relay Pinning and Provider Announcement
+# 009: Relay Pinning and Provider Announcement
 
 **Type:** AFK  
 **Milestone:** M4.5  
-**Status:** Blocked  
-**Blocked by:** 008
+**Status:** Done
+
+**Blocked by:** None
 
 ## Why
 
@@ -25,12 +26,14 @@ Other nodes can fetch the content from the relay.
 
 ## Acceptance Criteria
 
-- [ ] Relay accepts a valid signed pin request.
-- [ ] Relay rejects invalid pin requests.
-- [ ] Accepted content is stored as pinned and survives cache eviction.
-- [ ] Relay announces provider records for pinned content.
-- [ ] Another node can fetch pinned content from the relay while the publisher is disconnected in a test.
+- [x] Relay accepts a valid signed pin request.
+- [x] Relay rejects invalid pin requests.
+- [x] Accepted content is stored as pinned and survives cache eviction.
+- [x] Relay announces provider records for pinned content.
+- [x] Another node can fetch pinned content from the relay while the publisher is disconnected in a test.
 
 ## Notes
 
 Use existing content store pinning where possible. Keep relay capability explicit so ordinary nodes are not forced to accept third-party pins.
+
+Implemented as `POST /api/v1/relay/pins`. Relay-capable nodes verify the owner-signed `PinRequest`, fetch the content through the existing network fetch path, pin the cached copy, and announce themselves as a provider for the CID.

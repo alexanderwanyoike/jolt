@@ -1,4 +1,4 @@
-use dweb_core::{ContentId, JoltAddress, UpdateAction, UpdateLogEntry};
+use dweb_core::{ContentId, JoltAddress, PinRequest, UpdateAction, UpdateLogEntry};
 use dweb_identity::NodeIdentity;
 use dweb_network::{DaemonHandle, Multiaddr, NetworkConfig, NetworkNode};
 use dweb_store::{CacheConfig, ContentStore};
@@ -79,6 +79,14 @@ fn free_tcp_port() -> u16 {
 
 fn no_mdns_config() -> NetworkConfig {
     NetworkConfig {
+        enable_mdns: false,
+        ..NetworkConfig::test_config()
+    }
+}
+
+fn relay_config() -> NetworkConfig {
+    NetworkConfig {
+        bootstrap_relay: true,
         enable_mdns: false,
         ..NetworkConfig::test_config()
     }
@@ -454,6 +462,174 @@ async fn test_resolve_endpoint_discovers_path_published_through_http() {
     relay_handle.shutdown().await.ok();
     alice_handle.shutdown().await.ok();
     bob_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_relay_pin_request_keeps_content_available_after_publisher_disconnects() {
+    let relay_dir = tempfile::tempdir().unwrap();
+    let alice_dir = tempfile::tempdir().unwrap();
+    let alice_identity_dir = alice_dir.path().to_path_buf();
+    let bob_dir = tempfile::tempdir().unwrap();
+    let relay_p2p = free_tcp_port();
+    let alice_p2p = free_tcp_port();
+    let bob_p2p = free_tcp_port();
+
+    let relay_identity = NodeIdentity::generate();
+    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+        .unwrap();
+    let (relay_api, relay_handle, _relay_dir) = start_test_server_from_node(relay, relay_dir).await;
+    let relay_peer = relay_handle.status().await.unwrap().peer_id;
+    let relay_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}")
+        .parse()
+        .unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    alice_identity.save(alice_dir.path()).unwrap();
+    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, no_mdns_config()).unwrap();
+    alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
+        .unwrap();
+    alice.bootstrap_dht(&[relay_addr.clone()]).unwrap();
+    let (alice_api, alice_handle, _alice_dir) = start_test_server_from_node(alice, alice_dir).await;
+
+    wait_for_connected_peers(&alice_handle, 1).await;
+
+    let client = reqwest::Client::new();
+    let original_data = b"relay pinned content survives alice leaving";
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(original_data.to_vec()).file_name("pinned.txt"),
+    );
+
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    let content_id = published["content_id"].as_str().unwrap();
+
+    let owner = NodeIdentity::load(&alice_identity_dir).unwrap();
+    let pin_request = PinRequest::new(
+        owner.public_key_bytes(),
+        content_id.parse().unwrap(),
+        |bytes| owner.sign(bytes),
+    )
+    .unwrap();
+
+    let pin_resp = client
+        .post(format!("{}/api/v1/relay/pins", base_url(relay_api)))
+        .json(&pin_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pin_resp.status(), 200);
+
+    let relay_entries = relay_handle.list_cache_entries().await.unwrap();
+    assert!(relay_entries
+        .iter()
+        .any(|entry| entry.content_id == content_id && entry.pinned));
+
+    alice_handle.shutdown().await.ok();
+
+    let bob_identity = NodeIdentity::generate();
+    let bob_store = ContentStore::open(bob_dir.path(), CacheConfig::default()).unwrap();
+    let mut bob = NetworkNode::new_tcp(bob_identity, bob_store, no_mdns_config()).unwrap();
+    bob.listen_on(&format!("/ip4/127.0.0.1/tcp/{bob_p2p}"))
+        .unwrap();
+    bob.bootstrap_dht(&[relay_addr]).unwrap();
+    let (bob_api, bob_handle, _bob_dir) = start_test_server_from_node(bob, bob_dir).await;
+    wait_for_connected_peers(&bob_handle, 1).await;
+
+    let fetch_resp = client
+        .post(format!("{}/api/v1/fetch", base_url(bob_api)))
+        .json(&serde_json::json!({ "content_id": content_id }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(fetch_resp.status(), 200);
+    let fetched: serde_json::Value = fetch_resp.json().await.unwrap();
+    assert_eq!(fetched["content_id"], content_id);
+    let fetched_data: Vec<u8> = fetched["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(fetched_data, original_data);
+
+    relay_handle.shutdown().await.ok();
+    bob_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_relay_pin_request_rejects_tampered_owner_signature() {
+    let dir = tempfile::tempdir().unwrap();
+    let relay_identity = NodeIdentity::generate();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let node = NetworkNode::new_tcp(relay_identity, store, relay_config()).unwrap();
+    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
+
+    let owner = NodeIdentity::generate();
+    let mut request = PinRequest::new(
+        owner.public_key_bytes(),
+        ContentId::from_bytes(b"owner intended content"),
+        |bytes| owner.sign(bytes),
+    )
+    .unwrap();
+    request.body.content_id = ContentId::from_bytes(b"tampered content");
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/api/v1/relay/pins", base_url(port)))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("invalid signature"));
+    let stats = handle.cache_stats().await.unwrap();
+    assert_eq!(stats.pinned_items, 0);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_relay_pin_request_requires_relay_mode() {
+    let (port, handle, _dir) = start_test_server().await;
+    let owner = NodeIdentity::generate();
+    let request = PinRequest::new(
+        owner.public_key_bytes(),
+        ContentId::from_bytes(b"content ordinary node should not pin"),
+        |bytes| owner.sign(bytes),
+    )
+    .unwrap();
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/api/v1/relay/pins", base_url(port)))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("not configured"));
+
+    handle.shutdown().await.ok();
 }
 
 #[tokio::test]
