@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** Human addressing / M5
-**Status:** Blocked by 024
+**Status:** Done
 **Blocked by:** 024
 
 ## Why
@@ -40,13 +40,13 @@ The flow should:
 
 ## Acceptance Criteria
 
-- [ ] CLI has `dweb resolve <jolt-address>`.
-- [ ] HTTP API exposes `POST /api/v1/resolve`.
-- [ ] Dashboard has a `.jolt` resolve input separate from raw peer connect.
-- [ ] Resolve output shows identity, path, selected sequence, content ID, and reachability hints.
-- [ ] Invalid `.jolt` addresses fail with clear errors.
-- [ ] Unresolved addresses explain whether bootstrap, discovery, or verification failed.
-- [ ] Tests cover successful resolve, malformed address, no candidates, stale candidates, and invalid signatures.
+- [x] CLI has `dweb resolve <jolt-address>`.
+- [x] HTTP API exposes `POST /api/v1/resolve`.
+- [x] Dashboard has a `.jolt` resolve input separate from raw peer connect.
+- [x] Resolve output shows identity, path, selected sequence, content ID, and reachability hints.
+- [x] Invalid `.jolt` addresses fail with clear errors.
+- [x] Unresolved addresses explain whether bootstrap, discovery, or verification failed.
+- [x] Tests cover successful resolve, malformed address, no candidates, stale candidates, and invalid signatures.
 
 ## Non-Goals
 

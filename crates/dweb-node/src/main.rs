@@ -42,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Status => commands::status::run().await?,
         Commands::Publish { file } => commands::publish::run(&file).await?,
         Commands::Fetch { content_id, output } => commands::fetch::run(&content_id, output).await?,
+        Commands::Resolve { address } => commands::resolve::run(&address).await?,
         Commands::Cache { command } => match command {
             CacheCommands::Stats => commands::cache::stats().await?,
             CacheCommands::List => commands::cache::list().await?,

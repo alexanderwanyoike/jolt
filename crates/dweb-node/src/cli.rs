@@ -60,6 +60,12 @@ pub enum Commands {
         output: Option<PathBuf>,
     },
 
+    /// Resolve a .jolt address to its current content target
+    Resolve {
+        /// The .jolt address to resolve
+        address: String,
+    },
+
     /// Manage the content cache
     Cache {
         #[command(subcommand)]
@@ -195,6 +201,17 @@ mod tests {
                 assert_eq!(output, Some(PathBuf::from("/tmp/out.bin")));
             }
             _ => panic!("expected Fetch command"),
+        }
+    }
+
+    #[test]
+    fn parse_resolve_command() {
+        let cli = Cli::parse_from(["dweb", "resolve", "alice.jolt/profile"]);
+        match cli.command {
+            Commands::Resolve { address } => {
+                assert_eq!(address, "alice.jolt/profile");
+            }
+            _ => panic!("expected Resolve command"),
         }
     }
 
