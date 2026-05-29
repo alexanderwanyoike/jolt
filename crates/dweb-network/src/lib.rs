@@ -3,8 +3,8 @@ pub mod bootstrap;
 pub mod command;
 pub mod config;
 pub mod daemon_handle;
-pub mod fetch_manager;
 pub mod error;
+pub mod fetch_manager;
 pub mod node;
 pub mod protocol;
 
@@ -12,7 +12,7 @@ pub use command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
     PeerConnectResponse, PeerInfo, PublishResponse, ResolveResponse,
 };
-pub use config::NetworkConfig;
+pub use config::{HomeRelayCapability, HomeRelayConfig, NetworkConfig};
 pub use daemon_handle::DaemonHandle;
 pub use error::NetworkError;
 pub use libp2p::Multiaddr;

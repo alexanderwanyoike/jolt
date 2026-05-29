@@ -87,8 +87,8 @@ The current focus is:
 | [022](022-offline-publisher-through-relay-smoke-test.md) | AFK | Done | Prove Bob can fetch Alice's content while Alice is offline. |
 | [015](015-local-petnames-and-address-book.md) | AFK | Deferred until 020 | Add local aliases for identity addresses after global resolution is usable. |
 | [006](006-signed-path-publishing-v0.md) | AFK | Done | Publish and resolve generic signed path bindings. |
-| [007](007-home-relay-configuration.md) | AFK | Ready | Configure a user's home relay. |
-| [029](029-home-relay-publish-pinning-ux.md) | AFK | Ready after 007 | Let users pin published content to their configured home relay from API, CLI, and dashboard. |
+| [007](007-home-relay-configuration.md) | AFK | Done | Configure a user's home relay. |
+| [029](029-home-relay-publish-pinning-ux.md) | AFK | Ready | Let users pin published content to their configured home relay from API, CLI, and dashboard. |
 | [008](008-owner-signed-pin-protocol.md) | AFK | Done | Define and implement owner-signed pin requests. |
 | [009](009-relay-pinning-and-provider-announcement.md) | AFK | Done | Relay accepts pins, stores content, announces providers. |
 | [010](010-offline-fetch-through-home-relay.md) | AFK | Superseded by 022 | End-to-end offline publisher flow. |

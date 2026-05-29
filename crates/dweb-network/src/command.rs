@@ -5,6 +5,7 @@ use tokio::sync::oneshot;
 
 use dweb_core::{IdentityId, RelayHint};
 
+use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
 
 /// Commands sent from HTTP handlers / CLI to the daemon event loop.
@@ -107,6 +108,7 @@ pub struct NodeStatus {
     pub bootstrap_relay: bool,
     pub configured_bootstrap_relays: Vec<String>,
     pub effective_bootstrap_relays: Vec<String>,
+    pub home_relay: Option<HomeRelayConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

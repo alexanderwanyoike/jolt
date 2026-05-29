@@ -204,6 +204,39 @@ async fn test_status_endpoint() {
         body["effective_bootstrap_relays"].as_array().unwrap().len(),
         0
     );
+    assert!(body["home_relay"].is_null());
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_status_endpoint_reports_home_relay_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = NodeIdentity::generate();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut config = NetworkConfig::test_config();
+    config.home_relay = Some(dweb_network::HomeRelayConfig {
+        peer_id: "12D3HomeRelay".to_string(),
+        multiaddr: "/ip4/127.0.0.1/tcp/4001/p2p/12D3HomeRelay".to_string(),
+        capability: dweb_network::HomeRelayCapability::Pinning,
+    });
+    let node = NetworkNode::new_tcp(identity, store, config).unwrap();
+    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{}/api/v1/status", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["home_relay"]["multiaddr"],
+        "/ip4/127.0.0.1/tcp/4001/p2p/12D3HomeRelay"
+    );
+    assert_eq!(body["home_relay"]["capability"], "pinning");
 
     handle.shutdown().await.ok();
 }

@@ -41,6 +41,17 @@ pub async fn run() -> Result<()> {
                         "  Cached:     {}",
                         status["cached_count"].as_u64().unwrap_or(0)
                     );
+                    if let Some(home_relay) = status["home_relay"].as_object() {
+                        println!(
+                            "  Home relay: {}",
+                            home_relay
+                                .get("multiaddr")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or("unknown")
+                        );
+                    } else {
+                        println!("  Home relay: not configured");
+                    }
 
                     let uptime = status["uptime_secs"].as_u64().unwrap_or(0);
                     println!("  Uptime:     {}", format_duration(uptime));

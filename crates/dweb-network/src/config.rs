@@ -1,4 +1,20 @@
 use libp2p::Multiaddr;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeRelayCapability {
+    Unknown,
+    DiscoveryOnly,
+    Pinning,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HomeRelayConfig {
+    pub peer_id: String,
+    pub multiaddr: String,
+    pub capability: HomeRelayCapability,
+}
 
 /// Configuration for the network node.
 #[derive(Debug, Clone)]
@@ -19,6 +35,8 @@ pub struct NetworkConfig {
     pub effective_bootstrap_relays: Vec<String>,
     /// Whether this node is intentionally acting as a bootstrap/discovery relay.
     pub bootstrap_relay: bool,
+    /// User-selected home relay for delegated availability.
+    pub home_relay: Option<HomeRelayConfig>,
 }
 
 impl Default for NetworkConfig {
@@ -31,6 +49,7 @@ impl Default for NetworkConfig {
             configured_bootstrap_relays: Vec::new(),
             effective_bootstrap_relays: Vec::new(),
             bootstrap_relay: false,
+            home_relay: None,
         }
     }
 }
@@ -46,6 +65,7 @@ impl NetworkConfig {
             configured_bootstrap_relays: Vec::new(),
             effective_bootstrap_relays: Vec::new(),
             bootstrap_relay: false,
+            home_relay: None,
         }
     }
 }
@@ -62,5 +82,6 @@ mod tests {
         assert!(config.configured_bootstrap_relays.is_empty());
         assert!(config.effective_bootstrap_relays.is_empty());
         assert!(!config.bootstrap_relay);
+        assert!(config.home_relay.is_none());
     }
 }
