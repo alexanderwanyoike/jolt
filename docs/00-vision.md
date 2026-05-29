@@ -169,6 +169,8 @@ Apps are optional interfaces for spaces.
 
 A Jolt app can render or edit a particular kind of space: a game community, research workspace, creator feed, legal document graph, or private group. WASM is useful here, but it is not the core product. The core product is owned identity, signed state, access, and distribution.
 
+The protocol should not know what those interfaces mean. It should expose verifiable identity-owned state, generic paths, content references, access grants, and relay policies. Profiles, feeds, galleries, timelines, games, and future lenses are higher-layer interpretations of signed content.
+
 ### HTML Views
 
 HTML is still useful as a view of a space.

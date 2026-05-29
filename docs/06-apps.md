@@ -32,6 +32,22 @@ Jolt App
 
 The app should receive capability-limited access to the space. It should not become the authority over the space.
 
+## Protocol Boundary
+
+Apps and lenses sit above the protocol. The protocol should stay pure and durable: identity, CIDs, signed update logs, provider discovery, content fetch, relays, pinning, encryption/access grants, capability records, schema references, and generic signed paths.
+
+The protocol must not hardcode application concepts such as profiles, feeds, posts, galleries, games, timelines, or lens runtimes. Those are signed content and schemas interpreted by clients.
+
+```text
+Protocol:
+  identity X maps path /gallery to CID Y at sequence N
+
+Application/lens:
+  CID Y is a gallery manifest and this renderer knows how to use it
+```
+
+This keeps Jolt closer to the web's layering discipline: the lower layer moves verifiable state and addressing, while higher layers decide what experiences to build from it.
+
 ## HTML as a Space View
 
 HTML remains a valid interface format for browsing a space.

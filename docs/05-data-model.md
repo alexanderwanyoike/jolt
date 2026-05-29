@@ -7,6 +7,7 @@
 3. **Apps are isolated.** Each app has its own data namespace. App A cannot read App B's data.
 4. **Public content is cacheable.** Other nodes may cache your public content for availability.
 5. **Private data never leaves your node unencrypted.** Relays and caches may carry ciphertext without being able to read it.
+6. **The protocol is application-agnostic.** Profiles, feeds, galleries, games, timelines, and lenses are data above the protocol, not protocol primitives.
 
 ## Data Categories
 
