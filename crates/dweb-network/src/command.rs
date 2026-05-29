@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
-use dweb_core::RelayHint;
+use dweb_core::{IdentityId, RelayHint};
 
 use crate::error::NetworkError;
 
@@ -41,6 +41,10 @@ pub enum DaemonCommand {
     Pin {
         content_id: String,
         response_tx: oneshot::Sender<Result<(), NetworkError>>,
+    },
+    PinUpdateLog {
+        identity: IdentityId,
+        response_tx: oneshot::Sender<Result<u64, NetworkError>>,
     },
     Unpin {
         content_id: String,

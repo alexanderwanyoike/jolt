@@ -33,6 +33,11 @@ struct PendingResolve {
     deadline: Instant,
 }
 
+struct PendingUpdateLogPin {
+    identity: IdentityId,
+    response_tx: oneshot::Sender<Result<u64, NetworkError>>,
+}
+
 /// Tracks connection quality for a connected peer.
 #[derive(Debug, Clone)]
 pub struct PeerConnectionInfo {
@@ -89,6 +94,7 @@ pub struct NetworkNode {
             oneshot::Sender<Result<UpdateLogResponse, NetworkError>>,
         ),
     >,
+    pending_update_log_pins: HashMap<OutboundRequestId, PendingUpdateLogPin>,
     pending_jolt_resolutions: HashMap<
         OutboundRequestId,
         (
@@ -216,6 +222,7 @@ impl NetworkNode {
             store,
             pending_fetches: HashMap::new(),
             pending_update_log_requests: HashMap::new(),
+            pending_update_log_pins: HashMap::new(),
             pending_jolt_resolutions: HashMap::new(),
             pending_daemon_resolutions: HashMap::new(),
             pending_resolves: HashMap::new(),
@@ -311,6 +318,7 @@ impl NetworkNode {
             store,
             pending_fetches: HashMap::new(),
             pending_update_log_requests: HashMap::new(),
+            pending_update_log_pins: HashMap::new(),
             pending_jolt_resolutions: HashMap::new(),
             pending_daemon_resolutions: HashMap::new(),
             pending_resolves: HashMap::new(),
@@ -977,6 +985,25 @@ impl NetworkNode {
                             .map(|_| response)
                     };
                     let _ = tx.send(result);
+                } else if let Some(pending) = self.pending_update_log_pins.remove(&request_id) {
+                    let result = if response.entries.is_empty() {
+                        Err(NetworkError::Protocol(format!(
+                            "No update log entries returned for {}",
+                            pending.identity
+                        )))
+                    } else {
+                        verify_update_log_for_identity(&pending.identity, &response.entries)
+                            .map_err(|e| NetworkError::Protocol(e.to_string()))
+                            .and_then(|sequence| {
+                                self.store_verified_update_log(
+                                    pending.identity.clone(),
+                                    response.entries,
+                                )?;
+                                self.announce_update_log_provider(&pending.identity)?;
+                                Ok(sequence)
+                            })
+                    };
+                    let _ = pending.response_tx.send(result);
                 } else if let Some((address, now, tx)) =
                     self.pending_jolt_resolutions.remove(&request_id)
                 {
@@ -1018,6 +1045,11 @@ impl NetworkNode {
                 if let Some((_identity, tx)) = self.pending_update_log_requests.remove(&request_id)
                 {
                     let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                }
+                if let Some(pending) = self.pending_update_log_pins.remove(&request_id) {
+                    let _ = pending
+                        .response_tx
+                        .send(Err(NetworkError::Protocol(error.to_string())));
                 }
                 if let Some((_address, _now, tx)) =
                     self.pending_jolt_resolutions.remove(&request_id)
@@ -1436,6 +1468,44 @@ impl NetworkNode {
                         self.announce_provider(&content_id)
                     });
                 let _ = response_tx.send(result);
+            }
+            DaemonCommand::PinUpdateLog {
+                identity,
+                response_tx,
+            } => {
+                if let Some(entries) = self.update_logs.get(&identity) {
+                    let result = verify_update_log_for_identity(&identity, entries)
+                        .map_err(|e| NetworkError::Protocol(e.to_string()))
+                        .and_then(|sequence| {
+                            self.announce_update_log_provider(&identity)?;
+                            Ok(sequence)
+                        });
+                    let _ = response_tx.send(result);
+                    return;
+                }
+
+                let peers: Vec<_> = self.swarm.connected_peers().cloned().collect();
+                let Some(peer) = peers.first() else {
+                    let _ = response_tx.send(Err(NetworkError::NoPeers));
+                    return;
+                };
+
+                let request = UpdateLogRequest {
+                    identity: identity.clone(),
+                    since: None,
+                };
+                let request_id = self
+                    .swarm
+                    .behaviour_mut()
+                    .update_log_sync
+                    .send_request(peer, request);
+                self.pending_update_log_pins.insert(
+                    request_id,
+                    PendingUpdateLogPin {
+                        identity,
+                        response_tx,
+                    },
+                );
             }
             DaemonCommand::Unpin {
                 content_id,

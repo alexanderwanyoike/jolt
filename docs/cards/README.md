@@ -19,7 +19,7 @@ Done:
   Fetch immutable content from peers.
   Resolve signed state from verified update logs in deterministic tests.
 
-Next:
+Now proven:
   Let a fresh node join the mesh, resolve a .jolt space/community address, and fetch while the publisher is offline.
 ```
 
@@ -83,13 +83,13 @@ The current focus is:
 | [028](028-three-node-canary-harness.md) | AFK | Ready | Document/run Alice -> Relay -> Bob local test and real-world canary. |
 | [020](020-jolt-resolve-api-cli-dashboard.md) | AFK | Done | Let users resolve `.jolt` addresses through CLI, API, and dashboard. |
 | [021](021-fetch-by-jolt-address.md) | AFK | Done | Fetch content from a `.jolt` address instead of a raw CID. |
-| [022](022-offline-publisher-through-relay-smoke-test.md) | AFK | Blocked by 009 | Prove Bob can fetch Alice's content while Alice is offline. |
+| [022](022-offline-publisher-through-relay-smoke-test.md) | AFK | Done | Prove Bob can fetch Alice's content while Alice is offline. |
 | [015](015-local-petnames-and-address-book.md) | AFK | Deferred until 020 | Add local aliases for identity addresses after global resolution is usable. |
 | [006](006-signed-path-publishing-v0.md) | AFK | Done | Publish and resolve generic signed path bindings. |
 | [007](007-home-relay-configuration.md) | AFK | Ready | Configure a user's home relay. |
-| [008](008-owner-signed-pin-protocol.md) | AFK | Blocked by 004, 007 | Define and implement owner-signed pin requests. |
-| [009](009-relay-pinning-and-provider-announcement.md) | AFK | Blocked by 008 | Relay accepts pins, stores content, announces providers. |
-| [010](010-offline-fetch-through-home-relay.md) | AFK | Blocked by 009 | End-to-end offline publisher flow. |
+| [008](008-owner-signed-pin-protocol.md) | AFK | Done | Define and implement owner-signed pin requests. |
+| [009](009-relay-pinning-and-provider-announcement.md) | AFK | Done | Relay accepts pins, stores content, announces providers. |
+| [010](010-offline-fetch-through-home-relay.md) | AFK | Superseded by 022 | End-to-end offline publisher flow. |
 | [011](011-availability-checks-v0.md) | AFK | Blocked by 009 | Node checks whether home relay still serves pinned content. |
 | [012](012-crypto-agility-spike.md) | HITL | Later | Decide post-quantum-aware encryption direction. |
 | [013](013-wasm-runtime-parking-lot.md) | HITL | Later | Park app runtime work until relay/mutable content lands. |

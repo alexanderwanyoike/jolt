@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use tokio::sync::{mpsc, oneshot};
 
+use dweb_core::IdentityId;
+
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
     PeerConnectResponse, PeerInfo, PublishResponse, ResolveResponse,
@@ -136,6 +138,20 @@ impl DaemonHandle {
         self.cmd_tx
             .send(DaemonCommand::Pin {
                 content_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Pin an owner's signed update log and announce this node as its provider.
+    pub async fn pin_update_log(&self, identity: IdentityId) -> Result<u64, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::PinUpdateLog {
+                identity,
                 response_tx: tx,
             })
             .await

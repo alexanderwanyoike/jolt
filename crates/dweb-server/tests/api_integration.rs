@@ -465,7 +465,7 @@ async fn test_resolve_endpoint_discovers_path_published_through_http() {
 }
 
 #[tokio::test]
-async fn test_relay_pin_request_keeps_content_available_after_publisher_disconnects() {
+async fn test_offline_publisher_content_is_resolved_and_fetched_through_relay() {
     let relay_dir = tempfile::tempdir().unwrap();
     let alice_dir = tempfile::tempdir().unwrap();
     let alice_identity_dir = alice_dir.path().to_path_buf();
@@ -500,10 +500,12 @@ async fn test_relay_pin_request_keeps_content_available_after_publisher_disconne
 
     let client = reqwest::Client::new();
     let original_data = b"relay pinned content survives alice leaving";
-    let form = reqwest::multipart::Form::new().part(
-        "file",
-        reqwest::multipart::Part::bytes(original_data.to_vec()).file_name("pinned.txt"),
-    );
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(original_data.to_vec()).file_name("pinned.txt"),
+        )
+        .text("path", "/space/post");
 
     let publish_resp = client
         .post(format!("{}/api/v1/publish", base_url(alice_api)))
@@ -514,6 +516,7 @@ async fn test_relay_pin_request_keeps_content_available_after_publisher_disconne
     assert_eq!(publish_resp.status(), 200);
     let published: serde_json::Value = publish_resp.json().await.unwrap();
     let content_id = published["content_id"].as_str().unwrap();
+    let address = published["address"].as_str().unwrap();
 
     let owner = NodeIdentity::load(&alice_identity_dir).unwrap();
     let pin_request = PinRequest::new(
@@ -547,15 +550,25 @@ async fn test_relay_pin_request_keeps_content_available_after_publisher_disconne
     let (bob_api, bob_handle, _bob_dir) = start_test_server_from_node(bob, bob_dir).await;
     wait_for_connected_peers(&bob_handle, 1).await;
 
-    let fetch_resp = client
-        .post(format!("{}/api/v1/fetch", base_url(bob_api)))
-        .json(&serde_json::json!({ "content_id": content_id }))
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(fetch_resp.status(), 200);
-    let fetched: serde_json::Value = fetch_resp.json().await.unwrap();
+    let fetch_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let fetched = loop {
+        let fetch_resp = client
+            .post(format!("{}/api/v1/fetch", base_url(bob_api)))
+            .json(&serde_json::json!({ "target": address }))
+            .send()
+            .await
+            .unwrap();
+        let fetch_status = fetch_resp.status();
+        let fetched: serde_json::Value = fetch_resp.json().await.unwrap();
+        if fetch_status == 200 {
+            break fetched;
+        }
+        assert!(
+            std::time::Instant::now() < fetch_deadline,
+            "offline .jolt fetch did not converge: {fetched}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    };
     assert_eq!(fetched["content_id"], content_id);
     let fetched_data: Vec<u8> = fetched["data"]
         .as_array()

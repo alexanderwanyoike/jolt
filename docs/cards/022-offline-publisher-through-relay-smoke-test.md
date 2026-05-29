@@ -2,8 +2,8 @@
 
 **Type:** AFK
 **Milestone:** M5 / Relay Availability
-**Status:** Blocked by 009
-**Blocked by:** 009
+**Status:** Done
+**Blocked by:** None
 
 ## Why
 
@@ -37,16 +37,28 @@ Bob should start with only bootstrap relay configuration, not Alice's peer ID, r
 
 ## Acceptance Criteria
 
-- [ ] Test starts Alice, relay, and Bob from clean state.
-- [ ] Alice creates a minimal space/community record.
-- [ ] Alice publishes signed content into that space.
-- [ ] Alice pins content and signed update-log state to the relay.
-- [ ] Alice stops.
-- [ ] Bob starts with only bootstrap relay configuration.
-- [ ] Bob fetches Alice's content by `.jolt` address.
-- [ ] Bob verifies Alice's signed state before accepting the result.
-- [ ] Bob fetches content from the relay while Alice is offline.
-- [ ] Dashboard/manual demo docs show the same flow.
+- [x] Test starts Alice, relay, and Bob from clean state.
+- [x] Alice creates a minimal space/community record.
+- [x] Alice publishes signed content into that space.
+- [x] Alice pins content and signed update-log state to the relay.
+- [x] Alice stops.
+- [x] Bob starts with only bootstrap relay configuration.
+- [x] Bob fetches Alice's content by `.jolt` address.
+- [x] Bob verifies Alice's signed state before accepting the result.
+- [x] Bob fetches content from the relay while Alice is offline.
+- [x] Dashboard/manual demo docs show the same flow.
+
+## Manual Demo Flow
+
+1. Start a relay-capable node and note its `/ip4/.../p2p/...` bootstrap address.
+2. Start Alice with that bootstrap address.
+3. Start Bob with that bootstrap address.
+4. Publish from Alice with a path such as `/space/post`; the publish response returns `alice_identity.jolt/space/post`.
+5. Send Alice's owner-signed pin request to `POST /api/v1/relay/pins` on the relay. The relay verifies the signature, fetches and pins the content, fetches Alice's signed update log, and announces itself as provider for both.
+6. Stop Alice.
+7. Fetch from Bob with the `.jolt` address. Bob should resolve Alice's signed update log through the relay and fetch the content from the relay, without knowing Alice's peer ID, CID, direct address, or cached state.
+
+The automated smoke test is `test_offline_publisher_content_is_resolved_and_fetched_through_relay` in `crates/dweb-server/tests/api_integration.rs`.
 
 ## Non-Goals
 

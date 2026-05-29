@@ -12,6 +12,7 @@ pub struct RelayPinResponse {
     pub status: String,
     pub owner: String,
     pub content_id: String,
+    pub latest_sequence: u64,
     pub size: u64,
 }
 
@@ -31,16 +32,15 @@ pub async fn create_pin(
             "invalid pin request: {e}"
         )))
     })?;
-    let owner = request
-        .owner_identity()
-        .map_err(|e| {
-            ApiError(NetworkError::InvalidInput(format!(
-                "invalid pin request: {e}"
-            )))
-        })?
-        .to_string();
+    let owner_identity = request.owner_identity().map_err(|e| {
+        ApiError(NetworkError::InvalidInput(format!(
+            "invalid pin request: {e}"
+        )))
+    })?;
+    let owner = owner_identity.to_string();
     let content_id = request.body.content_id.to_string();
 
+    let latest_sequence = state.daemon.pin_update_log(owner_identity).await?;
     let fetched = state.daemon.fetch(content_id.clone()).await?;
     state.daemon.pin(content_id.clone()).await?;
 
@@ -48,6 +48,7 @@ pub async fn create_pin(
         status: "pinned".to_string(),
         owner,
         content_id,
+        latest_sequence,
         size: fetched.size,
     }))
 }
