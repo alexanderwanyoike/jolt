@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** M5 / Relay Availability
-**Status:** Ready
+**Status:** Done
 **Blocked by:** 029
 
 ## Why
@@ -47,14 +47,14 @@ For v0, it is acceptable for pin status to mean "this node successfully submitte
 
 ## Acceptance Criteria
 
-- [ ] HTTP API exposes a published inventory endpoint with path, local CID, local sequence, relay pin state, relay target, and pinned CID/sequence where known.
-- [ ] Dashboard shows all locally published content, not just the most recent publish result.
-- [ ] Dashboard clearly distinguishes local-only, relay-backed, and stale-local-newer-than-relay states.
-- [ ] Dashboard gives a pin/repin action from the inventory list.
-- [ ] Updating an already pinned path without repinning shows the item as stale.
-- [ ] Repinning the updated path moves it back to relay-backed.
-- [ ] A local manual demo can show Alice updating `/a/b`, Bob seeing latest while Alice is online, then Bob falling back to the pinned version after Alice goes offline.
-- [ ] Tests cover inventory state mapping without testing dashboard scaffolding.
+- [x] HTTP API exposes a published inventory endpoint with path, local CID, local sequence, relay pin state, relay target, and pinned CID/sequence where known.
+- [x] Dashboard shows all locally published content, not just the most recent publish result.
+- [x] Dashboard clearly distinguishes local-only, relay-backed, and stale-local-newer-than-relay states.
+- [x] Dashboard gives a pin/repin action from the inventory list.
+- [x] Updating an already pinned path without repinning shows the item as stale.
+- [x] Repinning the updated path moves it back to relay-backed.
+- [x] A local manual demo can show Alice updating `/a/b`, Bob seeing latest while Alice is online, then Bob falling back to the pinned version after Alice goes offline.
+- [x] Tests cover inventory state mapping without testing dashboard scaffolding.
 
 ## Non-Goals
 

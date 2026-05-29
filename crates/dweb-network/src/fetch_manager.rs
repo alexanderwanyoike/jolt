@@ -205,8 +205,7 @@ impl FetchManager {
                 ..
             } => {
                 warn!("Provider fetch failed for {content_id}");
-                let _ =
-                    response_tx.send(Err(NetworkError::ProviderNotFound(content_id.clone())));
+                let _ = response_tx.send(Err(NetworkError::ProviderNotFound(content_id.clone())));
                 true
             }
             FetchState::QueryingDht {
@@ -256,9 +255,7 @@ impl FetchManager {
                 ..
             } => {
                 let connected_at = if already_connected {
-                    info!(
-                        "Provider {provider} discovered for {content_id} (already connected)"
-                    );
+                    info!("Provider {provider} discovered for {content_id} (already connected)");
                     Some(Instant::now())
                 } else {
                     info!(
@@ -336,11 +333,7 @@ impl FetchManager {
 
     /// Transition a WaitingForProvider to FetchingFromProvider after the content
     /// request has been sent.
-    pub fn mark_request_sent(
-        &mut self,
-        content_id: &str,
-        request_id: OutboundRequestId,
-    ) {
+    pub fn mark_request_sent(&mut self, content_id: &str, request_id: OutboundRequestId) {
         let Some(state) = self.active.remove(content_id) else {
             return;
         };
@@ -407,8 +400,7 @@ impl FetchManager {
     }
 
     fn cleanup_request_mappings(&mut self, content_id: &str) {
-        self.request_to_content
-            .retain(|_, cid| cid != content_id);
+        self.request_to_content.retain(|_, cid| cid != content_id);
     }
 
     fn state_content_id(state: &FetchState) -> String {
@@ -491,8 +483,14 @@ mod tests {
         assert_eq!(timed_out.len(), 2);
         assert_eq!(mgr.active_count(), 0);
 
-        assert!(matches!(rx1.try_recv().unwrap(), Err(NetworkError::Timeout)));
-        assert!(matches!(rx2.try_recv().unwrap(), Err(NetworkError::Timeout)));
+        assert!(matches!(
+            rx1.try_recv().unwrap(),
+            Err(NetworkError::Timeout)
+        ));
+        assert!(matches!(
+            rx2.try_recv().unwrap(),
+            Err(NetworkError::Timeout)
+        ));
     }
 
     #[test]

@@ -128,6 +128,7 @@ async fn test_dashboard_root_endpoint() {
     assert!(body.contains("Jolt Node Console"));
     assert!(body.contains("/api/v1/status"));
     assert!(body.contains("/api/v1/publish"));
+    assert!(body.contains("/api/v1/published"));
     assert!(body.contains("publish-path"));
     assert!(body.contains("fetch-target"));
     assert!(body.contains("/api/v1/peers/connect"));
@@ -900,6 +901,179 @@ async fn test_home_relay_pin_endpoint_pins_published_content_for_offline_fetch()
 }
 
 #[tokio::test]
+async fn test_published_inventory_tracks_relay_backed_and_stale_path_state() {
+    let relay_dir = tempfile::tempdir().unwrap();
+    let alice_dir = tempfile::tempdir().unwrap();
+    let relay_p2p = free_tcp_port();
+    let alice_p2p = free_tcp_port();
+
+    let relay_identity = NodeIdentity::generate();
+    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+        .unwrap();
+    let (relay_api, relay_handle, _relay_dir) = start_test_server_from_node(relay, relay_dir).await;
+    let relay_peer = relay_handle.status().await.unwrap().peer_id;
+    let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut alice_config = no_mdns_config();
+    alice_config.home_relay = Some(HomeRelayConfig {
+        peer_id: relay_peer.clone(),
+        multiaddr: relay_multiaddr.clone(),
+        capability: HomeRelayCapability::Pinning,
+        api_url: Some(base_url(relay_api)),
+    });
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, alice_config).unwrap();
+    alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
+        .unwrap();
+    let (alice_api, alice_handle, _alice_dir) = start_test_server_from_node(alice, alice_dir).await;
+
+    let client = reqwest::Client::new();
+    let path = "/space/stale";
+    let first_data = b"first relay-backed version";
+    let first_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(first_data.to_vec()).file_name("first.txt"),
+        )
+        .text("path", path.to_string());
+    let first_publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(first_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first_publish_resp.status(), 200);
+    let first_published: serde_json::Value = first_publish_resp.json().await.unwrap();
+    let first_content_id = first_published["content_id"].as_str().unwrap();
+
+    let pin_resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(alice_api)))
+        .json(&serde_json::json!({ "content_id": first_content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pin_resp.status(), 200);
+
+    let inventory_resp = client
+        .get(format!("{}/api/v1/published", base_url(alice_api)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(inventory_resp.status(), 200);
+    let inventory: Vec<serde_json::Value> = inventory_resp.json().await.unwrap();
+    let item = inventory
+        .iter()
+        .find(|item| item["path"] == path)
+        .expect("path row missing after pin");
+    assert_eq!(item["content_id"], first_content_id);
+    assert_eq!(item["local_sequence"], 0);
+    assert_eq!(item["pin_state"], "relay_backed");
+    assert_eq!(item["relay"]["peer_id"], relay_peer);
+    assert_eq!(item["relay"]["multiaddr"], relay_multiaddr);
+    assert_eq!(item["pinned_content_id"], first_content_id);
+    assert_eq!(item["pinned_sequence"], 0);
+
+    let shared_path = "/space/shared";
+    let shared_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(first_data.to_vec()).file_name("shared.txt"),
+        )
+        .text("path", shared_path.to_string());
+    let shared_publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(shared_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(shared_publish_resp.status(), 200);
+    let shared_published: serde_json::Value = shared_publish_resp.json().await.unwrap();
+    assert_eq!(shared_published["content_id"], first_content_id);
+
+    let shared_pin_resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(alice_api)))
+        .json(&serde_json::json!({ "content_id": first_content_id, "path": shared_path }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(shared_pin_resp.status(), 200);
+
+    let second_data = b"second local only version";
+    let second_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(second_data.to_vec()).file_name("second.txt"),
+        )
+        .text("path", path.to_string());
+    let second_publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(second_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second_publish_resp.status(), 200);
+    let second_published: serde_json::Value = second_publish_resp.json().await.unwrap();
+    let second_content_id = second_published["content_id"].as_str().unwrap();
+
+    let inventory_resp = client
+        .get(format!("{}/api/v1/published", base_url(alice_api)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(inventory_resp.status(), 200);
+    let inventory: Vec<serde_json::Value> = inventory_resp.json().await.unwrap();
+    let item = inventory
+        .iter()
+        .find(|item| item["path"] == path)
+        .expect("path row missing after update");
+    assert_eq!(item["content_id"], second_content_id);
+    assert_eq!(item["local_sequence"], 2);
+    assert_eq!(item["pin_state"], "needs_repin");
+    assert_eq!(item["pinned_content_id"], first_content_id);
+    assert_eq!(item["pinned_sequence"], 0);
+
+    let shared_item = inventory
+        .iter()
+        .find(|item| item["path"] == shared_path)
+        .expect("shared path row missing after update");
+    assert_eq!(shared_item["content_id"], first_content_id);
+    assert_eq!(shared_item["pin_state"], "relay_backed");
+
+    let second_pin_resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(alice_api)))
+        .json(&serde_json::json!({ "content_id": second_content_id, "path": path }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second_pin_resp.status(), 200);
+
+    let inventory_resp = client
+        .get(format!("{}/api/v1/published", base_url(alice_api)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(inventory_resp.status(), 200);
+    let inventory: Vec<serde_json::Value> = inventory_resp.json().await.unwrap();
+    let item = inventory
+        .iter()
+        .find(|item| item["path"] == path)
+        .expect("path row missing after repin");
+    assert_eq!(item["content_id"], second_content_id);
+    assert_eq!(item["local_sequence"], 2);
+    assert_eq!(item["pin_state"], "relay_backed");
+    assert_eq!(item["pinned_content_id"], second_content_id);
+    assert_eq!(item["pinned_sequence"], 2);
+
+    relay_handle.shutdown().await.ok();
+    alice_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_home_relay_pin_endpoint_reports_missing_home_relay() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
@@ -1236,6 +1410,54 @@ async fn test_publish_endpoint_can_bind_content_to_jolt_path() {
     assert_eq!(resolved["content_id"], content_id.to_string());
     assert_eq!(resolved["latest_sequence"], 0);
     assert_eq!(resolved["source"], "cache");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_published_inventory_endpoint_shows_local_path_publish() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let path = "/space/post";
+    let data = b"inventory local path publish";
+
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(data.to_vec()).file_name("post.txt"),
+        )
+        .text("path", path.to_string());
+
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(port)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    let content_id = ContentId::from_bytes(data).to_string();
+
+    let inventory_resp = client
+        .get(format!("{}/api/v1/published", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(inventory_resp.status(), 200);
+    let inventory: serde_json::Value = inventory_resp.json().await.unwrap();
+    let items = inventory.as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    let item = &items[0];
+    assert_eq!(item["path"], path);
+    assert_eq!(item["address"], published["address"]);
+    assert_eq!(item["content_id"], content_id);
+    assert_eq!(item["size"], data.len() as u64);
+    assert_eq!(item["local_sequence"], 0);
+    assert_eq!(item["pin_state"], "local_only");
+    assert!(item["relay"].is_null());
+    assert!(item["pinned_content_id"].is_null());
+    assert!(item["pinned_sequence"].is_null());
 
     handle.shutdown().await.ok();
 }

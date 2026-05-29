@@ -35,7 +35,7 @@ pub async fn run(file: &Path, path: Option<&str>, pin_home_relay: bool) -> Resul
         println!("{address}");
     }
     if pin_home_relay {
-        let pin_response = client.pin_to_home_relay(content_id).await?;
+        let pin_response = client.pin_to_home_relay(content_id, path).await?;
         let relay = pin_response["relay"].as_str().unwrap_or("unknown");
         let latest_sequence = pin_response["latest_sequence"].as_u64().unwrap_or(0);
         println!("Pinned to home relay {relay} at update-log sequence {latest_sequence}");

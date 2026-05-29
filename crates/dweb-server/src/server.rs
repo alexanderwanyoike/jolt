@@ -20,6 +20,7 @@ pub fn build_router(daemon: DaemonHandle) -> Router {
         .route("/api/v1/peers", get(routes::peers::list_peers))
         .route("/api/v1/peers/connect", post(routes::peers::connect_peer))
         .route("/api/v1/publish", post(routes::publish::publish_file))
+        .route("/api/v1/published", get(routes::published::list))
         .route("/api/v1/fetch", post(routes::fetch::fetch_content))
         .route("/api/v1/resolve", post(routes::resolve::resolve_address))
         .route("/api/v1/home-relay/pins", post(routes::home_relay::pin))

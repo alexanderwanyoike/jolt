@@ -39,6 +39,9 @@ pub enum DaemonCommand {
     ListCacheEntries {
         response_tx: oneshot::Sender<Vec<CacheEntryInfo>>,
     },
+    ListPublishedContent {
+        response_tx: oneshot::Sender<Vec<PublishedContentInfo>>,
+    },
     Pin {
         content_id: String,
         response_tx: oneshot::Sender<Result<(), NetworkError>>,
@@ -46,6 +49,13 @@ pub enum DaemonCommand {
     CreatePinRequest {
         content_id: String,
         response_tx: oneshot::Sender<Result<PinRequest, NetworkError>>,
+    },
+    RecordHomeRelayPin {
+        content_id: String,
+        path: Option<String>,
+        relay: HomeRelayConfig,
+        latest_sequence: u64,
+        response_tx: oneshot::Sender<Result<(), NetworkError>>,
     },
     PinUpdateLog {
         identity: IdentityId,
@@ -147,4 +157,25 @@ pub struct CacheEntryInfo {
     pub cached_at: u64,
     pub last_accessed: u64,
     pub pinned: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublishedRelayInfo {
+    pub peer_id: String,
+    pub multiaddr: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublishedContentInfo {
+    pub content_id: String,
+    pub size: u64,
+    pub path: Option<String>,
+    pub address: Option<String>,
+    pub local_sequence: Option<u64>,
+    pub pin_state: String,
+    pub relay: Option<PublishedRelayInfo>,
+    pub pinned_content_id: Option<String>,
+    pub pinned_sequence: Option<u64>,
 }

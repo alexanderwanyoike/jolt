@@ -93,7 +93,7 @@ pub async fn pin(content_id: &str) -> Result<()> {
     }
 
     let client = DaemonClient::new(info.port);
-    let response = client.pin_to_home_relay(content_id).await?;
+    let response = client.pin_to_home_relay(content_id, None).await?;
     let relay = response["relay"].as_str().unwrap_or("unknown");
     let latest_sequence = response["latest_sequence"].as_u64().unwrap_or(0);
     println!("Pinned {content_id} to home relay {relay}");

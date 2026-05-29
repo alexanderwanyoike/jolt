@@ -5,6 +5,7 @@ pub mod health;
 pub mod home_relay;
 pub mod peers;
 pub mod publish;
+pub mod published;
 pub mod relay;
 pub mod resolve;
 pub mod status;
