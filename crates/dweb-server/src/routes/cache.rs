@@ -5,9 +5,7 @@ use crate::error::ApiError;
 use crate::state::AppState;
 use dweb_network::{CacheEntryInfo, CacheStatsResponse};
 
-pub async fn stats(
-    State(state): State<AppState>,
-) -> Result<Json<CacheStatsResponse>, ApiError> {
+pub async fn stats(State(state): State<AppState>) -> Result<Json<CacheStatsResponse>, ApiError> {
     let stats = state.daemon.cache_stats().await?;
     Ok(Json(stats))
 }

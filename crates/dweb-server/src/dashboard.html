@@ -306,6 +306,37 @@
       min-width: 620px;
     }
 
+    .published-table {
+      min-width: 820px;
+      table-layout: fixed;
+    }
+
+    .published-table th:nth-child(1) {
+      width: 38%;
+    }
+
+    .published-table th:nth-child(2) {
+      width: 18%;
+    }
+
+    .published-table th:nth-child(3) {
+      width: 18%;
+    }
+
+    .published-table th:nth-child(4) {
+      width: 15%;
+    }
+
+    .published-table th:nth-child(5) {
+      width: 11%;
+    }
+
+    .published-table .cid {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     th,
     td {
       padding: 11px 12px;
@@ -372,6 +403,18 @@
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
+    }
+
+    .row-action {
+      min-height: 30px;
+      padding: 0 10px;
+    }
+
+    .secondary-text {
+      display: block;
+      margin-top: 5px;
+      color: var(--faint);
+      font-size: 12px;
     }
 
     .result {
@@ -497,6 +540,29 @@
               <span>Listen addresses</span>
               <div id="listen-addresses" class="mono">--</div>
             </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Published</h2>
+            <span class="pill" id="published-inventory-count">0 items</span>
+          </div>
+          <div class="table-wrap">
+            <table class="published-table">
+              <thead>
+                <tr>
+                  <th>Path</th>
+                  <th>Local CID</th>
+                  <th>Availability</th>
+                  <th>Relay</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="published-body">
+                <tr><td colspan="5"><div class="empty">No published content.</div></td></tr>
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -650,6 +716,7 @@
       peers: [],
       cacheStats: null,
       cacheEntries: [],
+      publishedContent: [],
       lastPublishedContentId: null
     };
 
@@ -684,6 +751,12 @@
       return new Date(value * 1000).toLocaleString();
     }
 
+    function shortId(value, head = 12, tail = 6) {
+      const text = String(value || "");
+      if (text.length <= head + tail + 3) return text || "--";
+      return `${text.slice(0, head)}...${text.slice(-tail)}`;
+    }
+
     function setHealth(kind, label) {
       const dot = $("health-dot");
       dot.className = `status-dot ${kind}`;
@@ -701,16 +774,18 @@
 
     async function refresh() {
       try {
-        const [status, peers, cacheStats, cacheEntries] = await Promise.all([
+        const [status, peers, cacheStats, cacheEntries, publishedContent] = await Promise.all([
           getJson("/api/v1/status"),
           getJson("/api/v1/peers"),
           getJson("/api/v1/cache/stats"),
-          getJson("/api/v1/cache/entries")
+          getJson("/api/v1/cache/entries"),
+          getJson("/api/v1/published")
         ]);
         state.status = status;
         state.peers = peers;
         state.cacheStats = cacheStats;
         state.cacheEntries = cacheEntries;
+        state.publishedContent = publishedContent;
         render();
         setHealth("ok", "connected");
       } catch (error) {
@@ -750,6 +825,7 @@
       $("cache-pressure").textContent = max > 0 ? `${Math.round((used / max) * 100)}%` : "0%";
 
       renderHomeRelay(status.home_relay);
+      renderPublishedContent();
       renderPeers();
       renderCacheEntries();
     }
@@ -800,6 +876,65 @@
       `).join("");
     }
 
+    function pinStateLabel(pinState) {
+      if (pinState === "relay_backed") return "pinned to relay";
+      if (pinState === "needs_repin") return "needs repin";
+      return "published locally";
+    }
+
+    function pinStateClass(pinState) {
+      if (pinState === "relay_backed") return "good";
+      if (pinState === "needs_repin") return "warn";
+      return "";
+    }
+
+    function renderPublishedContent() {
+      const items = state.publishedContent || [];
+      $("published-inventory-count").textContent = `${items.length} ${items.length === 1 ? "item" : "items"}`;
+      if (!items.length) {
+        $("published-body").innerHTML = `<tr><td colspan="5"><div class="empty">No published content.</div></td></tr>`;
+        return;
+      }
+
+      $("published-body").innerHTML = items.map((item) => {
+        const path = item.path || "unaddressed";
+        const sequence = item.local_sequence ?? "--";
+        const relay = item.relay || null;
+        const pinState = item.pin_state || "local_only";
+        const canPin = Boolean(state.status && state.status.home_relay && item.content_id);
+        const action = pinState === "needs_repin" ? "Repin" : "Pin";
+        const relayText = relay
+          ? `${shortId(relay.peer_id)}`
+          : "not pinned";
+        const pinnedDetail = item.pinned_sequence !== null && item.pinned_sequence !== undefined
+          ? `seq ${item.pinned_sequence} / ${shortId(item.pinned_content_id)}`
+          : "";
+
+        return `
+          <tr>
+            <td>
+              <div class="mono">${escapeHtml(path)}</div>
+              <span class="secondary-text mono">sequence ${escapeHtml(sequence)}</span>
+            </td>
+            <td>
+              <div class="mono cid">${escapeHtml(shortId(item.content_id, 10, 6))}</div>
+              <span class="secondary-text">${formatBytes(item.size)}</span>
+            </td>
+            <td><span class="pill ${pinStateClass(pinState)}">${escapeHtml(pinStateLabel(pinState))}</span></td>
+            <td>
+              <div class="mono cid">${escapeHtml(relayText)}</div>
+              <span class="secondary-text mono">${escapeHtml(pinnedDetail)}</span>
+            </td>
+            <td>
+              <button class="row-action ${pinState === "needs_repin" ? "primary" : ""}" type="button" data-pin-content="${escapeHtml(item.content_id)}" data-pin-path="${escapeHtml(item.path || "")}" ${canPin ? "" : "disabled"}>
+                ${pinState === "relay_backed" ? "Repin" : action}
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
     function renderCacheEntries() {
       const entries = state.cacheEntries || [];
       if (!entries.length) {
@@ -842,11 +977,13 @@
       if (result.address) $("resolve-address").value = result.address;
     }
 
-    async function pinToHomeRelay(contentId) {
+    async function pinToHomeRelay(contentId, path = "") {
+      const request = { content_id: contentId };
+      if (path) request.path = path;
       const response = await fetch("/api/v1/home-relay/pins", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({ content_id: contentId })
+        body: JSON.stringify(request)
       });
       const body = await readResponse(response);
       if (!response.ok) throw new Error(body);
@@ -907,6 +1044,28 @@
     }
 
     $("refresh-button").addEventListener("click", refresh);
+
+    $("published-body").addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-pin-content]");
+      if (!button) return;
+      const contentId = button.getAttribute("data-pin-content");
+      const path = button.getAttribute("data-pin-path") || "";
+      if (!contentId) return;
+      button.disabled = true;
+      try {
+        const result = await pinToHomeRelay(contentId, path);
+        setResult(
+          "home-relay-pin-result",
+          "ok",
+          `Pinned\n${result.content_id}\nrelay ${result.relay}\nsequence ${result.latest_sequence}`
+        );
+        await refresh();
+      } catch (error) {
+        setResult("home-relay-pin-result", "err", error.message);
+      } finally {
+        button.disabled = false;
+      }
+    });
 
     $("publish-file-button").addEventListener("click", async () => {
       const file = $("publish-file").files[0];

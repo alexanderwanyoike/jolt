@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 use dweb_core::{ContentId, ContentManifest, IdentityId, UpdateLogEntry};
@@ -14,10 +15,30 @@ pub struct ContentStore {
     published_dir: PathBuf,
     cache_dir: PathBuf,
     update_logs_dir: PathBuf,
+    home_relay_pins_path: PathBuf,
     cache_index: CacheIndex,
     cache_config: CacheConfig,
     /// In-memory index of published content: content_id -> path to content file
     published_content: HashMap<String, PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublishedContentEntry {
+    pub content_id: String,
+    pub size: u64,
+    pub content_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HomeRelayPinRecord {
+    pub content_id: String,
+    pub path: Option<String>,
+    pub address: Option<String>,
+    pub relay_peer_id: String,
+    pub relay_multiaddr: String,
+    pub relay_api_url: Option<String>,
+    pub latest_sequence: u64,
+    pub pinned_at: u64,
 }
 
 impl ContentStore {
@@ -26,6 +47,7 @@ impl ContentStore {
         let published_dir = base_dir.join("published");
         let cache_dir = base_dir.join("cache");
         let update_logs_dir = base_dir.join("update_logs");
+        let home_relay_pins_path = base_dir.join("home_relay_pins.json");
 
         std::fs::create_dir_all(&published_dir)?;
         std::fs::create_dir_all(&cache_dir)?;
@@ -44,6 +66,7 @@ impl ContentStore {
             published_dir,
             cache_dir,
             update_logs_dir,
+            home_relay_pins_path,
             cache_index,
             cache_config: config,
             published_content,
@@ -67,8 +90,7 @@ impl ContentStore {
             .map_err(|e| StoreError::Serialization(e.to_string()))?;
         std::fs::write(content_dir.join("manifest.json"), manifest_json)?;
 
-        self.published_content
-            .insert(id_str, content_path);
+        self.published_content.insert(id_str, content_path);
 
         Ok(manifest.content_id.clone())
     }
@@ -137,9 +159,7 @@ impl ContentStore {
                 // Read manifest for publisher_key + signature
                 let manifest_path = content_path.parent().unwrap().join("manifest.json");
                 if let Ok(manifest_str) = std::fs::read_to_string(&manifest_path) {
-                    if let Ok(manifest) =
-                        serde_json::from_str::<ContentManifest>(&manifest_str)
-                    {
+                    if let Ok(manifest) = serde_json::from_str::<ContentManifest>(&manifest_str) {
                         return Some(ContentData {
                             data,
                             publisher_key: manifest.publisher_key,
@@ -181,6 +201,27 @@ impl ContentStore {
         self.published_content.keys().cloned().collect()
     }
 
+    /// List all locally published content with manifest metadata.
+    pub fn list_published_content(&self) -> Vec<PublishedContentEntry> {
+        let mut entries = Vec::new();
+        for (content_id, content_path) in &self.published_content {
+            let manifest_path = content_path.parent().unwrap().join("manifest.json");
+            let Ok(manifest_str) = std::fs::read_to_string(manifest_path) else {
+                continue;
+            };
+            let Ok(manifest) = serde_json::from_str::<ContentManifest>(&manifest_str) else {
+                continue;
+            };
+            entries.push(PublishedContentEntry {
+                content_id: content_id.clone(),
+                size: manifest.size,
+                content_type: manifest.content_type,
+            });
+        }
+        entries.sort_by(|a, b| a.content_id.cmp(&b.content_id));
+        entries
+    }
+
     /// Persist the authoritative update log for a local identity.
     pub fn save_update_log(
         &self,
@@ -207,9 +248,30 @@ impl ContentStore {
         }
 
         let json = std::fs::read_to_string(path)?;
-        let entries = serde_json::from_str(&json)
-            .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        let entries =
+            serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))?;
         Ok(Some(entries))
+    }
+
+    /// Persist a successful owner-directed home relay pin.
+    pub fn save_home_relay_pin_record(&self, record: HomeRelayPinRecord) -> Result<(), StoreError> {
+        let mut records = self.load_home_relay_pin_records()?;
+        records.push(record);
+        let tmp_path = self.home_relay_pins_path.with_extension("json.tmp");
+        let json = serde_json::to_string_pretty(&records)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        std::fs::write(&tmp_path, json)?;
+        std::fs::rename(tmp_path, &self.home_relay_pins_path)?;
+        Ok(())
+    }
+
+    /// Load successful owner-directed home relay pins known by this node.
+    pub fn load_home_relay_pin_records(&self) -> Result<Vec<HomeRelayPinRecord>, StoreError> {
+        if !self.home_relay_pins_path.exists() {
+            return Ok(Vec::new());
+        }
+        let json = std::fs::read_to_string(&self.home_relay_pins_path)?;
+        serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))
     }
 
     /// List all cached content IDs.
@@ -623,9 +685,7 @@ mod tests {
             let data = b"persistent cached";
             let id = ContentId::from_bytes(data);
             id_str = id.to_string();
-            store
-                .cache_content(&id_str, data, &[1], &[2])
-                .unwrap();
+            store.cache_content(&id_str, data, &[1], &[2]).unwrap();
         }
         let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
         assert!(store.has_content(&id_str));
@@ -641,25 +701,24 @@ mod tests {
 
         let data_a = vec![0u8; 50];
         let id_a = ContentId::from_bytes(&data_a).to_string();
-        store
-            .cache_content(&id_a, &data_a, &[1], &[1])
-            .unwrap();
+        store.cache_content(&id_a, &data_a, &[1], &[1]).unwrap();
 
         // Touch A's access time to be old
-        store.cache_index.entries.get_mut(&id_a).unwrap().last_accessed = 1;
+        store
+            .cache_index
+            .entries
+            .get_mut(&id_a)
+            .unwrap()
+            .last_accessed = 1;
 
         let data_b = vec![1u8; 50];
         let id_b = ContentId::from_bytes(&data_b).to_string();
-        store
-            .cache_content(&id_b, &data_b, &[2], &[2])
-            .unwrap();
+        store.cache_content(&id_b, &data_b, &[2], &[2]).unwrap();
 
         // Now cache C (50 bytes) -- should evict A (oldest accessed)
         let data_c = vec![2u8; 50];
         let id_c = ContentId::from_bytes(&data_c).to_string();
-        store
-            .cache_content(&id_c, &data_c, &[3], &[3])
-            .unwrap();
+        store.cache_content(&id_c, &data_c, &[3], &[3]).unwrap();
 
         assert!(!store.has_content(&id_a), "A should be evicted");
         assert!(store.has_content(&id_b), "B should remain");
@@ -674,12 +733,22 @@ mod tests {
         let data_a = vec![0u8; 40];
         let id_a = ContentId::from_bytes(&data_a).to_string();
         store.cache_content(&id_a, &data_a, &[1], &[1]).unwrap();
-        store.cache_index.entries.get_mut(&id_a).unwrap().last_accessed = 1;
+        store
+            .cache_index
+            .entries
+            .get_mut(&id_a)
+            .unwrap()
+            .last_accessed = 1;
 
         let data_b = vec![1u8; 40];
         let id_b = ContentId::from_bytes(&data_b).to_string();
         store.cache_content(&id_b, &data_b, &[2], &[2]).unwrap();
-        store.cache_index.entries.get_mut(&id_b).unwrap().last_accessed = 2;
+        store
+            .cache_index
+            .entries
+            .get_mut(&id_b)
+            .unwrap()
+            .last_accessed = 2;
 
         // Cache C (80 bytes) -- needs to evict both A and B to fit
         let data_c = vec![2u8; 80];
@@ -700,7 +769,12 @@ mod tests {
         let id_a = ContentId::from_bytes(&data_a).to_string();
         store.cache_content(&id_a, &data_a, &[1], &[1]).unwrap();
         store.pin(&id_a).unwrap();
-        store.cache_index.entries.get_mut(&id_a).unwrap().last_accessed = 1;
+        store
+            .cache_index
+            .entries
+            .get_mut(&id_a)
+            .unwrap()
+            .last_accessed = 1;
 
         let data_b = vec![1u8; 50];
         let id_b = ContentId::from_bytes(&data_b).to_string();
@@ -742,7 +816,12 @@ mod tests {
         let data_a = vec![0u8; 50];
         let id_a = ContentId::from_bytes(&data_a).to_string();
         store.cache_content(&id_a, &data_a, &[1], &[1]).unwrap();
-        store.cache_index.entries.get_mut(&id_a).unwrap().last_accessed = 1;
+        store
+            .cache_index
+            .entries
+            .get_mut(&id_a)
+            .unwrap()
+            .last_accessed = 1;
 
         let data_b = vec![1u8; 60];
         let id_b = ContentId::from_bytes(&data_b).to_string();
@@ -760,9 +839,7 @@ mod tests {
         let data = b"access time test";
         let id = ContentId::from_bytes(data);
         let id_str = id.to_string();
-        store
-            .cache_content(&id_str, data, &[1], &[2])
-            .unwrap();
+        store.cache_content(&id_str, data, &[1], &[2]).unwrap();
 
         let before = store.cache_index.entries[&id_str].last_accessed;
         // Access it
@@ -830,7 +907,12 @@ mod tests {
         let data_b = vec![1u8; 40];
         let id_b = ContentId::from_bytes(&data_b).to_string();
         store.cache_content(&id_b, &data_b, &[2], &[2]).unwrap();
-        store.cache_index.entries.get_mut(&id_b).unwrap().last_accessed = 1;
+        store
+            .cache_index
+            .entries
+            .get_mut(&id_b)
+            .unwrap()
+            .last_accessed = 1;
 
         // This should evict B, not A
         let data_c = vec![2u8; 40];

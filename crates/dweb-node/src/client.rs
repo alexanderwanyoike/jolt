@@ -145,11 +145,20 @@ impl DaemonClient {
         Ok(())
     }
 
-    pub async fn pin_to_home_relay(&self, content_id: &str) -> Result<serde_json::Value> {
+    pub async fn pin_to_home_relay(
+        &self,
+        content_id: &str,
+        path: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let mut request = serde_json::json!({ "content_id": content_id });
+        if let Some(path) = path {
+            request["path"] = serde_json::Value::String(path.to_string());
+        }
+
         let resp = self
             .client
             .post(format!("{}/api/v1/home-relay/pins", self.base_url))
-            .json(&serde_json::json!({ "content_id": content_id }))
+            .json(&request)
             .send()
             .await
             .context("Failed to connect to daemon")?;

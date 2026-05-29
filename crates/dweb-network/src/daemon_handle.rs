@@ -6,8 +6,9 @@ use dweb_core::{IdentityId, PinRequest, UpdateLogEntry};
 
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
-    PeerConnectResponse, PeerInfo, PublishResponse, ResolveResponse,
+    PeerConnectResponse, PeerInfo, PublishResponse, PublishedContentInfo, ResolveResponse,
 };
+use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
 
 /// Client-side handle to communicate with the daemon event loop.
@@ -132,6 +133,17 @@ impl DaemonHandle {
             .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))
     }
 
+    /// List locally published content with path and relay pin state.
+    pub async fn list_published_content(&self) -> Result<Vec<PublishedContentInfo>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::ListPublishedContent { response_tx: tx })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))
+    }
+
     /// Pin content to prevent cache eviction.
     pub async fn pin(&self, content_id: String) -> Result<(), NetworkError> {
         let (tx, rx) = oneshot::channel();
@@ -152,6 +164,29 @@ impl DaemonHandle {
         self.cmd_tx
             .send(DaemonCommand::CreatePinRequest {
                 content_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Record that the configured home relay accepted a pin for local content.
+    pub async fn record_home_relay_pin(
+        &self,
+        content_id: String,
+        path: Option<String>,
+        relay: HomeRelayConfig,
+        latest_sequence: u64,
+    ) -> Result<(), NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::RecordHomeRelayPin {
+                content_id,
+                path,
+                relay,
+                latest_sequence,
                 response_tx: tx,
             })
             .await

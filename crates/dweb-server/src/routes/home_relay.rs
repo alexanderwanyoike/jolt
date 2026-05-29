@@ -11,6 +11,7 @@ use crate::state::AppState;
 #[derive(Debug, Deserialize)]
 pub struct HomeRelayPinRequest {
     pub content_id: String,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -80,6 +81,16 @@ pub async fn pin(
                 "home relay returned invalid pin response: {e}"
             )))
         })?;
+
+    state
+        .daemon
+        .record_home_relay_pin(
+            request.content_id,
+            request.path,
+            relay.clone(),
+            pinned.latest_sequence,
+        )
+        .await?;
 
     Ok(Json(HomeRelayPinResponse {
         status: pinned.status,
