@@ -7,7 +7,7 @@ mod daemon;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use cli::{BootstrapCommands, CacheCommands, Cli, Commands};
+use cli::{BootstrapCommands, CacheCommands, Cli, Commands, HomeRelayCommands};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -55,6 +55,14 @@ async fn main() -> anyhow::Result<()> {
             BootstrapCommands::Remove { multiaddr } => {
                 commands::bootstrap::remove(&multiaddr).await?
             }
+        },
+        Commands::HomeRelay { command } => match command {
+            HomeRelayCommands::Show => commands::home_relay::show().await?,
+            HomeRelayCommands::Set {
+                multiaddr,
+                capability,
+            } => commands::home_relay::set(&multiaddr, capability).await?,
+            HomeRelayCommands::Clear => commands::home_relay::clear().await?,
         },
     }
 

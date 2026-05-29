@@ -117,6 +117,16 @@ curl -F "file=@myfile.txt" http://127.0.0.1:9862/api/v1/publish
 # {"content_id": "bafkr4i...", "size": 1234}
 ```
 
+### Configure A Home Relay
+
+```bash
+dweb home-relay set "/ip4/<RELAY_IP>/tcp/<PORT>/p2p/<RELAY_PEER_ID>" --capability pinning
+dweb home-relay show
+dweb status
+```
+
+The home relay is Alice's delegated availability node. It is stored locally, loaded when the daemon starts, and reported by `dweb status` and `GET /api/v1/status`.
+
 ### Fetch Content
 
 ```bash

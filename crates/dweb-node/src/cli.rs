@@ -81,6 +81,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: BootstrapCommands,
     },
+
+    /// Manage the configured home relay
+    HomeRelay {
+        #[command(subcommand)]
+        command: HomeRelayCommands,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -128,6 +134,32 @@ pub enum BootstrapCommands {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum HomeRelayCapabilityArg {
+    Unknown,
+    DiscoveryOnly,
+    Pinning,
+}
+
+#[derive(Subcommand)]
+pub enum HomeRelayCommands {
+    /// Show the configured home relay
+    Show,
+
+    /// Set the configured home relay multiaddr
+    Set {
+        /// Home relay multiaddr with /p2p/<peer_id>
+        multiaddr: String,
+
+        /// Known relay capability
+        #[arg(long, value_enum, default_value_t = HomeRelayCapabilityArg::Pinning)]
+        capability: HomeRelayCapabilityArg,
+    },
+
+    /// Remove the configured home relay
+    Clear,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,6 +169,32 @@ mod tests {
     fn parse_start_command() {
         let cli = Cli::parse_from(["dweb", "start"]);
         assert!(matches!(cli.command, Commands::Start { .. }));
+    }
+
+    #[test]
+    fn parse_home_relay_set_command() {
+        let cli = Cli::parse_from([
+            "dweb",
+            "home-relay",
+            "set",
+            "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWExample",
+            "--capability",
+            "discovery-only",
+        ]);
+
+        match cli.command {
+            Commands::HomeRelay {
+                command:
+                    HomeRelayCommands::Set {
+                        multiaddr,
+                        capability,
+                    },
+            } => {
+                assert_eq!(multiaddr, "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWExample");
+                assert_eq!(capability, HomeRelayCapabilityArg::DiscoveryOnly);
+            }
+            _ => panic!("expected HomeRelay Set command"),
+        }
     }
 
     #[test]

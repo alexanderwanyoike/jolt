@@ -22,7 +22,7 @@ use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
     PeerConnectResponse, PeerInfo, PublishResponse, ResolveResponse,
 };
-use crate::config::NetworkConfig;
+use crate::config::{HomeRelayConfig, NetworkConfig};
 use crate::error::NetworkError;
 use crate::fetch_manager::FetchManager;
 use crate::protocol::{ContentRequest, ContentResponse, UpdateLogRequest, UpdateLogResponse};
@@ -134,6 +134,8 @@ pub struct NetworkNode {
     effective_bootstrap_relays: Vec<String>,
     /// Whether this node is intentionally acting as a bootstrap/discovery relay.
     bootstrap_relay: bool,
+    /// User-selected home relay for delegated availability.
+    home_relay: Option<HomeRelayConfig>,
 }
 
 impl NetworkNode {
@@ -237,6 +239,7 @@ impl NetworkNode {
             configured_bootstrap_relays: config.configured_bootstrap_relays,
             effective_bootstrap_relays: config.effective_bootstrap_relays,
             bootstrap_relay: config.bootstrap_relay,
+            home_relay: config.home_relay,
         })
     }
 
@@ -333,6 +336,7 @@ impl NetworkNode {
             configured_bootstrap_relays: config.configured_bootstrap_relays,
             effective_bootstrap_relays: config.effective_bootstrap_relays,
             bootstrap_relay: config.bootstrap_relay,
+            home_relay: config.home_relay,
         })
     }
 
@@ -1405,6 +1409,7 @@ impl NetworkNode {
                     bootstrap_relay: self.bootstrap_relay,
                     configured_bootstrap_relays: self.configured_bootstrap_relays.clone(),
                     effective_bootstrap_relays: self.effective_bootstrap_relays.clone(),
+                    home_relay: self.home_relay.clone(),
                 };
                 let _ = response_tx.send(status);
             }
@@ -1717,6 +1722,11 @@ mod tests {
             "/ip4/127.0.0.1/tcp/4002/p2p/12D3Cli".to_string(),
         ];
         config.bootstrap_relay = true;
+        config.home_relay = Some(crate::config::HomeRelayConfig {
+            peer_id: "12D3Configured".to_string(),
+            multiaddr: "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string(),
+            capability: crate::config::HomeRelayCapability::Pinning,
+        });
         let mut node = make_node_with_config(dir.path(), config);
 
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
@@ -1738,6 +1748,10 @@ mod tests {
                 "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured",
                 "/ip4/127.0.0.1/tcp/4002/p2p/12D3Cli",
             ]
+        );
+        assert_eq!(
+            status.home_relay.unwrap().multiaddr,
+            "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured"
         );
 
         handle.shutdown().await.unwrap();

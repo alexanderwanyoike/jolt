@@ -630,10 +630,10 @@
         <section class="panel">
           <div class="panel-head">
             <h2>Relay</h2>
-            <span class="pill warn">placeholder</span>
+            <span class="pill" id="home-relay-state">not configured</span>
           </div>
-          <div class="panel-body">
-            <div class="empty">Home relay data is not configured or available.</div>
+          <div class="panel-body" id="home-relay-panel">
+            <div class="empty">Home relay is not configured.</div>
           </div>
         </section>
       </aside>
@@ -744,8 +744,34 @@
       const max = Number(stats.max_size || 0);
       $("cache-pressure").textContent = max > 0 ? `${Math.round((used / max) * 100)}%` : "0%";
 
+      renderHomeRelay(status.home_relay);
       renderPeers();
       renderCacheEntries();
+    }
+
+    function renderHomeRelay(homeRelay) {
+      const statePill = $("home-relay-state");
+      const panel = $("home-relay-panel");
+
+      if (!homeRelay) {
+        statePill.className = "pill warn";
+        statePill.textContent = "not configured";
+        panel.innerHTML = `<div class="empty">Home relay is not configured.</div>`;
+        return;
+      }
+
+      statePill.className = homeRelay.capability === "pinning" ? "pill good" : "pill warn";
+      statePill.textContent = homeRelay.capability || "unknown";
+      panel.innerHTML = `
+        <div class="kv">
+          <span>Peer ID</span>
+          <strong class="mono cid">${escapeHtml(homeRelay.peer_id || "--")}</strong>
+        </div>
+        <div class="kv">
+          <span>Address</span>
+          <strong class="mono cid">${escapeHtml(homeRelay.multiaddr || "--")}</strong>
+        </div>
+      `;
     }
 
     function renderPeers() {

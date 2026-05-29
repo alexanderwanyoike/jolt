@@ -1,9 +1,9 @@
-# 005: Home Relay Configuration
+# 007: Home Relay Configuration
 
-**Type:** AFK  
-**Milestone:** M4.5  
-**Status:** Blocked  
-**Blocked by:** 005
+**Type:** AFK
+**Milestone:** M5 / Relay Availability
+**Status:** Done
+**Blocked by:** None
 
 ## Why
 
@@ -23,12 +23,22 @@ For v0, this can be manual configuration. Automatic relay discovery can come lat
 
 ## Acceptance Criteria
 
-- [ ] CLI/config supports setting a home relay multiaddr.
-- [ ] Node startup loads configured home relay.
-- [ ] Status output/API shows configured home relay.
-- [ ] Invalid relay multiaddr is rejected with a clear error.
-- [ ] Docs show how to configure a home relay.
+- [x] CLI/config supports setting a home relay multiaddr.
+- [x] Node startup loads configured home relay.
+- [x] Status output/API shows configured home relay.
+- [x] Invalid relay multiaddr is rejected with a clear error.
+- [x] Docs show how to configure a home relay.
 
 ## Notes
 
 Keep this simple. No relay marketplace, no payment, no automatic selection.
+
+Implemented as:
+
+```bash
+dweb home-relay set /ip4/<RELAY_IP>/tcp/<PORT>/p2p/<RELAY_PEER_ID> --capability pinning
+dweb home-relay show
+dweb home-relay clear
+```
+
+The configured home relay is persisted in node settings, loaded on daemon startup, returned by `/api/v1/status`, and shown in `dweb status` and the dashboard relay panel.

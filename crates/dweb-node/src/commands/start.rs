@@ -137,6 +137,7 @@ fn build_network_config(
     net_config.configured_bootstrap_relays = settings.bootstrap_relays.clone();
     net_config.effective_bootstrap_relays = effective_bootstrap.clone();
     net_config.bootstrap_relay = settings.bootstrap_relay;
+    net_config.home_relay = settings.home_relay.clone();
     net_config.bootstrap_peers = effective_bootstrap
         .iter()
         .filter_map(|s| s.parse().ok())
@@ -162,6 +163,11 @@ mod tests {
             bootstrap_relays: vec![CONFIGURED.to_string()],
             use_builtin_bootstrap_relays: true,
             bootstrap_relay: true,
+            home_relay: Some(dweb_network::HomeRelayConfig {
+                peer_id: "12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN".to_string(),
+                multiaddr: CONFIGURED.to_string(),
+                capability: dweb_network::HomeRelayCapability::Pinning,
+            }),
         };
         let cli = vec![CLI.to_string()];
         let builtins = vec![BUILTIN.to_string()];
@@ -176,6 +182,7 @@ mod tests {
             vec![CONFIGURED.to_string(), CLI.to_string()]
         );
         assert!(config.bootstrap_relay);
+        assert_eq!(config.home_relay, settings.home_relay);
         assert_eq!(config.p2p_port, 4001);
     }
 

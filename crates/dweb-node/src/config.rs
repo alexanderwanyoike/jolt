@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use dweb_network::HomeRelayConfig;
+
 #[derive(Clone)]
 pub struct NodeConfig {
     pub data_dir: PathBuf,
@@ -19,6 +21,8 @@ pub struct NodeSettings {
     pub use_builtin_bootstrap_relays: bool,
     #[serde(default)]
     pub bootstrap_relay: bool,
+    #[serde(default)]
+    pub home_relay: Option<HomeRelayConfig>,
 }
 
 impl Default for NodeSettings {
@@ -27,6 +31,7 @@ impl Default for NodeSettings {
             bootstrap_relays: Vec::new(),
             use_builtin_bootstrap_relays: true,
             bootstrap_relay: false,
+            home_relay: None,
         }
     }
 }
@@ -160,6 +165,11 @@ mod tests {
             bootstrap_relays: vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWExample".to_string()],
             use_builtin_bootstrap_relays: false,
             bootstrap_relay: true,
+            home_relay: Some(HomeRelayConfig {
+                peer_id: "12D3KooWExample".to_string(),
+                multiaddr: "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWExample".to_string(),
+                capability: dweb_network::HomeRelayCapability::Pinning,
+            }),
         };
 
         config.save_settings(&settings).unwrap();
@@ -184,6 +194,7 @@ mod tests {
             bootstrap_relays: vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string()],
             use_builtin_bootstrap_relays: true,
             bootstrap_relay: false,
+            home_relay: None,
         };
         let cli = vec!["/ip4/127.0.0.1/tcp/4002/p2p/12D3Cli".to_string()];
         let defaults = vec!["/dns4/bootstrap.jolt.test/tcp/4001/p2p/12D3Default".to_string()];
