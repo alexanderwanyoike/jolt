@@ -100,6 +100,7 @@ pub struct NetworkNode {
         (
             JoltAddress,
             Option<u64>,
+            libp2p::PeerId,
             oneshot::Sender<Result<ResolvedJoltTarget, NetworkError>>,
         ),
     >,
@@ -108,6 +109,7 @@ pub struct NetworkNode {
         (
             JoltAddress,
             Option<u64>,
+            libp2p::PeerId,
             oneshot::Sender<Result<ResolveResponse, NetworkError>>,
         ),
     >,
@@ -556,7 +558,7 @@ impl NetworkNode {
             .update_log_sync
             .send_request(peer, request);
         self.pending_jolt_resolutions
-            .insert(request_id, (address.clone(), now, tx));
+            .insert(request_id, (address.clone(), now, *peer, tx));
 
         Ok(rx)
     }
@@ -691,7 +693,7 @@ impl NetworkNode {
             .update_log_sync
             .send_request(provider, request);
         self.pending_daemon_resolutions
-            .insert(request_id, (address, now, response_tx));
+            .insert(request_id, (address, now, *provider, response_tx));
     }
 
     fn request_pending_resolves_from_provider(
@@ -851,10 +853,24 @@ impl NetworkNode {
         &mut self,
         identity: &IdentityId,
     ) -> Option<libp2p::PeerId> {
+        self.take_discovered_update_log_provider_except(identity, None)
+    }
+
+    fn take_discovered_update_log_provider_except(
+        &mut self,
+        identity: &IdentityId,
+        excluded: Option<&libp2p::PeerId>,
+    ) -> Option<libp2p::PeerId> {
         let key = Self::update_log_provider_key(identity);
         if let Some(providers) = self.discovered_providers.get_mut(&key) {
-            if !providers.is_empty() {
-                return Some(providers.remove(0));
+            if let Some(excluded) = excluded {
+                providers.retain(|provider| provider != excluded);
+            }
+            if let Some(position) = providers
+                .iter()
+                .position(|provider| Some(provider) != excluded)
+            {
+                return Some(providers.remove(position));
             }
         }
         None
@@ -1074,7 +1090,7 @@ impl NetworkNode {
                             })
                     };
                     let _ = pending.response_tx.send(result);
-                } else if let Some((address, now, tx)) =
+                } else if let Some((address, now, _provider, tx)) =
                     self.pending_jolt_resolutions.remove(&request_id)
                 {
                     let result = if response.entries.is_empty() {
@@ -1087,7 +1103,7 @@ impl NetworkNode {
                             .and_then(|_| self.resolve_cached_jolt_address(&address, now))
                     };
                     let _ = tx.send(result);
-                } else if let Some((address, now, tx)) =
+                } else if let Some((address, now, _provider, tx)) =
                     self.pending_daemon_resolutions.remove(&request_id)
                 {
                     let result = if response.entries.is_empty() {
@@ -1121,15 +1137,44 @@ impl NetworkNode {
                         .response_tx
                         .send(Err(NetworkError::Protocol(error.to_string())));
                 }
-                if let Some((_address, _now, tx)) =
+                if let Some((address, now, provider, tx)) =
                     self.pending_jolt_resolutions.remove(&request_id)
                 {
-                    let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                    if let Some(next_provider) = self.take_discovered_update_log_provider_except(
+                        address.identity(),
+                        Some(&provider),
+                    ) {
+                        let request = UpdateLogRequest {
+                            identity: address.identity().clone(),
+                            since: self
+                                .update_logs
+                                .get(address.identity())
+                                .and_then(|entries| {
+                                    verify_update_log_for_identity(address.identity(), entries).ok()
+                                }),
+                        };
+                        let request_id = self
+                            .swarm
+                            .behaviour_mut()
+                            .update_log_sync
+                            .send_request(&next_provider, request);
+                        self.pending_jolt_resolutions
+                            .insert(request_id, (address, now, next_provider, tx));
+                    } else {
+                        let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                    }
                 }
-                if let Some((_address, _now, tx)) =
+                if let Some((address, now, provider, tx)) =
                     self.pending_daemon_resolutions.remove(&request_id)
                 {
-                    let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                    if let Some(next_provider) = self.take_discovered_update_log_provider_except(
+                        address.identity(),
+                        Some(&provider),
+                    ) {
+                        self.request_daemon_resolve_from_provider(address, now, &next_provider, tx);
+                    } else {
+                        let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                    }
                 }
             }
 
@@ -1757,6 +1802,41 @@ mod tests {
             node.update_log_entries(&identity),
             Some(expected.as_slice())
         );
+    }
+
+    #[tokio::test]
+    async fn daemon_resolution_retries_next_update_log_provider_after_dial_failure() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let owner = NodeIdentity::generate();
+        let address = JoltAddress::new(owner.identity_id(), "/profile").unwrap();
+        let failed_provider = libp2p::PeerId::random();
+        let fallback_provider = libp2p::PeerId::random();
+        let key = NetworkNode::update_log_provider_key(address.identity());
+        node.discovered_providers
+            .insert(key, vec![failed_provider, fallback_provider]);
+
+        let (tx, mut rx) = oneshot::channel();
+        node.request_daemon_resolve_from_provider(address.clone(), None, &failed_provider, tx);
+        let failed_request_id = *node.pending_daemon_resolutions.keys().next().unwrap();
+
+        node.handle_swarm_event(SwarmEvent::Behaviour(DwebBehaviourEvent::UpdateLogSync(
+            request_response::Event::OutboundFailure {
+                peer: failed_provider,
+                connection_id: libp2p::swarm::ConnectionId::new_unchecked(1),
+                request_id: failed_request_id,
+                error: request_response::OutboundFailure::DialFailure,
+            },
+        )));
+
+        assert!(matches!(
+            rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert_eq!(node.pending_daemon_resolutions.len(), 1);
+        let (_address, _now, provider, _tx) =
+            node.pending_daemon_resolutions.values().next().unwrap();
+        assert_eq!(*provider, fallback_provider);
     }
 
     #[tokio::test]
