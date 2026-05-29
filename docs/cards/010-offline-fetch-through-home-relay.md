@@ -1,9 +1,9 @@
-# 008: Offline Fetch Through Home Relay
+# 010: Offline Fetch Through Home Relay
 
 **Type:** AFK  
 **Milestone:** M4.5  
-**Status:** Blocked  
-**Blocked by:** 009
+**Status:** Superseded by 022
+**Blocked by:** None
 
 ## Why
 
@@ -34,4 +34,4 @@ The flow should include:
 
 ## Notes
 
-This should become the new project demo. It is more important than WASM runtime work.
+This flow is now covered by Card 022, which became the authoritative Alice-offline/Bob-fresh smoke test.
