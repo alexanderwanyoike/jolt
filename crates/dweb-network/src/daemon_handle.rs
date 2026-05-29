@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use tokio::sync::{mpsc, oneshot};
 
-use dweb_core::IdentityId;
+use dweb_core::{IdentityId, PinRequest, UpdateLogEntry};
 
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
@@ -146,12 +146,45 @@ impl DaemonHandle {
             .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
     }
 
+    /// Create an owner-signed request for a relay to pin locally published content.
+    pub async fn create_pin_request(&self, content_id: String) -> Result<PinRequest, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::CreatePinRequest {
+                content_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
     /// Pin an owner's signed update log and announce this node as its provider.
     pub async fn pin_update_log(&self, identity: IdentityId) -> Result<u64, NetworkError> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
             .send(DaemonCommand::PinUpdateLog {
                 identity,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Store a verified owner update-log snapshot and announce this node as its provider.
+    pub async fn store_update_log(
+        &self,
+        identity: IdentityId,
+        entries: Vec<UpdateLogEntry>,
+    ) -> Result<u64, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::StoreUpdateLog {
+                identity,
+                entries,
                 response_tx: tx,
             })
             .await

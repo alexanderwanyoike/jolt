@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 
 use dweb_core::{
     resolve_jolt_address, verify_update_log_for_identity, ContentId, ContentManifest, IdentityId,
-    JoltAddress, ResolvedJoltTarget, UpdateAction, UpdateLogEntry,
+    JoltAddress, PinRequest, ResolvedJoltTarget, UpdateAction, UpdateLogEntry,
 };
 use dweb_identity::NodeIdentity;
 use dweb_store::ContentStore;
@@ -100,6 +100,7 @@ pub struct NetworkNode {
         (
             JoltAddress,
             Option<u64>,
+            libp2p::PeerId,
             oneshot::Sender<Result<ResolvedJoltTarget, NetworkError>>,
         ),
     >,
@@ -108,6 +109,7 @@ pub struct NetworkNode {
         (
             JoltAddress,
             Option<u64>,
+            libp2p::PeerId,
             oneshot::Sender<Result<ResolveResponse, NetworkError>>,
         ),
     >,
@@ -441,6 +443,39 @@ impl NetworkNode {
         Ok((content_id, address, latest_sequence))
     }
 
+    fn publish_update_log_snapshot(
+        &mut self,
+        identity: &IdentityId,
+    ) -> Result<Option<ContentId>, NetworkError> {
+        let Some(entries) = self.update_logs.get(identity).cloned() else {
+            return Ok(None);
+        };
+        verify_update_log_for_identity(identity, &entries)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+
+        let data =
+            serde_json::to_vec(&entries).map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let content_id = ContentId::from_bytes(&data);
+        let signature = self.identity.sign(&data);
+        let manifest = ContentManifest {
+            content_id: content_id.clone(),
+            size: data.len() as u64,
+            content_type: "application/jolt-update-log+json".to_string(),
+            publisher_key: self.identity.public_key_bytes().to_vec(),
+            signature,
+        };
+
+        self.store
+            .publish(&data, &manifest)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+
+        if let Err(e) = self.announce_provider(&content_id) {
+            debug!("Update-log snapshot DHT announcement skipped: {e}");
+        }
+
+        Ok(Some(content_id))
+    }
+
     /// Request content from connected peers by ContentId.
     pub fn request_content(
         &mut self,
@@ -523,7 +558,7 @@ impl NetworkNode {
             .update_log_sync
             .send_request(peer, request);
         self.pending_jolt_resolutions
-            .insert(request_id, (address.clone(), now, tx));
+            .insert(request_id, (address.clone(), now, *peer, tx));
 
         Ok(rx)
     }
@@ -658,7 +693,7 @@ impl NetworkNode {
             .update_log_sync
             .send_request(provider, request);
         self.pending_daemon_resolutions
-            .insert(request_id, (address, now, response_tx));
+            .insert(request_id, (address, now, *provider, response_tx));
     }
 
     fn request_pending_resolves_from_provider(
@@ -818,10 +853,24 @@ impl NetworkNode {
         &mut self,
         identity: &IdentityId,
     ) -> Option<libp2p::PeerId> {
+        self.take_discovered_update_log_provider_except(identity, None)
+    }
+
+    fn take_discovered_update_log_provider_except(
+        &mut self,
+        identity: &IdentityId,
+        excluded: Option<&libp2p::PeerId>,
+    ) -> Option<libp2p::PeerId> {
         let key = Self::update_log_provider_key(identity);
         if let Some(providers) = self.discovered_providers.get_mut(&key) {
-            if !providers.is_empty() {
-                return Some(providers.remove(0));
+            if let Some(excluded) = excluded {
+                providers.retain(|provider| provider != excluded);
+            }
+            if let Some(position) = providers
+                .iter()
+                .position(|provider| Some(provider) != excluded)
+            {
+                return Some(providers.remove(position));
             }
         }
         None
@@ -1041,7 +1090,7 @@ impl NetworkNode {
                             })
                     };
                     let _ = pending.response_tx.send(result);
-                } else if let Some((address, now, tx)) =
+                } else if let Some((address, now, _provider, tx)) =
                     self.pending_jolt_resolutions.remove(&request_id)
                 {
                     let result = if response.entries.is_empty() {
@@ -1054,7 +1103,7 @@ impl NetworkNode {
                             .and_then(|_| self.resolve_cached_jolt_address(&address, now))
                     };
                     let _ = tx.send(result);
-                } else if let Some((address, now, tx)) =
+                } else if let Some((address, now, _provider, tx)) =
                     self.pending_daemon_resolutions.remove(&request_id)
                 {
                     let result = if response.entries.is_empty() {
@@ -1088,15 +1137,44 @@ impl NetworkNode {
                         .response_tx
                         .send(Err(NetworkError::Protocol(error.to_string())));
                 }
-                if let Some((_address, _now, tx)) =
+                if let Some((address, now, provider, tx)) =
                     self.pending_jolt_resolutions.remove(&request_id)
                 {
-                    let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                    if let Some(next_provider) = self.take_discovered_update_log_provider_except(
+                        address.identity(),
+                        Some(&provider),
+                    ) {
+                        let request = UpdateLogRequest {
+                            identity: address.identity().clone(),
+                            since: self
+                                .update_logs
+                                .get(address.identity())
+                                .and_then(|entries| {
+                                    verify_update_log_for_identity(address.identity(), entries).ok()
+                                }),
+                        };
+                        let request_id = self
+                            .swarm
+                            .behaviour_mut()
+                            .update_log_sync
+                            .send_request(&next_provider, request);
+                        self.pending_jolt_resolutions
+                            .insert(request_id, (address, now, next_provider, tx));
+                    } else {
+                        let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                    }
                 }
-                if let Some((_address, _now, tx)) =
+                if let Some((address, now, provider, tx)) =
                     self.pending_daemon_resolutions.remove(&request_id)
                 {
-                    let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                    if let Some(next_provider) = self.take_discovered_update_log_provider_except(
+                        address.identity(),
+                        Some(&provider),
+                    ) {
+                        self.request_daemon_resolve_from_provider(address, now, &next_provider, tx);
+                    } else {
+                        let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                    }
                 }
             }
 
@@ -1507,6 +1585,37 @@ impl NetworkNode {
                     });
                 let _ = response_tx.send(result);
             }
+            DaemonCommand::CreatePinRequest {
+                content_id,
+                response_tx,
+            } => {
+                let result = ContentId::from_str(&content_id)
+                    .map_err(|e| NetworkError::InvalidInput(e.to_string()))
+                    .and_then(|parsed| {
+                        if !self
+                            .store
+                            .published_ids()
+                            .iter()
+                            .any(|published| published == &content_id)
+                        {
+                            return Err(NetworkError::InvalidInput(format!(
+                                "content is not locally published: {content_id}"
+                            )));
+                        }
+
+                        let update_log_content_id =
+                            self.publish_update_log_snapshot(&self.identity.identity_id())?;
+
+                        PinRequest::with_update_log(
+                            self.identity.public_key_bytes(),
+                            parsed,
+                            update_log_content_id,
+                            |bytes| self.identity.sign(bytes),
+                        )
+                        .map_err(|e| NetworkError::Protocol(e.to_string()))
+                    });
+                let _ = response_tx.send(result);
+            }
             DaemonCommand::PinUpdateLog {
                 identity,
                 response_tx,
@@ -1544,6 +1653,26 @@ impl NetworkNode {
                         response_tx,
                     },
                 );
+            }
+            DaemonCommand::StoreUpdateLog {
+                identity,
+                entries,
+                response_tx,
+            } => {
+                let result = self
+                    .store_verified_update_log(identity.clone(), entries)
+                    .and_then(|_| {
+                        let entries = self.update_logs.get(&identity).ok_or_else(|| {
+                            NetworkError::Protocol(format!(
+                                "No verified update log cached for {identity}"
+                            ))
+                        })?;
+                        let sequence = verify_update_log_for_identity(&identity, entries)
+                            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+                        self.announce_update_log_provider(&identity)?;
+                        Ok(sequence)
+                    });
+                let _ = response_tx.send(result);
             }
             DaemonCommand::Unpin {
                 content_id,
@@ -1676,6 +1805,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn daemon_resolution_retries_next_update_log_provider_after_dial_failure() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let owner = NodeIdentity::generate();
+        let address = JoltAddress::new(owner.identity_id(), "/profile").unwrap();
+        let failed_provider = libp2p::PeerId::random();
+        let fallback_provider = libp2p::PeerId::random();
+        let key = NetworkNode::update_log_provider_key(address.identity());
+        node.discovered_providers
+            .insert(key, vec![failed_provider, fallback_provider]);
+
+        let (tx, mut rx) = oneshot::channel();
+        node.request_daemon_resolve_from_provider(address.clone(), None, &failed_provider, tx);
+        let failed_request_id = *node.pending_daemon_resolutions.keys().next().unwrap();
+
+        node.handle_swarm_event(SwarmEvent::Behaviour(DwebBehaviourEvent::UpdateLogSync(
+            request_response::Event::OutboundFailure {
+                peer: failed_provider,
+                connection_id: libp2p::swarm::ConnectionId::new_unchecked(1),
+                request_id: failed_request_id,
+                error: request_response::OutboundFailure::DialFailure,
+            },
+        )));
+
+        assert!(matches!(
+            rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert_eq!(node.pending_daemon_resolutions.len(), 1);
+        let (_address, _now, provider, _tx) =
+            node.pending_daemon_resolutions.values().next().unwrap();
+        assert_eq!(*provider, fallback_provider);
+    }
+
+    #[tokio::test]
     async fn new_tcp_rejects_invalid_persisted_local_update_log() {
         let dir = tempdir().unwrap();
         let owner = NodeIdentity::generate();
@@ -1783,6 +1947,7 @@ mod tests {
             peer_id: "12D3Configured".to_string(),
             multiaddr: "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string(),
             capability: crate::config::HomeRelayCapability::Pinning,
+            api_url: Some("http://127.0.0.1:9862".to_string()),
         });
         let mut node = make_node_with_config(dir.path(), config);
 

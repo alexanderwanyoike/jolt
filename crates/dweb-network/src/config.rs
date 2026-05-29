@@ -14,6 +14,8 @@ pub struct HomeRelayConfig {
     pub peer_id: String,
     pub multiaddr: String,
     pub capability: HomeRelayCapability,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_url: Option<String>,
 }
 
 /// Configuration for the network node.

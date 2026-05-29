@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** M5 / Relay Availability
-**Status:** Ready
+**Status:** Done
 **Blocked by:** None
 
 ## Why
@@ -38,13 +38,13 @@ The persisted update log should be treated as signed protocol state, not as a ca
 
 ## Acceptance Criteria
 
-- [ ] Publishing a path writes the signed update-log entry to durable storage.
-- [ ] Daemon startup loads the local identity's persisted update log.
-- [ ] Publishing after restart appends the next sequence number instead of creating a new sequence-0 log.
-- [ ] Existing Bob can resolve Alice's new path after Alice restarts and publishes again.
-- [ ] Relay pinning after restart pins the full latest update-log state.
-- [ ] Tests cover publish -> restart -> publish -> existing peer resolves both old and new paths.
-- [ ] Tests cover corrupted or invalid persisted update-log state failing closed with a clear error.
+- [x] Publishing a path writes the signed update-log entry to durable storage.
+- [x] Daemon startup loads the local identity's persisted update log.
+- [x] Publishing after restart appends the next sequence number instead of creating a new sequence-0 log.
+- [x] Existing Bob can resolve Alice's new path after Alice restarts and publishes again.
+- [x] Relay pinning after restart pins the full latest update-log state.
+- [x] Tests cover publish -> restart -> publish -> existing peer resolves both old and new paths.
+- [x] Tests cover corrupted or invalid persisted update-log state failing closed with a clear error.
 
 ## Notes
 

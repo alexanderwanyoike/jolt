@@ -1,13 +1,13 @@
 use axum::extract::State;
 use axum::Json;
-use dweb_core::PinRequest;
+use dweb_core::{PinRequest, UpdateLogEntry};
 use dweb_network::NetworkError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::ApiError;
 use crate::state::AppState;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RelayPinResponse {
     pub status: String,
     pub owner: String,
@@ -40,7 +40,26 @@ pub async fn create_pin(
     let owner = owner_identity.to_string();
     let content_id = request.body.content_id.to_string();
 
-    let latest_sequence = state.daemon.pin_update_log(owner_identity).await?;
+    let latest_sequence = if let Some(update_log_content_id) = request.body.update_log_content_id {
+        let fetched_log = state
+            .daemon
+            .fetch(update_log_content_id.to_string())
+            .await?;
+        let entries: Vec<UpdateLogEntry> =
+            serde_json::from_slice(&fetched_log.data).map_err(|e| {
+                ApiError(NetworkError::Protocol(format!(
+                    "invalid update log snapshot: {e}"
+                )))
+            })?;
+        let latest_sequence = state
+            .daemon
+            .store_update_log(owner_identity.clone(), entries)
+            .await?;
+        state.daemon.pin(update_log_content_id.to_string()).await?;
+        latest_sequence
+    } else {
+        state.daemon.pin_update_log(owner_identity).await?
+    };
     let fetched = state.daemon.fetch(content_id.clone()).await?;
     state.daemon.pin(content_id.clone()).await?;
 

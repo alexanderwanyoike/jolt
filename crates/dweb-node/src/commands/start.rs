@@ -174,6 +174,7 @@ mod tests {
                 peer_id: "12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN".to_string(),
                 multiaddr: CONFIGURED.to_string(),
                 capability: dweb_network::HomeRelayCapability::Pinning,
+                api_url: Some("http://127.0.0.1:9862".to_string()),
             }),
         };
         let cli = vec![CLI.to_string()];

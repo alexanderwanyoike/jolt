@@ -7,7 +7,7 @@ use crate::client::DaemonClient;
 use crate::config::NodeConfig;
 use crate::daemon;
 
-pub async fn run(file: &Path, path: Option<&str>) -> Result<()> {
+pub async fn run(file: &Path, path: Option<&str>, pin_home_relay: bool) -> Result<()> {
     if !file.exists() {
         anyhow::bail!("File not found: {}", file.display());
     }
@@ -33,6 +33,12 @@ pub async fn run(file: &Path, path: Option<&str>) -> Result<()> {
     println!("{content_id}");
     if let Some(address) = response["address"].as_str() {
         println!("{address}");
+    }
+    if pin_home_relay {
+        let pin_response = client.pin_to_home_relay(content_id).await?;
+        let relay = pin_response["relay"].as_str().unwrap_or("unknown");
+        let latest_sequence = pin_response["latest_sequence"].as_u64().unwrap_or(0);
+        println!("Pinned to home relay {relay} at update-log sequence {latest_sequence}");
     }
     info!("Content is now being served by the daemon");
 

@@ -1,6 +1,8 @@
 use dweb_core::{ContentId, JoltAddress, PinRequest, UpdateAction, UpdateLogEntry};
 use dweb_identity::NodeIdentity;
-use dweb_network::{DaemonHandle, Multiaddr, NetworkConfig, NetworkNode};
+use dweb_network::{
+    DaemonHandle, HomeRelayCapability, HomeRelayConfig, Multiaddr, NetworkConfig, NetworkNode,
+};
 use dweb_store::{CacheConfig, ContentStore};
 use tokio::sync::mpsc;
 
@@ -219,6 +221,7 @@ async fn test_status_endpoint_reports_home_relay_config() {
         peer_id: "12D3HomeRelay".to_string(),
         multiaddr: "/ip4/127.0.0.1/tcp/4001/p2p/12D3HomeRelay".to_string(),
         capability: dweb_network::HomeRelayCapability::Pinning,
+        api_url: Some("http://127.0.0.1:9862".to_string()),
     });
     let node = NetworkNode::new_tcp(identity, store, config).unwrap();
     let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
@@ -237,6 +240,7 @@ async fn test_status_endpoint_reports_home_relay_config() {
         "/ip4/127.0.0.1/tcp/4001/p2p/12D3HomeRelay"
     );
     assert_eq!(body["home_relay"]["capability"], "pinning");
+    assert_eq!(body["home_relay"]["api_url"], "http://127.0.0.1:9862");
 
     handle.shutdown().await.ok();
 }
@@ -745,6 +749,242 @@ async fn test_offline_publisher_content_is_resolved_and_fetched_through_relay() 
 
     relay_handle.shutdown().await.ok();
     bob_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_home_relay_pin_endpoint_pins_published_content_for_offline_fetch() {
+    let relay_dir = tempfile::tempdir().unwrap();
+    let alice_dir = tempfile::tempdir().unwrap();
+    let bob_dir = tempfile::tempdir().unwrap();
+    let relay_p2p = free_tcp_port();
+    let alice_p2p = free_tcp_port();
+    let bob_p2p = free_tcp_port();
+
+    let relay_identity = NodeIdentity::generate();
+    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+        .unwrap();
+    let (relay_api, relay_handle, _relay_dir) = start_test_server_from_node(relay, relay_dir).await;
+    let relay_peer = relay_handle.status().await.unwrap().peer_id;
+    let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
+    let relay_addr: Multiaddr = relay_multiaddr.parse().unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut alice_config = no_mdns_config();
+    alice_config.home_relay = Some(HomeRelayConfig {
+        peer_id: relay_peer,
+        multiaddr: relay_multiaddr,
+        capability: HomeRelayCapability::Pinning,
+        api_url: Some(base_url(relay_api)),
+    });
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, alice_config).unwrap();
+    alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
+        .unwrap();
+    let (alice_api, alice_handle, _alice_dir) = start_test_server_from_node(alice, alice_dir).await;
+
+    let client = reqwest::Client::new();
+    let original_data = b"home relay pin endpoint makes alice content durable";
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(original_data.to_vec()).file_name("home-pin.txt"),
+        )
+        .text("path", "/space/home-pin");
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    let content_id = published["content_id"].as_str().unwrap();
+
+    let pin_resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(alice_api)))
+        .json(&serde_json::json!({ "content_id": content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pin_resp.status(), 200);
+    let pinned: serde_json::Value = pin_resp.json().await.unwrap();
+    assert_eq!(pinned["status"], "pinned");
+    assert_eq!(pinned["content_id"], content_id);
+    assert_eq!(pinned["latest_sequence"], 0);
+
+    let relay_entries = relay_handle.list_cache_entries().await.unwrap();
+    assert!(relay_entries
+        .iter()
+        .any(|entry| entry.content_id == content_id && entry.pinned));
+
+    let second_data = b"home relay pin endpoint refreshes the owner update log";
+    let second_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(second_data.to_vec()).file_name("home-pin-2.txt"),
+        )
+        .text("path", "/space/home-pin-2");
+    let second_publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(second_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second_publish_resp.status(), 200);
+    let second_published: serde_json::Value = second_publish_resp.json().await.unwrap();
+    let second_content_id = second_published["content_id"].as_str().unwrap();
+    let second_address = second_published["address"].as_str().unwrap();
+
+    let second_pin_resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(alice_api)))
+        .json(&serde_json::json!({ "content_id": second_content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second_pin_resp.status(), 200);
+    let second_pinned: serde_json::Value = second_pin_resp.json().await.unwrap();
+    assert_eq!(second_pinned["status"], "pinned");
+    assert_eq!(second_pinned["content_id"], second_content_id);
+    assert_eq!(second_pinned["latest_sequence"], 1);
+
+    let relay_entries = relay_handle.list_cache_entries().await.unwrap();
+    assert!(relay_entries
+        .iter()
+        .any(|entry| entry.content_id == second_content_id && entry.pinned));
+
+    alice_handle.shutdown().await.ok();
+
+    let bob_identity = NodeIdentity::generate();
+    let bob_store = ContentStore::open(bob_dir.path(), CacheConfig::default()).unwrap();
+    let mut bob = NetworkNode::new_tcp(bob_identity, bob_store, no_mdns_config()).unwrap();
+    bob.listen_on(&format!("/ip4/127.0.0.1/tcp/{bob_p2p}"))
+        .unwrap();
+    bob.bootstrap_dht(&[relay_addr]).unwrap();
+    let (bob_api, bob_handle, _bob_dir) = start_test_server_from_node(bob, bob_dir).await;
+    wait_for_connected_peers(&bob_handle, 1).await;
+
+    let fetch_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let fetched = loop {
+        let fetch_resp = client
+            .post(format!("{}/api/v1/fetch", base_url(bob_api)))
+            .json(&serde_json::json!({ "target": second_address }))
+            .send()
+            .await
+            .unwrap();
+        let fetch_status = fetch_resp.status();
+        let fetched: serde_json::Value = fetch_resp.json().await.unwrap();
+        if fetch_status == 200 {
+            break fetched;
+        }
+        assert!(
+            std::time::Instant::now() < fetch_deadline,
+            "home-relay pinned .jolt fetch did not converge: {fetched}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    };
+    assert_eq!(fetched["content_id"], second_content_id);
+    let fetched_data: Vec<u8> = fetched["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(fetched_data, second_data);
+
+    relay_handle.shutdown().await.ok();
+    bob_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_home_relay_pin_endpoint_reports_missing_home_relay() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(port)))
+        .json(&serde_json::json!({ "content_id": ContentId::from_bytes(b"missing") }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("home relay is not configured"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_home_relay_pin_endpoint_requires_pinning_capability() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = NodeIdentity::generate();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut config = no_mdns_config();
+    config.home_relay = Some(HomeRelayConfig {
+        peer_id: "12D3HomeRelay".to_string(),
+        multiaddr: "/ip4/127.0.0.1/tcp/4001/p2p/12D3HomeRelay".to_string(),
+        capability: HomeRelayCapability::DiscoveryOnly,
+        api_url: None,
+    });
+    let node = NetworkNode::new_tcp(identity, store, config).unwrap();
+    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(port)))
+        .json(&serde_json::json!({ "content_id": ContentId::from_bytes(b"missing") }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("home relay is not pin-capable"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_home_relay_pin_endpoint_requires_relay_api_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = NodeIdentity::generate();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut config = no_mdns_config();
+    config.home_relay = Some(HomeRelayConfig {
+        peer_id: "12D3HomeRelay".to_string(),
+        multiaddr: "/ip4/127.0.0.1/tcp/4001/p2p/12D3HomeRelay".to_string(),
+        capability: HomeRelayCapability::Pinning,
+        api_url: None,
+    });
+    let node = NetworkNode::new_tcp(identity, store, config).unwrap();
+    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(port)))
+        .json(&serde_json::json!({ "content_id": ContentId::from_bytes(b"missing") }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("home relay API URL is not configured"));
+
+    handle.shutdown().await.ok();
 }
 
 #[tokio::test]

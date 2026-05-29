@@ -145,6 +145,24 @@ impl DaemonClient {
         Ok(())
     }
 
+    pub async fn pin_to_home_relay(&self, content_id: &str) -> Result<serde_json::Value> {
+        let resp = self
+            .client
+            .post(format!("{}/api/v1/home-relay/pins", self.base_url))
+            .json(&serde_json::json!({ "content_id": content_id }))
+            .send()
+            .await
+            .context("Failed to connect to daemon")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Home relay pin failed ({status}): {body}");
+        }
+
+        Ok(resp.json().await?)
+    }
+
     pub async fn unpin(&self, content_id: &str) -> Result<()> {
         let resp = self
             .client
