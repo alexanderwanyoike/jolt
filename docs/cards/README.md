@@ -59,8 +59,9 @@ The current focus is:
 16. Add home relay / owner-directed pinning.
 17. Prove Alice-offline/Bob-fresh fetch through a relay.
 18. Add user-facing publish-to-home-relay pinning.
-19. Add relay gossip only after the DHT-first path is understood.
-20. Add local petnames after the global path works.
+19. Make local published state and relay-backed state understandable in the dashboard.
+20. Add relay gossip only after the DHT-first path is understood.
+21. Add local petnames after the global path works.
 
 ## Cards
 
@@ -90,6 +91,7 @@ The current focus is:
 | [030](030-persistent-update-log-store.md) | AFK | Done | Persist the owner's update log so `.jolt` paths survive daemon restarts. |
 | [007](007-home-relay-configuration.md) | AFK | Done | Configure a user's home relay. |
 | [029](029-home-relay-publish-pinning-ux.md) | AFK | Done | Let users pin published content to their configured home relay from API, CLI, and dashboard. |
+| [031](031-published-content-inventory-dashboard.md) | AFK | Ready | Show local published content, relay pin state, stale paths, and repin actions in the dashboard. |
 | [008](008-owner-signed-pin-protocol.md) | AFK | Done | Define and implement owner-signed pin requests. |
 | [009](009-relay-pinning-and-provider-announcement.md) | AFK | Done | Relay accepts pins, stores content, announces providers. |
 | [010](010-offline-fetch-through-home-relay.md) | AFK | Superseded by 022 | End-to-end offline publisher flow. |
