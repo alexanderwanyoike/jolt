@@ -118,6 +118,20 @@
 
 ---
 
+## M6.5: Built-In Space Lens
+
+**Goal:** Show an application-shaped Jolt space before building a WASM runtime.
+
+**Deliverables:**
+- Built-in dashboard/client lens for opening a `.jolt` space.
+- Minimal app-layer space manifest or generated HTML view.
+- Relay-backed publish flow for the demo space.
+- Bob can open Alice's space while Alice is offline.
+
+**Success criteria:** A user can open an identity-owned space and see a useful rendered experience, not just CIDs or a file list. The implementation stays above the protocol layer.
+
+---
+
 ## M7: WASM Runtime
 
 **Goal:** The node can execute WASM applications in a sandboxed environment.

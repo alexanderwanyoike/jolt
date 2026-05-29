@@ -293,10 +293,11 @@ dweb node
 | M7: User-Facing `.jolt` Resolution | Next | CLI/API/dashboard resolve and fetch by `.jolt` address |
 | M8: Home Relays | Planned | Owner-directed pinning, availability checks, offline publisher flow |
 | M9: Encryption | Planned | E2E encryption, group keys, access control |
-| M10: Space Apps / WASM | Planned | Portable interfaces over community spaces |
-| M11: Streaming | Planned | Chunked transfer, video/audio streaming |
-| M12: Redundancy | Planned | Groups of nodes keeping content available |
-| M13: Developer SDK | Planned | Rust + JS SDKs, templates, docs |
+| M10: Built-In Space Lens | Planned | First application-shaped space demo without a WASM runtime |
+| M11: Space Apps / WASM | Planned | Portable executable interfaces over community spaces |
+| M12: Streaming | Planned | Chunked transfer, video/audio streaming |
+| M13: Redundancy | Planned | Groups of nodes keeping content available |
+| M14: Developer SDK | Planned | Rust + JS SDKs, templates, docs |
 
 ## Future Applications
 

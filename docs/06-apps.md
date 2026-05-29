@@ -13,7 +13,7 @@ Examples:
 - A research app renders datasets, notebooks, citations, and usage rights.
 - A legal workspace app renders documents, signatures, versions, and evidence graphs.
 
-WASM is useful because it lets a space carry or reference its preferred interface without forcing everyone through a central SaaS backend. But WASM is not the core product. The core product is owned community state that any authorized client can verify.
+WASM is useful because it lets a space carry or reference its preferred interface without forcing everyone through a central SaaS backend. But WASM is not the core product, and it should not be the first application proof. The core product is owned community state that any authorized client can verify.
 
 Apps are distributed software packages. A developer compiles an app to WASM, publishes it to the Jolt network, and users install it on their nodes. Apps run locally, store data in scoped local namespaces, and communicate with other users peer-to-peer through node capabilities.
 
@@ -47,6 +47,31 @@ Application/lens:
 ```
 
 This keeps Jolt closer to the web's layering discipline: the lower layer moves verifiable state and addressing, while higher layers decide what experiences to build from it.
+
+## Exploratory: Spaces and Lenses
+
+An emerging framing is:
+
+```text
+Space = owned signed object graph
+Object = signed/encrypted content or state unit
+Lens = executable or built-in perspective over a space
+```
+
+In this framing, the space is the durable place. Lenses are interchangeable ways to inspect, render, edit, or transform that place. A creator could recommend a gallery lens, while a visitor could choose a low-bandwidth lens, accessibility lens, timeline lens, object explorer, or debug lens.
+
+This is a useful north star, but it is not yet a committed runtime design. Executable lenses introduce hard problems: sandboxing, capabilities, malicious code, schema evolution, GPU/audio access, local storage, app updates, trust, and revocation.
+
+Before building a WASM runtime, Jolt should prove a smaller application layer:
+
+```text
+identity.jolt path
+  -> signed space manifest or HTML view
+  -> built-in client/dashboard renderer
+  -> fetches verified content through existing APIs
+```
+
+That demo should use the existing protocol primitives without adding profile/feed/gallery concepts to the protocol layer. It can be implemented as a built-in lens in the local dashboard or client: enough to show that a Jolt space can be experienced as more than a file list, without treating WASM as a prerequisite.
 
 ## HTML as a Space View
 
