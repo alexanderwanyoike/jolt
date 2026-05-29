@@ -441,6 +441,39 @@ impl NetworkNode {
         Ok((content_id, address, latest_sequence))
     }
 
+    fn publish_update_log_snapshot(
+        &mut self,
+        identity: &IdentityId,
+    ) -> Result<Option<ContentId>, NetworkError> {
+        let Some(entries) = self.update_logs.get(identity).cloned() else {
+            return Ok(None);
+        };
+        verify_update_log_for_identity(identity, &entries)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+
+        let data =
+            serde_json::to_vec(&entries).map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let content_id = ContentId::from_bytes(&data);
+        let signature = self.identity.sign(&data);
+        let manifest = ContentManifest {
+            content_id: content_id.clone(),
+            size: data.len() as u64,
+            content_type: "application/jolt-update-log+json".to_string(),
+            publisher_key: self.identity.public_key_bytes().to_vec(),
+            signature,
+        };
+
+        self.store
+            .publish(&data, &manifest)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+
+        if let Err(e) = self.announce_provider(&content_id) {
+            debug!("Update-log snapshot DHT announcement skipped: {e}");
+        }
+
+        Ok(Some(content_id))
+    }
+
     /// Request content from connected peers by ContentId.
     pub fn request_content(
         &mut self,
@@ -1525,9 +1558,15 @@ impl NetworkNode {
                             )));
                         }
 
-                        PinRequest::new(self.identity.public_key_bytes(), parsed, |bytes| {
-                            self.identity.sign(bytes)
-                        })
+                        let update_log_content_id =
+                            self.publish_update_log_snapshot(&self.identity.identity_id())?;
+
+                        PinRequest::with_update_log(
+                            self.identity.public_key_bytes(),
+                            parsed,
+                            update_log_content_id,
+                            |bytes| self.identity.sign(bytes),
+                        )
                         .map_err(|e| NetworkError::Protocol(e.to_string()))
                     });
                 let _ = response_tx.send(result);
@@ -1569,6 +1608,26 @@ impl NetworkNode {
                         response_tx,
                     },
                 );
+            }
+            DaemonCommand::StoreUpdateLog {
+                identity,
+                entries,
+                response_tx,
+            } => {
+                let result = self
+                    .store_verified_update_log(identity.clone(), entries)
+                    .and_then(|_| {
+                        let entries = self.update_logs.get(&identity).ok_or_else(|| {
+                            NetworkError::Protocol(format!(
+                                "No verified update log cached for {identity}"
+                            ))
+                        })?;
+                        let sequence = verify_update_log_for_identity(&identity, entries)
+                            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+                        self.announce_update_log_provider(&identity)?;
+                        Ok(sequence)
+                    });
+                let _ = response_tx.send(result);
             }
             DaemonCommand::Unpin {
                 content_id,

@@ -51,6 +51,11 @@ pub enum DaemonCommand {
         identity: IdentityId,
         response_tx: oneshot::Sender<Result<u64, NetworkError>>,
     },
+    StoreUpdateLog {
+        identity: IdentityId,
+        entries: Vec<dweb_core::UpdateLogEntry>,
+        response_tx: oneshot::Sender<Result<u64, NetworkError>>,
+    },
     Unpin {
         content_id: String,
         response_tx: oneshot::Sender<Result<(), NetworkError>>,

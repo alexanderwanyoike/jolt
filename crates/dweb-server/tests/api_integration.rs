@@ -803,7 +803,6 @@ async fn test_home_relay_pin_endpoint_pins_published_content_for_offline_fetch()
     assert_eq!(publish_resp.status(), 200);
     let published: serde_json::Value = publish_resp.json().await.unwrap();
     let content_id = published["content_id"].as_str().unwrap();
-    let address = published["address"].as_str().unwrap();
 
     let pin_resp = client
         .post(format!("{}/api/v1/home-relay/pins", base_url(alice_api)))
@@ -822,6 +821,41 @@ async fn test_home_relay_pin_endpoint_pins_published_content_for_offline_fetch()
         .iter()
         .any(|entry| entry.content_id == content_id && entry.pinned));
 
+    let second_data = b"home relay pin endpoint refreshes the owner update log";
+    let second_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(second_data.to_vec()).file_name("home-pin-2.txt"),
+        )
+        .text("path", "/space/home-pin-2");
+    let second_publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(second_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second_publish_resp.status(), 200);
+    let second_published: serde_json::Value = second_publish_resp.json().await.unwrap();
+    let second_content_id = second_published["content_id"].as_str().unwrap();
+    let second_address = second_published["address"].as_str().unwrap();
+
+    let second_pin_resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(alice_api)))
+        .json(&serde_json::json!({ "content_id": second_content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second_pin_resp.status(), 200);
+    let second_pinned: serde_json::Value = second_pin_resp.json().await.unwrap();
+    assert_eq!(second_pinned["status"], "pinned");
+    assert_eq!(second_pinned["content_id"], second_content_id);
+    assert_eq!(second_pinned["latest_sequence"], 1);
+
+    let relay_entries = relay_handle.list_cache_entries().await.unwrap();
+    assert!(relay_entries
+        .iter()
+        .any(|entry| entry.content_id == second_content_id && entry.pinned));
+
     alice_handle.shutdown().await.ok();
 
     let bob_identity = NodeIdentity::generate();
@@ -837,7 +871,7 @@ async fn test_home_relay_pin_endpoint_pins_published_content_for_offline_fetch()
     let fetched = loop {
         let fetch_resp = client
             .post(format!("{}/api/v1/fetch", base_url(bob_api)))
-            .json(&serde_json::json!({ "target": address }))
+            .json(&serde_json::json!({ "target": second_address }))
             .send()
             .await
             .unwrap();
@@ -852,14 +886,14 @@ async fn test_home_relay_pin_endpoint_pins_published_content_for_offline_fetch()
         );
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     };
-    assert_eq!(fetched["content_id"], content_id);
+    assert_eq!(fetched["content_id"], second_content_id);
     let fetched_data: Vec<u8> = fetched["data"]
         .as_array()
         .unwrap()
         .iter()
         .map(|v| v.as_u64().unwrap() as u8)
         .collect();
-    assert_eq!(fetched_data, original_data);
+    assert_eq!(fetched_data, second_data);
 
     relay_handle.shutdown().await.ok();
     bob_handle.shutdown().await.ok();

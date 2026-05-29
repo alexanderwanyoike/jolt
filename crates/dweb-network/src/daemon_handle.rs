@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use tokio::sync::{mpsc, oneshot};
 
-use dweb_core::{IdentityId, PinRequest};
+use dweb_core::{IdentityId, PinRequest, UpdateLogEntry};
 
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
@@ -166,6 +166,25 @@ impl DaemonHandle {
         self.cmd_tx
             .send(DaemonCommand::PinUpdateLog {
                 identity,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Store a verified owner update-log snapshot and announce this node as its provider.
+    pub async fn store_update_log(
+        &self,
+        identity: IdentityId,
+        entries: Vec<UpdateLogEntry>,
+    ) -> Result<u64, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::StoreUpdateLog {
+                identity,
+                entries,
                 response_tx: tx,
             })
             .await
