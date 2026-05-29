@@ -498,6 +498,138 @@ async fn test_resolve_endpoint_discovers_path_published_through_http() {
 }
 
 #[tokio::test]
+async fn test_existing_peer_resolves_path_published_after_owner_restart() {
+    let relay_dir = tempfile::tempdir().unwrap();
+    let alice_dir = tempfile::tempdir().unwrap();
+    let bob_dir = tempfile::tempdir().unwrap();
+    let relay_p2p = free_tcp_port();
+    let alice_p2p = free_tcp_port();
+    let restarted_alice_p2p = free_tcp_port();
+    let bob_p2p = free_tcp_port();
+
+    let relay_identity = NodeIdentity::generate();
+    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, no_mdns_config()).unwrap();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+        .unwrap();
+    let (_relay_api, relay_handle, _relay_dir) =
+        start_test_server_from_node(relay, relay_dir).await;
+    let relay_peer = relay_handle.status().await.unwrap().peer_id;
+    let relay_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}")
+        .parse()
+        .unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    alice_identity.save(alice_dir.path()).unwrap();
+    let alice_identity_id = alice_identity.identity_id();
+    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, no_mdns_config()).unwrap();
+    alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
+        .unwrap();
+    alice.bootstrap_dht(&[relay_addr.clone()]).unwrap();
+    let (alice_api, alice_handle, alice_dir) = start_test_server_from_node(alice, alice_dir).await;
+
+    let bob_identity = NodeIdentity::generate();
+    let bob_store = ContentStore::open(bob_dir.path(), CacheConfig::default()).unwrap();
+    let mut bob = NetworkNode::new_tcp(bob_identity, bob_store, no_mdns_config()).unwrap();
+    bob.listen_on(&format!("/ip4/127.0.0.1/tcp/{bob_p2p}"))
+        .unwrap();
+    bob.bootstrap_dht(&[relay_addr.clone()]).unwrap();
+    let (bob_api, bob_handle, _bob_dir) = start_test_server_from_node(bob, bob_dir).await;
+
+    wait_for_connected_peers(&alice_handle, 1).await;
+    wait_for_connected_peers(&bob_handle, 1).await;
+
+    let client = reqwest::Client::new();
+    let first_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"first path before restart".to_vec())
+                .file_name("first.txt"),
+        )
+        .text("path", "/first");
+    let first_publish = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(first_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first_publish.status(), 200);
+    let first_published: serde_json::Value = first_publish.json().await.unwrap();
+    let first_address = first_published["address"].as_str().unwrap().to_string();
+    assert_eq!(first_published["latest_sequence"], 0);
+
+    let first_resolve = client
+        .post(format!("{}/api/v1/resolve", base_url(bob_api)))
+        .json(&serde_json::json!({ "address": first_address }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first_resolve.status(), 200);
+
+    alice_handle.shutdown().await.ok();
+
+    let restarted_alice_identity = NodeIdentity::load(alice_dir.path()).unwrap();
+    assert_eq!(restarted_alice_identity.identity_id(), alice_identity_id);
+    let restarted_alice_store =
+        ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut restarted_alice = NetworkNode::new_tcp(
+        restarted_alice_identity,
+        restarted_alice_store,
+        no_mdns_config(),
+    )
+    .unwrap();
+    restarted_alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{restarted_alice_p2p}"))
+        .unwrap();
+    restarted_alice.bootstrap_dht(&[relay_addr]).unwrap();
+    let (restarted_alice_api, restarted_alice_handle, _alice_dir) =
+        start_test_server_from_node(restarted_alice, alice_dir).await;
+    wait_for_connected_peers(&restarted_alice_handle, 1).await;
+
+    let second_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"second path after restart".to_vec())
+                .file_name("second.txt"),
+        )
+        .text("path", "/second");
+    let second_publish = client
+        .post(format!("{}/api/v1/publish", base_url(restarted_alice_api)))
+        .multipart(second_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second_publish.status(), 200);
+    let second_published: serde_json::Value = second_publish.json().await.unwrap();
+    let second_address = second_published["address"].as_str().unwrap();
+    assert!(second_address.starts_with(&alice_identity_id.to_string()));
+    assert_eq!(second_published["latest_sequence"], 1);
+
+    let second_resolve = client
+        .post(format!("{}/api/v1/resolve", base_url(bob_api)))
+        .json(&serde_json::json!({ "address": second_address }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second_resolve.status(), 200);
+    let resolved: serde_json::Value = second_resolve.json().await.unwrap();
+    assert_eq!(resolved["identity"], alice_identity_id.to_string());
+    assert_eq!(resolved["path"], "/second");
+    assert_eq!(resolved["latest_sequence"], 1);
+    assert_eq!(
+        resolved["content_id"],
+        ContentId::from_bytes(b"second path after restart").to_string()
+    );
+
+    relay_handle.shutdown().await.ok();
+    restarted_alice_handle.shutdown().await.ok();
+    bob_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_offline_publisher_content_is_resolved_and_fetched_through_relay() {
     let relay_dir = tempfile::tempdir().unwrap();
     let alice_dir = tempfile::tempdir().unwrap();

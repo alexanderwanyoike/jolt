@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tracing::{debug, info, warn};
 
-use dweb_core::{ContentId, ContentManifest};
+use dweb_core::{ContentId, ContentManifest, IdentityId, UpdateLogEntry};
 
 use crate::cache_entry::{CacheEntry, CacheIndex, CacheStats, ContentData};
 use crate::config::CacheConfig;
@@ -13,6 +13,7 @@ use crate::error::StoreError;
 pub struct ContentStore {
     published_dir: PathBuf,
     cache_dir: PathBuf,
+    update_logs_dir: PathBuf,
     cache_index: CacheIndex,
     cache_config: CacheConfig,
     /// In-memory index of published content: content_id -> path to content file
@@ -24,9 +25,11 @@ impl ContentStore {
     pub fn open(base_dir: &Path, config: CacheConfig) -> Result<Self, StoreError> {
         let published_dir = base_dir.join("published");
         let cache_dir = base_dir.join("cache");
+        let update_logs_dir = base_dir.join("update_logs");
 
         std::fs::create_dir_all(&published_dir)?;
         std::fs::create_dir_all(&cache_dir)?;
+        std::fs::create_dir_all(&update_logs_dir)?;
 
         let cache_index = Self::load_index(&cache_dir)?;
         let published_content = Self::scan_published(&published_dir)?;
@@ -40,6 +43,7 @@ impl ContentStore {
         Ok(Self {
             published_dir,
             cache_dir,
+            update_logs_dir,
             cache_index,
             cache_config: config,
             published_content,
@@ -175,6 +179,37 @@ impl ContentStore {
     /// List all published content IDs.
     pub fn published_ids(&self) -> Vec<String> {
         self.published_content.keys().cloned().collect()
+    }
+
+    /// Persist the authoritative update log for a local identity.
+    pub fn save_update_log(
+        &self,
+        identity: &IdentityId,
+        entries: &[UpdateLogEntry],
+    ) -> Result<(), StoreError> {
+        let path = self.update_log_path(identity);
+        let tmp_path = path.with_extension("json.tmp");
+        let json = serde_json::to_string_pretty(entries)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        std::fs::write(&tmp_path, json)?;
+        std::fs::rename(tmp_path, path)?;
+        Ok(())
+    }
+
+    /// Load the authoritative update log for a local identity, if one exists.
+    pub fn load_update_log(
+        &self,
+        identity: &IdentityId,
+    ) -> Result<Option<Vec<UpdateLogEntry>>, StoreError> {
+        let path = self.update_log_path(identity);
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let json = std::fs::read_to_string(path)?;
+        let entries = serde_json::from_str(&json)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        Ok(Some(entries))
     }
 
     /// List all cached content IDs.
@@ -319,6 +354,10 @@ impl ContentStore {
         Ok(index)
     }
 
+    fn update_log_path(&self, identity: &IdentityId) -> PathBuf {
+        self.update_logs_dir.join(format!("{identity}.json"))
+    }
+
     fn scan_published(published_dir: &Path) -> Result<HashMap<String, PathBuf>, StoreError> {
         let mut map = HashMap::new();
         if !published_dir.exists() {
@@ -346,6 +385,7 @@ fn now_unix() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dweb_core::{UpdateAction, UpdateLogEntry, UpdateLogEntryBody};
     use tempfile::tempdir;
 
     fn make_manifest(data: &[u8], pubkey: &[u8], sig: &[u8]) -> ContentManifest {
@@ -372,6 +412,7 @@ mod tests {
         let _store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
         assert!(dir.path().join("published").exists());
         assert!(dir.path().join("cache").exists());
+        assert!(dir.path().join("update_logs").exists());
     }
 
     #[test]
@@ -545,6 +586,32 @@ mod tests {
         let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
         let id = ContentId::from_bytes(b"persistent published");
         assert!(store.has_content(&id.to_string()));
+    }
+
+    #[test]
+    fn reopen_loads_persisted_update_log() {
+        let dir = tempdir().unwrap();
+        let identity = IdentityId::from_public_key([7; 32]);
+        let entries = vec![UpdateLogEntry {
+            body: UpdateLogEntryBody {
+                owner_public_key: vec![7; 32],
+                sequence: 0,
+                previous_entry_hash: None,
+                action: UpdateAction::SetPath {
+                    path: "/post".to_string(),
+                    content_id: ContentId::from_bytes(b"persisted path"),
+                },
+            },
+            signature: vec![8; 64],
+        }];
+
+        {
+            let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+            store.save_update_log(&identity, &entries).unwrap();
+        }
+
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        assert_eq!(store.load_update_log(&identity).unwrap(), Some(entries));
     }
 
     #[test]
