@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 
 use dweb_core::{
     resolve_jolt_address, verify_update_log_for_identity, ContentId, ContentManifest, IdentityId,
-    JoltAddress, ResolvedJoltTarget, UpdateAction, UpdateLogEntry,
+    JoltAddress, PinRequest, ResolvedJoltTarget, UpdateAction, UpdateLogEntry,
 };
 use dweb_identity::NodeIdentity;
 use dweb_store::ContentStore;
@@ -1507,6 +1507,31 @@ impl NetworkNode {
                     });
                 let _ = response_tx.send(result);
             }
+            DaemonCommand::CreatePinRequest {
+                content_id,
+                response_tx,
+            } => {
+                let result = ContentId::from_str(&content_id)
+                    .map_err(|e| NetworkError::InvalidInput(e.to_string()))
+                    .and_then(|parsed| {
+                        if !self
+                            .store
+                            .published_ids()
+                            .iter()
+                            .any(|published| published == &content_id)
+                        {
+                            return Err(NetworkError::InvalidInput(format!(
+                                "content is not locally published: {content_id}"
+                            )));
+                        }
+
+                        PinRequest::new(self.identity.public_key_bytes(), parsed, |bytes| {
+                            self.identity.sign(bytes)
+                        })
+                        .map_err(|e| NetworkError::Protocol(e.to_string()))
+                    });
+                let _ = response_tx.send(result);
+            }
             DaemonCommand::PinUpdateLog {
                 identity,
                 response_tx,
@@ -1783,6 +1808,7 @@ mod tests {
             peer_id: "12D3Configured".to_string(),
             multiaddr: "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string(),
             capability: crate::config::HomeRelayCapability::Pinning,
+            api_url: Some("http://127.0.0.1:9862".to_string()),
         });
         let mut node = make_node_with_config(dir.path(), config);
 

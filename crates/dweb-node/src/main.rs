@@ -40,7 +40,11 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Stop => commands::stop::run().await?,
         Commands::Status => commands::status::run().await?,
-        Commands::Publish { file, path } => commands::publish::run(&file, path.as_deref()).await?,
+        Commands::Publish {
+            file,
+            path,
+            pin_home_relay,
+        } => commands::publish::run(&file, path.as_deref(), pin_home_relay).await?,
         Commands::Fetch { target, output } => commands::fetch::run(&target, output).await?,
         Commands::Resolve { address } => commands::resolve::run(&address).await?,
         Commands::Cache { command } => match command {
@@ -61,7 +65,9 @@ async fn main() -> anyhow::Result<()> {
             HomeRelayCommands::Set {
                 multiaddr,
                 capability,
-            } => commands::home_relay::set(&multiaddr, capability).await?,
+                api_url,
+            } => commands::home_relay::set(&multiaddr, capability, api_url.as_deref()).await?,
+            HomeRelayCommands::Pin { content_id } => commands::home_relay::pin(&content_id).await?,
             HomeRelayCommands::Clear => commands::home_relay::clear().await?,
         },
     }

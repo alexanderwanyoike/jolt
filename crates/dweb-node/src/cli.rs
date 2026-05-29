@@ -52,6 +52,10 @@ pub enum Commands {
         /// Optional .jolt namespace path to bind to the published CID
         #[arg(long)]
         path: Option<String>,
+
+        /// Pin the published content to the configured home relay
+        #[arg(long)]
+        pin_home_relay: bool,
     },
 
     /// Fetch content by ContentId or .jolt address
@@ -154,6 +158,16 @@ pub enum HomeRelayCommands {
         /// Known relay capability
         #[arg(long, value_enum, default_value_t = HomeRelayCapabilityArg::Pinning)]
         capability: HomeRelayCapabilityArg,
+
+        /// HTTP API URL for relay pin requests
+        #[arg(long)]
+        api_url: Option<String>,
+    },
+
+    /// Pin locally published content to the configured home relay
+    Pin {
+        /// The locally published ContentId to pin
+        content_id: String,
     },
 
     /// Remove the configured home relay
@@ -180,6 +194,8 @@ mod tests {
             "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWExample",
             "--capability",
             "discovery-only",
+            "--api-url",
+            "http://127.0.0.1:9863",
         ]);
 
         match cli.command {
@@ -188,12 +204,44 @@ mod tests {
                     HomeRelayCommands::Set {
                         multiaddr,
                         capability,
+                        api_url,
                     },
             } => {
                 assert_eq!(multiaddr, "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWExample");
                 assert_eq!(capability, HomeRelayCapabilityArg::DiscoveryOnly);
+                assert_eq!(api_url.as_deref(), Some("http://127.0.0.1:9863"));
             }
             _ => panic!("expected HomeRelay Set command"),
+        }
+    }
+
+    #[test]
+    fn parse_publish_with_home_relay_pin() {
+        let cli = Cli::parse_from(["dweb", "publish", "post.txt", "--pin-home-relay"]);
+
+        match cli.command {
+            Commands::Publish {
+                file,
+                path,
+                pin_home_relay,
+            } => {
+                assert_eq!(file, PathBuf::from("post.txt"));
+                assert_eq!(path, None);
+                assert!(pin_home_relay);
+            }
+            _ => panic!("expected Publish command"),
+        }
+    }
+
+    #[test]
+    fn parse_home_relay_pin_command() {
+        let cli = Cli::parse_from(["dweb", "home-relay", "pin", "cid123"]);
+
+        match cli.command {
+            Commands::HomeRelay {
+                command: HomeRelayCommands::Pin { content_id },
+            } => assert_eq!(content_id, "cid123"),
+            _ => panic!("expected HomeRelay Pin command"),
         }
     }
 
@@ -231,9 +279,14 @@ mod tests {
     fn parse_publish_command() {
         let cli = Cli::parse_from(["dweb", "publish", "/tmp/test.txt"]);
         match cli.command {
-            Commands::Publish { file, path } => {
+            Commands::Publish {
+                file,
+                path,
+                pin_home_relay,
+            } => {
                 assert_eq!(file, PathBuf::from("/tmp/test.txt"));
                 assert!(path.is_none());
+                assert!(!pin_home_relay);
             }
             _ => panic!("expected Publish command"),
         }
@@ -243,9 +296,14 @@ mod tests {
     fn parse_publish_command_with_jolt_path() {
         let cli = Cli::parse_from(["dweb", "publish", "/tmp/test.txt", "--path", "/hello"]);
         match cli.command {
-            Commands::Publish { file, path } => {
+            Commands::Publish {
+                file,
+                path,
+                pin_home_relay,
+            } => {
                 assert_eq!(file, PathBuf::from("/tmp/test.txt"));
                 assert_eq!(path.as_deref(), Some("/hello"));
+                assert!(!pin_home_relay);
             }
             _ => panic!("expected Publish command"),
         }

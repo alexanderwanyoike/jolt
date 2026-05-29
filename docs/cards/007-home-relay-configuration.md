@@ -36,9 +36,11 @@ Keep this simple. No relay marketplace, no payment, no automatic selection.
 Implemented as:
 
 ```bash
-dweb home-relay set /ip4/<RELAY_IP>/tcp/<PORT>/p2p/<RELAY_PEER_ID> --capability pinning
+dweb home-relay set /ip4/<RELAY_IP>/tcp/<PORT>/p2p/<RELAY_PEER_ID> \
+  --capability pinning \
+  --api-url http://<RELAY_API_HOST>:9862
 dweb home-relay show
 dweb home-relay clear
 ```
 
-The configured home relay is persisted in node settings, loaded on daemon startup, returned by `/api/v1/status`, and shown in `dweb status` and the dashboard relay panel.
+The configured home relay is persisted in node settings, loaded on daemon startup, returned by `/api/v1/status`, and shown in `dweb status` and the dashboard relay panel. The optional `api-url` is used by the v0 HTTP relay pinning control path.

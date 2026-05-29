@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use tokio::sync::{mpsc, oneshot};
 
-use dweb_core::IdentityId;
+use dweb_core::{IdentityId, PinRequest};
 
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
@@ -137,6 +137,20 @@ impl DaemonHandle {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
             .send(DaemonCommand::Pin {
+                content_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Create an owner-signed request for a relay to pin locally published content.
+    pub async fn create_pin_request(&self, content_id: String) -> Result<PinRequest, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::CreatePinRequest {
                 content_id,
                 response_tx: tx,
             })

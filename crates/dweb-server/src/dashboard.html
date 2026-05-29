@@ -574,6 +574,10 @@
               <button id="publish-text-button" type="button">Publish Text</button>
             </div>
             <div class="result mono" id="publish-result">No publish request yet.</div>
+            <div class="button-row">
+              <button id="pin-home-relay-button" type="button" disabled>Pin to Home Relay</button>
+            </div>
+            <div class="result mono" id="home-relay-pin-result">No relay pin request yet.</div>
           </div>
         </section>
 
@@ -645,7 +649,8 @@
       status: null,
       peers: [],
       cacheStats: null,
-      cacheEntries: []
+      cacheEntries: [],
+      lastPublishedContentId: null
     };
 
     const $ = (id) => document.getElementById(id);
@@ -771,6 +776,10 @@
           <span>Address</span>
           <strong class="mono cid">${escapeHtml(homeRelay.multiaddr || "--")}</strong>
         </div>
+        <div class="kv">
+          <span>API</span>
+          <strong class="mono cid">${escapeHtml(homeRelay.api_url || "not configured")}</strong>
+        </div>
       `;
     }
 
@@ -826,9 +835,22 @@
     }
 
     function applyPublishResult(result) {
+      state.lastPublishedContentId = result.content_id;
       setResult("publish-result", "ok", renderPublishResult(result));
+      $("pin-home-relay-button").disabled = !result.content_id;
       $("fetch-target").value = result.address || result.content_id;
       if (result.address) $("resolve-address").value = result.address;
+    }
+
+    async function pinToHomeRelay(contentId) {
+      const response = await fetch("/api/v1/home-relay/pins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ content_id: contentId })
+      });
+      const body = await readResponse(response);
+      if (!response.ok) throw new Error(body);
+      return JSON.parse(body);
     }
 
     async function fetchContent(target) {
@@ -914,6 +936,25 @@
         await refresh();
       } catch (error) {
         setResult("publish-result", "err", error.message);
+      }
+    });
+
+    $("pin-home-relay-button").addEventListener("click", async () => {
+      const contentId = state.lastPublishedContentId;
+      if (!contentId) {
+        setResult("home-relay-pin-result", "err", "No published content selected.");
+        return;
+      }
+      try {
+        const result = await pinToHomeRelay(contentId);
+        setResult(
+          "home-relay-pin-result",
+          "ok",
+          `Pinned\n${result.content_id}\nrelay ${result.relay}\nsequence ${result.latest_sequence}`
+        );
+        await refresh();
+      } catch (error) {
+        setResult("home-relay-pin-result", "err", error.message);
       }
     });
 

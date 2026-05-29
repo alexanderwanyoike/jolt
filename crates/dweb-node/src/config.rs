@@ -169,6 +169,7 @@ mod tests {
                 peer_id: "12D3KooWExample".to_string(),
                 multiaddr: "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWExample".to_string(),
                 capability: dweb_network::HomeRelayCapability::Pinning,
+                api_url: Some("http://127.0.0.1:9863".to_string()),
             }),
         };
 

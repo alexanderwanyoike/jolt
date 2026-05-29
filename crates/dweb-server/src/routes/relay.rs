@@ -2,12 +2,12 @@ use axum::extract::State;
 use axum::Json;
 use dweb_core::PinRequest;
 use dweb_network::NetworkError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::ApiError;
 use crate::state::AppState;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RelayPinResponse {
     pub status: String,
     pub owner: String,

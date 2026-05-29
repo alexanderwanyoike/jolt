@@ -115,17 +115,21 @@ cargo build --release
 ```bash
 curl -F "file=@myfile.txt" http://127.0.0.1:9862/api/v1/publish
 # {"content_id": "bafkr4i...", "size": 1234}
+dweb publish ./myfile.txt --path /notes/hello --pin-home-relay
 ```
 
 ### Configure A Home Relay
 
 ```bash
-dweb home-relay set "/ip4/<RELAY_IP>/tcp/<PORT>/p2p/<RELAY_PEER_ID>" --capability pinning
+dweb home-relay set "/ip4/<RELAY_IP>/tcp/<PORT>/p2p/<RELAY_PEER_ID>" \
+  --capability pinning \
+  --api-url "http://<RELAY_API_HOST>:9862"
 dweb home-relay show
+dweb home-relay pin <CONTENT_ID>
 dweb status
 ```
 
-The home relay is Alice's delegated availability node. It is stored locally, loaded when the daemon starts, and reported by `dweb status` and `GET /api/v1/status`.
+The home relay is Alice's delegated availability node. It is stored locally, loaded when the daemon starts, and reported by `dweb status` and `GET /api/v1/status`. The `api-url` is the v0 relay HTTP control endpoint used for owner-signed pin requests.
 
 ### Fetch Content
 
