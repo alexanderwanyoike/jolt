@@ -36,6 +36,7 @@ pub async fn run(
 
     let identity = NodeIdentity::load_or_generate(&config.identity_dir)?;
     info!("Peer ID: {}", identity.peer_id());
+    let local_identity = identity.identity_id();
     let settings = config.load_settings()?;
     let builtin_bootstrap = default_bootstrap_peers();
     let (net_config, effective_bootstrap) =
@@ -65,6 +66,12 @@ pub async fn run(
             if let Err(e) = node.announce_provider(&content_id) {
                 info!("Provider announcement skipped for {content_id_str}: {e}");
             }
+        }
+    }
+
+    if node.update_log_entries(&local_identity).is_some() {
+        if let Err(e) = node.announce_update_log_provider(&local_identity) {
+            info!("Update-log provider announcement skipped for {local_identity}: {e}");
         }
     }
 

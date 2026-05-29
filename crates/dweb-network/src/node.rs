@@ -218,6 +218,8 @@ impl NetworkNode {
                 .with_idle_connection_timeout(Duration::from_secs(300)),
         );
 
+        let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
+
         Ok(Self {
             swarm,
             identity,
@@ -229,7 +231,7 @@ impl NetworkNode {
             pending_daemon_resolutions: HashMap::new(),
             pending_resolves: HashMap::new(),
             discovered_providers: HashMap::new(),
-            update_logs: HashMap::new(),
+            update_logs,
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
@@ -315,6 +317,8 @@ impl NetworkNode {
                 .with_idle_connection_timeout(Duration::from_secs(300)),
         );
 
+        let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
+
         Ok(Self {
             swarm,
             identity,
@@ -326,7 +330,7 @@ impl NetworkNode {
             pending_daemon_resolutions: HashMap::new(),
             pending_resolves: HashMap::new(),
             discovered_providers: HashMap::new(),
-            update_logs: HashMap::new(),
+            update_logs,
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
@@ -421,10 +425,14 @@ impl NetworkNode {
             .map_err(|e| NetworkError::Protocol(e.to_string()))?,
         };
         let latest_sequence = entry.body.sequence;
-        self.update_logs
-            .entry(identity.clone())
-            .or_default()
-            .push(entry);
+        let entries_to_save = {
+            let entries = self.update_logs.entry(identity.clone()).or_default();
+            entries.push(entry);
+            entries.clone()
+        };
+        self.store
+            .save_update_log(&identity, &entries_to_save)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
 
         if let Err(e) = self.announce_update_log_provider(&identity) {
             debug!("Update-log DHT announcement skipped: {e}");
@@ -528,6 +536,31 @@ impl NetworkNode {
     /// Get a mutable reference to the content store.
     pub fn store_mut(&mut self) -> &mut ContentStore {
         &mut self.store
+    }
+
+    fn load_persisted_local_update_log(
+        store: &ContentStore,
+        identity: &NodeIdentity,
+    ) -> Result<HashMap<IdentityId, Vec<UpdateLogEntry>>, NetworkError> {
+        let identity_id = identity.identity_id();
+        let Some(entries) = store.load_update_log(&identity_id).map_err(|e| {
+            NetworkError::Protocol(format!(
+                "failed to load persisted update log for {identity_id}: {e}"
+            ))
+        })?
+        else {
+            return Ok(HashMap::new());
+        };
+
+        verify_update_log_for_identity(&identity_id, &entries).map_err(|e| {
+            NetworkError::Protocol(format!(
+                "invalid persisted update log for {identity_id}: {e}"
+            ))
+        })?;
+
+        let mut update_logs = HashMap::new();
+        update_logs.insert(identity_id, entries);
+        Ok(update_logs)
     }
 
     /// Store a verified update log for an identity, ignoring stale valid logs.
@@ -1640,6 +1673,30 @@ mod tests {
             node.update_log_entries(&identity),
             Some(expected.as_slice())
         );
+    }
+
+    #[tokio::test]
+    async fn new_tcp_rejects_invalid_persisted_local_update_log() {
+        let dir = tempdir().unwrap();
+        let owner = NodeIdentity::generate();
+        let attacker = NodeIdentity::generate();
+        let owner_identity = owner.identity_id();
+        let store = make_store(dir.path());
+        store
+            .save_update_log(
+                &owner_identity,
+                &signed_profile_log(&attacker, b"wrong owner"),
+            )
+            .unwrap();
+
+        let result = NetworkNode::new_tcp(owner, store, NetworkConfig::test_config());
+
+        assert!(matches!(
+            result,
+            Err(NetworkError::Protocol(message))
+                if message.contains("invalid persisted update log")
+                    && message.contains(&owner_identity.to_string())
+        ));
     }
 
     #[tokio::test]
