@@ -110,7 +110,7 @@ The current focus is:
 | [038](038-identity-head-gossip-v0.md) | AFK | Done | Exchange signed, expiring identity-head hints for common `.jolt` lookups. |
 | [041](041-identity-head-gossip-fair-batching.md) | AFK | Done | Keep identity-head gossip batches fair across identities and requested limits. |
 | [039](039-relay-discovery-failure-ux.md) | AFK | Done | Return clear failure reasons when relay discovery or `.jolt` resolution fails. |
-| [040](040-relay-mesh-milestone-canary.md) | AFK | Ready after 033-039 | Run one real-world relay-mesh canary after local process demos pass. |
+| [040](040-relay-mesh-milestone-canary.md) | AFK | Done | Run one real-world relay-mesh canary after local process demos pass. |
 | [008](008-owner-signed-pin-protocol.md) | AFK | Done | Define and implement owner-signed pin requests. |
 | [009](009-relay-pinning-and-provider-announcement.md) | AFK | Done | Relay accepts pins, stores content, announces providers. |
 | [010](010-offline-fetch-through-home-relay.md) | AFK | Superseded by 022 | End-to-end offline publisher flow. |
