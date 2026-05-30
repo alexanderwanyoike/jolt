@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 use crate::config::NodeConfig;
 
@@ -40,7 +42,9 @@ pub fn clear_daemon_info(config: &NodeConfig) {
 
 /// Check if a process with the given PID is still running.
 fn is_pid_alive(pid: u32) -> bool {
-    Path::new(&format!("/proc/{pid}")).exists()
+    let mut system = System::new();
+    system.refresh_processes(ProcessesToUpdate::Some(&[Pid::from_u32(pid)]), true);
+    system.process(Pid::from_u32(pid)).is_some()
 }
 
 /// Check if the daemon is actually running (PID alive + port file exists).
@@ -81,28 +85,33 @@ pub fn find_single_running_daemon(
 }
 
 fn find_jolt_start_processes() -> Vec<DaemonInfo> {
-    let Ok(entries) = std::fs::read_dir("/proc") else {
-        return Vec::new();
-    };
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing()
+            .with_cmd(UpdateKind::Always)
+            .without_tasks(),
+    );
 
-    entries
-        .flatten()
-        .filter_map(|entry| {
-            let pid = entry.file_name().to_string_lossy().parse::<u32>().ok()?;
-            let raw = std::fs::read(entry.path().join("cmdline")).ok()?;
-            let args = raw
-                .split(|byte| *byte == 0)
-                .filter(|arg| !arg.is_empty())
-                .filter_map(|arg| std::str::from_utf8(arg).ok())
+    system
+        .processes()
+        .iter()
+        .filter_map(|(pid, process)| {
+            let args = process
+                .cmd()
+                .iter()
+                .map(|arg| arg.to_string_lossy())
                 .collect::<Vec<_>>();
-            daemon_info_from_process_args(pid, &args)
+            let args = args.iter().map(|arg| arg.as_ref()).collect::<Vec<_>>();
+            daemon_info_from_process_args(pid.as_u32(), &args)
         })
         .collect()
 }
 
 fn daemon_info_from_process_args(pid: u32, args: &[&str]) -> Option<DaemonInfo> {
-    let program = Path::new(args.first()?).file_name()?.to_str()?;
-    if program != "jolt" {
+    let program = executable_name(args.first()?)?;
+    if program != "jolt" && program != "jolt.exe" {
         return None;
     }
     if !args.iter().any(|arg| *arg == "start") {
@@ -125,6 +134,13 @@ fn api_port_from_args(args: &[&str]) -> Option<u16> {
         }
     }
     None
+}
+
+fn executable_name(program: &str) -> Option<&str> {
+    program
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())
 }
 
 #[cfg(test)]
@@ -194,6 +210,25 @@ mod tests {
 
         assert_eq!(info.pid, 42);
         assert_eq!(info.port, 9863);
+    }
+
+    #[test]
+    fn daemon_process_args_detect_windows_jolt_start() {
+        let info =
+            daemon_info_from_process_args(42, &[r"C:\Users\alice\jolt.exe", "start"]).unwrap();
+
+        assert_eq!(info.pid, 42);
+        assert_eq!(info.port, 9862);
+    }
+
+    #[test]
+    fn daemon_process_args_detect_equals_api_port() {
+        let info =
+            daemon_info_from_process_args(42, &["/usr/local/bin/jolt", "start", "--api-port=9864"])
+                .unwrap();
+
+        assert_eq!(info.pid, 42);
+        assert_eq!(info.port, 9864);
     }
 
     #[test]
