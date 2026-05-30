@@ -151,6 +151,8 @@ pub struct NetworkNode {
     update_logs: HashMap<IdentityId, Vec<UpdateLogEntry>>,
     /// Signed, expiring identity-head hints learned through relay gossip.
     identity_head_hints: HashMap<IdentityId, Vec<IdentityHeadHint>>,
+    /// Cursor used to rotate bounded identity-head gossip batches across identities.
+    identity_head_gossip_cursor: usize,
     /// Connection quality tracking: peer -> connection info
     peer_connections: HashMap<libp2p::PeerId, PeerConnectionInfo>,
     /// When the node was created (for uptime reporting)
@@ -302,6 +304,7 @@ impl NetworkNode {
             discovered_providers: HashMap::new(),
             update_logs,
             identity_head_hints: HashMap::new(),
+            identity_head_gossip_cursor: 0,
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
@@ -419,6 +422,7 @@ impl NetworkNode {
             discovered_providers: HashMap::new(),
             update_logs,
             identity_head_hints: HashMap::new(),
+            identity_head_gossip_cursor: 0,
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
@@ -517,7 +521,8 @@ impl NetworkNode {
             );
         }
 
-        let announce_hints = self.identity_head_hints_for_exchange(now);
+        let announce_hints =
+            self.identity_head_hints_for_exchange(now, IDENTITY_HEAD_HINT_EXCHANGE_MAX);
         if !announce_hints.is_empty() {
             self.swarm.behaviour_mut().relay_exchange.send_request(
                 peer,
@@ -589,29 +594,50 @@ impl NetworkNode {
         (accepted, rejected)
     }
 
-    fn identity_head_hints_for_exchange(&self, now: u64) -> Vec<IdentityHeadHint> {
-        let mut hints: Vec<_> = self
+    fn identity_head_hints_for_exchange(
+        &mut self,
+        now: u64,
+        limit: usize,
+    ) -> Vec<IdentityHeadHint> {
+        let mut hints_by_identity: Vec<_> = self
             .identity_head_hints
-            .values()
-            .flat_map(|hints| hints.iter())
-            .filter(|hint| hint.verify_at(now).is_ok())
-            .cloned()
+            .iter()
+            .filter_map(|(identity, hints)| {
+                let best = hints
+                    .iter()
+                    .filter(|hint| hint.verify_at(now).is_ok())
+                    .max_by(|a, b| {
+                        a.body
+                            .latest_sequence
+                            .cmp(&b.body.latest_sequence)
+                            .then_with(|| a.body.expires_at.cmp(&b.body.expires_at))
+                            .then_with(|| a.body.provider_peer_id.cmp(&b.body.provider_peer_id))
+                    })?
+                    .clone();
+                Some((identity.to_string(), best))
+            })
             .collect();
 
-        hints.sort_by(|a, b| {
-            b.body
-                .latest_sequence
-                .cmp(&a.body.latest_sequence)
-                .then_with(|| {
-                    a.body
-                        .identity
-                        .to_string()
-                        .cmp(&b.body.identity.to_string())
-                })
-                .then_with(|| a.body.provider_peer_id.cmp(&b.body.provider_peer_id))
-        });
-        hints.truncate(IDENTITY_HEAD_HINT_EXCHANGE_MAX);
-        hints
+        hints_by_identity.sort_by(|a, b| a.0.cmp(&b.0));
+        if hints_by_identity.is_empty() {
+            self.identity_head_gossip_cursor = 0;
+            return Vec::new();
+        }
+
+        let limit = limit
+            .min(IDENTITY_HEAD_HINT_EXCHANGE_MAX)
+            .min(hints_by_identity.len());
+        let start = self.identity_head_gossip_cursor % hints_by_identity.len();
+        let mut selected = Vec::with_capacity(limit);
+        for offset in 0..hints_by_identity.len() {
+            if selected.len() >= limit {
+                break;
+            }
+            let index = (start + offset) % hints_by_identity.len();
+            selected.push(hints_by_identity[index].1.clone());
+        }
+        self.identity_head_gossip_cursor = (start + selected.len()) % hints_by_identity.len();
+        selected
     }
 
     pub fn record_identity_head_hint(
@@ -2266,11 +2292,7 @@ impl NetworkNode {
                     }
                     RelayExchangeRequest::GetIdentityHeads { limit } => {
                         RelayExchangeResponse::IdentityHeads {
-                            hints: self
-                                .identity_head_hints_for_exchange(now)
-                                .into_iter()
-                                .take(usize::from(limit).min(IDENTITY_HEAD_HINT_EXCHANGE_MAX))
-                                .collect(),
+                            hints: self.identity_head_hints_for_exchange(now, usize::from(limit)),
                         }
                     }
                     RelayExchangeRequest::AnnounceIdentityHeads { hints } => {
@@ -3304,6 +3326,64 @@ mod tests {
 
         let stored_count: usize = node.identity_head_hints.values().map(Vec::len).sum();
         assert_eq!(stored_count, 4);
+    }
+
+    #[tokio::test]
+    async fn identity_head_exchange_batch_is_fair_across_identities() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let dominant = NodeIdentity::generate();
+
+        for sequence in 0..40 {
+            let hint = identity_head_hint(&dominant, libp2p::PeerId::random(), sequence, 100, 300);
+            node.record_identity_head_hints(vec![hint], 150);
+        }
+
+        for sequence in 0..4 {
+            let owner = NodeIdentity::generate();
+            let hint = identity_head_hint(&owner, libp2p::PeerId::random(), sequence, 100, 300);
+            node.record_identity_head_hints(vec![hint], 150);
+        }
+
+        let hints = node.identity_head_hints_for_exchange(150, IDENTITY_HEAD_HINT_EXCHANGE_MAX);
+        let identities: HashSet<_> = hints
+            .iter()
+            .map(|hint| hint.body.identity.clone())
+            .collect();
+
+        assert_eq!(hints.len(), 5);
+        assert_eq!(identities.len(), 5);
+        assert!(hints
+            .iter()
+            .any(|hint| hint.body.identity == dominant.identity_id()
+                && hint.body.latest_sequence == 39));
+    }
+
+    #[tokio::test]
+    async fn identity_head_exchange_batch_rotates_by_requested_limit() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+
+        for sequence in 0..6 {
+            let owner = NodeIdentity::generate();
+            let hint = identity_head_hint(&owner, libp2p::PeerId::random(), sequence, 100, 300);
+            node.record_identity_head_hints(vec![hint], 150);
+        }
+
+        let first = node.identity_head_hints_for_exchange(150, 2);
+        let second = node.identity_head_hints_for_exchange(150, 2);
+        let first_identities: HashSet<_> = first
+            .iter()
+            .map(|hint| hint.body.identity.clone())
+            .collect();
+        let second_identities: HashSet<_> = second
+            .iter()
+            .map(|hint| hint.body.identity.clone())
+            .collect();
+
+        assert_eq!(first.len(), 2);
+        assert_eq!(second.len(), 2);
+        assert!(first_identities.is_disjoint(&second_identities));
     }
 
     #[tokio::test]
