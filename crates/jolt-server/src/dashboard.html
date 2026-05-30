@@ -532,6 +532,7 @@
             <div class="metric"><span>Peers</span><strong id="peer-count">--</strong></div>
             <div class="metric"><span>Published</span><strong id="published-count">--</strong></div>
             <div class="metric"><span>Cached</span><strong id="cached-count">--</strong></div>
+            <div class="metric"><span>Known relays</span><strong id="known-relay-count">--</strong></div>
           </div>
           <div class="panel-body identity">
             <div class="identity-row">
@@ -827,6 +828,7 @@
       $("peer-count").textContent = status.connected_peers ?? "--";
       $("published-count").textContent = status.published_count ?? "--";
       $("cached-count").textContent = status.cached_count ?? "--";
+      $("known-relay-count").textContent = status.known_relay_count ?? "--";
       $("identity-address").textContent = identityAddress;
       $("peer-id").textContent = peerId;
       $("connectivity").textContent = `${status.nat_type || "unknown"} / relays ${status.active_relays ?? 0}`;

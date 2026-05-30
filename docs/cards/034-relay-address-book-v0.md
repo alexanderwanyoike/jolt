@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** M5+  
-**Status:** Ready  
+**Status:** Done
 **Blocked by:** 033
 
 ## Why
@@ -35,12 +35,12 @@ Rules:
 
 ## Acceptance Criteria
 
-- [ ] Nodes can store verified relay records.
-- [ ] Relays can store verified relay records.
-- [ ] Expired records are ignored or removed.
-- [ ] Duplicate records update the existing entry when newer.
-- [ ] Stored relay records are bounded.
-- [ ] Status/API can report known relay count.
+- [x] Nodes can store verified relay records.
+- [x] Relays can store verified relay records.
+- [x] Expired records are ignored or removed.
+- [x] Duplicate records update the existing entry when newer.
+- [x] Stored relay records are bounded.
+- [x] Status/API can report known relay count.
 
 ## Verification
 

@@ -130,6 +130,7 @@ pub struct NodeStatus {
     pub configured_bootstrap_relay_count: usize,
     pub effective_bootstrap_relays: Vec<String>,
     pub effective_bootstrap_relay_count: usize,
+    pub known_relay_count: usize,
     pub connected_bootstrap_peers: usize,
     pub last_bootstrap_error: Option<String>,
     pub home_relay: Option<HomeRelayConfig>,

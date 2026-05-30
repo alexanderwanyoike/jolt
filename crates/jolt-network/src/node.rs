@@ -1839,7 +1839,12 @@ impl NetworkNode {
                     .filter(|c| c.is_relayed)
                     .count();
                 let connected_bootstrap_peers = self.connected_bootstrap_peer_count();
-                let relay_record = self.local_relay_record(unix_now()).unwrap_or_else(|e| {
+                let now = unix_now();
+                let known_relay_count = self.store.known_relay_count(now).unwrap_or_else(|e| {
+                    warn!("Failed to load known relay count: {e}");
+                    0
+                });
+                let relay_record = self.local_relay_record(now).unwrap_or_else(|e| {
                     warn!("Failed to build local relay record: {e}");
                     None
                 });
@@ -1861,6 +1866,7 @@ impl NetworkNode {
                     configured_bootstrap_relay_count: self.configured_bootstrap_relays.len(),
                     effective_bootstrap_relays: self.effective_bootstrap_relays.clone(),
                     effective_bootstrap_relay_count: self.effective_bootstrap_relays.len(),
+                    known_relay_count,
                     connected_bootstrap_peers,
                     last_bootstrap_error: self.last_bootstrap_error.clone(),
                     home_relay: self.home_relay.clone(),

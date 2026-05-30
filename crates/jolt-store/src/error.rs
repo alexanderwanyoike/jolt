@@ -16,4 +16,7 @@ pub enum StoreError {
 
     #[error("Content already exists: {0}")]
     AlreadyExists(String),
+
+    #[error("Invalid relay record: {0}")]
+    InvalidRelayRecord(String),
 }

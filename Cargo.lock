@@ -2347,6 +2347,7 @@ name = "jolt-store"
 version = "0.1.0"
 dependencies = [
  "jolt-core",
+ "jolt-identity",
  "serde",
  "serde_json",
  "tempfile",
