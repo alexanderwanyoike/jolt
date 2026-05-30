@@ -29,8 +29,8 @@ use crate::config::{HomeRelayConfig, NetworkConfig};
 use crate::error::NetworkError;
 use crate::fetch_manager::FetchManager;
 use crate::protocol::{
-    ContentRequest, ContentResponse, RelayExchangeRequest, RelayExchangeResponse, UpdateLogRequest,
-    UpdateLogResponse,
+    ContentRequest, ContentResponse, IdentityProviderCandidate, RelayExchangeRequest,
+    RelayExchangeResponse, UpdateLogRequest, UpdateLogResponse,
 };
 
 struct PendingResolve {
@@ -43,6 +43,16 @@ struct PendingResolve {
 struct PendingUpdateLogPin {
     identity: IdentityId,
     response_tx: oneshot::Sender<Result<u64, NetworkError>>,
+}
+
+struct PendingIdentityProviderForwardGroup {
+    query_id: String,
+    identity: IdentityId,
+    providers: Vec<IdentityProviderCandidate>,
+    channel: request_response::ResponseChannel<RelayExchangeResponse>,
+    deadline: Instant,
+    remaining_requests: usize,
+    limit: usize,
 }
 
 fn relay_record_matches_capabilities(
@@ -121,6 +131,9 @@ pub struct NetworkNode {
         ),
     >,
     pending_update_log_pins: HashMap<OutboundRequestId, PendingUpdateLogPin>,
+    pending_identity_provider_forwards: HashMap<OutboundRequestId, String>,
+    pending_identity_provider_forward_groups: HashMap<String, PendingIdentityProviderForwardGroup>,
+    seen_identity_provider_queries: HashMap<String, Instant>,
     pending_jolt_resolutions: HashMap<
         OutboundRequestId,
         (
@@ -170,6 +183,11 @@ const RELAY_RECORD_TTL_SECS: u64 = 60 * 60;
 const RELAY_EXCHANGE_MAX_RECORDS: usize = 32;
 const RELAY_MESH_EXPLORATION_FANOUT: usize = 1;
 const RELAY_MESH_EXPLORATION_INTERVAL: Duration = Duration::from_secs(1);
+const IDENTITY_PROVIDER_QUERY_FANOUT: usize = 3;
+const IDENTITY_PROVIDER_QUERY_LIMIT: u16 = 8;
+const IDENTITY_PROVIDER_QUERY_TTL: u8 = 3;
+const IDENTITY_PROVIDER_QUERY_TIMEOUT: Duration = Duration::from_secs(8);
+const SEEN_IDENTITY_PROVIDER_QUERY_TTL: Duration = Duration::from_secs(30);
 
 impl NetworkNode {
     /// Create a new network node with iroh transport.
@@ -270,6 +288,9 @@ impl NetworkNode {
             pending_fetches: HashMap::new(),
             pending_update_log_requests: HashMap::new(),
             pending_update_log_pins: HashMap::new(),
+            pending_identity_provider_forwards: HashMap::new(),
+            pending_identity_provider_forward_groups: HashMap::new(),
+            seen_identity_provider_queries: HashMap::new(),
             pending_jolt_resolutions: HashMap::new(),
             pending_daemon_resolutions: HashMap::new(),
             pending_resolves: HashMap::new(),
@@ -383,6 +404,9 @@ impl NetworkNode {
             pending_fetches: HashMap::new(),
             pending_update_log_requests: HashMap::new(),
             pending_update_log_pins: HashMap::new(),
+            pending_identity_provider_forwards: HashMap::new(),
+            pending_identity_provider_forward_groups: HashMap::new(),
+            seen_identity_provider_queries: HashMap::new(),
             pending_jolt_resolutions: HashMap::new(),
             pending_daemon_resolutions: HashMap::new(),
             pending_resolves: HashMap::new(),
@@ -622,6 +646,308 @@ impl NetworkNode {
             if let Err(e) = self.swarm.dial(addr) {
                 debug!("Failed to dial relay mesh peer {peer_id}: {e}");
                 self.mark_relay_peer_failure(&peer_id);
+            }
+        }
+    }
+
+    fn local_identity_provider_candidate(&self) -> IdentityProviderCandidate {
+        let peer_id = self.swarm.local_peer_id().to_string();
+        let addrs = self
+            .swarm
+            .listeners()
+            .map(|addr| {
+                if addr
+                    .iter()
+                    .any(|protocol| matches!(protocol, Protocol::P2p(_)))
+                {
+                    addr.to_string()
+                } else {
+                    addr.clone()
+                        .with(Protocol::P2p(*self.swarm.local_peer_id()))
+                        .to_string()
+                }
+            })
+            .collect();
+        IdentityProviderCandidate { peer_id, addrs }
+    }
+
+    fn relay_record_candidate_for_peer(
+        &self,
+        peer: &libp2p::PeerId,
+        now: u64,
+    ) -> Option<IdentityProviderCandidate> {
+        let peer_id = peer.to_string();
+        let records = self.store.load_relay_records(now).ok()?;
+        records
+            .into_iter()
+            .find(|record| record.relay_record.body.peer_id == peer_id)
+            .map(|record| {
+                let addrs = record
+                    .relay_record
+                    .body
+                    .addrs
+                    .into_iter()
+                    .map(|addr| {
+                        if addr.contains("/p2p/") {
+                            addr
+                        } else {
+                            format!("{addr}/p2p/{peer_id}")
+                        }
+                    })
+                    .collect();
+                IdentityProviderCandidate { peer_id, addrs }
+            })
+    }
+
+    fn identity_provider_candidates(
+        &self,
+        identity: &IdentityId,
+        limit: usize,
+        now: u64,
+    ) -> Vec<IdentityProviderCandidate> {
+        let mut candidates = Vec::new();
+        if self.update_logs.contains_key(identity) {
+            candidates.push(self.local_identity_provider_candidate());
+        }
+
+        let key = Self::update_log_provider_key(identity);
+        if let Some(providers) = self.discovered_providers.get(&key) {
+            for provider in providers {
+                if let Some(candidate) = self.relay_record_candidate_for_peer(provider, now) {
+                    candidates.push(candidate);
+                } else {
+                    candidates.push(IdentityProviderCandidate {
+                        peer_id: provider.to_string(),
+                        addrs: Vec::new(),
+                    });
+                }
+            }
+        }
+
+        Self::dedupe_identity_provider_candidates(candidates, limit)
+    }
+
+    fn dedupe_identity_provider_candidates(
+        candidates: Vec<IdentityProviderCandidate>,
+        limit: usize,
+    ) -> Vec<IdentityProviderCandidate> {
+        let mut seen = HashSet::new();
+        let mut deduped = Vec::new();
+        for candidate in candidates {
+            if seen.insert(candidate.peer_id.clone()) {
+                deduped.push(candidate);
+                if deduped.len() >= limit {
+                    break;
+                }
+            }
+        }
+        deduped
+    }
+
+    fn relay_query_peers(&self, excluded: Option<&libp2p::PeerId>) -> Vec<libp2p::PeerId> {
+        self.swarm
+            .connected_peers()
+            .filter(|peer| Some(*peer) != excluded)
+            .filter(|peer| {
+                self.bootstrap_peer_ids.contains(peer) || self.relay_mesh_peer_ids.contains(peer)
+            })
+            .take(IDENTITY_PROVIDER_QUERY_FANOUT)
+            .copied()
+            .collect()
+    }
+
+    fn identity_provider_query_id(&self, identity: &IdentityId) -> String {
+        format!(
+            "{}:{}:{}",
+            self.swarm.local_peer_id(),
+            identity,
+            unix_now_ms()
+        )
+    }
+
+    fn start_identity_provider_relay_query(&mut self, identity: &IdentityId) {
+        let query_id = self.identity_provider_query_id(identity);
+        let request = RelayExchangeRequest::FindIdentityProviders {
+            query_id,
+            identity: identity.clone(),
+            limit: IDENTITY_PROVIDER_QUERY_LIMIT,
+            ttl: IDENTITY_PROVIDER_QUERY_TTL,
+            deadline_unix_ms: unix_now_ms() + IDENTITY_PROVIDER_QUERY_TIMEOUT.as_millis() as u64,
+        };
+
+        for peer in self.relay_query_peers(None) {
+            self.swarm
+                .behaviour_mut()
+                .relay_exchange
+                .send_request(&peer, request.clone());
+        }
+    }
+
+    fn record_identity_provider_candidates(
+        &mut self,
+        identity: &IdentityId,
+        providers: Vec<IdentityProviderCandidate>,
+    ) -> Vec<libp2p::PeerId> {
+        let key = Self::update_log_provider_key(identity);
+        let mut accepted = Vec::new();
+
+        for provider in providers {
+            let Ok(peer_id) = libp2p::PeerId::from_str(&provider.peer_id) else {
+                continue;
+            };
+            if peer_id == *self.swarm.local_peer_id() {
+                continue;
+            }
+
+            for addr in provider.addrs {
+                if let Ok(addr) = addr.parse::<Multiaddr>() {
+                    let addr = if addr
+                        .iter()
+                        .any(|protocol| matches!(protocol, Protocol::P2p(_)))
+                    {
+                        addr
+                    } else {
+                        addr.with(Protocol::P2p(peer_id))
+                    };
+                    self.swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .add_address(&peer_id, addr.clone());
+                    self.swarm.add_peer_address(peer_id, addr.clone());
+                    if let Err(e) = self.swarm.dial(addr) {
+                        debug!("Failed to dial identity provider candidate {peer_id}: {e}");
+                    }
+                }
+            }
+
+            let providers = self.discovered_providers.entry(key.clone()).or_default();
+            if !providers.contains(&peer_id) {
+                providers.push(peer_id);
+                accepted.push(peer_id);
+            }
+        }
+
+        accepted
+    }
+
+    fn prune_seen_identity_provider_queries(&mut self) {
+        let now = Instant::now();
+        self.seen_identity_provider_queries
+            .retain(|_, seen_at| now.duration_since(*seen_at) < SEEN_IDENTITY_PROVIDER_QUERY_TTL);
+    }
+
+    fn handle_identity_provider_query(
+        &mut self,
+        peer: libp2p::PeerId,
+        query_id: String,
+        identity: IdentityId,
+        limit: u16,
+        ttl: u8,
+        deadline_unix_ms: u64,
+        channel: request_response::ResponseChannel<RelayExchangeResponse>,
+    ) {
+        self.prune_seen_identity_provider_queries();
+        let now_ms = unix_now_ms();
+        let limit = usize::from(limit.min(IDENTITY_PROVIDER_QUERY_LIMIT));
+        let providers = self.identity_provider_candidates(&identity, limit, unix_now());
+        let already_seen = self
+            .seen_identity_provider_queries
+            .insert(query_id.clone(), Instant::now())
+            .is_some();
+        debug!(
+            "Identity provider query {query_id} for {identity}: {} local candidates, ttl={ttl}",
+            providers.len()
+        );
+
+        if already_seen || ttl == 0 || deadline_unix_ms <= now_ms || providers.len() >= limit {
+            self.respond_identity_providers(channel, query_id, identity, providers, limit);
+            return;
+        }
+
+        let next_peers = self.relay_query_peers(Some(&peer));
+        if next_peers.is_empty() {
+            self.respond_identity_providers(channel, query_id, identity, providers, limit);
+            return;
+        }
+        debug!(
+            "Forwarding identity provider query {query_id} for {identity} to {} relay(s) with ttl={}",
+            next_peers.len(),
+            ttl.saturating_sub(1)
+        );
+
+        let remaining_requests = next_peers.len();
+        for next_peer in next_peers {
+            let request_id = self.swarm.behaviour_mut().relay_exchange.send_request(
+                &next_peer,
+                RelayExchangeRequest::FindIdentityProviders {
+                    query_id: query_id.clone(),
+                    identity: identity.clone(),
+                    limit: limit as u16,
+                    ttl: ttl.saturating_sub(1),
+                    deadline_unix_ms,
+                },
+            );
+            self.pending_identity_provider_forwards
+                .insert(request_id, query_id.clone());
+        }
+
+        self.pending_identity_provider_forward_groups.insert(
+            query_id.clone(),
+            PendingIdentityProviderForwardGroup {
+                query_id,
+                identity,
+                providers,
+                channel,
+                deadline: Instant::now() + IDENTITY_PROVIDER_QUERY_TIMEOUT,
+                remaining_requests,
+                limit,
+            },
+        );
+    }
+
+    fn respond_identity_providers(
+        &mut self,
+        channel: request_response::ResponseChannel<RelayExchangeResponse>,
+        query_id: String,
+        identity: IdentityId,
+        providers: Vec<IdentityProviderCandidate>,
+        limit: usize,
+    ) {
+        let providers = Self::dedupe_identity_provider_candidates(providers, limit);
+        if let Err(e) = self.swarm.behaviour_mut().relay_exchange.send_response(
+            channel,
+            RelayExchangeResponse::IdentityProviders {
+                query_id,
+                identity,
+                providers,
+            },
+        ) {
+            warn!("Failed to send identity provider response: {e:?}");
+        }
+    }
+
+    fn check_identity_provider_forward_timeouts(&mut self) {
+        let now = Instant::now();
+        let timed_out: Vec<_> = self
+            .pending_identity_provider_forward_groups
+            .iter()
+            .filter_map(|(query_id, pending)| (pending.deadline <= now).then_some(query_id.clone()))
+            .collect();
+
+        for query_id in timed_out {
+            if let Some(pending) = self
+                .pending_identity_provider_forward_groups
+                .remove(&query_id)
+            {
+                self.pending_identity_provider_forwards
+                    .retain(|_, pending_query_id| pending_query_id != &query_id);
+                self.respond_identity_providers(
+                    pending.channel,
+                    pending.query_id,
+                    pending.identity,
+                    pending.providers,
+                    pending.limit,
+                );
             }
         }
     }
@@ -1384,7 +1710,9 @@ impl NetworkNode {
     pub fn find_update_log_providers(&mut self, identity: &IdentityId) -> libp2p::kad::QueryId {
         let key =
             libp2p::kad::RecordKey::new(&Self::update_log_provider_key(identity).into_bytes());
-        self.swarm.behaviour_mut().kademlia.get_providers(key)
+        let query_id = self.swarm.behaviour_mut().kademlia.get_providers(key);
+        self.start_identity_provider_relay_query(identity);
+        query_id
     }
 
     /// Handle a single swarm event.
@@ -1718,6 +2046,24 @@ impl NetworkNode {
                         let (accepted, rejected) = self.store_relay_records(records, now);
                         RelayExchangeResponse::Announced { accepted, rejected }
                     }
+                    RelayExchangeRequest::FindIdentityProviders {
+                        query_id,
+                        identity,
+                        limit,
+                        ttl,
+                        deadline_unix_ms,
+                    } => {
+                        self.handle_identity_provider_query(
+                            peer,
+                            query_id,
+                            identity,
+                            limit,
+                            ttl,
+                            deadline_unix_ms,
+                            channel,
+                        );
+                        return;
+                    }
                 };
 
                 if let Err(e) = self
@@ -1737,7 +2083,7 @@ impl NetworkNode {
                     peer,
                     message:
                         request_response::Message::Response {
-                            request_id: _,
+                            request_id,
                             response,
                         },
                     ..
@@ -1755,11 +2101,98 @@ impl NetworkNode {
                     self.mark_relay_peer_success(&peer, unix_now());
                     debug!("Relay announcement response: {accepted} accepted, {rejected} rejected");
                 }
+                RelayExchangeResponse::IdentityProviders {
+                    query_id: _,
+                    identity,
+                    providers,
+                } => {
+                    if let Some(query_id) =
+                        self.pending_identity_provider_forwards.remove(&request_id)
+                    {
+                        let mut should_respond = false;
+                        if let Some(pending) = self
+                            .pending_identity_provider_forward_groups
+                            .get_mut(&query_id)
+                        {
+                            debug!(
+                                "Received {} forwarded identity provider candidates for {}",
+                                providers.len(),
+                                identity
+                            );
+                            pending.providers.extend(providers);
+                            pending.remaining_requests =
+                                pending.remaining_requests.saturating_sub(1);
+                            should_respond = pending.remaining_requests == 0
+                                || pending.providers.len() >= pending.limit;
+                        }
+
+                        if should_respond {
+                            if let Some(pending) = self
+                                .pending_identity_provider_forward_groups
+                                .remove(&query_id)
+                            {
+                                self.pending_identity_provider_forwards
+                                    .retain(|_, pending_query_id| pending_query_id != &query_id);
+                                self.respond_identity_providers(
+                                    pending.channel,
+                                    pending.query_id,
+                                    pending.identity,
+                                    pending.providers,
+                                    pending.limit,
+                                );
+                            }
+                        }
+                    } else {
+                        debug!(
+                            "Received {} identity provider candidates for {}",
+                            providers.len(),
+                            identity
+                        );
+                        let providers =
+                            self.record_identity_provider_candidates(&identity, providers);
+                        if let Some(provider) = providers.first() {
+                            self.request_pending_resolves_from_provider(&identity, provider);
+                        }
+                    }
+                }
             },
 
             SwarmEvent::Behaviour(JoltBehaviourEvent::RelayExchange(
-                request_response::Event::OutboundFailure { peer, error, .. },
+                request_response::Event::OutboundFailure {
+                    peer,
+                    request_id,
+                    error,
+                    ..
+                },
             )) => {
+                if let Some(query_id) = self.pending_identity_provider_forwards.remove(&request_id)
+                {
+                    let mut should_respond = false;
+                    if let Some(pending) = self
+                        .pending_identity_provider_forward_groups
+                        .get_mut(&query_id)
+                    {
+                        pending.remaining_requests = pending.remaining_requests.saturating_sub(1);
+                        should_respond = pending.remaining_requests == 0;
+                    }
+
+                    if should_respond {
+                        if let Some(pending) = self
+                            .pending_identity_provider_forward_groups
+                            .remove(&query_id)
+                        {
+                            self.pending_identity_provider_forwards
+                                .retain(|_, pending_query_id| pending_query_id != &query_id);
+                            self.respond_identity_providers(
+                                pending.channel,
+                                pending.query_id,
+                                pending.identity,
+                                pending.providers,
+                                pending.limit,
+                            );
+                        }
+                    }
+                }
                 self.mark_relay_peer_failure(&peer);
                 debug!("Outbound relay exchange failed: {error}");
             }
@@ -1957,6 +2390,7 @@ impl NetworkNode {
                 _ = timeout_interval.tick() => {
                     self.fetch_manager.check_timeouts();
                     self.check_resolve_timeouts();
+                    self.check_identity_provider_forward_timeouts();
 
                     // Send content requests for providers that have connected
                     let ready = self.fetch_manager.ready_to_request();
@@ -1974,6 +2408,7 @@ impl NetworkNode {
                     }
                 }
                 _ = relay_mesh_interval.tick() => {
+                    self.check_identity_provider_forward_timeouts();
                     self.explore_relay_mesh();
                 }
             }
@@ -2344,6 +2779,7 @@ impl NetworkNode {
                     self.handle_swarm_event(event);
                 }
                 _ = relay_mesh_interval.tick() => {
+                    self.check_identity_provider_forward_timeouts();
                     self.explore_relay_mesh();
                 }
             }
@@ -2381,6 +2817,13 @@ fn unix_now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn unix_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 #[cfg(test)]

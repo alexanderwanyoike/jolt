@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** M5+  
-**Status:** Ready  
+**Status:** Done
 **Blocked by:** 036
 
 ## Why
@@ -63,15 +63,36 @@ Tim fetches and verifies Alice update log
 
 ## Acceptance Criteria
 
-- [ ] Relay can ask neighbour relays for identity/update-log providers.
-- [ ] Relay can forward a miss to selected neighbours while `ttl` remains.
-- [ ] Relay suppresses duplicate query forwarding by `query_id`.
-- [ ] Relay can return bounded provider candidates to the requesting node.
-- [ ] Query forwarding has hop/fanout/deadline limits.
-- [ ] Query forwarding returns partial results rather than hanging indefinitely.
-- [ ] Invalid candidate data cannot make a client accept unsigned state.
-- [ ] DHT-first lookup still works.
-- [ ] Forwarding is used as fallback when local/DHT lookup is insufficient.
+- [x] Relay can ask neighbour relays for identity/update-log providers.
+- [x] Relay can forward a miss to selected neighbours while `ttl` remains.
+- [x] Relay suppresses duplicate query forwarding by `query_id`.
+- [x] Relay can return bounded provider candidates to the requesting node.
+- [x] Query forwarding has hop/fanout/deadline limits.
+- [x] Query forwarding returns partial results rather than hanging indefinitely.
+- [x] Invalid candidate data cannot make a client accept unsigned state.
+- [x] DHT-first lookup still works.
+- [x] Forwarding is used as fallback when local/DHT lookup is insufficient.
+
+## Implementation Notes
+
+Implemented in this card.
+
+The v0 path adds bounded relay-exchange messages for `FindIdentityProviders`
+and `IdentityProviders`. A relay that cannot satisfy a local identity/update-log
+provider query forwards it to selected relay neighbours with a query id, ttl,
+deadline, fanout limit, and short-lived seen-query cache.
+
+Provider candidates remain hints. A client records useful relay addresses from
+the response, then fetches and verifies the signed update log normally.
+
+Coverage includes:
+
+- Single-hop forwarding where Tim only knows R2 and discovers Alice through R1.
+- Recursive forwarding where Tim only knows R1 and discovers Alice through an
+  R1 -> R2 -> R3 -> R4 relay chain.
+- Existing DHT-backed update-log provider discovery still passes.
+- A real multi-process demo script:
+  `./scripts/test-identity-provider-forwarding-process.sh`.
 
 ## One-Machine Process Demo
 
@@ -111,6 +132,16 @@ The lookup fails clearly if ttl is too small
 ```
 
 No Hetzner canary is required for this card.
+
+The local process demo is automated by:
+
+```sh
+./scripts/test-identity-provider-forwarding-process.sh
+```
+
+It starts five actual `jolt` daemons with `--no-mdns`, publishes Alice content
+on R4, resolves and fetches from Tim through R1, and checks the daemon logs for
+relay identity-provider query forwarding.
 
 ## Non-Goals
 

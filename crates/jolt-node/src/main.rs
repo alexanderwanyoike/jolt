@@ -25,6 +25,7 @@ async fn main() -> anyhow::Result<()> {
             api_bind,
             bootstrap,
             no_bootstrap,
+            no_mdns,
             p2p_port,
             transport,
         } => {
@@ -33,6 +34,7 @@ async fn main() -> anyhow::Result<()> {
                 &api_bind,
                 bootstrap,
                 no_bootstrap,
+                no_mdns,
                 p2p_port,
                 transport,
             )

@@ -29,6 +29,10 @@ pub enum Commands {
         #[arg(long)]
         no_bootstrap: bool,
 
+        /// Disable mDNS LAN peer discovery. Useful for deterministic relay-path demos/tests.
+        #[arg(long)]
+        no_mdns: bool,
+
         /// Fixed P2P port (default: 0 = random). UDP for iroh, TCP for --transport tcp.
         #[arg(long, default_value = "0")]
         p2p_port: u16,
@@ -259,6 +263,15 @@ mod tests {
         let cli = Cli::parse_from(["jolt", "start", "--transport", "tcp"]);
         match cli.command {
             Commands::Start { transport, .. } => assert_eq!(transport, TransportMode::Tcp),
+            _ => panic!("expected Start command"),
+        }
+    }
+
+    #[test]
+    fn parse_start_with_no_mdns() {
+        let cli = Cli::parse_from(["jolt", "start", "--no-mdns"]);
+        match cli.command {
+            Commands::Start { no_mdns, .. } => assert!(no_mdns),
             _ => panic!("expected Start command"),
         }
     }

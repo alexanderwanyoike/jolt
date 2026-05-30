@@ -105,7 +105,7 @@ The current focus is:
 | [034](034-relay-address-book-v0.md) | AFK | Done | Persist verified relay records with expiry, deduplication, and bounds. |
 | [035](035-relay-record-exchange-v0.md) | AFK | Done | Let nodes and relays exchange bounded sets of verified relay records. |
 | [036](036-relay-mesh-exploration-v0.md) | AFK | Done | Let a relay with one known relay discover more of the relay mesh. |
-| [037](037-identity-provider-query-forwarding-v0.md) | AFK | Ready | Let relays forward identity/update-log provider queries across known relay neighbours. |
+| [037](037-identity-provider-query-forwarding-v0.md) | AFK | Done | Let relays forward identity/update-log provider queries across known relay neighbours. |
 | [038](038-identity-head-gossip-v0.md) | AFK | Ready | Exchange signed, expiring identity-head hints for common `.jolt` lookups. |
 | [039](039-relay-discovery-failure-ux.md) | AFK | Ready | Return clear failure reasons when relay discovery or `.jolt` resolution fails. |
 | [040](040-relay-mesh-milestone-canary.md) | AFK | Ready after 033-039 | Run one real-world relay-mesh canary after local process demos pass. |
