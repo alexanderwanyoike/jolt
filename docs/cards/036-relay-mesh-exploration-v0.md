@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** M5+  
-**Status:** Ready  
+**Status:** Done
 **Blocked by:** 035
 
 ## Why
@@ -34,11 +34,19 @@ Rules:
 
 ## Acceptance Criteria
 
-- [ ] A relay can learn new relay records through a known relay.
-- [ ] Exploration is rate-limited and bounded.
-- [ ] Invalid/expired relay records are rejected.
-- [ ] Learned relays persist.
-- [ ] Status/API can expose learned relay count.
+- [x] A relay can learn new relay records through a known relay.
+- [x] Exploration is rate-limited and bounded.
+- [x] Invalid/expired relay records are rejected.
+- [x] Learned relays persist.
+- [x] Status/API can expose learned relay count.
+
+## Implementation Notes
+
+- Relay-mode nodes periodically explore the relay mesh.
+- Each exploration tick selects at most one known relay record, so a relay does not ask every known relay every interval.
+- Exploration uses the existing signed relay exchange protocol from card 035.
+- Relay exchange responses mark the responding relay as successful, so later address-book ordering can prefer useful relays.
+- Learned relays are persisted in the local relay address book and are visible through the existing known relay count in status/API/dashboard.
 
 ## One-Machine Process Demo
 

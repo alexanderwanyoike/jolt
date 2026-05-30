@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use jolt_core::{
     ContentId, JoltAddress, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
@@ -38,6 +38,13 @@ fn relay_config() -> NetworkConfig {
         enable_mdns: false,
         ..NetworkConfig::test_config()
     }
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after Unix epoch")
+        .as_secs()
 }
 
 fn relay_record(identity: &NodeIdentity, port: u16) -> RelayRecord {
@@ -447,4 +454,86 @@ async fn connected_relay_exchange_persists_learned_relays() {
     assert!(relay_ids.contains(&identity_r3.identity_id()));
 
     r1_handle.abort();
+}
+
+#[tokio::test]
+async fn relay_mesh_exploration_learns_relays_through_a_known_relay() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+
+    let dir_r1 = tempdir().unwrap();
+    let dir_r2 = tempdir().unwrap();
+    let dir_r3 = tempdir().unwrap();
+
+    let identity_r1 = NodeIdentity::generate();
+    let identity_r2 = NodeIdentity::generate();
+    let identity_r3 = NodeIdentity::generate();
+    let r1_id = identity_r1.identity_id();
+    let r3_id = identity_r3.identity_id();
+
+    let store_r3 = make_store(dir_r3.path());
+    let mut node_r3 = NetworkNode::new_tcp(identity_r3, store_r3, relay_config()).unwrap();
+    node_r3.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r3 = wait_for_listener(node_r3).await;
+    let record_seen_at = unix_now();
+    let r3_record = node_r3
+        .local_relay_record(record_seen_at)
+        .unwrap()
+        .expect("relay-mode node should expose a local relay record");
+
+    let store_r2 = make_store(dir_r2.path());
+    store_r2
+        .record_relay_record(r3_record, record_seen_at)
+        .unwrap();
+    let mut node_r2 = NetworkNode::new_tcp(identity_r2, store_r2, relay_config()).unwrap();
+    node_r2.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r2 = wait_for_listener(node_r2).await;
+    let r2_addr = listener_with_peer(&node_r2.listeners()[0], node_r2.local_peer_id());
+
+    let mut r1_config = relay_config();
+    r1_config.effective_bootstrap_relays = vec![r2_addr.to_string()];
+    let store_r1 = make_store(dir_r1.path());
+    let mut node_r1 = NetworkNode::new_tcp(identity_r1, store_r1, r1_config).unwrap();
+    node_r1.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r1 = wait_for_listener(node_r1).await;
+    node_r1
+        .connect_peer_multiaddr(&r2_addr.to_string())
+        .unwrap();
+
+    let r1_handle = tokio::spawn(async move {
+        node_r1.run_event_loop().await;
+    });
+    let r2_handle = tokio::spawn(async move {
+        node_r2.run_event_loop().await;
+    });
+    let r3_handle = tokio::spawn(async move {
+        node_r3.run_event_loop().await;
+    });
+
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let now = unix_now();
+            let r1_store = make_store(dir_r1.path());
+            let r3_store = make_store(dir_r3.path());
+            let r1_records = r1_store.load_relay_records(now).unwrap();
+            let r3_records = r3_store.load_relay_records(now).unwrap();
+            let r1_learned_r3 = r1_records
+                .iter()
+                .any(|record| record.relay_record.body.relay_id == r3_id);
+            let r3_learned_r1 = r3_records
+                .iter()
+                .any(|record| record.relay_record.body.relay_id == r1_id);
+
+            if r1_learned_r3 && r3_learned_r1 {
+                return;
+            }
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("timed out waiting for relay mesh exploration");
+
+    r1_handle.abort();
+    r2_handle.abort();
+    r3_handle.abort();
 }

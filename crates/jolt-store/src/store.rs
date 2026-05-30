@@ -454,6 +454,19 @@ impl ContentStore {
         Ok(())
     }
 
+    /// Mark a relay record as failed by its libp2p peer id.
+    pub fn mark_relay_record_peer_failure(&self, peer_id: &str) -> Result<(), StoreError> {
+        let mut records = self.load_all_relay_records()?;
+        if let Some(existing) = records
+            .iter_mut()
+            .find(|record| record.relay_record.body.peer_id == peer_id)
+        {
+            existing.failure_count = existing.failure_count.saturating_add(1);
+            self.save_relay_records(&records)?;
+        }
+        Ok(())
+    }
+
     /// Mark a relay record as successfully used.
     pub fn mark_relay_record_success(
         &self,
@@ -464,6 +477,24 @@ impl ContentStore {
         if let Some(existing) = records
             .iter_mut()
             .find(|record| &record.relay_record.body.relay_id == relay_id)
+        {
+            existing.last_success = Some(success_at);
+            existing.failure_count = 0;
+            self.save_relay_records(&records)?;
+        }
+        Ok(())
+    }
+
+    /// Mark a relay record as successfully used by its libp2p peer id.
+    pub fn mark_relay_record_peer_success(
+        &self,
+        peer_id: &str,
+        success_at: u64,
+    ) -> Result<(), StoreError> {
+        let mut records = self.load_all_relay_records()?;
+        if let Some(existing) = records
+            .iter_mut()
+            .find(|record| record.relay_record.body.peer_id == peer_id)
         {
             existing.last_success = Some(success_at);
             existing.failure_count = 0;
@@ -1072,22 +1103,30 @@ mod tests {
         let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
         let identity = NodeIdentity::generate();
         let relay_id = identity.identity_id();
+        let peer_id = identity.peer_id().to_string();
         let record = relay_record(&identity, 100, 200);
 
         store.record_relay_record(record, 110).unwrap();
         store.mark_relay_record_failure(&relay_id).unwrap();
+        store.mark_relay_record_peer_failure(&peer_id).unwrap();
         store.mark_relay_record_failure(&relay_id).unwrap();
 
         let failed = store.load_relay_records(150).unwrap();
         assert_eq!(failed.len(), 1);
-        assert_eq!(failed[0].failure_count, 2);
+        assert_eq!(failed[0].failure_count, 3);
 
-        store.mark_relay_record_success(&relay_id, 160).unwrap();
+        store.mark_relay_record_peer_success(&peer_id, 160).unwrap();
         let successful = store.load_relay_records(170).unwrap();
 
         assert_eq!(successful.len(), 1);
         assert_eq!(successful[0].failure_count, 0);
         assert_eq!(successful[0].last_success, Some(160));
+
+        store.mark_relay_record_failure(&relay_id).unwrap();
+        store.mark_relay_record_success(&relay_id, 180).unwrap();
+        let successful = store.load_relay_records(190).unwrap();
+        assert_eq!(successful[0].failure_count, 0);
+        assert_eq!(successful[0].last_success, Some(180));
     }
 
     #[test]
