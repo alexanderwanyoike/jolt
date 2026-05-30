@@ -13,7 +13,8 @@ use tracing::{debug, info, warn};
 
 use jolt_core::{
     resolve_jolt_address, verify_update_log_for_identity, ContentId, ContentManifest, IdentityId,
-    JoltAddress, PinRequest, ResolvedJoltTarget, UpdateAction, UpdateLogEntry,
+    JoltAddress, PinRequest, RelayRecord, RelayRecordCapability, ResolvedJoltTarget, UpdateAction,
+    UpdateLogEntry,
 };
 use jolt_identity::NodeIdentity;
 use jolt_store::{ContentStore, HomeRelayPinRecord};
@@ -147,6 +148,8 @@ pub struct NetworkNode {
     /// User-selected home relay for delegated availability.
     home_relay: Option<HomeRelayConfig>,
 }
+
+const RELAY_RECORD_TTL_SECS: u64 = 60 * 60;
 
 impl NetworkNode {
     /// Create a new network node with iroh transport.
@@ -392,6 +395,35 @@ impl NetworkNode {
     /// Get the local peer ID.
     pub fn local_peer_id(&self) -> &libp2p::PeerId {
         self.swarm.local_peer_id()
+    }
+
+    /// Build this daemon's current signed relay record when relay mode is enabled.
+    pub fn local_relay_record(&self, now: u64) -> Result<Option<RelayRecord>, NetworkError> {
+        if !self.bootstrap_relay {
+            return Ok(None);
+        }
+
+        let addrs = self
+            .swarm
+            .listeners()
+            .map(|addr| addr.to_string())
+            .collect();
+        let record = RelayRecord::new(
+            self.identity.public_key_bytes(),
+            self.swarm.local_peer_id().to_string(),
+            addrs,
+            vec![
+                RelayRecordCapability::Bootstrap,
+                RelayRecordCapability::Discovery,
+                RelayRecordCapability::Pinning,
+            ],
+            now,
+            now + RELAY_RECORD_TTL_SECS,
+            |bytes| self.identity.sign(bytes),
+        )
+        .map_err(|e| NetworkError::Protocol(e.to_string()));
+
+        record.map(Some)
     }
 
     /// Publish a file to the content store. Returns the ContentId.
@@ -1807,6 +1839,10 @@ impl NetworkNode {
                     .filter(|c| c.is_relayed)
                     .count();
                 let connected_bootstrap_peers = self.connected_bootstrap_peer_count();
+                let relay_record = self.local_relay_record(unix_now()).unwrap_or_else(|e| {
+                    warn!("Failed to build local relay record: {e}");
+                    None
+                });
                 let status = NodeStatus {
                     peer_id: self.swarm.local_peer_id().to_string(),
                     identity_address: self.identity.jolt_address().to_string(),
@@ -1828,6 +1864,7 @@ impl NetworkNode {
                     connected_bootstrap_peers,
                     last_bootstrap_error: self.last_bootstrap_error.clone(),
                     home_relay: self.home_relay.clone(),
+                    relay_record,
                 };
                 let _ = response_tx.send(status);
             }
@@ -2056,6 +2093,7 @@ mod tests {
     use super::*;
     use jolt_core::{UpdateAction, UpdateLogEntry};
     use jolt_store::CacheConfig;
+    use std::str::FromStr;
     use tempfile::tempdir;
 
     fn make_store(dir: &std::path::Path) -> ContentStore {
@@ -2072,6 +2110,10 @@ mod tests {
         let identity = NodeIdentity::generate();
         let store = make_store(dir);
         NetworkNode::new_tcp(identity, store, config).unwrap()
+    }
+
+    fn node_identity_id_from_status(address: &str) -> IdentityId {
+        JoltAddress::from_str(address).unwrap().identity().clone()
     }
 
     fn signed_profile_log(identity: &NodeIdentity, label: &[u8]) -> Vec<UpdateLogEntry> {
@@ -2398,6 +2440,19 @@ mod tests {
             status.home_relay.unwrap().multiaddr,
             "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured"
         );
+        let relay_record = status
+            .relay_record
+            .expect("relay mode exposes relay record");
+        assert_eq!(relay_record.body.peer_id, status.peer_id);
+        assert_eq!(
+            relay_record.body.relay_id,
+            node_identity_id_from_status(&status.identity_address)
+        );
+        assert!(relay_record
+            .body
+            .capabilities
+            .contains(&jolt_core::RelayRecordCapability::Bootstrap));
+        assert_eq!(relay_record.verify_at(unix_now()), Ok(()));
 
         handle.shutdown().await.unwrap();
         daemon.await.unwrap();

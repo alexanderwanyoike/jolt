@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** M5+  
-**Status:** Ready  
+**Status:** Done
 **Blocked by:** 027
 
 ## Why
@@ -38,12 +38,12 @@ The record is a claim by the relay about itself. Other nodes may store it, try i
 
 ## Acceptance Criteria
 
-- [ ] Relay records serialize over the network wire format.
-- [ ] Relay records are signed by the relay identity.
-- [ ] Invalid signatures are rejected.
-- [ ] Expired relay records are rejected.
-- [ ] Relay capabilities are explicit and bounded.
-- [ ] Status/API can expose the local relay's current record when relay mode is enabled.
+- [x] Relay records serialize over the network wire format.
+- [x] Relay records are signed by the relay identity.
+- [x] Invalid signatures are rejected.
+- [x] Expired relay records are rejected.
+- [x] Relay capabilities are explicit and bounded.
+- [x] Status/API can expose the local relay's current record when relay mode is enabled.
 
 ## Verification
 

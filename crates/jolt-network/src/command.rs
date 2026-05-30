@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
-use jolt_core::{IdentityId, PinRequest, RelayHint};
+use jolt_core::{IdentityId, PinRequest, RelayHint, RelayRecord};
 
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
@@ -133,6 +133,8 @@ pub struct NodeStatus {
     pub connected_bootstrap_peers: usize,
     pub last_bootstrap_error: Option<String>,
     pub home_relay: Option<HomeRelayConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relay_record: Option<RelayRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

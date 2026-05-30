@@ -101,7 +101,7 @@ The current focus is:
 | [029](029-home-relay-publish-pinning-ux.md) | AFK | Done | Let users pin published content to their configured home relay from API, CLI, and dashboard. |
 | [031](031-published-content-inventory-dashboard.md) | AFK | Done | Show local published content, relay pin state, stale paths, and repin actions in the dashboard. |
 | [032](032-built-in-space-lens-demo.md) | HITL | Discussion | Show a useful built-in space/application experience before building a WASM runtime. |
-| [033](033-relay-records-v0.md) | AFK | Ready | Define signed relay records so relays can describe how they are reached. |
+| [033](033-relay-records-v0.md) | AFK | Done | Define signed relay records so relays can describe how they are reached. |
 | [034](034-relay-address-book-v0.md) | AFK | Ready | Persist verified relay records with expiry, deduplication, and bounds. |
 | [035](035-relay-record-exchange-v0.md) | AFK | Ready | Let nodes and relays exchange bounded sets of verified relay records. |
 | [036](036-relay-mesh-exploration-v0.md) | AFK | Ready | Let a relay with one known relay discover more of the relay mesh. |
