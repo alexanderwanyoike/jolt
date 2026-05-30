@@ -1,4 +1,7 @@
-use jolt_core::{ContentId, JoltAddress, PinRequest, UpdateAction, UpdateLogEntry};
+use jolt_core::{
+    ContentId, JoltAddress, PinRequest, RelayRecord, RelayRecordCapability, UpdateAction,
+    UpdateLogEntry,
+};
 use jolt_identity::NodeIdentity;
 use jolt_network::{
     DaemonHandle, HomeRelayCapability, HomeRelayConfig, Multiaddr, NetworkConfig, NetworkNode,
@@ -98,6 +101,19 @@ fn relay_config() -> NetworkConfig {
         enable_mdns: false,
         ..NetworkConfig::test_config()
     }
+}
+
+fn relay_record(identity: &NodeIdentity, observed_at: u64, expires_at: u64) -> RelayRecord {
+    RelayRecord::new(
+        identity.public_key_bytes(),
+        identity.peer_id().to_string(),
+        vec!["/ip4/127.0.0.1/tcp/4001".to_string()],
+        vec![RelayRecordCapability::Bootstrap],
+        observed_at,
+        expires_at,
+        |bytes| identity.sign(bytes),
+    )
+    .unwrap()
 }
 
 async fn wait_for_connected_peers(handle: &DaemonHandle, expected: usize) {
@@ -290,6 +306,32 @@ async fn test_status_endpoint_reports_relay_record_in_relay_mode() {
         .unwrap()
         .contains(&format!("/tcp/{p2p_port}")));
     assert!(body["relay_record"]["signature"].is_array());
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_status_endpoint_reports_known_relay_count() {
+    let dir = tempfile::tempdir().unwrap();
+    let relay_identity = NodeIdentity::generate();
+    let node_identity = NodeIdentity::generate();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    store
+        .record_relay_record(relay_record(&relay_identity, 100, 4_102_444_800), 110)
+        .unwrap();
+    let node = NetworkNode::new_tcp(node_identity, store, NetworkConfig::test_config()).unwrap();
+    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{}/api/v1/status", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["known_relay_count"], 1);
 
     handle.shutdown().await.ok();
 }

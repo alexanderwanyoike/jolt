@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use jolt_core::{ContentId, ContentManifest, IdentityId, UpdateLogEntry};
+use jolt_core::{ContentId, ContentManifest, IdentityId, RelayRecord, UpdateLogEntry};
 
 use crate::cache_entry::{CacheEntry, CacheIndex, CacheStats, ContentData};
 use crate::config::CacheConfig;
@@ -17,6 +17,7 @@ pub struct ContentStore {
     update_logs_dir: PathBuf,
     home_relay_pins_path: PathBuf,
     discovered_peer_hints_path: PathBuf,
+    relay_records_path: PathBuf,
     cache_index: CacheIndex,
     cache_config: CacheConfig,
     /// In-memory index of published content: content_id -> path to content file
@@ -26,6 +27,7 @@ pub struct ContentStore {
 const MAX_DISCOVERED_PEER_HINTS: usize = 64;
 const DISCOVERED_PEER_HINT_TTL_SECS: u64 = 30 * 24 * 60 * 60;
 const MAX_DISCOVERED_PEER_FAILURES: u32 = 3;
+const MAX_STORED_RELAY_RECORDS: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishedContentEntry {
@@ -56,6 +58,17 @@ pub struct DiscoveredPeerHint {
     pub failure_count: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredRelayRecord {
+    pub relay_record: RelayRecord,
+    pub first_seen: u64,
+    pub last_seen: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_success: Option<u64>,
+    #[serde(default)]
+    pub failure_count: u32,
+}
+
 impl ContentStore {
     /// Open or create a content store at the given base directory.
     pub fn open(base_dir: &Path, config: CacheConfig) -> Result<Self, StoreError> {
@@ -64,6 +77,7 @@ impl ContentStore {
         let update_logs_dir = base_dir.join("update_logs");
         let home_relay_pins_path = base_dir.join("home_relay_pins.json");
         let discovered_peer_hints_path = base_dir.join("discovered_peer_hints.json");
+        let relay_records_path = base_dir.join("relay_records.json");
 
         std::fs::create_dir_all(&published_dir)?;
         std::fs::create_dir_all(&cache_dir)?;
@@ -84,6 +98,7 @@ impl ContentStore {
             update_logs_dir,
             home_relay_pins_path,
             discovered_peer_hints_path,
+            relay_records_path,
             cache_index,
             cache_config: config,
             published_content,
@@ -359,6 +374,121 @@ impl ContentStore {
         Ok(())
     }
 
+    /// Persist a verified relay record in the local relay address book.
+    pub fn record_relay_record(
+        &self,
+        relay_record: RelayRecord,
+        seen_at: u64,
+    ) -> Result<(), StoreError> {
+        relay_record
+            .verify_at(seen_at)
+            .map_err(|e| StoreError::InvalidRelayRecord(e.to_string()))?;
+
+        let mut records = self.load_all_relay_records()?;
+        if let Some(existing) = records
+            .iter_mut()
+            .find(|record| record.relay_record.body.relay_id == relay_record.body.relay_id)
+        {
+            if relay_record.body.observed_at >= existing.relay_record.body.observed_at {
+                existing.relay_record = relay_record;
+            }
+            existing.last_seen = seen_at;
+            existing.failure_count = 0;
+        } else {
+            records.push(StoredRelayRecord {
+                relay_record,
+                first_seen: seen_at,
+                last_seen: seen_at,
+                last_success: None,
+                failure_count: 0,
+            });
+        }
+
+        records.sort_by_key(|record| std::cmp::Reverse(record.last_seen));
+        records.truncate(MAX_STORED_RELAY_RECORDS);
+        self.save_relay_records(&records)
+    }
+
+    /// Load relay records that are still valid at `now`.
+    pub fn load_relay_records(&self, now: u64) -> Result<Vec<StoredRelayRecord>, StoreError> {
+        Ok(self
+            .load_all_relay_records()?
+            .into_iter()
+            .filter(|record| record.relay_record.verify_at(now).is_ok())
+            .collect())
+    }
+
+    pub fn known_relay_count(&self, now: u64) -> Result<usize, StoreError> {
+        Ok(self.load_relay_records(now)?.len())
+    }
+
+    /// Load bootstrap multiaddrs from verified relay records, preferring recent success.
+    pub fn load_relay_bootstrap_addrs(&self, now: u64) -> Result<Vec<String>, StoreError> {
+        let mut records = self.load_relay_records(now)?;
+        records.sort_by_key(|record| {
+            std::cmp::Reverse((record.last_success.unwrap_or(0), record.last_seen))
+        });
+
+        let mut addrs = Vec::new();
+        for record in records {
+            for addr in record.relay_record.body.addrs {
+                let bootstrap_addr = relay_addr_with_peer(&addr, &record.relay_record.body.peer_id);
+                if !addrs.contains(&bootstrap_addr) {
+                    addrs.push(bootstrap_addr);
+                }
+            }
+        }
+        Ok(addrs)
+    }
+
+    /// Mark a relay record as failed without immediately deleting it.
+    pub fn mark_relay_record_failure(&self, relay_id: &IdentityId) -> Result<(), StoreError> {
+        let mut records = self.load_all_relay_records()?;
+        if let Some(existing) = records
+            .iter_mut()
+            .find(|record| &record.relay_record.body.relay_id == relay_id)
+        {
+            existing.failure_count = existing.failure_count.saturating_add(1);
+            self.save_relay_records(&records)?;
+        }
+        Ok(())
+    }
+
+    /// Mark a relay record as successfully used.
+    pub fn mark_relay_record_success(
+        &self,
+        relay_id: &IdentityId,
+        success_at: u64,
+    ) -> Result<(), StoreError> {
+        let mut records = self.load_all_relay_records()?;
+        if let Some(existing) = records
+            .iter_mut()
+            .find(|record| &record.relay_record.body.relay_id == relay_id)
+        {
+            existing.last_success = Some(success_at);
+            existing.failure_count = 0;
+            self.save_relay_records(&records)?;
+        }
+        Ok(())
+    }
+
+    fn load_all_relay_records(&self) -> Result<Vec<StoredRelayRecord>, StoreError> {
+        if !self.relay_records_path.exists() {
+            return Ok(Vec::new());
+        }
+        let json = std::fs::read_to_string(&self.relay_records_path)?;
+        serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))
+    }
+
+    fn save_relay_records(&self, records: &[StoredRelayRecord]) -> Result<(), StoreError> {
+        let tmp_path = self.relay_records_path.with_extension("json.tmp");
+        let json = serde_json::to_string_pretty(records)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        std::fs::write(&tmp_path, json)?;
+        std::fs::rename(tmp_path, &self.relay_records_path)?;
+        Ok(())
+    }
+
     /// List all cached content IDs.
     pub fn cached_ids(&self) -> Vec<String> {
         self.cache_index.entries.keys().cloned().collect()
@@ -529,10 +659,21 @@ fn now_unix() -> u64 {
         .as_secs()
 }
 
+fn relay_addr_with_peer(addr: &str, peer_id: &str) -> String {
+    if addr.contains("/p2p/") {
+        addr.to_string()
+    } else {
+        format!("{addr}/p2p/{peer_id}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jolt_core::{UpdateAction, UpdateLogEntry, UpdateLogEntryBody};
+    use jolt_core::{
+        RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry, UpdateLogEntryBody,
+    };
+    use jolt_identity::NodeIdentity;
     use tempfile::tempdir;
 
     fn make_manifest(data: &[u8], pubkey: &[u8], sig: &[u8]) -> ContentManifest {
@@ -549,6 +690,22 @@ mod tests {
         CacheConfig {
             max_size_bytes: max_bytes,
         }
+    }
+
+    fn relay_record(identity: &NodeIdentity, observed_at: u64, expires_at: u64) -> RelayRecord {
+        RelayRecord::new(
+            identity.public_key_bytes(),
+            identity.peer_id().to_string(),
+            vec!["/ip4/127.0.0.1/tcp/4001".to_string()],
+            vec![
+                RelayRecordCapability::Bootstrap,
+                RelayRecordCapability::Discovery,
+            ],
+            observed_at,
+            expires_at,
+            |bytes| identity.sign(bytes),
+        )
+        .unwrap()
     }
 
     // --- Phase 1: ContentStore basics ---
@@ -836,6 +993,131 @@ mod tests {
         store.mark_discovered_peer_hint_failure(multiaddr).unwrap();
 
         assert!(store.load_discovered_peer_hints().unwrap().is_empty());
+    }
+
+    #[test]
+    fn relay_records_persist_reload_and_count() {
+        let dir = tempdir().unwrap();
+        let identity = NodeIdentity::generate();
+        let record = relay_record(&identity, 100, 200);
+
+        {
+            let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+            store.record_relay_record(record.clone(), 110).unwrap();
+        }
+
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        let records = store.load_relay_records(150).unwrap();
+
+        assert_eq!(store.known_relay_count(150).unwrap(), 1);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].relay_record, record);
+        assert_eq!(records[0].first_seen, 110);
+        assert_eq!(records[0].last_seen, 110);
+        assert_eq!(records[0].failure_count, 0);
+    }
+
+    #[test]
+    fn relay_records_reject_expired_records() {
+        let dir = tempdir().unwrap();
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        let identity = NodeIdentity::generate();
+        let record = relay_record(&identity, 100, 200);
+
+        let result = store.record_relay_record(record, 200);
+
+        assert!(matches!(result, Err(StoreError::InvalidRelayRecord(_))));
+        assert_eq!(store.known_relay_count(200).unwrap(), 0);
+    }
+
+    #[test]
+    fn relay_records_deduplicate_by_identity_and_keep_newer_record() {
+        let dir = tempdir().unwrap();
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        let identity = NodeIdentity::generate();
+        let older = relay_record(&identity, 100, 200);
+        let mut newer = relay_record(&identity, 120, 240);
+        newer.body.addrs = vec!["/ip4/127.0.0.1/tcp/5001".to_string()];
+        newer.signature = identity.sign(&newer.body.canonical_bytes());
+
+        store.record_relay_record(older.clone(), 110).unwrap();
+        store.record_relay_record(newer.clone(), 130).unwrap();
+        store.record_relay_record(older, 140).unwrap();
+
+        let records = store.load_relay_records(150).unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].relay_record, newer);
+        assert_eq!(records[0].first_seen, 110);
+        assert_eq!(records[0].last_seen, 140);
+    }
+
+    #[test]
+    fn relay_records_are_bounded() {
+        let dir = tempdir().unwrap();
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+
+        for index in 0..70 {
+            let identity = NodeIdentity::generate();
+            let record = relay_record(&identity, 100 + index, 1_000);
+            store.record_relay_record(record, 100 + index).unwrap();
+        }
+
+        assert_eq!(store.load_relay_records(200).unwrap().len(), 64);
+    }
+
+    #[test]
+    fn relay_records_track_failures_and_success_without_deleting() {
+        let dir = tempdir().unwrap();
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        let identity = NodeIdentity::generate();
+        let relay_id = identity.identity_id();
+        let record = relay_record(&identity, 100, 200);
+
+        store.record_relay_record(record, 110).unwrap();
+        store.mark_relay_record_failure(&relay_id).unwrap();
+        store.mark_relay_record_failure(&relay_id).unwrap();
+
+        let failed = store.load_relay_records(150).unwrap();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].failure_count, 2);
+
+        store.mark_relay_record_success(&relay_id, 160).unwrap();
+        let successful = store.load_relay_records(170).unwrap();
+
+        assert_eq!(successful.len(), 1);
+        assert_eq!(successful[0].failure_count, 0);
+        assert_eq!(successful[0].last_success, Some(160));
+    }
+
+    #[test]
+    fn relay_bootstrap_addrs_prefer_recent_success() {
+        let dir = tempdir().unwrap();
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        let first = NodeIdentity::generate();
+        let second = NodeIdentity::generate();
+        let mut first_record = relay_record(&first, 100, 300);
+        first_record.body.addrs = vec!["/ip4/127.0.0.1/tcp/4001".to_string()];
+        first_record.signature = first.sign(&first_record.body.canonical_bytes());
+        let mut second_record = relay_record(&second, 110, 300);
+        second_record.body.addrs = vec!["/ip4/127.0.0.1/tcp/4002".to_string()];
+        second_record.signature = second.sign(&second_record.body.canonical_bytes());
+
+        store.record_relay_record(first_record, 120).unwrap();
+        store.record_relay_record(second_record, 130).unwrap();
+        store
+            .mark_relay_record_success(&first.identity_id(), 160)
+            .unwrap();
+
+        let addrs = store.load_relay_bootstrap_addrs(170).unwrap();
+
+        assert_eq!(
+            addrs,
+            vec![
+                format!("/ip4/127.0.0.1/tcp/4001/p2p/{}", first.peer_id()),
+                format!("/ip4/127.0.0.1/tcp/4002/p2p/{}", second.peer_id()),
+            ]
+        );
     }
 
     // --- Phase 2: LRU eviction ---
