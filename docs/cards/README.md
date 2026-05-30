@@ -67,9 +67,10 @@ The current focus is:
 24. Let relays explore the relay mesh from one known relay.
 25. Add relay-to-relay identity provider query forwarding.
 26. Add bounded identity-head gossip for common lookups.
-27. Make relay discovery and `.jolt` resolution failures explainable.
-28. Run one relay-mesh milestone canary after the local slices pass.
-29. Add local petnames after the global path works.
+27. Make identity-head gossip batches fair across identities.
+28. Make relay discovery and `.jolt` resolution failures explainable.
+29. Run one relay-mesh milestone canary after the local slices pass.
+30. Add local petnames after the global path works.
 
 ## Cards
 
@@ -107,6 +108,7 @@ The current focus is:
 | [036](036-relay-mesh-exploration-v0.md) | AFK | Done | Let a relay with one known relay discover more of the relay mesh. |
 | [037](037-identity-provider-query-forwarding-v0.md) | AFK | Done | Let relays forward identity/update-log provider queries across known relay neighbours. |
 | [038](038-identity-head-gossip-v0.md) | AFK | Done | Exchange signed, expiring identity-head hints for common `.jolt` lookups. |
+| [041](041-identity-head-gossip-fair-batching.md) | AFK | Done | Keep identity-head gossip batches fair across identities and requested limits. |
 | [039](039-relay-discovery-failure-ux.md) | AFK | Ready | Return clear failure reasons when relay discovery or `.jolt` resolution fails. |
 | [040](040-relay-mesh-milestone-canary.md) | AFK | Ready after 033-039 | Run one real-world relay-mesh canary after local process demos pass. |
 | [008](008-owner-signed-pin-protocol.md) | AFK | Done | Define and implement owner-signed pin requests. |
