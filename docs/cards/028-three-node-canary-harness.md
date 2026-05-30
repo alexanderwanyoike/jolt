@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** M5
-**Status:** Ready
+**Status:** Done
 **Blocked by:** None
 
 ## Why
@@ -41,12 +41,12 @@ The real-world canary should use:
 
 ## Acceptance Criteria
 
-- [ ] Local deterministic three-node test is documented and runnable.
-- [ ] Test starts Bob without Alice's peer ID, raw CID, direct multiaddr, or update log.
-- [ ] Test proves Bob discovers Alice through configured relay/DHT path.
-- [ ] Test verifies Alice's update log before success.
-- [ ] Manual real-world canary steps are documented.
-- [ ] Canary includes expected commands, expected status output, and failure hints.
+- [x] Local deterministic three-node test is documented and runnable.
+- [x] Test starts Bob without Alice's peer ID, raw CID, direct multiaddr, or update log.
+- [x] Test proves Bob discovers Alice through configured relay/DHT path.
+- [x] Test verifies Alice's update log before success.
+- [x] Manual real-world canary steps are documented.
+- [x] Canary includes expected commands, expected status output, and failure hints.
 
 ## Non-Goals
 
