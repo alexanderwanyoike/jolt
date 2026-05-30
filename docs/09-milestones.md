@@ -41,12 +41,11 @@
 - `jolt-server` crate with axum HTTP server (localhost REST API)
 - CLI commands refactored to call the daemon's API instead of creating throwaway nodes
 - Persistent connection management (relay circuits maintained, dcutr completes)
-- Docker Compose test environment (3-node network simulation)
 - Basic browser UI: node status, peer list, publish/fetch content
 - Register `jolt://` as OS protocol handler on install
 - URI resolution: `jolt://` links resolve through the daemon
 
-**Success criteria:** Daemon stays running, maintains relay circuits and DHT presence. `jolt fetch` talks to the daemon and gets content without creating a new node. dcutr hole-punching completes because connections persist. Docker tests verify the full flow.
+**Success criteria:** Daemon stays running, maintains relay circuits and DHT presence. `jolt fetch` talks to the daemon and gets content without creating a new node. The supported verification path is the Rust deterministic test suite plus documented real-network canaries.
 
 ---
 

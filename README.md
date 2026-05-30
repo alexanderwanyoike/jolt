@@ -34,7 +34,7 @@ Example communities:
 
 ## Current Status
 
-**Transport, content transfer, daemon/API, signed identity addresses, and update-log primitives are in place.** Jolt has validated content flow across three machines, two NATs, and a carrier-grade NAT over iroh P2P. The next proof is higher level: a fresh node should join through bootstrap relays, resolve a `.jolt` community/person address, and fetch signed content while the publisher is offline.
+**Transport, content transfer, daemon/API, signed identity addresses, update-log primitives, home relay pinning, and relay mesh discovery are in place.** Jolt has validated content flow across three machines, two NATs, and a carrier-grade NAT over iroh P2P. It has also proved the higher-level relay mesh path: a fresh node can join through one relay, learn the relay mesh, resolve `.jolt` community/person addresses, and fetch pinned signed content while the publisher is offline.
 
 ```
                   Bootstrap Node
@@ -56,7 +56,9 @@ Example communities:
 - Canonical `{identity}.jolt` addresses
 - Signed update-log primitives for mutable identity/community state
 - Network request/response path for update-log sync in deterministic tests
-- 95 tests including simulated NAT topologies (patchbay)
+- Relay mesh discovery and `.jolt` resolution through one configured relay
+- Home relay pinning and availability checks
+- Deterministic Rust tests for protocol, storage, CLI, API, and TCP-backed multi-node flows
 
 ### Protocol Direction
 
@@ -232,7 +234,6 @@ Test matrix:
 | Daemon/API tests | `cargo test -p jolt-node -p jolt-server` | Yes | Covers CLI parsing, daemon config, and HTTP routes. |
 | iroh smoke test | `cargo test -p jolt-network new_iroh_creates_node_without_error -- --ignored` | No | Manual because it creates an iroh endpoint and may depend on local network or relay availability. |
 | Patchbay topologies | `cargo test -p jolt-network --test nat_traversal -- --ignored` | No | Linux/user-namespace tests for LAN, NAT, CGNAT, and DHT topology simulation. |
-| Docker topology harness | `cd tests/docker && bash test-all.sh` | No | Optional/manual harness for old container topology checks. Not part of the normal dev loop. |
 | Real-world canary | Public relay/bootstrap plus two client machines on different networks | No | Final confidence check for NAT/CGNAT behavior. |
 
 Manual network checks:
@@ -243,9 +244,6 @@ cargo test -p jolt-network --test nat_traversal -- --ignored
 
 # Manual iroh transport smoke test
 cargo test -p jolt-network new_iroh_creates_node_without_error -- --ignored
-
-# Optional Docker topology harness
-cd tests/docker && bash test-all.sh
 ```
 
 Real-world release canary remains the strongest confidence test: a public bootstrap/relay node plus two client machines on different networks, including a CGNAT/mobile network when possible.
