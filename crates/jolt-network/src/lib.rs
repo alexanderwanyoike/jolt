@@ -15,7 +15,7 @@ pub use command::{
 };
 pub use config::{HomeRelayCapability, HomeRelayConfig, NetworkConfig};
 pub use daemon_handle::DaemonHandle;
-pub use error::NetworkError;
+pub use error::{DiscoveryFailureCode, NetworkError};
 pub use libp2p::Multiaddr;
 pub use libp2p::PeerId;
 pub use node::NetworkNode;

@@ -63,7 +63,7 @@ impl DaemonClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Publish failed ({status}): {body}");
+            anyhow::bail!("Publish failed ({status}): {}", format_error_body(&body));
         }
 
         let body = resp.json().await?;
@@ -82,7 +82,7 @@ impl DaemonClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Fetch failed ({status}): {body}");
+            anyhow::bail!("Fetch failed ({status}): {}", format_error_body(&body));
         }
 
         let body = resp.json().await?;
@@ -101,7 +101,7 @@ impl DaemonClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Resolve failed ({status}): {body}");
+            anyhow::bail!("Resolve failed ({status}): {}", format_error_body(&body));
         }
 
         let body = resp.json().await?;
@@ -140,7 +140,7 @@ impl DaemonClient {
 
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Pin failed: {body}");
+            anyhow::bail!("Pin failed: {}", format_error_body(&body));
         }
         Ok(())
     }
@@ -166,7 +166,10 @@ impl DaemonClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Home relay pin failed ({status}): {body}");
+            anyhow::bail!(
+                "Home relay pin failed ({status}): {}",
+                format_error_body(&body)
+            );
         }
 
         Ok(resp.json().await?)
@@ -182,7 +185,7 @@ impl DaemonClient {
 
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Unpin failed: {body}");
+            anyhow::bail!("Unpin failed: {}", format_error_body(&body));
         }
         Ok(())
     }
@@ -192,5 +195,33 @@ impl DaemonClient {
         // For now, we don't have a shutdown endpoint exposed.
         // The CLI `stop` command will use the PID to send SIGTERM.
         Ok(())
+    }
+}
+
+fn format_error_body(body: &str) -> String {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(body) else {
+        return body.to_string();
+    };
+    let code = json.get("code").and_then(|value| value.as_str());
+    let error = json.get("error").and_then(|value| value.as_str());
+    match (code, error) {
+        (Some(code), Some(error)) => format!("{code}: {error}"),
+        (None, Some(error)) => error.to_string(),
+        _ => body.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_error_body;
+
+    #[test]
+    fn formats_structured_api_errors() {
+        let body = r#"{"code":"no_bootstrap_relays","error":"No relays configured"}"#;
+
+        assert_eq!(
+            format_error_body(body),
+            "no_bootstrap_relays: No relays configured"
+        );
     }
 }

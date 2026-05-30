@@ -26,7 +26,7 @@ use crate::command::{
     ResolveResponse,
 };
 use crate::config::{HomeRelayConfig, NetworkConfig};
-use crate::error::NetworkError;
+use crate::error::{DiscoveryFailureCode, NetworkError};
 use crate::fetch_manager::FetchManager;
 use crate::protocol::{
     ContentRequest, ContentResponse, IdentityProviderCandidate, RelayExchangeRequest,
@@ -1758,14 +1758,20 @@ impl NetworkNode {
     fn check_resolve_timeouts(&mut self) {
         let now = Instant::now();
         let mut empty = Vec::new();
+        let no_bootstrap_relays = self.effective_bootstrap_relays.is_empty()
+            && self.swarm.connected_peers().next().is_none();
+        let relay_unreachable = !self.effective_bootstrap_relays.is_empty()
+            && self.connected_bootstrap_peer_count() == 0;
 
         for (identity, pending) in &mut self.pending_resolves {
             let mut still_waiting = Vec::new();
             for pending in pending.drain(..) {
                 if pending.deadline <= now {
                     let result = pending.fallback_response.map(Ok).unwrap_or_else(|| {
-                        Err(NetworkError::ProviderNotFound(
-                            Self::update_log_provider_key(identity),
+                        Err(Self::identity_provider_failure(
+                            identity,
+                            no_bootstrap_relays,
+                            relay_unreachable,
                         ))
                     });
                     let _ = pending.response_tx.send(result);
@@ -1797,6 +1803,49 @@ impl NetworkNode {
                     .unwrap_or(Err(NetworkError::Timeout));
                 let _ = pending.response_tx.send(result);
             }
+        }
+    }
+
+    fn identity_provider_failure(
+        identity: &IdentityId,
+        no_bootstrap_relays: bool,
+        relay_unreachable: bool,
+    ) -> NetworkError {
+        let key = Self::update_log_provider_key(identity);
+        let (code, reason) = if no_bootstrap_relays {
+            (
+                DiscoveryFailureCode::NoBootstrapRelays,
+                "this node has no bootstrap relays configured and no connected peers",
+            )
+        } else if relay_unreachable {
+            (
+                DiscoveryFailureCode::RelayUnreachable,
+                "configured bootstrap relays are not reachable yet",
+            )
+        } else {
+            (
+                DiscoveryFailureCode::IdentityProviderNotFound,
+                "the reachable relay mesh did not know an update-log provider for this identity",
+            )
+        };
+        NetworkError::DiscoveryFailed {
+            code,
+            message: format!(
+                "No update-log provider found for {key}: {reason}. A .jolt address is globally meaningful, but it is only reachable if this node can reach a relay mesh that knows where to find the identity."
+            ),
+        }
+    }
+
+    fn identity_head_invalid_failure(
+        identity: &IdentityId,
+        detail: impl Into<String>,
+    ) -> NetworkError {
+        NetworkError::DiscoveryFailed {
+            code: DiscoveryFailureCode::IdentityHeadInvalid,
+            message: format!(
+                "Invalid identity head for {identity}: {}. The relay mesh found an update-log provider, but the returned signed identity state could not be verified.",
+                detail.into()
+            ),
         }
     }
 
@@ -2164,28 +2213,40 @@ impl NetworkNode {
                     self.pending_jolt_resolutions.remove(&request_id)
                 {
                     let result = if response.entries.is_empty() {
-                        Err(NetworkError::Protocol(format!(
-                            "No update log entries returned for {}",
-                            address.identity()
-                        )))
+                        Err(Self::identity_head_invalid_failure(
+                            address.identity(),
+                            "provider returned no update log entries",
+                        ))
                     } else {
                         self.store_verified_update_log(address.identity().clone(), response.entries)
+                            .map_err(|e| {
+                                Self::identity_head_invalid_failure(
+                                    address.identity(),
+                                    e.to_string(),
+                                )
+                            })
                             .and_then(|_| self.resolve_cached_jolt_address(&address, now))
                     };
                     let _ = tx.send(result);
                 } else if let Some(pending) = self.pending_daemon_resolutions.remove(&request_id) {
                     let result = if response.entries.is_empty() {
                         pending.fallback_response.map(Ok).unwrap_or_else(|| {
-                            Err(NetworkError::Protocol(format!(
-                                "No update log entries returned for {}",
-                                pending.address.identity()
-                            )))
+                            Err(Self::identity_head_invalid_failure(
+                                pending.address.identity(),
+                                "provider returned no update log entries",
+                            ))
                         })
                     } else {
                         self.store_verified_update_log(
                             pending.address.identity().clone(),
                             response.entries,
                         )
+                        .map_err(|e| {
+                            Self::identity_head_invalid_failure(
+                                pending.address.identity(),
+                                e.to_string(),
+                            )
+                        })
                         .and_then(|_| {
                             self.resolve_response_from_cache(
                                 &pending.address,
@@ -3163,6 +3224,22 @@ mod tests {
             |bytes| identity.sign(bytes),
         )
         .expect("test identity-head hint should be valid")
+    }
+
+    #[test]
+    fn identity_head_invalid_failure_is_structured() {
+        let identity = NodeIdentity::generate().identity_id();
+
+        let err = NetworkNode::identity_head_invalid_failure(&identity, "bad signature");
+
+        match err {
+            NetworkError::DiscoveryFailed { code, message } => {
+                assert_eq!(code, DiscoveryFailureCode::IdentityHeadInvalid);
+                assert!(message.contains(&identity.to_string()));
+                assert!(message.contains("bad signature"));
+            }
+            other => panic!("expected structured discovery failure, got {other:?}"),
+        }
     }
 
     #[tokio::test]

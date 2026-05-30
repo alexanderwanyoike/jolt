@@ -9,28 +9,51 @@ pub struct ApiError(pub NetworkError);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let (status, message) = match &self.0 {
-            NetworkError::ContentNotFound(id) => {
-                (StatusCode::NOT_FOUND, format!("Content not found: {id}"))
-            }
+        let (status, code, message) = match &self.0 {
+            NetworkError::ContentNotFound(id) => (
+                StatusCode::NOT_FOUND,
+                "content_not_found",
+                format!("Content not found: {id}"),
+            ),
             NetworkError::NoPeers => (
                 StatusCode::SERVICE_UNAVAILABLE,
+                "no_peers",
                 "No peers available".to_string(),
             ),
-            NetworkError::Timeout => (StatusCode::GATEWAY_TIMEOUT, "Request timed out".to_string()),
+            NetworkError::Timeout => (
+                StatusCode::GATEWAY_TIMEOUT,
+                "timeout",
+                "Request timed out".to_string(),
+            ),
             NetworkError::ProviderNotFound(id) => (
                 StatusCode::NOT_FOUND,
+                "provider_not_found",
                 format!("No provider found for: {id}"),
             ),
-            NetworkError::InvalidInput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
-            NetworkError::Io(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("IO error: {e}")),
+            NetworkError::DiscoveryFailed { code, message } => {
+                (StatusCode::NOT_FOUND, code.as_str(), message.clone())
+            }
+            NetworkError::InvalidInput(e) => {
+                (StatusCode::BAD_REQUEST, "invalid_input", e.to_string())
+            }
+            NetworkError::VerificationFailed => (
+                StatusCode::BAD_GATEWAY,
+                "content_hash_mismatch",
+                "Verification failed: hash mismatch".to_string(),
+            ),
+            NetworkError::Io(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "io_error",
+                format!("IO error: {e}"),
+            ),
             other => (
                 StatusCode::INTERNAL_SERVER_ERROR,
+                "internal_error",
                 format!("Internal error: {other}"),
             ),
         };
 
-        (status, Json(json!({ "error": message }))).into_response()
+        (status, Json(json!({ "code": code, "error": message }))).into_response()
     }
 }
 

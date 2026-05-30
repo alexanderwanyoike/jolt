@@ -6,6 +6,7 @@ use std::str::FromStr;
 use crate::error::ApiError;
 use crate::state::AppState;
 use jolt_core::JoltAddress;
+use jolt_network::DiscoveryFailureCode;
 use jolt_network::FetchResult;
 use jolt_network::NetworkError;
 
@@ -31,6 +32,28 @@ pub async fn fetch_content(
         }
         Err(_) => target,
     };
-    let result = state.daemon.fetch(content_id).await?;
+    let result = state
+        .daemon
+        .fetch(content_id.clone())
+        .await
+        .map_err(|err| ApiError(fetch_error_for_target(err, &content_id)))?;
     Ok(Json(result))
+}
+
+fn fetch_error_for_target(err: NetworkError, content_id: &str) -> NetworkError {
+    match err {
+        NetworkError::ProviderNotFound(id) => NetworkError::DiscoveryFailed {
+            code: DiscoveryFailureCode::ContentProviderNotFound,
+            message: format!("No content provider found for {id}"),
+        },
+        NetworkError::Timeout => NetworkError::DiscoveryFailed {
+            code: DiscoveryFailureCode::ContentFetchFailed,
+            message: format!("Timed out while fetching content {content_id}"),
+        },
+        NetworkError::VerificationFailed => NetworkError::DiscoveryFailed {
+            code: DiscoveryFailureCode::ContentHashMismatch,
+            message: format!("Fetched content did not match requested hash {content_id}"),
+        },
+        other => other,
+    }
 }
