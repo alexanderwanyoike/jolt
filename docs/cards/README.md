@@ -114,7 +114,7 @@ The current focus is:
 | [008](008-owner-signed-pin-protocol.md) | AFK | Done | Define and implement owner-signed pin requests. |
 | [009](009-relay-pinning-and-provider-announcement.md) | AFK | Done | Relay accepts pins, stores content, announces providers. |
 | [010](010-offline-fetch-through-home-relay.md) | AFK | Superseded by 022 | End-to-end offline publisher flow. |
-| [011](011-availability-checks-v0.md) | AFK | Ready | Node checks whether home relay still serves pinned content. |
+| [011](011-availability-checks-v0.md) | AFK | Done | Node checks whether home relay still serves pinned content. |
 | [012](012-crypto-agility-spike.md) | HITL | Later | Decide post-quantum-aware encryption direction. |
 | [013](013-wasm-runtime-parking-lot.md) | HITL | Later | Park app runtime work until relay/mutable content lands. |
 

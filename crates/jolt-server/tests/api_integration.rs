@@ -1214,6 +1214,279 @@ async fn test_published_inventory_tracks_relay_backed_and_stale_path_state() {
 }
 
 #[tokio::test]
+async fn test_home_relay_availability_reports_healthy_pin() {
+    let relay_dir = tempfile::tempdir().unwrap();
+    let alice_dir = tempfile::tempdir().unwrap();
+    let relay_p2p = free_tcp_port();
+    let alice_p2p = free_tcp_port();
+
+    let relay_identity = NodeIdentity::generate();
+    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+        .unwrap();
+    let (relay_api, relay_handle, _relay_dir) = start_test_server_from_node(relay, relay_dir).await;
+    let relay_peer = relay_handle.status().await.unwrap().peer_id;
+    let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut alice_config = no_mdns_config();
+    alice_config.home_relay = Some(HomeRelayConfig {
+        peer_id: relay_peer.clone(),
+        multiaddr: relay_multiaddr,
+        capability: HomeRelayCapability::Pinning,
+        api_url: Some(base_url(relay_api)),
+    });
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, alice_config).unwrap();
+    alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
+        .unwrap();
+    let (alice_api, alice_handle, _alice_dir) = start_test_server_from_node(alice, alice_dir).await;
+
+    let client = reqwest::Client::new();
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"healthy home relay pin".to_vec())
+                .file_name("healthy.txt"),
+        )
+        .text("path", "/space/healthy");
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    let content_id = published["content_id"].as_str().unwrap();
+
+    let pin_resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(alice_api)))
+        .json(&serde_json::json!({ "content_id": content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pin_resp.status(), 200);
+
+    let availability_resp = client
+        .get(format!(
+            "{}/api/v1/home-relay/availability",
+            base_url(alice_api)
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(availability_resp.status(), 200);
+    let availability: serde_json::Value = availability_resp.json().await.unwrap();
+    assert_eq!(availability["status"], "healthy");
+    assert_eq!(availability["checked_count"], 1);
+    assert_eq!(availability["degraded_count"], 0);
+    assert_eq!(availability["items"][0]["content_id"], content_id);
+    assert_eq!(availability["items"][0]["path"], "/space/healthy");
+    assert_eq!(availability["items"][0]["status"], "available");
+    assert_eq!(availability["items"][0]["relay"]["peer_id"], relay_peer);
+
+    relay_handle.shutdown().await.ok();
+    alice_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_home_relay_availability_reports_missing_pin() {
+    let relay_dir = tempfile::tempdir().unwrap();
+    let alice_dir = tempfile::tempdir().unwrap();
+    let relay_p2p = free_tcp_port();
+    let alice_p2p = free_tcp_port();
+
+    let relay_identity = NodeIdentity::generate();
+    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+        .unwrap();
+    let (relay_api, relay_handle, _relay_dir) = start_test_server_from_node(relay, relay_dir).await;
+    let relay_peer = relay_handle.status().await.unwrap().peer_id;
+    let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut alice_config = no_mdns_config();
+    alice_config.home_relay = Some(HomeRelayConfig {
+        peer_id: relay_peer,
+        multiaddr: relay_multiaddr,
+        capability: HomeRelayCapability::Pinning,
+        api_url: Some(base_url(relay_api)),
+    });
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, alice_config).unwrap();
+    alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
+        .unwrap();
+    let (alice_api, alice_handle, _alice_dir) = start_test_server_from_node(alice, alice_dir).await;
+
+    let client = reqwest::Client::new();
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"missing relay pin".to_vec()).file_name("missing.txt"),
+        )
+        .text("path", "/space/missing");
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    let content_id = published["content_id"].as_str().unwrap();
+
+    let pin_resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(alice_api)))
+        .json(&serde_json::json!({ "content_id": content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pin_resp.status(), 200);
+
+    let unpin_resp = client
+        .delete(format!(
+            "{}/api/v1/cache/pin/{content_id}",
+            base_url(relay_api)
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unpin_resp.status(), 200);
+
+    let availability_resp = client
+        .get(format!(
+            "{}/api/v1/home-relay/availability",
+            base_url(alice_api)
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(availability_resp.status(), 200);
+    let availability: serde_json::Value = availability_resp.json().await.unwrap();
+    assert_eq!(availability["status"], "degraded");
+    assert_eq!(availability["checked_count"], 1);
+    assert_eq!(availability["degraded_count"], 1);
+    assert_eq!(availability["items"][0]["content_id"], content_id);
+    assert_eq!(availability["items"][0]["status"], "missing_pin");
+
+    relay_handle.shutdown().await.ok();
+    alice_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_home_relay_availability_reports_unreachable_relay_without_breaking_local_content() {
+    let relay_dir = tempfile::tempdir().unwrap();
+    let alice_dir = tempfile::tempdir().unwrap();
+    let relay_p2p = free_tcp_port();
+    let alice_p2p = free_tcp_port();
+
+    let relay_identity = NodeIdentity::generate();
+    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+        .unwrap();
+    let (relay_api, relay_handle, _relay_dir) = start_test_server_from_node(relay, relay_dir).await;
+    let relay_peer = relay_handle.status().await.unwrap().peer_id;
+    let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut alice_config = no_mdns_config();
+    alice_config.home_relay = Some(HomeRelayConfig {
+        peer_id: relay_peer,
+        multiaddr: relay_multiaddr,
+        capability: HomeRelayCapability::Pinning,
+        api_url: Some(base_url(relay_api)),
+    });
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, alice_config).unwrap();
+    alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
+        .unwrap();
+    let (alice_api, alice_handle, _alice_dir) = start_test_server_from_node(alice, alice_dir).await;
+
+    let client = reqwest::Client::new();
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"relay will disappear".to_vec())
+                .file_name("unreachable.txt"),
+        )
+        .text("path", "/space/unreachable");
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    let content_id = published["content_id"].as_str().unwrap();
+
+    let pin_resp = client
+        .post(format!("{}/api/v1/home-relay/pins", base_url(alice_api)))
+        .json(&serde_json::json!({ "content_id": content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pin_resp.status(), 200);
+
+    relay_handle.shutdown().await.ok();
+
+    let availability_resp = client
+        .get(format!(
+            "{}/api/v1/home-relay/availability",
+            base_url(alice_api)
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(availability_resp.status(), 200);
+    let availability: serde_json::Value = availability_resp.json().await.unwrap();
+    assert_eq!(availability["status"], "degraded");
+    assert_eq!(availability["checked_count"], 1);
+    assert_eq!(availability["degraded_count"], 1);
+    assert_eq!(availability["items"][0]["status"], "relay_unreachable");
+    assert!(availability["items"][0]["error"]
+        .as_str()
+        .unwrap()
+        .contains("home relay"));
+
+    let local_form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(b"local publishing still works".to_vec())
+            .file_name("local.txt"),
+    );
+    let local_publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(alice_api)))
+        .multipart(local_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(local_publish_resp.status(), 200);
+    let local_published: serde_json::Value = local_publish_resp.json().await.unwrap();
+    let local_content_id = local_published["content_id"].as_str().unwrap();
+    let local_fetch_resp = client
+        .post(format!("{}/api/v1/fetch", base_url(alice_api)))
+        .json(&serde_json::json!({ "content_id": local_content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(local_fetch_resp.status(), 200);
+    let fetched: serde_json::Value = local_fetch_resp.json().await.unwrap();
+    assert_eq!(fetched["content_id"], local_content_id);
+
+    alice_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_home_relay_pin_endpoint_reports_missing_home_relay() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
