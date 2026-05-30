@@ -34,12 +34,35 @@ pub enum RelayExchangeRequest {
     AnnounceRelays {
         records: Vec<RelayRecord>,
     },
+    FindIdentityProviders {
+        query_id: String,
+        identity: IdentityId,
+        limit: u16,
+        ttl: u8,
+        deadline_unix_ms: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RelayExchangeResponse {
-    Relays { records: Vec<RelayRecord> },
-    Announced { accepted: u16, rejected: u16 },
+    Relays {
+        records: Vec<RelayRecord>,
+    },
+    Announced {
+        accepted: u16,
+        rejected: u16,
+    },
+    IdentityProviders {
+        query_id: String,
+        identity: IdentityId,
+        providers: Vec<IdentityProviderCandidate>,
+    },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct IdentityProviderCandidate {
+    pub peer_id: String,
+    pub addrs: Vec<String>,
 }
 
 #[cfg(test)]
@@ -185,6 +208,62 @@ mod tests {
         assert!(matches!(
             decoded,
             RelayExchangeResponse::Relays { records } if records == vec![record]
+        ));
+    }
+
+    #[test]
+    fn identity_provider_query_cbor_round_trip() {
+        let identity = IdentityId::from_public_key([7; 32]);
+        let request = RelayExchangeRequest::FindIdentityProviders {
+            query_id: "query-1".to_string(),
+            identity: identity.clone(),
+            limit: 4,
+            ttl: 2,
+            deadline_unix_ms: 123_456,
+        };
+
+        let mut buf = Vec::new();
+        ciborium::into_writer(&request, &mut buf).unwrap();
+        let decoded: RelayExchangeRequest = ciborium::from_reader(&buf[..]).unwrap();
+
+        assert!(matches!(
+            decoded,
+            RelayExchangeRequest::FindIdentityProviders {
+                query_id,
+                identity: decoded_identity,
+                limit: 4,
+                ttl: 2,
+                deadline_unix_ms: 123_456,
+            } if query_id == "query-1" && decoded_identity == identity
+        ));
+    }
+
+    #[test]
+    fn identity_provider_response_cbor_round_trip() {
+        let identity = IdentityId::from_public_key([8; 32]);
+        let candidate = IdentityProviderCandidate {
+            peer_id: "12D3KooWTest".to_string(),
+            addrs: vec!["/ip4/127.0.0.1/tcp/4001".to_string()],
+        };
+        let response = RelayExchangeResponse::IdentityProviders {
+            query_id: "query-2".to_string(),
+            identity: identity.clone(),
+            providers: vec![candidate.clone()],
+        };
+
+        let mut buf = Vec::new();
+        ciborium::into_writer(&response, &mut buf).unwrap();
+        let decoded: RelayExchangeResponse = ciborium::from_reader(&buf[..]).unwrap();
+
+        assert!(matches!(
+            decoded,
+            RelayExchangeResponse::IdentityProviders {
+                query_id,
+                identity: decoded_identity,
+                providers,
+            } if query_id == "query-2"
+                && decoded_identity == identity
+                && providers == vec![candidate]
         ));
     }
 }

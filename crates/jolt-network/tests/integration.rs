@@ -537,3 +537,251 @@ async fn relay_mesh_exploration_learns_relays_through_a_known_relay() {
     r2_handle.abort();
     r3_handle.abort();
 }
+
+#[tokio::test]
+async fn identity_provider_query_forwarding_finds_home_relay_provider() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+
+    let dir_r1 = tempdir().unwrap();
+    let dir_r2 = tempdir().unwrap();
+    let dir_tim = tempdir().unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_id = alice_identity.identity_id();
+    let alice_update_log = signed_profile_log(&alice_identity, b"profile through forwarded query");
+
+    let identity_r1 = NodeIdentity::generate();
+    let identity_r2 = NodeIdentity::generate();
+    let identity_tim = NodeIdentity::generate();
+
+    let store_r1 = make_store(dir_r1.path());
+    let mut node_r1 = NetworkNode::new_tcp(identity_r1, store_r1, relay_config()).unwrap();
+    node_r1
+        .store_verified_update_log(alice_id.clone(), alice_update_log.clone())
+        .unwrap();
+    node_r1.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r1 = wait_for_listener(node_r1).await;
+    let r1_peer = *node_r1.local_peer_id();
+    let record_seen_at = unix_now();
+    let r1_record = node_r1
+        .local_relay_record(record_seen_at)
+        .unwrap()
+        .expect("relay-mode node should expose a local relay record");
+
+    let store_r2 = make_store(dir_r2.path());
+    store_r2
+        .record_relay_record(r1_record, record_seen_at)
+        .unwrap();
+    let mut node_r2 = NetworkNode::new_tcp(identity_r2, store_r2, relay_config()).unwrap();
+    node_r2.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r2 = wait_for_listener(node_r2).await;
+    let r2_addr = listener_with_peer(&node_r2.listeners()[0], node_r2.local_peer_id());
+
+    let mut tim_config = no_mdns_config();
+    tim_config.effective_bootstrap_relays = vec![r2_addr.to_string()];
+    let store_tim = make_store(dir_tim.path());
+    let mut tim = NetworkNode::new_tcp(identity_tim, store_tim, tim_config).unwrap();
+    tim.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut tim = wait_for_listener(tim).await;
+    tim.connect_peer_multiaddr(&r2_addr.to_string()).unwrap();
+
+    let r1_handle = tokio::spawn(async move {
+        node_r1.run_event_loop().await;
+    });
+    let r2_handle = tokio::spawn(async move {
+        node_r2.run_event_loop().await;
+    });
+
+    let expected_log = alice_update_log.clone();
+    let provider = tokio::time::timeout(Duration::from_secs(15), async {
+        let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        while tokio::time::Instant::now() < settle_deadline {
+            if let Ok(event) =
+                tokio::time::timeout(Duration::from_millis(100), tim.next_event()).await
+            {
+                tim.handle_swarm_event(event);
+            }
+        }
+
+        tim.find_update_log_providers(&alice_id);
+
+        loop {
+            let event = tim.next_event().await;
+            tim.handle_swarm_event(event);
+            if let Some(provider) = tim.take_discovered_update_log_provider(&alice_id) {
+                return provider;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for forwarded identity provider query");
+
+    assert_eq!(provider, r1_peer);
+
+    let mut rx = tim
+        .request_update_log_from(&alice_id, None, &provider)
+        .expect("Tim should request Alice's update log from the forwarded provider");
+    let response = loop {
+        tokio::select! {
+            result = &mut rx => {
+                break result
+                    .expect("update-log response channel should remain open")
+                    .expect("update-log request should succeed");
+            }
+            event = tim.next_event() => {
+                tim.handle_swarm_event(event);
+            }
+        }
+    };
+
+    assert_eq!(response.entries, expected_log);
+    assert_eq!(
+        tim.update_log_entries(&alice_id),
+        Some(expected_log.as_slice())
+    );
+
+    r1_handle.abort();
+    r2_handle.abort();
+}
+
+#[tokio::test]
+async fn identity_provider_query_forwarding_crosses_multiple_relay_hops() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+
+    let dir_r1 = tempdir().unwrap();
+    let dir_r2 = tempdir().unwrap();
+    let dir_r3 = tempdir().unwrap();
+    let dir_r4 = tempdir().unwrap();
+    let dir_tim = tempdir().unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_id = alice_identity.identity_id();
+    let alice_update_log = signed_profile_log(&alice_identity, b"profile through recursive query");
+
+    let identity_r1 = NodeIdentity::generate();
+    let identity_r2 = NodeIdentity::generate();
+    let identity_r3 = NodeIdentity::generate();
+    let identity_r4 = NodeIdentity::generate();
+    let identity_tim = NodeIdentity::generate();
+
+    let store_r4 = make_store(dir_r4.path());
+    let mut node_r4 = NetworkNode::new_tcp(identity_r4, store_r4, relay_config()).unwrap();
+    node_r4
+        .store_verified_update_log(alice_id.clone(), alice_update_log.clone())
+        .unwrap();
+    node_r4.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r4 = wait_for_listener(node_r4).await;
+    let r4_peer = *node_r4.local_peer_id();
+    let record_seen_at = unix_now();
+    let r4_record = node_r4
+        .local_relay_record(record_seen_at)
+        .unwrap()
+        .expect("relay-mode node should expose a local relay record");
+
+    let store_r3 = make_store(dir_r3.path());
+    store_r3
+        .record_relay_record(r4_record, record_seen_at)
+        .unwrap();
+    let mut node_r3 = NetworkNode::new_tcp(identity_r3, store_r3, relay_config()).unwrap();
+    node_r3.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r3 = wait_for_listener(node_r3).await;
+    let r3_record = node_r3
+        .local_relay_record(record_seen_at)
+        .unwrap()
+        .expect("relay-mode node should expose a local relay record");
+
+    let store_r2 = make_store(dir_r2.path());
+    store_r2
+        .record_relay_record(r3_record, record_seen_at)
+        .unwrap();
+    let mut node_r2 = NetworkNode::new_tcp(identity_r2, store_r2, relay_config()).unwrap();
+    node_r2.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r2 = wait_for_listener(node_r2).await;
+    let r2_record = node_r2
+        .local_relay_record(record_seen_at)
+        .unwrap()
+        .expect("relay-mode node should expose a local relay record");
+
+    let store_r1 = make_store(dir_r1.path());
+    store_r1
+        .record_relay_record(r2_record, record_seen_at)
+        .unwrap();
+    let mut node_r1 = NetworkNode::new_tcp(identity_r1, store_r1, relay_config()).unwrap();
+    node_r1.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r1 = wait_for_listener(node_r1).await;
+    let r1_addr = listener_with_peer(&node_r1.listeners()[0], node_r1.local_peer_id());
+
+    let mut tim_config = no_mdns_config();
+    tim_config.effective_bootstrap_relays = vec![r1_addr.to_string()];
+    let store_tim = make_store(dir_tim.path());
+    let mut tim = NetworkNode::new_tcp(identity_tim, store_tim, tim_config).unwrap();
+    tim.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut tim = wait_for_listener(tim).await;
+    tim.connect_peer_multiaddr(&r1_addr.to_string()).unwrap();
+
+    let r1_handle = tokio::spawn(async move {
+        node_r1.run_event_loop().await;
+    });
+    let r2_handle = tokio::spawn(async move {
+        node_r2.run_event_loop().await;
+    });
+    let r3_handle = tokio::spawn(async move {
+        node_r3.run_event_loop().await;
+    });
+    let r4_handle = tokio::spawn(async move {
+        node_r4.run_event_loop().await;
+    });
+
+    let expected_log = alice_update_log.clone();
+    let provider = tokio::time::timeout(Duration::from_secs(20), async {
+        let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < settle_deadline {
+            if let Ok(event) =
+                tokio::time::timeout(Duration::from_millis(100), tim.next_event()).await
+            {
+                tim.handle_swarm_event(event);
+            }
+        }
+
+        tim.find_update_log_providers(&alice_id);
+
+        loop {
+            let event = tim.next_event().await;
+            tim.handle_swarm_event(event);
+            if let Some(provider) = tim.take_discovered_update_log_provider(&alice_id) {
+                return provider;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for recursive identity provider query");
+
+    assert_eq!(provider, r4_peer);
+
+    let mut rx = tim
+        .request_update_log_from(&alice_id, None, &provider)
+        .expect("Tim should request Alice's update log from the forwarded provider");
+    let response = loop {
+        tokio::select! {
+            result = &mut rx => {
+                break result
+                    .expect("update-log response channel should remain open")
+                    .expect("update-log request should succeed");
+            }
+            event = tim.next_event() => {
+                tim.handle_swarm_event(event);
+            }
+        }
+    };
+
+    assert_eq!(response.entries, expected_log);
+    assert_eq!(
+        tim.update_log_entries(&alice_id),
+        Some(expected_log.as_slice())
+    );
+
+    r1_handle.abort();
+    r2_handle.abort();
+    r3_handle.abort();
+    r4_handle.abort();
+}
