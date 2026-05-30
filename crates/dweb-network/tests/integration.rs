@@ -269,3 +269,68 @@ async fn two_nodes_request_and_cache_verified_update_log() {
     node_a_handle.abort();
     node_b_handle.abort();
 }
+
+#[tokio::test]
+async fn connected_peer_address_is_cached_for_later_bootstrap() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+
+    let dir_a = tempdir().unwrap();
+    let dir_b = tempdir().unwrap();
+
+    let identity_a = NodeIdentity::generate();
+    let identity_b = NodeIdentity::generate();
+
+    let store_a = make_store(dir_a.path());
+    let mut node_a =
+        NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config()).unwrap();
+    node_a.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+
+    let (mut node_a, addr_a, peer_a) = {
+        let handle = tokio::spawn(async move {
+            loop {
+                let event = node_a.next_event().await;
+                node_a.handle_swarm_event(event);
+                if !node_a.listeners().is_empty() {
+                    return node_a;
+                }
+            }
+        });
+        let node_a = tokio::time::timeout(Duration::from_secs(5), handle)
+            .await
+            .expect("timed out")
+            .expect("task failed");
+        let addr = node_a.listeners()[0].clone();
+        let peer = *node_a.local_peer_id();
+        (node_a, addr, peer)
+    };
+
+    let store_b = make_store(dir_b.path());
+    let mut node_b =
+        NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config()).unwrap();
+    node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    node_b.dial(addr_a).unwrap();
+
+    let node_a_handle = tokio::spawn(async move {
+        node_a.run_event_loop().await;
+    });
+
+    tokio::time::timeout(Duration::from_secs(10), async move {
+        loop {
+            let event = node_b.next_event().await;
+            node_b.handle_swarm_event(event);
+            if !node_b.connected_peers().is_empty() {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for connection");
+
+    node_a_handle.abort();
+
+    let store_b = make_store(dir_b.path());
+    let hints = store_b.load_discovered_peer_hints().unwrap();
+
+    assert_eq!(hints.len(), 1);
+    assert!(hints[0].multiaddr.ends_with(&format!("/p2p/{peer_a}")));
+}

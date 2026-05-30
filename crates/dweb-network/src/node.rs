@@ -4,6 +4,7 @@ use std::str::FromStr;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use libp2p::futures::StreamExt;
+use libp2p::multiaddr::Protocol;
 use libp2p::request_response::{self, OutboundRequestId, ProtocolSupport};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, StreamProtocol, Swarm, Transport};
@@ -774,6 +775,17 @@ impl NetworkNode {
         .to_string()
     }
 
+    fn peer_hint_multiaddr(remote_addr: &str, peer_id: libp2p::PeerId) -> String {
+        if remote_addr.contains("/p2p/") {
+            return remote_addr.to_string();
+        }
+
+        match remote_addr.parse::<Multiaddr>() {
+            Ok(addr) => addr.with(Protocol::P2p(peer_id)).to_string(),
+            Err(_) => remote_addr.to_string(),
+        }
+    }
+
     fn current_local_paths(&self) -> HashMap<String, (ContentId, u64)> {
         let identity = self.identity.identity_id();
         let mut current_paths: HashMap<String, (ContentId, u64)> = HashMap::new();
@@ -967,6 +979,9 @@ impl NetworkNode {
                 let message = format!("Failed to dial bootstrap peer {peer_id}: {e}");
                 warn!("{message}");
                 self.last_bootstrap_error = Some(message);
+                let _ = self
+                    .store
+                    .mark_discovered_peer_hint_failure(&addr.to_string());
             }
             info!("Added bootstrap peer: {peer_id}");
         }
@@ -1500,6 +1515,7 @@ impl NetworkNode {
                     "Connected to peer: {peer_id} (relayed: {}, transport: {})",
                     conn_info.is_relayed, conn_info.transport
                 );
+                let remote_addr = conn_info.remote_addr.clone();
 
                 // Track connection quality (keep best: direct > relayed)
                 let dominated = self
@@ -1512,6 +1528,15 @@ impl NetworkNode {
                 }
                 if self.bootstrap_peer_ids.contains(&peer_id) {
                     self.last_bootstrap_error = None;
+                }
+                let source = if self.bootstrap_peer_ids.contains(&peer_id) {
+                    "bootstrap"
+                } else {
+                    "connection"
+                };
+                let hint = Self::peer_hint_multiaddr(&remote_addr, peer_id);
+                if let Err(e) = self.store.record_discovered_peer_hint(&hint, source) {
+                    debug!("Failed to record discovered peer hint {hint}: {e}");
                 }
 
                 // Notify fetch manager in case this is a provider we're waiting for
