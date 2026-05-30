@@ -739,6 +739,7 @@
       cacheStats: null,
       cacheEntries: [],
       publishedContent: [],
+      homeRelayAvailability: null,
       lastPublishedContentId: null
     };
 
@@ -888,6 +889,23 @@
 
       statePill.className = homeRelay.capability === "pinning" ? "pill good" : "pill warn";
       statePill.textContent = homeRelay.capability || "unknown";
+      const availability = state.homeRelayAvailability;
+      const availabilityClass = availability && availability.status === "healthy"
+        ? "good"
+        : availability && availability.status === "degraded"
+          ? "bad"
+          : "warn";
+      const availabilitySummary = availability
+        ? `${availability.checked_count} checked / ${availability.degraded_count} degraded`
+        : "not checked";
+      const availabilityRows = availability && Array.isArray(availability.items) && availability.items.length
+        ? availability.items.map((item) => `
+          <div class="kv">
+            <span>${escapeHtml(item.path || "unaddressed")}</span>
+            <strong class="mono cid">${escapeHtml(item.status || "unknown")}</strong>
+          </div>
+        `).join("")
+        : `<div class="empty">No home relay pin checks yet.</div>`;
       panel.innerHTML = `
         <div class="kv">
           <span>Peer ID</span>
@@ -901,6 +919,15 @@
           <span>API</span>
           <strong class="mono cid">${escapeHtml(homeRelay.api_url || "not configured")}</strong>
         </div>
+        <div class="kv">
+          <span>Availability</span>
+          <strong><span class="pill ${availabilityClass}">${escapeHtml(availability ? availability.status : "unknown")}</span></strong>
+        </div>
+        <span class="secondary-text mono">${escapeHtml(availabilitySummary)}</span>
+        <div class="button-row" style="margin-top: 12px;">
+          <button id="check-home-relay-availability-button" type="button">Check Availability</button>
+        </div>
+        <div style="margin-top: 12px;">${availabilityRows}</div>
       `;
     }
 
@@ -1068,6 +1095,10 @@
       return JSON.parse(body);
     }
 
+    async function checkHomeRelayAvailability() {
+      return getJson("/api/v1/home-relay/availability");
+    }
+
     async function readResponse(response) {
       const text = await response.text();
       return text || `${response.status} ${response.statusText}`;
@@ -1110,6 +1141,7 @@
       button.disabled = true;
       try {
         const result = await pinToHomeRelay(contentId, path);
+        state.homeRelayAvailability = await checkHomeRelayAvailability();
         setResult(
           "home-relay-pin-result",
           "ok",
@@ -1162,6 +1194,7 @@
       }
       try {
         const result = await pinToHomeRelay(contentId);
+        state.homeRelayAvailability = await checkHomeRelayAvailability();
         setResult(
           "home-relay-pin-result",
           "ok",
@@ -1185,6 +1218,26 @@
         await refresh();
       } catch (error) {
         setResult("connect-result", "err", error.message);
+      }
+    });
+
+    $("home-relay-panel").addEventListener("click", async (event) => {
+      const button = event.target.closest("#check-home-relay-availability-button");
+      if (!button) return;
+      button.disabled = true;
+      try {
+        state.homeRelayAvailability = await checkHomeRelayAvailability();
+        renderHomeRelay(state.status ? state.status.home_relay : null);
+      } catch (error) {
+        state.homeRelayAvailability = {
+          status: "degraded",
+          checked_count: 0,
+          degraded_count: 1,
+          items: [{ path: "home relay", status: error.message }]
+        };
+        renderHomeRelay(state.status ? state.status.home_relay : null);
+      } finally {
+        button.disabled = false;
       }
     });
 

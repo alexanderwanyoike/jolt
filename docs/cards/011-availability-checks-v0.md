@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** M4.5  
-**Status:** Ready
+**Status:** Done
 **Blocked by:** None
 
 ## Why
@@ -23,11 +23,21 @@ Do not implement automatic multi-relay repair yet unless it falls out naturally.
 
 ## Acceptance Criteria
 
-- [ ] Node tracks which local published CIDs are expected to be pinned on home relay.
-- [ ] Node can ask relay whether a CID is pinned.
-- [ ] Node status/API reports healthy vs degraded relay availability.
-- [ ] A failed relay check does not break local publishing/fetching.
-- [ ] Tests cover healthy relay, missing pin, and unreachable relay.
+- [x] Node tracks which local published CIDs are expected to be pinned on home relay.
+- [x] Node can ask relay whether a CID is pinned.
+- [x] Node status/API reports healthy vs degraded relay availability.
+- [x] A failed relay check does not break local publishing/fetching.
+- [x] Tests cover healthy relay, missing pin, and unreachable relay.
+
+## Result
+
+Implemented as an on-demand v0 check:
+
+- Relays expose `GET /api/v1/relay/pins/{content_id}` for pinned-CID status.
+- Owner nodes expose `GET /api/v1/home-relay/availability` for recorded home-relay pins.
+- The dashboard can manually check home relay availability from the Relay panel.
+
+This intentionally avoids automatic repair or multi-relay policy.
 
 ## Notes
 

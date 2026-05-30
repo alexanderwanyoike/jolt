@@ -23,8 +23,16 @@ pub fn build_router(daemon: DaemonHandle) -> Router {
         .route("/api/v1/published", get(routes::published::list))
         .route("/api/v1/fetch", post(routes::fetch::fetch_content))
         .route("/api/v1/resolve", post(routes::resolve::resolve_address))
+        .route(
+            "/api/v1/home-relay/availability",
+            get(routes::home_relay::availability),
+        )
         .route("/api/v1/home-relay/pins", post(routes::home_relay::pin))
         .route("/api/v1/relay/pins", post(routes::relay::create_pin))
+        .route(
+            "/api/v1/relay/pins/{content_id}",
+            get(routes::relay::pin_status),
+        )
         .route("/api/v1/cache/stats", get(routes::cache::stats))
         .route("/api/v1/cache/entries", get(routes::cache::list_entries))
         .route("/api/v1/cache/pin/{content_id}", post(routes::cache::pin))

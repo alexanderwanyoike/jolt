@@ -1,4 +1,4 @@
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::Json;
 use jolt_core::{PinRequest, UpdateLogEntry};
 use jolt_network::NetworkError;
@@ -14,6 +14,13 @@ pub struct RelayPinResponse {
     pub content_id: String,
     pub latest_sequence: u64,
     pub size: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RelayPinStatusResponse {
+    pub content_id: String,
+    pub pinned: bool,
+    pub size: Option<u64>,
 }
 
 pub async fn create_pin(
@@ -69,5 +76,29 @@ pub async fn create_pin(
         content_id,
         latest_sequence,
         size: fetched.size,
+    }))
+}
+
+pub async fn pin_status(
+    State(state): State<AppState>,
+    Path(content_id): Path<String>,
+) -> Result<Json<RelayPinStatusResponse>, ApiError> {
+    let status = state.daemon.status().await?;
+    if !status.bootstrap_relay {
+        return Err(ApiError(NetworkError::InvalidInput(
+            "node is not configured to report relay pin status".to_string(),
+        )));
+    }
+
+    let entry = state
+        .daemon
+        .list_cache_entries()
+        .await?
+        .into_iter()
+        .find(|entry| entry.content_id == content_id);
+    Ok(Json(RelayPinStatusResponse {
+        content_id,
+        pinned: entry.as_ref().map(|entry| entry.pinned).unwrap_or(false),
+        size: entry.map(|entry| entry.size),
     }))
 }
