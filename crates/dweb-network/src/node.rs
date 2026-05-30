@@ -33,6 +33,7 @@ struct PendingResolve {
     address: JoltAddress,
     response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
     deadline: Instant,
+    fallback_response: Option<ResolveResponse>,
 }
 
 struct PendingUpdateLogPin {
@@ -46,6 +47,7 @@ struct PendingDaemonResolve {
     provider: libp2p::PeerId,
     response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
     deadline: Instant,
+    fallback_response: Option<ResolveResponse>,
 }
 
 /// Tracks connection quality for a connected peer.
@@ -892,6 +894,7 @@ impl NetworkNode {
         now: Option<u64>,
         provider: &libp2p::PeerId,
         response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
+        fallback_response: Option<ResolveResponse>,
     ) {
         let request = UpdateLogRequest {
             identity: address.identity().clone(),
@@ -916,8 +919,18 @@ impl NetworkNode {
                 provider: *provider,
                 response_tx,
                 deadline: Instant::now() + self.resolve_timeout,
+                fallback_response,
             },
         );
+    }
+
+    fn should_refresh_cached_resolution(&self, identity: &IdentityId) -> bool {
+        let key = Self::update_log_provider_key(identity);
+        self.discovered_providers
+            .get(&key)
+            .is_some_and(|providers| !providers.is_empty())
+            || self.swarm.connected_peers().next().is_some()
+            || !self.effective_bootstrap_relays.is_empty()
     }
 
     fn request_pending_resolves_from_provider(
@@ -935,6 +948,7 @@ impl NetworkNode {
                 None,
                 provider,
                 pending.response_tx,
+                pending.fallback_response,
             );
         }
     }
@@ -947,9 +961,12 @@ impl NetworkNode {
             let mut still_waiting = Vec::new();
             for pending in pending.drain(..) {
                 if pending.deadline <= now {
-                    let _ = pending.response_tx.send(Err(NetworkError::ProviderNotFound(
-                        Self::update_log_provider_key(identity),
-                    )));
+                    let result = pending.fallback_response.map(Ok).unwrap_or_else(|| {
+                        Err(NetworkError::ProviderNotFound(
+                            Self::update_log_provider_key(identity),
+                        ))
+                    });
+                    let _ = pending.response_tx.send(result);
                 } else {
                     still_waiting.push(pending);
                 }
@@ -972,7 +989,11 @@ impl NetworkNode {
 
         for request_id in timed_out {
             if let Some(pending) = self.pending_daemon_resolutions.remove(&request_id) {
-                let _ = pending.response_tx.send(Err(NetworkError::Timeout));
+                let result = pending
+                    .fallback_response
+                    .map(Ok)
+                    .unwrap_or(Err(NetworkError::Timeout));
+                let _ = pending.response_tx.send(result);
             }
         }
     }
@@ -1350,10 +1371,12 @@ impl NetworkNode {
                     let _ = tx.send(result);
                 } else if let Some(pending) = self.pending_daemon_resolutions.remove(&request_id) {
                     let result = if response.entries.is_empty() {
-                        Err(NetworkError::Protocol(format!(
-                            "No update log entries returned for {}",
-                            pending.address.identity()
-                        )))
+                        pending.fallback_response.map(Ok).unwrap_or_else(|| {
+                            Err(NetworkError::Protocol(format!(
+                                "No update log entries returned for {}",
+                                pending.address.identity()
+                            )))
+                        })
                     } else {
                         self.store_verified_update_log(
                             pending.address.identity().clone(),
@@ -1424,11 +1447,14 @@ impl NetworkNode {
                             pending.now,
                             &next_provider,
                             pending.response_tx,
+                            pending.fallback_response,
                         );
                     } else {
-                        let _ = pending
-                            .response_tx
-                            .send(Err(NetworkError::Protocol(error.to_string())));
+                        let result = pending
+                            .fallback_response
+                            .map(Ok)
+                            .unwrap_or_else(|| Err(NetworkError::Protocol(error.to_string())));
+                        let _ = pending.response_tx.send(result);
                     }
                 }
             }
@@ -1724,32 +1750,37 @@ impl NetworkNode {
                     }
                 };
 
-                match self.resolve_response_from_cache(&address, None, "cache") {
-                    Ok(response) => {
-                        let _ = response_tx.send(Ok(response));
-                    }
-                    Err(_) => {
-                        let identity = address.identity().clone();
-                        self.find_update_log_providers(&identity);
+                let fallback_response = self
+                    .resolve_response_from_cache(&address, None, "cache")
+                    .ok();
+                let identity = address.identity().clone();
 
-                        if let Some(provider) = self.take_discovered_update_log_provider(&identity)
-                        {
-                            self.request_daemon_resolve_from_provider(
-                                address,
-                                None,
-                                &provider,
-                                response_tx,
-                            );
-                        } else {
-                            self.pending_resolves.entry(identity).or_default().push(
-                                PendingResolve {
-                                    address,
-                                    response_tx,
-                                    deadline: Instant::now() + self.resolve_timeout,
-                                },
-                            );
-                        }
-                    }
+                if fallback_response.is_some() && !self.should_refresh_cached_resolution(&identity)
+                {
+                    let _ = response_tx.send(Ok(fallback_response.unwrap()));
+                    return;
+                }
+
+                self.find_update_log_providers(&identity);
+
+                if let Some(provider) = self.take_discovered_update_log_provider(&identity) {
+                    self.request_daemon_resolve_from_provider(
+                        address,
+                        None,
+                        &provider,
+                        response_tx,
+                        fallback_response,
+                    );
+                } else {
+                    self.pending_resolves
+                        .entry(identity)
+                        .or_default()
+                        .push(PendingResolve {
+                            address,
+                            response_tx,
+                            deadline: Instant::now() + self.resolve_timeout,
+                            fallback_response,
+                        });
                 }
             }
             DaemonCommand::ConnectPeer {
@@ -2113,7 +2144,13 @@ mod tests {
             .insert(key, vec![failed_provider, fallback_provider]);
 
         let (tx, mut rx) = oneshot::channel();
-        node.request_daemon_resolve_from_provider(address.clone(), None, &failed_provider, tx);
+        node.request_daemon_resolve_from_provider(
+            address.clone(),
+            None,
+            &failed_provider,
+            tx,
+            None,
+        );
         let failed_request_id = *node.pending_daemon_resolutions.keys().next().unwrap();
 
         node.handle_swarm_event(SwarmEvent::Behaviour(DwebBehaviourEvent::UpdateLogSync(
@@ -2135,6 +2172,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn daemon_resolution_refreshes_cached_address_when_provider_is_known() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let owner = NodeIdentity::generate();
+        let identity = owner.identity_id();
+        let path = "/hello/1234";
+        let old_content_id = ContentId::from_bytes(b"old content");
+        let new_content_id = ContentId::from_bytes(b"new content");
+        let genesis = UpdateLogEntry::genesis(
+            owner.public_key_bytes(),
+            UpdateAction::SetPath {
+                path: path.to_string(),
+                content_id: old_content_id.clone(),
+            },
+            |bytes| owner.sign(bytes),
+        )
+        .unwrap();
+        let newer = genesis
+            .append(
+                UpdateAction::SetPath {
+                    path: path.to_string(),
+                    content_id: new_content_id.clone(),
+                },
+                |bytes| owner.sign(bytes),
+            )
+            .unwrap();
+        let provider = libp2p::PeerId::random();
+        let key = NetworkNode::update_log_provider_key(&identity);
+        let address = JoltAddress::new(identity.clone(), path).unwrap();
+
+        node.store_verified_update_log(identity.clone(), vec![genesis.clone()])
+            .unwrap();
+        node.discovered_providers.insert(key, vec![provider]);
+
+        let (tx, mut rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::Resolve {
+            address: address.to_string(),
+            response_tx: tx,
+        });
+
+        assert!(matches!(
+            rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert_eq!(node.pending_daemon_resolutions.len(), 1);
+        let request_id = *node.pending_daemon_resolutions.keys().next().unwrap();
+
+        node.handle_swarm_event(SwarmEvent::Behaviour(DwebBehaviourEvent::UpdateLogSync(
+            request_response::Event::Message {
+                peer: provider,
+                connection_id: libp2p::swarm::ConnectionId::new_unchecked(1),
+                message: request_response::Message::Response {
+                    request_id,
+                    response: UpdateLogResponse {
+                        entries: vec![genesis, newer],
+                    },
+                },
+            },
+        )));
+
+        let resolved = rx.await.unwrap().unwrap();
+        assert_eq!(resolved.content_id, new_content_id.to_string());
+        assert_eq!(resolved.latest_sequence, 1);
+        assert_eq!(resolved.source, "network");
+    }
+
+    #[tokio::test]
     async fn daemon_resolution_times_out_when_update_log_provider_stalls() {
         let dir = tempdir().unwrap();
         let mut node = make_node(dir.path());
@@ -2144,7 +2248,7 @@ mod tests {
         let provider = libp2p::PeerId::random();
 
         let (tx, rx) = oneshot::channel();
-        node.request_daemon_resolve_from_provider(address, None, &provider, tx);
+        node.request_daemon_resolve_from_provider(address, None, &provider, tx, None);
 
         assert_eq!(node.pending_daemon_resolutions.len(), 1);
         node.check_resolve_timeouts();
