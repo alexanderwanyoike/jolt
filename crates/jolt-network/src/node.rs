@@ -154,6 +154,10 @@ pub struct NetworkNode {
     effective_bootstrap_relays: Vec<String>,
     /// Peer IDs parsed from effective bootstrap relay multiaddrs.
     bootstrap_peer_ids: HashSet<libp2p::PeerId>,
+    /// Relay peers dialed from the relay address book for mesh exploration.
+    relay_mesh_peer_ids: HashSet<libp2p::PeerId>,
+    /// Cursor used to avoid asking every known relay during each exploration tick.
+    relay_mesh_exploration_cursor: usize,
     /// Most recent bootstrap failure, if known.
     last_bootstrap_error: Option<String>,
     /// Whether this node is intentionally acting as a bootstrap/discovery relay.
@@ -164,6 +168,8 @@ pub struct NetworkNode {
 
 const RELAY_RECORD_TTL_SECS: u64 = 60 * 60;
 const RELAY_EXCHANGE_MAX_RECORDS: usize = 32;
+const RELAY_MESH_EXPLORATION_FANOUT: usize = 1;
+const RELAY_MESH_EXPLORATION_INTERVAL: Duration = Duration::from_secs(1);
 
 impl NetworkNode {
     /// Create a new network node with iroh transport.
@@ -278,6 +284,8 @@ impl NetworkNode {
             configured_bootstrap_relays: config.configured_bootstrap_relays,
             effective_bootstrap_relays: config.effective_bootstrap_relays,
             bootstrap_peer_ids,
+            relay_mesh_peer_ids: HashSet::new(),
+            relay_mesh_exploration_cursor: 0,
             last_bootstrap_error: None,
             bootstrap_relay: config.bootstrap_relay,
             home_relay: config.home_relay,
@@ -389,6 +397,8 @@ impl NetworkNode {
             configured_bootstrap_relays: config.configured_bootstrap_relays,
             effective_bootstrap_relays: config.effective_bootstrap_relays,
             bootstrap_peer_ids,
+            relay_mesh_peer_ids: HashSet::new(),
+            relay_mesh_exploration_cursor: 0,
             last_bootstrap_error: None,
             bootstrap_relay: config.bootstrap_relay,
             home_relay: config.home_relay,
@@ -529,6 +539,91 @@ impl NetworkNode {
             }
         }
         (accepted, rejected)
+    }
+
+    fn relay_record_peer_addr(record: &RelayRecord) -> Option<(libp2p::PeerId, Multiaddr)> {
+        let peer_id = libp2p::PeerId::from_str(&record.body.peer_id).ok()?;
+        let addr = record.body.addrs.first()?.parse::<Multiaddr>().ok()?;
+        let addr = if addr
+            .iter()
+            .any(|protocol| matches!(protocol, Protocol::P2p(_)))
+        {
+            addr
+        } else {
+            addr.with(Protocol::P2p(peer_id))
+        };
+        Some((peer_id, addr))
+    }
+
+    fn mark_relay_peer_success(&self, peer: &libp2p::PeerId, now: u64) {
+        if let Err(e) = self
+            .store
+            .mark_relay_record_peer_success(&peer.to_string(), now)
+        {
+            debug!("Failed to mark relay peer success for {peer}: {e}");
+        }
+    }
+
+    fn mark_relay_peer_failure(&self, peer: &libp2p::PeerId) {
+        if let Err(e) = self.store.mark_relay_record_peer_failure(&peer.to_string()) {
+            debug!("Failed to mark relay peer failure for {peer}: {e}");
+        }
+    }
+
+    fn explore_relay_mesh(&mut self) {
+        if !self.bootstrap_relay {
+            return;
+        }
+
+        let now = unix_now();
+        let records = match self.store.load_relay_records(now) {
+            Ok(records) => records,
+            Err(e) => {
+                debug!("Failed to load relay records for mesh exploration: {e}");
+                return;
+            }
+        };
+        if records.is_empty() {
+            return;
+        }
+
+        let local_peer = *self.swarm.local_peer_id();
+        let start = self.relay_mesh_exploration_cursor % records.len();
+        let mut explored = 0usize;
+
+        for offset in 0..records.len() {
+            if explored >= RELAY_MESH_EXPLORATION_FANOUT {
+                break;
+            }
+
+            let index = (start + offset) % records.len();
+            self.relay_mesh_exploration_cursor = (index + 1) % records.len();
+            let record = &records[index].relay_record;
+            let Some((peer_id, addr)) = Self::relay_record_peer_addr(record) else {
+                continue;
+            };
+            if peer_id == local_peer {
+                continue;
+            }
+
+            explored += 1;
+            self.relay_mesh_peer_ids.insert(peer_id);
+            self.swarm
+                .behaviour_mut()
+                .kademlia
+                .add_address(&peer_id, addr.clone());
+
+            if self.swarm.is_connected(&peer_id) {
+                self.start_relay_record_exchange(&peer_id);
+                continue;
+            }
+
+            debug!("Exploring relay mesh through {peer_id} at {addr}");
+            if let Err(e) = self.swarm.dial(addr) {
+                debug!("Failed to dial relay mesh peer {peer_id}: {e}");
+                self.mark_relay_peer_failure(&peer_id);
+            }
+        }
     }
 
     /// Publish a file to the content store. Returns the ContentId.
@@ -1599,6 +1694,7 @@ impl NetworkNode {
             // --- Relay Record Exchange ---
             SwarmEvent::Behaviour(JoltBehaviourEvent::RelayExchange(
                 request_response::Event::Message {
+                    peer,
                     message:
                         request_response::Message::Request {
                             request, channel, ..
@@ -1631,11 +1727,14 @@ impl NetworkNode {
                     .send_response(channel, response)
                 {
                     warn!("Failed to send relay exchange response: {e:?}");
+                } else {
+                    self.mark_relay_peer_success(&peer, now);
                 }
             }
 
             SwarmEvent::Behaviour(JoltBehaviourEvent::RelayExchange(
                 request_response::Event::Message {
+                    peer,
                     message:
                         request_response::Message::Response {
                             request_id: _,
@@ -1645,19 +1744,23 @@ impl NetworkNode {
                 },
             )) => match response {
                 RelayExchangeResponse::Relays { records } => {
-                    let (accepted, rejected) = self.store_relay_records(records, unix_now());
+                    let now = unix_now();
+                    let (accepted, rejected) = self.store_relay_records(records, now);
+                    self.mark_relay_peer_success(&peer, now);
                     debug!(
                         "Stored relay exchange response records: {accepted} accepted, {rejected} rejected"
                     );
                 }
                 RelayExchangeResponse::Announced { accepted, rejected } => {
+                    self.mark_relay_peer_success(&peer, unix_now());
                     debug!("Relay announcement response: {accepted} accepted, {rejected} rejected");
                 }
             },
 
             SwarmEvent::Behaviour(JoltBehaviourEvent::RelayExchange(
-                request_response::Event::OutboundFailure { error, .. },
+                request_response::Event::OutboundFailure { peer, error, .. },
             )) => {
+                self.mark_relay_peer_failure(&peer);
                 debug!("Outbound relay exchange failed: {error}");
             }
 
@@ -1784,12 +1887,16 @@ impl NetworkNode {
                 if dominated {
                     self.peer_connections.insert(peer_id, conn_info);
                 }
-                if self.bootstrap_peer_ids.contains(&peer_id) {
+                let should_exchange_relay_records = self.bootstrap_peer_ids.contains(&peer_id)
+                    || self.relay_mesh_peer_ids.contains(&peer_id);
+                if should_exchange_relay_records {
                     self.last_bootstrap_error = None;
                     self.start_relay_record_exchange(&peer_id);
                 }
                 let source = if self.bootstrap_peer_ids.contains(&peer_id) {
                     "bootstrap"
+                } else if self.relay_mesh_peer_ids.contains(&peer_id) {
+                    "relay_mesh"
                 } else {
                     "connection"
                 };
@@ -1824,6 +1931,7 @@ impl NetworkNode {
     /// Run the daemon event loop, processing both swarm events and incoming commands.
     pub async fn run_daemon_loop(&mut self, mut cmd_rx: mpsc::Receiver<DaemonCommand>) {
         let mut timeout_interval = tokio::time::interval(Duration::from_secs(1));
+        let mut relay_mesh_interval = tokio::time::interval(RELAY_MESH_EXPLORATION_INTERVAL);
 
         loop {
             tokio::select! {
@@ -1864,6 +1972,9 @@ impl NetworkNode {
                             .send_request(&provider, request);
                         self.fetch_manager.mark_request_sent(&content_id, req_id);
                     }
+                }
+                _ = relay_mesh_interval.tick() => {
+                    self.explore_relay_mesh();
                 }
             }
         }
@@ -2226,9 +2337,16 @@ impl NetworkNode {
 
     /// Run the event loop, processing swarm events until cancelled.
     pub async fn run_event_loop(&mut self) {
+        let mut relay_mesh_interval = tokio::time::interval(RELAY_MESH_EXPLORATION_INTERVAL);
         loop {
-            let event = self.swarm.select_next_some().await;
-            self.handle_swarm_event(event);
+            tokio::select! {
+                event = self.swarm.select_next_some() => {
+                    self.handle_swarm_event(event);
+                }
+                _ = relay_mesh_interval.tick() => {
+                    self.explore_relay_mesh();
+                }
+            }
         }
     }
 
