@@ -27,6 +27,10 @@
       box-sizing: border-box;
     }
 
+    [hidden] {
+      display: none !important;
+    }
+
     body {
       margin: 0;
       background:
@@ -382,6 +386,12 @@
       background: rgba(224, 168, 79, 0.1);
     }
 
+    .pill.bad {
+      color: #ffd6ce;
+      border-color: rgba(234, 111, 90, 0.45);
+      background: rgba(234, 111, 90, 0.1);
+    }
+
     .forms {
       display: grid;
       gap: 14px;
@@ -535,6 +545,17 @@
             <div class="identity-row">
               <span>Connectivity</span>
               <div class="mono" id="connectivity">--</div>
+            </div>
+            <div class="identity-row">
+              <span>Bootstrap</span>
+              <div>
+                <span class="pill" id="bootstrap-state">--</span>
+                <span class="secondary-text mono" id="bootstrap-detail">--</span>
+              </div>
+            </div>
+            <div class="identity-row" id="bootstrap-error-row" hidden>
+              <span>Bootstrap error</span>
+              <div class="mono" id="bootstrap-error">--</div>
             </div>
             <div class="identity-row">
               <span>Listen addresses</span>
@@ -809,6 +830,7 @@
       $("identity-address").textContent = identityAddress;
       $("peer-id").textContent = peerId;
       $("connectivity").textContent = `${status.nat_type || "unknown"} / relays ${status.active_relays ?? 0}`;
+      renderBootstrap(status);
       $("peer-mix").textContent = `direct ${status.direct_peers ?? 0} / relayed ${status.relayed_peers ?? 0}`;
 
       const addresses = status.listen_addresses || [];
@@ -828,6 +850,27 @@
       renderPublishedContent();
       renderPeers();
       renderCacheEntries();
+    }
+
+    function bootstrapStateClass(bootstrapState) {
+      if (bootstrapState === "connected") return "good";
+      if (bootstrapState === "bootstrapping") return "warn";
+      if (bootstrapState === "degraded") return "bad";
+      return "";
+    }
+
+    function renderBootstrap(status) {
+      const bootstrapState = status.bootstrap_state || "disconnected";
+      $("bootstrap-state").className = `pill ${bootstrapStateClass(bootstrapState)}`;
+      $("bootstrap-state").textContent = bootstrapState;
+      const configured = status.configured_bootstrap_relay_count ?? 0;
+      const effective = status.effective_bootstrap_relay_count ?? 0;
+      const connected = status.connected_bootstrap_peers ?? 0;
+      $("bootstrap-detail").textContent = `${connected} connected / ${effective} effective / ${configured} configured`;
+
+      const error = status.last_bootstrap_error || "";
+      $("bootstrap-error-row").hidden = !error;
+      $("bootstrap-error").textContent = error || "--";
     }
 
     function renderHomeRelay(homeRelay) {

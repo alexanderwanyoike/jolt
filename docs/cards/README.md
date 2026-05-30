@@ -81,7 +81,7 @@ The current focus is:
 | [023](023-bootstrap-management-ux.md) | AFK | Done | Add CLI UX for listing, adding, and removing bootstrap relay addresses. |
 | [024](024-dht-bootstrap-discovery-path.md) | AFK | Done | Prove Bob can discover Alice's update-log provider through a configured relay and DHT. |
 | [025](025-discovered-relay-peer-cache.md) | AFK | Ready | Cache useful discovered relay/node addresses for future starts. |
-| [026](026-bootstrap-observability.md) | AFK | Ready | Expose bootstrap state through status/API/dashboard. |
+| [026](026-bootstrap-observability.md) | AFK | Done | Expose bootstrap state through status/API/dashboard. |
 | [027](027-relay-gossip-v0.md) | HITL | Ready | Add relay-to-relay discovery-hint gossip after the DHT-first path is proven. |
 | [028](028-three-node-canary-harness.md) | AFK | Ready | Document/run Alice -> Relay -> Bob local test and real-world canary. |
 | [020](020-jolt-resolve-api-cli-dashboard.md) | AFK | Done | Let users resolve `.jolt` addresses through CLI, API, and dashboard. |
