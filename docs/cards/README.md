@@ -76,7 +76,7 @@ The current focus is:
 
 | Card | Type | Status | Summary |
 |---|---|---|---|
-| [001](001-current-state-and-test-harness.md) | AFK | Ready | Stabilize current test/dev ground and remove stale drift. |
+| [001](001-current-state-and-test-harness.md) | AFK | Done | Stabilize current test/dev ground and remove stale drift. |
 | [002](002-local-node-dashboard-v0.md) | AFK | Ready | Add localhost dashboard for node/relay debugging. |
 | [014](014-local-multi-node-demo-mode.md) | AFK | Ready after 002 | Make two local dashboard nodes connect and transfer content predictably. |
 | [003](003-testing-strategy-and-harness.md) | AFK | Done | Define and automate the test layers. |

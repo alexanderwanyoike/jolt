@@ -29,9 +29,9 @@ over the internet as a true peer-to-peer mesh.
 - All directions work. Content caches and re-shares through the mesh.
 
 ### Test Coverage
-- 95 tests across all crates
-- 7 patchbay NAT simulation tests (Home, Corporate, CGNAT, double NAT topologies)
-- Content transfer tests using real NetworkNode instances inside simulated networks
+- Deterministic Rust tests across the protocol, identity, store, node, network, and server crates
+- Ignored/manual patchbay NAT simulation tests for Home, Corporate, CGNAT, and double NAT topologies
+- TCP-backed content transfer tests using real `NetworkNode` instances
 - 3-node DHT discovery test: publish -> announce -> discover -> fetch
 
 ## Architecture
