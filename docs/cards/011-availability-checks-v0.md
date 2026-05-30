@@ -1,9 +1,9 @@
-# 009: Availability Checks v0
+# 011: Availability Checks v0
 
 **Type:** AFK  
 **Milestone:** M4.5  
-**Status:** Blocked  
-**Blocked by:** 009
+**Status:** Ready
+**Blocked by:** None
 
 ## Why
 

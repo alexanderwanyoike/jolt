@@ -2,8 +2,8 @@
 
 **Type:** AFK
 **Milestone:** M5
-**Status:** Blocked by 024
-**Blocked by:** 024
+**Status:** Ready
+**Blocked by:** None
 
 ## Why
 
