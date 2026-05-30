@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use jolt_core::{IdentityId, UpdateLogEntry};
+use jolt_core::{IdentityId, RelayRecord, RelayRecordCapability, UpdateLogEntry};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentRequest {
@@ -25,12 +25,27 @@ pub struct UpdateLogResponse {
     pub entries: Vec<UpdateLogEntry>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RelayExchangeRequest {
+    GetRelays {
+        limit: u16,
+        capabilities: Vec<RelayRecordCapability>,
+    },
+    AnnounceRelays {
+        records: Vec<RelayRecord>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RelayExchangeResponse {
+    Relays { records: Vec<RelayRecord> },
+    Announced { accepted: u16, rejected: u16 },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jolt_core::{
-        ContentId, IdentityId, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
-    };
+    use jolt_core::{ContentId, IdentityId, UpdateAction, UpdateLogEntry};
     use jolt_identity::NodeIdentity;
 
     #[test]
@@ -124,5 +139,52 @@ mod tests {
 
         assert_eq!(decoded, record);
         assert_eq!(decoded.verify_at(150), Ok(()));
+    }
+
+    #[test]
+    fn relay_exchange_get_relays_cbor_round_trip() {
+        let request = RelayExchangeRequest::GetRelays {
+            limit: 12,
+            capabilities: vec![RelayRecordCapability::Bootstrap],
+        };
+
+        let mut buf = Vec::new();
+        ciborium::into_writer(&request, &mut buf).unwrap();
+        let decoded: RelayExchangeRequest = ciborium::from_reader(&buf[..]).unwrap();
+
+        assert!(matches!(
+            decoded,
+            RelayExchangeRequest::GetRelays {
+                limit: 12,
+                capabilities
+            } if capabilities == vec![RelayRecordCapability::Bootstrap]
+        ));
+    }
+
+    #[test]
+    fn relay_exchange_records_cbor_round_trip() {
+        let identity = NodeIdentity::generate();
+        let record = RelayRecord::new(
+            identity.public_key_bytes(),
+            identity.peer_id().to_string(),
+            vec!["/ip4/127.0.0.1/tcp/4001".to_string()],
+            vec![RelayRecordCapability::Bootstrap],
+            100,
+            200,
+            |bytes| identity.sign(bytes),
+        )
+        .unwrap();
+        let response = RelayExchangeResponse::Relays {
+            records: vec![record.clone()],
+        };
+
+        let mut buf = Vec::new();
+        ciborium::into_writer(&response, &mut buf).unwrap();
+        let decoded: RelayExchangeResponse = ciborium::from_reader(&buf[..]).unwrap();
+
+        assert!(matches!(
+            decoded,
+            RelayExchangeResponse::Relays { records } if records == vec![record]
+        ));
     }
 }

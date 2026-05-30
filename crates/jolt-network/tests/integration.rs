@@ -1,9 +1,12 @@
 use std::time::Duration;
 
-use jolt_core::{ContentId, JoltAddress, UpdateAction, UpdateLogEntry};
+use jolt_core::{
+    ContentId, JoltAddress, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
+};
 use jolt_identity::{verify_signature, NodeIdentity};
 use jolt_network::{NetworkConfig, NetworkNode};
 use jolt_store::{CacheConfig, ContentStore};
+use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use tempfile::tempdir;
 
 fn make_store(dir: &std::path::Path) -> ContentStore {
@@ -20,6 +23,55 @@ fn signed_profile_log(identity: &NodeIdentity, label: &[u8]) -> Vec<UpdateLogEnt
         |bytes| identity.sign(bytes),
     )
     .unwrap()]
+}
+
+fn no_mdns_config() -> NetworkConfig {
+    NetworkConfig {
+        enable_mdns: false,
+        ..NetworkConfig::test_config()
+    }
+}
+
+fn relay_config() -> NetworkConfig {
+    NetworkConfig {
+        bootstrap_relay: true,
+        enable_mdns: false,
+        ..NetworkConfig::test_config()
+    }
+}
+
+fn relay_record(identity: &NodeIdentity, port: u16) -> RelayRecord {
+    RelayRecord::new(
+        identity.public_key_bytes(),
+        identity.peer_id().to_string(),
+        vec![format!("/ip4/127.0.0.1/tcp/{port}")],
+        vec![
+            RelayRecordCapability::Bootstrap,
+            RelayRecordCapability::Discovery,
+        ],
+        100,
+        4_102_444_800,
+        |bytes| identity.sign(bytes),
+    )
+    .unwrap()
+}
+
+async fn wait_for_listener(mut node: NetworkNode) -> NetworkNode {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = node.next_event().await;
+            node.handle_swarm_event(event);
+            if !node.listeners().is_empty() {
+                return node;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for listener")
+}
+
+fn listener_with_peer(addr: &Multiaddr, peer: &PeerId) -> Multiaddr {
+    addr.clone().with(Protocol::P2p(*peer))
 }
 
 #[tokio::test]
@@ -333,4 +385,66 @@ async fn connected_peer_address_is_cached_for_later_bootstrap() {
 
     assert_eq!(hints.len(), 1);
     assert!(hints[0].multiaddr.ends_with(&format!("/p2p/{peer_a}")));
+}
+
+#[tokio::test]
+async fn connected_relay_exchange_persists_learned_relays() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+
+    let dir_r1 = tempdir().unwrap();
+    let dir_tim = tempdir().unwrap();
+
+    let identity_r1 = NodeIdentity::generate();
+    let identity_r2 = NodeIdentity::generate();
+    let identity_r3 = NodeIdentity::generate();
+    let identity_tim = NodeIdentity::generate();
+
+    let store_r1 = make_store(dir_r1.path());
+    store_r1
+        .record_relay_record(relay_record(&identity_r2, 4002), 120)
+        .unwrap();
+    store_r1
+        .record_relay_record(relay_record(&identity_r3, 4003), 130)
+        .unwrap();
+
+    let mut node_r1 = NetworkNode::new_tcp(identity_r1, store_r1, relay_config()).unwrap();
+    node_r1.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r1 = wait_for_listener(node_r1).await;
+    let r1_addr = listener_with_peer(&node_r1.listeners()[0], node_r1.local_peer_id());
+
+    let r1_handle = tokio::spawn(async move {
+        node_r1.run_event_loop().await;
+    });
+
+    let mut tim_config = no_mdns_config();
+    tim_config.effective_bootstrap_relays = vec![r1_addr.to_string()];
+    let store_tim = make_store(dir_tim.path());
+    let mut node_tim = NetworkNode::new_tcp(identity_tim, store_tim, tim_config).unwrap();
+    node_tim.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    node_tim
+        .connect_peer_multiaddr(&r1_addr.to_string())
+        .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let event = node_tim.next_event().await;
+            node_tim.handle_swarm_event(event);
+            if node_tim.store().known_relay_count(200).unwrap() >= 2 {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for relay exchange");
+
+    let records = node_tim.store().load_relay_records(200).unwrap();
+    let relay_ids: Vec<_> = records
+        .iter()
+        .map(|record| record.relay_record.body.relay_id.clone())
+        .collect();
+
+    assert!(relay_ids.contains(&identity_r2.identity_id()));
+    assert!(relay_ids.contains(&identity_r3.identity_id()));
+
+    r1_handle.abort();
 }
