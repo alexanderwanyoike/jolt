@@ -1,8 +1,8 @@
-# dweb Architecture
+# jolt Architecture
 
 ## Overview
 
-A dweb node is a single binary that runs on a user's machine. It combines a P2P networking layer, a WASM application runtime, a local data store, and an HTTP server that serves a browser-based UI.
+A jolt node is a single binary that runs on a user's machine. It combines a P2P networking layer, a WASM application runtime, a local data store, and an HTTP server that serves a browser-based UI.
 
 ```mermaid
 block-beta
@@ -60,18 +60,18 @@ block-beta
 ## Crate Structure
 
 ```
-dweb/
+jolt/
   crates/
-    dweb-core/        # shared types, content addressing, manifests
-    dweb-identity/    # keypair management, signing, verification
-    dweb-crypto/      # encryption, key exchange, access control
-    dweb-network/     # libp2p setup, protocols, peer discovery
-    dweb-store/       # embedded database, per-app data isolation
-    dweb-runtime/     # wasmtime WASM sandbox, host API
-    dweb-apps/        # app lifecycle: install, update, remove, permissions
-    dweb-content/     # content publishing, fetching, caching
-    dweb-server/      # axum HTTP server, REST API, browser UI proxy
-    dweb-node/        # CLI entry point, node configuration, orchestration
+    jolt-core/        # shared types, content addressing, manifests
+    jolt-identity/    # keypair management, signing, verification
+    jolt-crypto/      # encryption, key exchange, access control
+    jolt-network/     # libp2p setup, protocols, peer discovery
+    jolt-store/       # embedded database, per-app data isolation
+    jolt-runtime/     # wasmtime WASM sandbox, host API
+    jolt-apps/        # app lifecycle: install, update, remove, permissions
+    jolt-content/     # content publishing, fetching, caching
+    jolt-server/      # axum HTTP server, REST API, browser UI proxy
+    jolt-node/        # CLI entry point, node configuration, orchestration
   web/                # browser UI (HTML/CSS/JS frontend)
 ```
 
@@ -79,24 +79,24 @@ dweb/
 
 ```mermaid
 graph TD
-    node[dweb-node] --> server[dweb-server]
-    node --> net2[dweb-network]
+    node[jolt-node] --> server[jolt-server]
+    node --> net2[jolt-network]
 
-    server --> apps[dweb-apps]
-    server --> id1[dweb-identity]
+    server --> apps[jolt-apps]
+    server --> id1[jolt-identity]
 
-    apps --> rt[dweb-runtime]
-    apps --> content[dweb-content]
+    apps --> rt[jolt-runtime]
+    apps --> content[jolt-content]
 
-    rt --> store[dweb-store]
-    rt --> core1[dweb-core]
+    rt --> store[jolt-store]
+    rt --> core1[jolt-core]
 
-    content --> net1[dweb-network]
-    content --> crypto[dweb-crypto]
-    content --> core2[dweb-core]
+    content --> net1[jolt-network]
+    content --> crypto[jolt-crypto]
+    content --> core2[jolt-core]
 
-    net2 --> id2[dweb-identity]
-    id2 --> core3[dweb-core]
+    net2 --> id2[jolt-identity]
+    id2 --> core3[jolt-core]
 ```
 
 ## Key Dependencies
@@ -117,7 +117,7 @@ graph TD
 
 ## Component Responsibilities
 
-### dweb-core
+### jolt-core
 
 Shared types used across all crates.
 
@@ -127,7 +127,7 @@ Shared types used across all crates.
 - `UpdateLog` -- append-only signed log of changes to a user's published content
 - Serialization formats
 
-### dweb-identity
+### jolt-identity
 
 Manages the user's cryptographic identity.
 
@@ -137,7 +137,7 @@ Manages the user's cryptographic identity.
 - Derive X25519 keys for encryption from Ed25519 identity
 - Identity export/import for backup
 
-### dweb-crypto
+### jolt-crypto
 
 Encryption and access control.
 
@@ -146,7 +146,7 @@ Encryption and access control.
 - Encrypt/decrypt content at rest
 - Key derivation for per-app secrets
 
-### dweb-network
+### jolt-network
 
 P2P networking layer built on libp2p.
 
@@ -157,7 +157,7 @@ P2P networking layer built on libp2p.
 - NAT traversal via relay nodes and hole punching
 - Bandwidth management and connection limits
 
-### dweb-store
+### jolt-store
 
 Local data persistence.
 
@@ -167,7 +167,7 @@ Local data persistence.
 - KV store API exposed to WASM apps via host functions
 - Storage quotas and garbage collection
 
-### dweb-runtime
+### jolt-runtime
 
 WASM application execution environment.
 
@@ -177,7 +177,7 @@ WASM application execution environment.
 - Resource limits (CPU time, memory, storage)
 - App isolation (each app runs in its own sandbox)
 
-### dweb-apps
+### jolt-apps
 
 Application lifecycle management.
 
@@ -187,7 +187,7 @@ Application lifecycle management.
 - App registry (list installed apps, metadata)
 - Permission management (grant/revoke capabilities per app)
 
-### dweb-content
+### jolt-content
 
 Content publishing and distribution.
 
@@ -197,7 +197,7 @@ Content publishing and distribution.
 - Update log management (append entries, resolve latest)
 - Pinning (explicitly cache and serve specific content)
 
-### dweb-server
+### jolt-server
 
 HTTP interface for the browser UI and apps.
 
@@ -206,9 +206,9 @@ HTTP interface for the browser UI and apps.
 - Proxy requests from browser to installed WASM apps
 - WebSocket support for real-time updates
 - Localhost-only binding (security)
-- Resolve `dweb://` URIs to local content (see below)
+- Resolve `jolt://` URIs to local content (see below)
 
-### dweb-node
+### jolt-node
 
 The entry point that ties everything together.
 
@@ -217,37 +217,37 @@ The entry point that ties everything together.
 - Bootstrap and initialization sequence
 - Graceful shutdown
 - Logging and diagnostics
-- Register `dweb://` protocol handler with the OS on install
+- Register `jolt://` protocol handler with the OS on install
 
-## Protocol Handler (`dweb://` links)
+## Protocol Handler (`jolt://` links)
 
-dweb registers a custom protocol handler with the operating system on install. This allows `dweb://` links to work anywhere -- browsers, email clients, chat apps, terminals -- without a browser extension.
+jolt registers a custom protocol handler with the operating system on install. This allows `jolt://` links to work anywhere -- browsers, email clients, chat apps, terminals -- without a browser extension.
 
 ### How it works
 
-1. On install, the node registers as the OS handler for the `dweb://` protocol
-2. User clicks a `dweb://` link anywhere on their system
-3. The OS routes it to the dweb node process
+1. On install, the node registers as the OS handler for the `jolt://` protocol
+2. User clicks a `jolt://` link anywhere on their system
+3. The OS routes it to the jolt node process
 4. The node resolves the link and opens it in the user's default browser via localhost
 
 ### URI format
 
 ```
-dweb://<peer-public-key>/<path>
-dweb://<content-id>
+jolt://<peer-public-key>/<path>
+jolt://<content-id>
 ```
 
 Examples:
 
 ```
-dweb://ed25519:a1b2c3d4/blog/hello-world    -> a user's published content
-dweb://ed25519:a1b2c3d4/apps/chat            -> a user's published app
-dweb://bafk...xyz                            -> content by hash (any provider)
+jolt://ed25519:a1b2c3d4/blog/hello-world    -> a user's published content
+jolt://ed25519:a1b2c3d4/apps/chat            -> a user's published app
+jolt://bafk...xyz                            -> content by hash (any provider)
 ```
 
 ### Resolution
 
-When the node receives a `dweb://` URI, it:
+When the node receives a `jolt://` URI, it:
 
 1. Parses the URI into either a peer key + path, or a raw ContentId
 2. For peer URIs: resolves the peer's update log to find the content at that path
@@ -258,8 +258,8 @@ When the node receives a `dweb://` URI, it:
 
 | Platform | Method |
 |---|---|
-| Linux | `.desktop` file in `~/.local/share/applications/` with `MimeType=x-scheme-handler/dweb` |
+| Linux | `.desktop` file in `~/.local/share/applications/` with `MimeType=x-scheme-handler/jolt` |
 | macOS | `CFBundleURLTypes` in the app's `Info.plist` |
-| Windows | Registry key under `HKEY_CLASSES_ROOT\dweb` |
+| Windows | Registry key under `HKEY_CLASSES_ROOT\jolt` |
 
 This is the same mechanism used by Zoom (`zoommtg://`), Spotify (`spotify://`), and Steam (`steam://`).

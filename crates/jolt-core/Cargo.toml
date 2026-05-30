@@ -1,0 +1,19 @@
+[package]
+name = "jolt-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+blake3 = { workspace = true }
+cid = { workspace = true }
+multihash = { workspace = true }
+multihash-codetable = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ed25519-dalek = { workspace = true }
+data-encoding = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+rand = { workspace = true }

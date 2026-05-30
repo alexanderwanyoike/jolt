@@ -1,0 +1,22 @@
+[package]
+name = "jolt-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+jolt-core = { workspace = true }
+jolt-network = { workspace = true }
+axum = { workspace = true }
+axum-extra = { workspace = true }
+tower-http = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+reqwest = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+jolt-identity = { workspace = true }
+jolt-store = { workspace = true }

@@ -1,10 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/dweb-core",
-    "crates/dweb-identity",
-    "crates/dweb-network",
-    "crates/dweb-node",
+    "crates/jolt-core",
+    "crates/jolt-identity",
+    "crates/jolt-store",
+    "crates/jolt-network",
+    "crates/jolt-server",
+    "crates/jolt-node",
 ]
 
 [workspace.package]
@@ -14,26 +16,30 @@ license = "MIT"
 
 [workspace.dependencies]
 # Internal crates
-dweb-core = { path = "crates/dweb-core" }
-dweb-identity = { path = "crates/dweb-identity" }
-dweb-network = { path = "crates/dweb-network" }
+jolt-core = { path = "crates/jolt-core" }
+jolt-identity = { path = "crates/jolt-identity" }
+jolt-store = { path = "crates/jolt-store" }
+jolt-network = { path = "crates/jolt-network" }
+jolt-server = { path = "crates/jolt-server" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
 # P2P networking
-libp2p = { version = "0.54", features = [
+libp2p = { version = "0.56", features = [
     "tokio",
     "noise",
-    "tcp",
-    "quic",
     "yamux",
+    "tcp",
     "mdns",
     "request-response",
     "cbor",
     "macros",
     "identify",
+    "kad",
 ] }
+libp2p-iroh = { git = "https://github.com/alexanderwanyoike/libp2p-iroh.git", branch = "main" }
+iroh = "0.97"
 
 # Cryptography
 ed25519-dalek = { version = "2", features = ["rand_core", "serde"] }
@@ -61,7 +67,14 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# HTTP server
+axum = "0.8"
+axum-extra = { version = "0.10", features = ["multipart"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+
 # Misc
 directories = "5"
 hex = "0.4"
+data-encoding = "2"
 tempfile = "3"

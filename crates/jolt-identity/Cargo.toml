@@ -1,0 +1,16 @@
+[package]
+name = "jolt-identity"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+jolt-core = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+libp2p = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

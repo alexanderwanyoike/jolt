@@ -2,11 +2,12 @@
 
 ## Principles
 
-1. **Data belongs to its owner.** Your data lives on your node. Period.
+1. **Data belongs to its owner.** Your keys and signed records define ownership. Nodes and relays may hold copies, but they are not the authority.
 2. **Apps don't own data.** An app is code that operates on your data. Uninstall the app, keep the data.
 3. **Apps are isolated.** Each app has its own data namespace. App A cannot read App B's data.
 4. **Public content is cacheable.** Other nodes may cache your public content for availability.
-5. **Private data never leaves your node unencrypted.** Encrypted backups are opt-in only.
+5. **Private data never leaves your node unencrypted.** Relays and caches may carry ciphertext without being able to read it.
+6. **The protocol is application-agnostic.** Profiles, feeds, galleries, games, timelines, and lenses are data above the protocol, not protocol primitives.
 
 ## Data Categories
 
@@ -15,7 +16,7 @@
 Data created by an app during use. Stored in a per-app isolated namespace on the user's node.
 
 ```
-~/.dweb/data/
+~/.jolt/data/
   apps/
     <app-content-id>/
       kv/           # key-value store (sled/sqlite)
@@ -40,7 +41,7 @@ This data:
 Content the user has explicitly published to the network. Content-addressed and signed.
 
 ```
-~/.dweb/data/
+~/.jolt/data/
   published/
     <content-id>/
       content       # the actual bytes
@@ -58,13 +59,14 @@ This content:
 - Is signed by the publisher's key
 - Can be cached by any node that fetches it
 - Is served to the network via the content fetch protocol
+- Can be pinned by a home relay at the owner's request
 
 ### 3. Cached Content (From Other Nodes)
 
 Content fetched from other nodes and cached locally for performance and availability.
 
 ```
-~/.dweb/data/
+~/.jolt/data/
   cache/
     <content-id>/
       content
@@ -84,7 +86,7 @@ This content:
 WASM binaries and assets for installed applications.
 
 ```
-~/.dweb/data/
+~/.jolt/data/
   installed_apps/
     <app-content-id>/
       app.wasm          # the WASM binary
@@ -225,8 +227,8 @@ The runtime enforces that WASM app A can never obtain a handle to app B's data s
 Users can export their data at any time:
 
 ```
-dweb export --app dweb-chat --format json > my-chat-history.json
-dweb export --all --format tar > my-dweb-data.tar
+jolt export --app jolt-chat --format json > my-chat-history.json
+jolt export --all --format tar > my-jolt-data.tar
 ```
 
 This is a core principle: your data is never trapped. You can:
@@ -239,7 +241,7 @@ This is a core principle: your data is never trapped. You can:
 
 ```toml
 [storage]
-total_limit = "10GB"          # total disk usage for dweb
+total_limit = "10GB"          # total disk usage for jolt
 cache_limit = "2GB"           # max cached content from other nodes
 per_app_limit = "500MB"       # max data per installed app
 published_limit = "5GB"       # max published content
@@ -252,12 +254,24 @@ When limits are reached:
 
 ## Redundancy and Backup
 
+### Relay Pinning
+
+Users can delegate availability to a relay. The relay pins owner-requested content and announces itself as a provider. The relay is replaceable and does not become the authority for the content.
+
+For v0, replication is owner-directed:
+
+```
+owner node -> selected relay(s)
+```
+
+Relays should not create durable relay-to-relay copies unless the owner explicitly authorizes mirroring in a future protocol version.
+
 ### Peer Pinning
 
 Users can ask trusted peers to pin their published content:
 
 ```
-dweb pin request --peer <peer-id> --content <content-id>
+jolt pin request --peer <peer-id> --content <content-id>
 ```
 
 The pinning peer stores a copy and serves it to the network. Mutual pinning arrangements ("I pin yours, you pin mine") improve availability for both parties.

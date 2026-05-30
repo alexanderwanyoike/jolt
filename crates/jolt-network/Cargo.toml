@@ -1,0 +1,25 @@
+[package]
+name = "jolt-network"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+jolt-core = { workspace = true }
+jolt-identity = { workspace = true }
+jolt-store = { workspace = true }
+libp2p = { workspace = true }
+libp2p-iroh = { workspace = true }
+iroh = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true }
+ciborium = { workspace = true }
+tracing-subscriber = { workspace = true }
+patchbay = "0.1"

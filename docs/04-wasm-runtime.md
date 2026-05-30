@@ -2,19 +2,19 @@
 
 ## Overview
 
-dweb runs applications as WebAssembly (WASM) modules in a sandboxed environment powered by wasmtime. Apps have zero access to the host system by default and interact with dweb exclusively through a capability-gated host API.
+jolt runs applications as WebAssembly (WASM) modules in a sandboxed environment powered by wasmtime. Apps have zero access to the host system by default and interact with jolt exclusively through a capability-gated host API.
 
 ## Execution Model
 
 ```mermaid
 graph TD
-    subgraph sandbox["dweb WASM Sandbox"]
+    subgraph sandbox["jolt WASM Sandbox"]
         subgraph app["App WASM Module"]
             Lang["Written in: Rust, Go, C#, C,<br/>JS via QuickJS, Python via RustPython"]
             Bin["Compiled to: .wasm binary"]
         end
 
-        subgraph hostapi["dweb Host API"]
+        subgraph hostapi["jolt Host API"]
             KV["KV Store"]
             Net["Network"]
             Id["Identity"]
@@ -43,16 +43,16 @@ graph TD
 
 ### Client-Side Apps
 
-Run in the user's browser. The WASM binary and assets (HTML, CSS, JS) are served to the browser by the local dweb node. The app executes entirely in the browser's WASM runtime.
+Run in the user's browser. The WASM binary and assets (HTML, CSS, JS) are served to the browser by the local jolt node. The app executes entirely in the browser's WASM runtime.
 
 - No server-side execution needed
-- Data syncs P2P between users via the dweb network layer
+- Data syncs P2P between users via the jolt network layer
 - Most apps should target this model
 - Cached and available even when the original publisher is offline
 
 ### Server-Side Apps
 
-Run on the user's dweb node in the wasmtime sandbox. Used for:
+Run on the user's jolt node in the wasmtime sandbox. Used for:
 - Background processing (indexing, syncing)
 - Serving dynamic content to the local browser
 - Tasks requiring persistent execution (not just when the browser is open)
@@ -63,7 +63,7 @@ Combine both: a client-side UI with a server-side background process.
 
 ```mermaid
 graph TD
-    subgraph hybrid["dweb-chat (Hybrid App)"]
+    subgraph hybrid["jolt-chat (Hybrid App)"]
         subgraph server["Server-side (runs on node)"]
             S1["Receive messages while browser is closed"]
             S2["Sync message history with peers"]
@@ -88,7 +88,7 @@ graph TD
 
 ## Host API
 
-The host API is the set of functions dweb exposes to WASM apps. Each function is gated behind a capability -- the app must have been granted the capability at install time to use it.
+The host API is the set of functions jolt exposes to WASM apps. Each function is gated behind a capability -- the app must have been granted the capability at install time to use it.
 
 ### Storage API
 
@@ -199,7 +199,7 @@ Apps declare required and optional capabilities in their manifest:
 
 ```toml
 [app]
-name = "dweb-chat"
+name = "jolt-chat"
 version = "1.0.0"
 developer = "ed25519:a1b2c3d4..."
 
@@ -218,7 +218,7 @@ http = true  # this app does not need external HTTP access
 At install time, the user sees:
 
 ```
-Installing dweb-chat v1.0.0
+Installing jolt-chat v1.0.0
 Developer: alice (ed25519:a1b2c3...)
 
 Required permissions:
@@ -263,13 +263,13 @@ WASM is the compilation target. Developers can write apps in any language that c
 | JavaScript | QuickJS compiled to WASM | Bundle QuickJS runtime + user code |
 | Python | RustPython or CPython-WASM | Heavier, experimental |
 
-dweb will provide SDK crates/packages for popular languages that wrap the host API into idiomatic bindings:
+jolt will provide SDK crates/packages for popular languages that wrap the host API into idiomatic bindings:
 
 ```
-dweb-sdk-rust     # Rust crate
-dweb-sdk-js       # npm package (for QuickJS target)
-dweb-sdk-go       # Go module (for TinyGo target)
-dweb-sdk-dotnet   # NuGet package
+jolt-sdk-rust     # Rust crate
+jolt-sdk-js       # npm package (for QuickJS target)
+jolt-sdk-go       # Go module (for TinyGo target)
+jolt-sdk-dotnet   # NuGet package
 ```
 
 ## App Isolation

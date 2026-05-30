@@ -2,7 +2,9 @@
 
 ## Overview
 
-dweb networking is built on libp2p, providing peer discovery, content routing, NAT traversal, and encrypted transport. The network has no central servers -- only peer nodes.
+jolt networking is built on libp2p and iroh, providing peer discovery, content routing, NAT traversal, relays, and encrypted transport. The network has no required central server -- only user nodes and relay nodes.
+
+Relays are ordinary jolt nodes with public reachability and extra responsibilities. They may help with discovery, NAT traversal, content pinning, and serving. They are replaceable carriers, not authorities over identity or content.
 
 ## Transport
 
@@ -20,15 +22,17 @@ All transports use the Noise protocol for encryption and peer authentication.
 
 ### Bootstrap Nodes
 
-On first launch, a node connects to a set of well-known bootstrap nodes to join the DHT. Bootstrap nodes are ordinary dweb nodes that are publicly reachable and have agreed to serve as entry points.
+On first launch, a node connects to a set of well-known bootstrap nodes to join the DHT. Bootstrap nodes are ordinary jolt nodes that are publicly reachable and have agreed to serve as entry points.
 
 ```
 Bootstrap list (hardcoded + user-configurable):
-  /dns4/bootstrap1.dweb.network/tcp/4001/p2p/QmBootstrap1...
-  /dns4/bootstrap2.dweb.network/tcp/4001/p2p/QmBootstrap2...
+  /dns4/bootstrap1.jolt.network/tcp/4001/p2p/QmBootstrap1...
+  /dns4/bootstrap2.jolt.network/tcp/4001/p2p/QmBootstrap2...
 ```
 
 Bootstrap nodes do not have special authority. They only help new nodes discover other peers. Anyone can run a bootstrap node.
+
+Some relays may be discovery-only. A discovery relay helps nodes find peers and provider records, but does not accept content pinning.
 
 ### Kademlia DHT
 
@@ -69,7 +73,7 @@ Connected peers periodically exchange lists of known peers. This helps the netwo
 
 ## NAT Traversal
 
-Most home and mobile networks use NAT, which prevents inbound connections. dweb handles this with multiple strategies:
+Most home and mobile networks use NAT, which prevents inbound connections. jolt handles this with multiple strategies:
 
 ### 1. QUIC Hole Punching
 
@@ -103,6 +107,10 @@ Relay is a fallback, not the default. Relayed connections are:
 - Limited in bandwidth (relays impose quotas)
 - Still end-to-end encrypted (relay cannot read content)
 
+In addition to traffic relay, jolt uses the term relay for delegated availability. A user's home relay can pin that user's signed/encrypted content and announce provider records so the content remains reachable when the user's personal device is offline.
+
+Traffic relay and persistence relay are separate capabilities. A node may offer one, both, or neither.
+
 ### 3. UPnP / NAT-PMP
 
 The node attempts to configure port forwarding on the router automatically. Works on many home networks without user intervention.
@@ -121,9 +129,9 @@ graph TD
 
 ## Protocols
 
-dweb defines custom libp2p protocols for different operations:
+jolt defines custom libp2p protocols for different operations:
 
-### `/dweb/content/1.0.0` -- Content Fetch
+### `/jolt/content/1.0.0` -- Content Fetch
 
 Request and serve content by ContentId.
 
@@ -141,7 +149,20 @@ sequenceDiagram
     Req->>Req: Cache content locally
 ```
 
-### `/dweb/updatelog/1.0.0` -- Update Log Sync
+### `/jolt/pin/1.0.0` -- Relay Pinning
+
+Request that a relay intentionally keep content available.
+
+For v0, pinning is owner-directed: the user's node chooses relays and uploads content to them. Relays do not independently replicate durable copies to other relays.
+
+```
+Request:  { owner: PeerId, content_id: ContentId, record_id: Option<ContentId>, signature: Signature }
+Response: { accepted: bool, reason: Option<String> }
+```
+
+The signature proves that the owner requested this pin. A relay may reject a pin request for any local reason: capacity, policy, unknown user, invalid signature, or unsupported content.
+
+### `/jolt/updatelog/1.0.0` -- Update Log Sync
 
 Synchronize a user's update log (for mutable content resolution).
 
@@ -156,7 +177,7 @@ sequenceDiagram
     Req->>Req: Append to local copy
 ```
 
-### `/dweb/appsync/1.0.0` -- App Data Sync
+### `/jolt/appsync/1.0.0` -- App Data Sync
 
 Sync app-specific data between peers running the same app. This is the protocol apps use to exchange data (messages, posts, state).
 
@@ -170,7 +191,7 @@ SyncType:
   - Custom: app-defined protocol
 ```
 
-### `/dweb/message/1.0.0` -- Direct Messaging
+### `/jolt/message/1.0.0` -- Direct Messaging
 
 Send encrypted messages between peers.
 

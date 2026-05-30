@@ -2,7 +2,13 @@
 
 ## Overview
 
-dweb distributes content across the network using content addressing and peer-to-peer transfers. Popular content naturally replicates as more nodes cache it, improving availability and performance. This is particularly important for bandwidth-heavy use cases like video and music streaming.
+jolt distributes content across the network using content addressing and peer-to-peer transfers. Popular content naturally replicates as more nodes cache it, improving availability and performance. This is particularly important for bandwidth-heavy use cases like video and music streaming.
+
+Availability is not magic. If the publisher's node is offline, some other online node must have the content. jolt's answer is owner-directed relay pinning plus opportunistic caching:
+
+- **Pinning** is intentional. The owner or local user asks a node to keep content.
+- **Caching** is opportunistic. A node may keep content it fetched and may evict it later.
+- **Mirroring** is future work. Owner-authorized relay-to-relay replication can be added later.
 
 ## Content Publishing
 
@@ -17,6 +23,16 @@ flowchart TD
     ManifestHash --> Sign["Sign everything with publisher's key"]
     Sign --> DHT["Announce provider records to DHT"]
     DHT --> Log["Add update log entry"]
+```
+
+If the user has a home relay, publishing also asks that relay to pin the content and the signed update record:
+
+```mermaid
+flowchart TD
+    Publish["Publish content locally"] --> Record["Sign update record"]
+    Record --> Pin["Ask home relay to pin content"]
+    Pin --> Announce["Relay announces provider records"]
+    Announce --> Fetch["Other nodes can resolve and fetch while publisher is offline"]
 ```
 
 ### Chunking
@@ -144,12 +160,15 @@ Automatically cached:
   - Frequently accessed public content from subscribed peers
 
 Not cached:
-  - Private/encrypted content from other users (no point, can't read it)
   - Content explicitly marked no-cache by publisher
+
+May be cached but unreadable:
+  - Private/encrypted content from other users
+  - The cache can improve availability even if the caching node cannot decrypt it
 
 Pinned (cached permanently until unpinned):
   - Content the user explicitly pins
-  - Content from redundancy group members
+  - Content the owner asked this relay to pin
   - Installed app binaries
 ```
 
@@ -209,45 +228,29 @@ Live content uses a different model since content isn't pre-chunked:
 
 ## Content Availability
 
-### Availability Tiers
+The honest rule is:
 
 ```
-Tier 1: Always available
-  - User's own published content (while node is online)
-  - Pinned content on user's node
-  - Content replicated by redundancy group
-
-Tier 2: Probably available
-  - Popular content cached by many nodes
-  - Content from active peers who are usually online
-
-Tier 3: Sometimes available
-  - Content from peers who are rarely online
-  - Unpopular content only cached by a few nodes
-
-Tier 4: Offline
-  - Publisher offline, no cache anywhere
-  - Display: "This content is currently unavailable"
-  - Queue for fetch when any provider comes online
+Content is available while at least one node that has it is online and willing to serve it.
 ```
 
-### Improving Availability
-
-Strategies in order of effort:
+Availability comes from:
 
 ```
-1. Caching (automatic)
-   More viewers = more cache copies = more availability
+1. The publisher's node
+   Available while the user's own node is online.
 
-2. Pinning peers (easy, social)
-   Ask a friend to pin your content: dweb pin request <peer>
+2. Home relay pinning
+   The user's relay keeps selected published content online.
 
-3. Redundancy groups (reliable, cooperative)
-   Join a group of 5-10 nodes that keep each other's content alive
+3. Owner-directed multi-relay pinning
+   The user's node may upload and pin content on more than one relay.
 
-4. Always-on node (guaranteed)
-   Run dweb on a Raspberry Pi, old laptop, or $5/month VPS
+4. Cache-on-fetch
+   Nodes that fetch content may cache and serve it.
 ```
+
+Relays should not silently create durable copies on other relays in v0. Replication is owner-directed so the user's key remains the authority over intentional persistence.
 
 ### Unavailability UX
 
@@ -267,13 +270,12 @@ graph TD
     style offline_ux fill:#1a1a2e,stroke:#e94560,color:#fff
 ```
 
-## Bandwidth Economics
+## Bandwidth Contribution
 
-dweb has no built-in token or payment system for bandwidth. Instead, it relies on:
+jolt has no built-in token or payment system for bandwidth. For the core protocol, payment is out of scope. Participation relies on:
 
 1. **Reciprocity** -- nodes that download also upload (cache sharing)
 2. **Social incentive** -- redundancy groups are mutual arrangements
 3. **Self-interest** -- caching popular content means faster access for yourself too
-4. **Optional tipping** -- apps can integrate external payment for premium content
 
-This avoids the complexity of token economics while still incentivizing participation. The network functions like BitTorrent: most users contribute by default because the protocol is designed that way.
+This avoids the complexity of token economics in the core protocol. The network functions like BitTorrent: most users contribute by default because the protocol is designed that way.
