@@ -91,6 +91,8 @@ Coverage includes:
 - Recursive forwarding where Tim only knows R1 and discovers Alice through an
   R1 -> R2 -> R3 -> R4 relay chain.
 - Existing DHT-backed update-log provider discovery still passes.
+- A real multi-process demo script:
+  `./scripts/test-identity-provider-forwarding-process.sh`.
 
 ## One-Machine Process Demo
 
@@ -130,6 +132,16 @@ The lookup fails clearly if ttl is too small
 ```
 
 No Hetzner canary is required for this card.
+
+The local process demo is automated by:
+
+```sh
+./scripts/test-identity-provider-forwarding-process.sh
+```
+
+It starts five actual `jolt` daemons with `--no-mdns`, publishes Alice content
+on R4, resolves and fetches from Tim through R1, and checks the daemon logs for
+relay identity-provider query forwarding.
 
 ## Non-Goals
 

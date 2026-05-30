@@ -849,6 +849,10 @@ impl NetworkNode {
             .seen_identity_provider_queries
             .insert(query_id.clone(), Instant::now())
             .is_some();
+        debug!(
+            "Identity provider query {query_id} for {identity}: {} local candidates, ttl={ttl}",
+            providers.len()
+        );
 
         if already_seen || ttl == 0 || deadline_unix_ms <= now_ms || providers.len() >= limit {
             self.respond_identity_providers(channel, query_id, identity, providers, limit);
@@ -859,6 +863,10 @@ impl NetworkNode {
             self.respond_identity_providers(channel, query_id, identity, providers, limit);
             return;
         };
+        debug!(
+            "Forwarding identity provider query {query_id} for {identity} to relay {next_peer} with ttl={}",
+            ttl.saturating_sub(1)
+        );
 
         let request_id = self.swarm.behaviour_mut().relay_exchange.send_request(
             &next_peer,
@@ -2081,6 +2089,11 @@ impl NetworkNode {
                     if let Some(mut pending) =
                         self.pending_identity_provider_forwards.remove(&request_id)
                     {
+                        debug!(
+                            "Received {} forwarded identity provider candidates for {}",
+                            providers.len(),
+                            identity
+                        );
                         pending.providers.extend(providers);
                         self.respond_identity_providers(
                             pending.channel,
@@ -2090,6 +2103,11 @@ impl NetworkNode {
                             usize::from(IDENTITY_PROVIDER_QUERY_LIMIT),
                         );
                     } else {
+                        debug!(
+                            "Received {} identity provider candidates for {}",
+                            providers.len(),
+                            identity
+                        );
                         let providers =
                             self.record_identity_provider_candidates(&identity, providers);
                         if let Some(provider) = providers.first() {
