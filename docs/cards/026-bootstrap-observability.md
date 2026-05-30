@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** M5
-**Status:** Ready
+**Status:** Done
 **Blocked by:** None
 
 ## Why
@@ -32,12 +32,12 @@ Show enough context to debug:
 
 ## Acceptance Criteria
 
-- [ ] Node status includes bootstrap state.
-- [ ] Node status includes configured and effective bootstrap relay counts.
-- [ ] Node status includes connected bootstrap peer count.
-- [ ] Node status can represent disconnected, bootstrapping, connected, and degraded states.
-- [ ] Dashboard renders bootstrap state without requiring logs.
-- [ ] Tests cover status mapping for the main bootstrap states.
+- [x] Node status includes bootstrap state.
+- [x] Node status includes configured and effective bootstrap relay counts.
+- [x] Node status includes connected bootstrap peer count.
+- [x] Node status can represent disconnected, bootstrapping, connected, and degraded states.
+- [x] Dashboard renders bootstrap state without requiring logs.
+- [x] Tests cover status mapping for the main bootstrap states.
 
 ## Non-Goals
 

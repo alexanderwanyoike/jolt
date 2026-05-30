@@ -34,6 +34,20 @@ pub async fn run() -> Result<()> {
                         status["connected_peers"].as_u64().unwrap_or(0)
                     );
                     println!(
+                        "  Bootstrap:  {} ({} connected / {} effective / {} configured)",
+                        status["bootstrap_state"].as_str().unwrap_or("unknown"),
+                        status["connected_bootstrap_peers"].as_u64().unwrap_or(0),
+                        status["effective_bootstrap_relay_count"]
+                            .as_u64()
+                            .unwrap_or(0),
+                        status["configured_bootstrap_relay_count"]
+                            .as_u64()
+                            .unwrap_or(0)
+                    );
+                    if let Some(error) = status["last_bootstrap_error"].as_str() {
+                        println!("  Bootstrap error: {error}");
+                    }
+                    println!(
                         "  Published:  {}",
                         status["published_count"].as_u64().unwrap_or(0)
                     );

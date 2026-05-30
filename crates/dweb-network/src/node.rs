@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::str::FromStr;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -135,6 +135,10 @@ pub struct NetworkNode {
     configured_bootstrap_relays: Vec<String>,
     /// Bootstrap relays used for this daemon start.
     effective_bootstrap_relays: Vec<String>,
+    /// Peer IDs parsed from effective bootstrap relay multiaddrs.
+    bootstrap_peer_ids: HashSet<libp2p::PeerId>,
+    /// Most recent bootstrap failure, if known.
+    last_bootstrap_error: Option<String>,
     /// Whether this node is intentionally acting as a bootstrap/discovery relay.
     bootstrap_relay: bool,
     /// User-selected home relay for delegated availability.
@@ -223,6 +227,8 @@ impl NetworkNode {
 
         let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
 
+        let bootstrap_peer_ids = Self::parse_bootstrap_peer_ids(&config.effective_bootstrap_relays);
+
         Ok(Self {
             swarm,
             identity,
@@ -243,6 +249,8 @@ impl NetworkNode {
             transport_name: "iroh",
             configured_bootstrap_relays: config.configured_bootstrap_relays,
             effective_bootstrap_relays: config.effective_bootstrap_relays,
+            bootstrap_peer_ids,
+            last_bootstrap_error: None,
             bootstrap_relay: config.bootstrap_relay,
             home_relay: config.home_relay,
         })
@@ -322,6 +330,8 @@ impl NetworkNode {
 
         let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
 
+        let bootstrap_peer_ids = Self::parse_bootstrap_peer_ids(&config.effective_bootstrap_relays);
+
         Ok(Self {
             swarm,
             identity,
@@ -342,9 +352,19 @@ impl NetworkNode {
             transport_name: "tcp",
             configured_bootstrap_relays: config.configured_bootstrap_relays,
             effective_bootstrap_relays: config.effective_bootstrap_relays,
+            bootstrap_peer_ids,
+            last_bootstrap_error: None,
             bootstrap_relay: config.bootstrap_relay,
             home_relay: config.home_relay,
         })
+    }
+
+    fn parse_bootstrap_peer_ids(relays: &[String]) -> HashSet<libp2p::PeerId> {
+        relays
+            .iter()
+            .filter_map(|addr| crate::bootstrap::parse_bootstrap_addr(addr).ok())
+            .map(|(peer_id, _)| peer_id)
+            .collect()
     }
 
     /// Start listening on a multiaddr.
@@ -730,6 +750,30 @@ impl NetworkNode {
             .collect()
     }
 
+    fn connected_bootstrap_peer_count(&self) -> usize {
+        self.swarm
+            .connected_peers()
+            .filter(|peer| self.bootstrap_peer_ids.contains(peer))
+            .count()
+    }
+
+    fn bootstrap_state(&self, connected_bootstrap_peers: usize) -> String {
+        if self.effective_bootstrap_relays.is_empty() {
+            if self.swarm.connected_peers().next().is_some() {
+                "connected"
+            } else {
+                "disconnected"
+            }
+        } else if connected_bootstrap_peers > 0 {
+            "connected"
+        } else if self.last_bootstrap_error.is_some() {
+            "degraded"
+        } else {
+            "bootstrapping"
+        }
+        .to_string()
+    }
+
     fn current_local_paths(&self) -> HashMap<String, (ContentId, u64)> {
         let identity = self.identity.identity_id();
         let mut current_paths: HashMap<String, (ContentId, u64)> = HashMap::new();
@@ -905,6 +949,7 @@ impl NetworkNode {
     pub fn bootstrap_dht(&mut self, bootstrap_addrs: &[Multiaddr]) -> Result<(), NetworkError> {
         for addr in bootstrap_addrs {
             let (peer_id, transport) = crate::bootstrap::parse_bootstrap_addr(&addr.to_string())?;
+            self.bootstrap_peer_ids.insert(peer_id);
             // Add address to Kademlia routing table
             // For iroh transport, use the /p2p/<peer_id> addr; for TCP, use the transport addr
             let kad_addr = if transport.iter().count() == 0 {
@@ -919,16 +964,21 @@ impl NetworkNode {
 
             // Dial the full multiaddr so iroh can extract the NodeId
             if let Err(e) = self.swarm.dial(addr.clone()) {
-                warn!("Failed to dial bootstrap peer {peer_id}: {e}");
+                let message = format!("Failed to dial bootstrap peer {peer_id}: {e}");
+                warn!("{message}");
+                self.last_bootstrap_error = Some(message);
             }
             info!("Added bootstrap peer: {peer_id}");
         }
 
-        self.swarm
-            .behaviour_mut()
-            .kademlia
-            .bootstrap()
-            .map_err(|e| NetworkError::Dht(format!("Bootstrap failed: {e:?}")))?;
+        match self.swarm.behaviour_mut().kademlia.bootstrap() {
+            Ok(_) => {}
+            Err(e) => {
+                let message = format!("Bootstrap failed: {e:?}");
+                self.last_bootstrap_error = Some(message.clone());
+                return Err(NetworkError::Dht(message));
+            }
+        }
 
         info!("DHT bootstrap initiated");
         Ok(())
@@ -1364,7 +1414,9 @@ impl NetworkNode {
                                 info!("DHT bootstrap step: {} remaining", ok.num_remaining);
                             }
                             libp2p::kad::QueryResult::Bootstrap(Err(e)) => {
-                                warn!("DHT bootstrap error: {e:?}");
+                                let message = format!("DHT bootstrap error: {e:?}");
+                                warn!("{message}");
+                                self.last_bootstrap_error = Some(message);
                             }
                             libp2p::kad::QueryResult::StartProviding(Ok(_)) => {
                                 info!("DHT provider announcement confirmed");
@@ -1457,6 +1509,9 @@ impl NetworkNode {
                     .unwrap_or(true);
                 if dominated {
                     self.peer_connections.insert(peer_id, conn_info);
+                }
+                if self.bootstrap_peer_ids.contains(&peer_id) {
+                    self.last_bootstrap_error = None;
                 }
 
                 // Notify fetch manager in case this is a provider we're waiting for
@@ -1665,6 +1720,7 @@ impl NetworkNode {
                     .values()
                     .filter(|c| c.is_relayed)
                     .count();
+                let connected_bootstrap_peers = self.connected_bootstrap_peer_count();
                 let status = NodeStatus {
                     peer_id: self.swarm.local_peer_id().to_string(),
                     identity_address: self.identity.jolt_address().to_string(),
@@ -1678,8 +1734,13 @@ impl NetworkNode {
                     cached_count: self.store.list_entries().len(),
                     listen_addresses: self.swarm.listeners().map(|a| a.to_string()).collect(),
                     bootstrap_relay: self.bootstrap_relay,
+                    bootstrap_state: self.bootstrap_state(connected_bootstrap_peers),
                     configured_bootstrap_relays: self.configured_bootstrap_relays.clone(),
+                    configured_bootstrap_relay_count: self.configured_bootstrap_relays.len(),
                     effective_bootstrap_relays: self.effective_bootstrap_relays.clone(),
+                    effective_bootstrap_relay_count: self.effective_bootstrap_relays.len(),
+                    connected_bootstrap_peers,
+                    last_bootstrap_error: self.last_bootstrap_error.clone(),
                     home_relay: self.home_relay.clone(),
                 };
                 let _ = response_tx.send(status);
@@ -2140,6 +2201,11 @@ mod tests {
 
         let status = handle.status().await.unwrap();
         assert!(status.bootstrap_relay);
+        assert_eq!(status.bootstrap_state, "bootstrapping");
+        assert_eq!(status.configured_bootstrap_relay_count, 1);
+        assert_eq!(status.effective_bootstrap_relay_count, 2);
+        assert_eq!(status.connected_bootstrap_peers, 0);
+        assert_eq!(status.last_bootstrap_error, None);
         assert_eq!(
             status.configured_bootstrap_relays,
             vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured"]
@@ -2154,6 +2220,34 @@ mod tests {
         assert_eq!(
             status.home_relay.unwrap().multiaddr,
             "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured"
+        );
+
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_daemon_status_reports_degraded_bootstrap_after_error() {
+        let dir = tempdir().unwrap();
+        let mut config = NetworkConfig::test_config();
+        config.effective_bootstrap_relays =
+            vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string()];
+        let mut node = make_node_with_config(dir.path(), config);
+        node.last_bootstrap_error = Some("DHT bootstrap failed".to_string());
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx.clone());
+
+        let daemon = tokio::spawn(async move {
+            node.run_daemon_loop(cmd_rx).await;
+        });
+
+        let status = handle.status().await.unwrap();
+        assert_eq!(status.bootstrap_state, "degraded");
+        assert_eq!(status.connected_bootstrap_peers, 0);
+        assert_eq!(
+            status.last_bootstrap_error,
+            Some("DHT bootstrap failed".to_string())
         );
 
         handle.shutdown().await.unwrap();

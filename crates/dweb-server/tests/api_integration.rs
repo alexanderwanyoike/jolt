@@ -129,6 +129,7 @@ async fn test_dashboard_root_endpoint() {
     assert!(body.contains("/api/v1/status"));
     assert!(body.contains("/api/v1/publish"));
     assert!(body.contains("/api/v1/published"));
+    assert!(body.contains("bootstrap-state"));
     assert!(body.contains("publish-path"));
     assert!(body.contains("fetch-target"));
     assert!(body.contains("/api/v1/peers/connect"));
@@ -207,6 +208,11 @@ async fn test_status_endpoint() {
         body["effective_bootstrap_relays"].as_array().unwrap().len(),
         0
     );
+    assert_eq!(body["bootstrap_state"], "disconnected");
+    assert_eq!(body["configured_bootstrap_relay_count"], 0);
+    assert_eq!(body["effective_bootstrap_relay_count"], 0);
+    assert_eq!(body["connected_bootstrap_peers"], 0);
+    assert!(body["last_bootstrap_error"].is_null());
     assert!(body["home_relay"].is_null());
 
     handle.shutdown().await.ok();
@@ -244,6 +250,55 @@ async fn test_status_endpoint_reports_home_relay_config() {
     assert_eq!(body["home_relay"]["api_url"], "http://127.0.0.1:9862");
 
     handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_status_endpoint_reports_connected_bootstrap_peer() {
+    let relay_dir = tempfile::tempdir().unwrap();
+    let alice_dir = tempfile::tempdir().unwrap();
+    let relay_p2p = free_tcp_port();
+    let alice_p2p = free_tcp_port();
+
+    let relay_identity = NodeIdentity::generate();
+    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+        .unwrap();
+    let (_relay_api, relay_handle, _relay_dir) =
+        start_test_server_from_node(relay, relay_dir).await;
+    let relay_peer = relay_handle.status().await.unwrap().peer_id;
+    let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
+    let relay_addr: Multiaddr = relay_multiaddr.parse().unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut alice_config = no_mdns_config();
+    alice_config.effective_bootstrap_relays = vec![relay_multiaddr.clone()];
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, alice_config).unwrap();
+    alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
+        .unwrap();
+    alice.bootstrap_dht(&[relay_addr]).unwrap();
+    let (alice_api, alice_handle, _alice_dir) = start_test_server_from_node(alice, alice_dir).await;
+    wait_for_connected_peers(&alice_handle, 1).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{}/api/v1/status", base_url(alice_api)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["bootstrap_state"], "connected");
+    assert_eq!(body["effective_bootstrap_relay_count"], 1);
+    assert_eq!(body["connected_bootstrap_peers"], 1);
+    assert!(body["last_bootstrap_error"].is_null());
+
+    alice_handle.shutdown().await.ok();
+    relay_handle.shutdown().await.ok();
 }
 
 #[tokio::test]
