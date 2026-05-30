@@ -40,6 +40,14 @@ struct PendingUpdateLogPin {
     response_tx: oneshot::Sender<Result<u64, NetworkError>>,
 }
 
+struct PendingDaemonResolve {
+    address: JoltAddress,
+    now: Option<u64>,
+    provider: libp2p::PeerId,
+    response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
+    deadline: Instant,
+}
+
 /// Tracks connection quality for a connected peer.
 #[derive(Debug, Clone)]
 pub struct PeerConnectionInfo {
@@ -106,15 +114,7 @@ pub struct NetworkNode {
             oneshot::Sender<Result<ResolvedJoltTarget, NetworkError>>,
         ),
     >,
-    pending_daemon_resolutions: HashMap<
-        OutboundRequestId,
-        (
-            JoltAddress,
-            Option<u64>,
-            libp2p::PeerId,
-            oneshot::Sender<Result<ResolveResponse, NetworkError>>,
-        ),
-    >,
+    pending_daemon_resolutions: HashMap<OutboundRequestId, PendingDaemonResolve>,
     pending_resolves: HashMap<IdentityId, Vec<PendingResolve>>,
     /// Providers discovered via DHT: content_id string -> provider PeerIds
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
@@ -908,8 +908,16 @@ impl NetworkNode {
             .behaviour_mut()
             .update_log_sync
             .send_request(provider, request);
-        self.pending_daemon_resolutions
-            .insert(request_id, (address, now, *provider, response_tx));
+        self.pending_daemon_resolutions.insert(
+            request_id,
+            PendingDaemonResolve {
+                address,
+                now,
+                provider: *provider,
+                response_tx,
+                deadline: Instant::now() + self.resolve_timeout,
+            },
+        );
     }
 
     fn request_pending_resolves_from_provider(
@@ -954,6 +962,18 @@ impl NetworkNode {
 
         for identity in empty {
             self.pending_resolves.remove(&identity);
+        }
+
+        let timed_out: Vec<_> = self
+            .pending_daemon_resolutions
+            .iter()
+            .filter_map(|(request_id, pending)| (pending.deadline <= now).then_some(*request_id))
+            .collect();
+
+        for request_id in timed_out {
+            if let Some(pending) = self.pending_daemon_resolutions.remove(&request_id) {
+                let _ = pending.response_tx.send(Err(NetworkError::Timeout));
+            }
         }
     }
 
@@ -1328,21 +1348,26 @@ impl NetworkNode {
                             .and_then(|_| self.resolve_cached_jolt_address(&address, now))
                     };
                     let _ = tx.send(result);
-                } else if let Some((address, now, _provider, tx)) =
-                    self.pending_daemon_resolutions.remove(&request_id)
-                {
+                } else if let Some(pending) = self.pending_daemon_resolutions.remove(&request_id) {
                     let result = if response.entries.is_empty() {
                         Err(NetworkError::Protocol(format!(
                             "No update log entries returned for {}",
-                            address.identity()
+                            pending.address.identity()
                         )))
                     } else {
-                        self.store_verified_update_log(address.identity().clone(), response.entries)
-                            .and_then(|_| {
-                                self.resolve_response_from_cache(&address, now, "network")
-                            })
+                        self.store_verified_update_log(
+                            pending.address.identity().clone(),
+                            response.entries,
+                        )
+                        .and_then(|_| {
+                            self.resolve_response_from_cache(
+                                &pending.address,
+                                pending.now,
+                                "network",
+                            )
+                        })
                     };
-                    let _ = tx.send(result);
+                    let _ = pending.response_tx.send(result);
                 }
             }
 
@@ -1389,16 +1414,21 @@ impl NetworkNode {
                         let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
                     }
                 }
-                if let Some((address, now, provider, tx)) =
-                    self.pending_daemon_resolutions.remove(&request_id)
-                {
+                if let Some(pending) = self.pending_daemon_resolutions.remove(&request_id) {
                     if let Some(next_provider) = self.take_discovered_update_log_provider_except(
-                        address.identity(),
-                        Some(&provider),
+                        pending.address.identity(),
+                        Some(&pending.provider),
                     ) {
-                        self.request_daemon_resolve_from_provider(address, now, &next_provider, tx);
+                        self.request_daemon_resolve_from_provider(
+                            pending.address,
+                            pending.now,
+                            &next_provider,
+                            pending.response_tx,
+                        );
                     } else {
-                        let _ = tx.send(Err(NetworkError::Protocol(error.to_string())));
+                        let _ = pending
+                            .response_tx
+                            .send(Err(NetworkError::Protocol(error.to_string())));
                     }
                 }
             }
@@ -2100,9 +2130,27 @@ mod tests {
             Err(oneshot::error::TryRecvError::Empty)
         ));
         assert_eq!(node.pending_daemon_resolutions.len(), 1);
-        let (_address, _now, provider, _tx) =
-            node.pending_daemon_resolutions.values().next().unwrap();
-        assert_eq!(*provider, fallback_provider);
+        let pending = node.pending_daemon_resolutions.values().next().unwrap();
+        assert_eq!(pending.provider, fallback_provider);
+    }
+
+    #[tokio::test]
+    async fn daemon_resolution_times_out_when_update_log_provider_stalls() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        node.set_resolve_timeout(Duration::from_millis(0));
+        let owner = NodeIdentity::generate();
+        let address = JoltAddress::new(owner.identity_id(), "/profile").unwrap();
+        let provider = libp2p::PeerId::random();
+
+        let (tx, rx) = oneshot::channel();
+        node.request_daemon_resolve_from_provider(address, None, &provider, tx);
+
+        assert_eq!(node.pending_daemon_resolutions.len(), 1);
+        node.check_resolve_timeouts();
+
+        assert_eq!(node.pending_daemon_resolutions.len(), 0);
+        assert!(matches!(rx.await.unwrap(), Err(NetworkError::Timeout)));
     }
 
     #[tokio::test]
