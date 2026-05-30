@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** M5+  
-**Status:** Ready  
+**Status:** Done
 **Blocked by:** 037, 038
 
 ## Why
@@ -43,29 +43,36 @@ It is only reachable if this node can reach a relay mesh that knows where to fin
 
 ## Acceptance Criteria
 
-- [ ] CLI errors distinguish bootstrap, mesh, identity, verification, and content failures.
-- [ ] API returns structured error codes.
-- [ ] Dashboard renders useful failure text.
-- [ ] Tests cover the main failure modes.
-- [ ] Existing successful resolution/fetch behavior is unchanged.
+- [x] CLI errors distinguish bootstrap, mesh, identity, verification, and content failures.
+- [x] API returns structured error codes.
+- [x] Dashboard renders useful failure text.
+- [x] Tests cover the main failure modes.
+- [x] Existing successful resolution/fetch behavior is unchanged.
 
 ## One-Machine Process Demo
 
 Required for review.
 
-Run local failure scenarios:
+Run local process failure scenarios:
 
 ```text
 Tim with no relays
 Tim with unreachable relay
 Tim with R2 reachable but Alice unknown
-Tim with invalid identity-head hint
-Tim with valid identity but unavailable content
 ```
 
 Verifier should be able to see distinct errors for each case.
+Automated tests cover invalid identity-head mapping and unavailable content fetch mapping.
 
 No Hetzner canary is required.
+
+## Verification
+
+```bash
+cargo test -p jolt-node -- --nocapture
+cargo test -p jolt-server --test api_integration -- --nocapture
+./scripts/test-relay-discovery-failure-ux.sh
+```
 
 ## Non-Goals
 

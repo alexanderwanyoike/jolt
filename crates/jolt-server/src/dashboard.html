@@ -1004,7 +1004,7 @@
       if (path) form.append("path", path);
       const response = await fetch("/api/v1/publish", { method: "POST", body: form });
       const body = await readResponse(response);
-      if (!response.ok) throw new Error(body);
+      if (!response.ok) throw new Error(formatApiError(body));
       return JSON.parse(body);
     }
 
@@ -1031,7 +1031,7 @@
         body: JSON.stringify(request)
       });
       const body = await readResponse(response);
-      if (!response.ok) throw new Error(body);
+      if (!response.ok) throw new Error(formatApiError(body));
       return JSON.parse(body);
     }
 
@@ -1042,7 +1042,7 @@
         body: JSON.stringify({ target })
       });
       const body = await readResponse(response);
-      if (!response.ok) throw new Error(body);
+      if (!response.ok) throw new Error(formatApiError(body));
       return JSON.parse(body);
     }
 
@@ -1053,7 +1053,7 @@
         body: JSON.stringify({ multiaddr })
       });
       const body = await readResponse(response);
-      if (!response.ok) throw new Error(body);
+      if (!response.ok) throw new Error(formatApiError(body));
       return JSON.parse(body);
     }
 
@@ -1064,13 +1064,24 @@
         body: JSON.stringify({ address })
       });
       const body = await readResponse(response);
-      if (!response.ok) throw new Error(body);
+      if (!response.ok) throw new Error(formatApiError(body));
       return JSON.parse(body);
     }
 
     async function readResponse(response) {
       const text = await response.text();
       return text || `${response.status} ${response.statusText}`;
+    }
+
+    function formatApiError(body) {
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed.code && parsed.error) return `${parsed.code}: ${parsed.error}`;
+        if (parsed.error) return parsed.error;
+      } catch (_) {
+        // Non-JSON errors are already displayable text.
+      }
+      return body;
     }
 
     function setResult(id, kind, text) {

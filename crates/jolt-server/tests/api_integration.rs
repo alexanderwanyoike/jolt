@@ -5,6 +5,7 @@ use jolt_core::{
 use jolt_identity::NodeIdentity;
 use jolt_network::{
     DaemonHandle, HomeRelayCapability, HomeRelayConfig, Multiaddr, NetworkConfig, NetworkNode,
+    PeerId,
 };
 use jolt_store::{CacheConfig, ContentStore};
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -1379,9 +1380,78 @@ async fn test_resolve_endpoint_reports_no_update_log_provider_candidates() {
 
     assert_eq!(resp.status(), 404);
     let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "no_bootstrap_relays");
     assert!(body["error"].as_str().unwrap().contains("jolt:update-log"));
 
     handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_resolve_endpoint_reports_relay_unreachable() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = NodeIdentity::generate();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let unreachable_peer = PeerId::random();
+    let config = NetworkConfig {
+        enable_mdns: false,
+        effective_bootstrap_relays: vec![format!("/ip4/127.0.0.1/tcp/9/p2p/{unreachable_peer}")],
+        ..NetworkConfig::test_config()
+    };
+    let node = NetworkNode::new_tcp(identity, store, config).unwrap();
+    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
+    let missing_identity = NodeIdentity::generate().identity_id();
+    let address = JoltAddress::new(missing_identity, "/profile").unwrap();
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/resolve", base_url(port)))
+        .json(&serde_json::json!({ "address": address.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "relay_unreachable");
+    assert!(body["error"].as_str().unwrap().contains("bootstrap relays"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_resolve_endpoint_reports_identity_provider_not_found_on_reachable_mesh() {
+    let p2p_a = free_tcp_port();
+    let (_port_a, handle_a, _dir_a) = start_test_server_with_tcp_port(p2p_a).await;
+    let (port_b, handle_b, _dir_b) = start_test_server_with_tcp_port(free_tcp_port()).await;
+    let client = reqwest::Client::new();
+
+    let peer_a = handle_a.status().await.unwrap().peer_id;
+    let multiaddr = format!("/ip4/127.0.0.1/tcp/{p2p_a}/p2p/{peer_a}");
+    let connect_resp = client
+        .post(format!("{}/api/v1/peers/connect", base_url(port_b)))
+        .json(&serde_json::json!({ "multiaddr": multiaddr }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(connect_resp.status(), 200);
+    wait_for_connected_peers(&handle_b, 1).await;
+
+    let missing_identity = NodeIdentity::generate().identity_id();
+    let address = JoltAddress::new(missing_identity, "/profile").unwrap();
+    let resp = client
+        .post(format!("{}/api/v1/resolve", base_url(port_b)))
+        .json(&serde_json::json!({ "address": address.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "identity_provider_not_found");
+    assert!(body["error"].as_str().unwrap().contains("relay mesh"));
+
+    handle_a.shutdown().await.ok();
+    handle_b.shutdown().await.ok();
 }
 
 #[tokio::test]
@@ -1749,6 +1819,7 @@ async fn test_fetch_endpoint_distinguishes_unresolved_jolt_address() {
 
     assert_eq!(resp.status(), 404);
     let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "no_bootstrap_relays");
     assert!(body["error"].as_str().unwrap().contains("jolt:update-log"));
 
     handle.shutdown().await.ok();
@@ -1810,6 +1881,10 @@ async fn test_fetch_endpoint_distinguishes_resolved_but_unavailable_content() {
         "Expected content fetch failure, got {status}"
     );
     let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        body["code"] == "content_provider_not_found" || body["code"] == "content_fetch_failed",
+        "expected structured content failure code, got {body}"
+    );
     let error = body["error"].as_str().unwrap();
     assert!(
         error.contains(&missing_content.to_string()) || error.contains("timed out"),
