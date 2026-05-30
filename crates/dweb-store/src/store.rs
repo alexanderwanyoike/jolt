@@ -16,11 +16,16 @@ pub struct ContentStore {
     cache_dir: PathBuf,
     update_logs_dir: PathBuf,
     home_relay_pins_path: PathBuf,
+    discovered_peer_hints_path: PathBuf,
     cache_index: CacheIndex,
     cache_config: CacheConfig,
     /// In-memory index of published content: content_id -> path to content file
     published_content: HashMap<String, PathBuf>,
 }
+
+const MAX_DISCOVERED_PEER_HINTS: usize = 64;
+const DISCOVERED_PEER_HINT_TTL_SECS: u64 = 30 * 24 * 60 * 60;
+const MAX_DISCOVERED_PEER_FAILURES: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishedContentEntry {
@@ -41,6 +46,16 @@ pub struct HomeRelayPinRecord {
     pub pinned_at: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiscoveredPeerHint {
+    pub multiaddr: String,
+    pub source: String,
+    pub first_seen: u64,
+    pub last_seen: u64,
+    #[serde(default)]
+    pub failure_count: u32,
+}
+
 impl ContentStore {
     /// Open or create a content store at the given base directory.
     pub fn open(base_dir: &Path, config: CacheConfig) -> Result<Self, StoreError> {
@@ -48,6 +63,7 @@ impl ContentStore {
         let cache_dir = base_dir.join("cache");
         let update_logs_dir = base_dir.join("update_logs");
         let home_relay_pins_path = base_dir.join("home_relay_pins.json");
+        let discovered_peer_hints_path = base_dir.join("discovered_peer_hints.json");
 
         std::fs::create_dir_all(&published_dir)?;
         std::fs::create_dir_all(&cache_dir)?;
@@ -67,6 +83,7 @@ impl ContentStore {
             cache_dir,
             update_logs_dir,
             home_relay_pins_path,
+            discovered_peer_hints_path,
             cache_index,
             cache_config: config,
             published_content,
@@ -272,6 +289,74 @@ impl ContentStore {
         }
         let json = std::fs::read_to_string(&self.home_relay_pins_path)?;
         serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))
+    }
+
+    /// Persist a best-effort peer/relay address hint learned from the network.
+    pub fn record_discovered_peer_hint(
+        &self,
+        multiaddr: &str,
+        source: &str,
+    ) -> Result<(), StoreError> {
+        let now = now_unix();
+        let mut hints = self.load_all_discovered_peer_hints()?;
+
+        if let Some(existing) = hints.iter_mut().find(|hint| hint.multiaddr == multiaddr) {
+            existing.source = source.to_string();
+            existing.last_seen = now;
+            existing.failure_count = 0;
+        } else {
+            hints.push(DiscoveredPeerHint {
+                multiaddr: multiaddr.to_string(),
+                source: source.to_string(),
+                first_seen: now,
+                last_seen: now,
+                failure_count: 0,
+            });
+        }
+
+        hints.sort_by_key(|hint| std::cmp::Reverse(hint.last_seen));
+        hints.truncate(MAX_DISCOVERED_PEER_HINTS);
+        self.save_discovered_peer_hints(&hints)
+    }
+
+    /// Load usable discovered peer hints. Stale or repeatedly failed hints are ignored.
+    pub fn load_discovered_peer_hints(&self) -> Result<Vec<DiscoveredPeerHint>, StoreError> {
+        let now = now_unix();
+        Ok(self
+            .load_all_discovered_peer_hints()?
+            .into_iter()
+            .filter(|hint| {
+                hint.failure_count < MAX_DISCOVERED_PEER_FAILURES
+                    && now.saturating_sub(hint.last_seen) <= DISCOVERED_PEER_HINT_TTL_SECS
+            })
+            .collect())
+    }
+
+    /// Mark a discovered hint as unreachable. After repeated failures it is ignored.
+    pub fn mark_discovered_peer_hint_failure(&self, multiaddr: &str) -> Result<(), StoreError> {
+        let mut hints = self.load_all_discovered_peer_hints()?;
+        if let Some(existing) = hints.iter_mut().find(|hint| hint.multiaddr == multiaddr) {
+            existing.failure_count = existing.failure_count.saturating_add(1);
+            self.save_discovered_peer_hints(&hints)?;
+        }
+        Ok(())
+    }
+
+    fn load_all_discovered_peer_hints(&self) -> Result<Vec<DiscoveredPeerHint>, StoreError> {
+        if !self.discovered_peer_hints_path.exists() {
+            return Ok(Vec::new());
+        }
+        let json = std::fs::read_to_string(&self.discovered_peer_hints_path)?;
+        serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))
+    }
+
+    fn save_discovered_peer_hints(&self, hints: &[DiscoveredPeerHint]) -> Result<(), StoreError> {
+        let tmp_path = self.discovered_peer_hints_path.with_extension("json.tmp");
+        let json = serde_json::to_string_pretty(hints)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        std::fs::write(&tmp_path, json)?;
+        std::fs::rename(tmp_path, &self.discovered_peer_hints_path)?;
+        Ok(())
     }
 
     /// List all cached content IDs.
@@ -690,6 +775,67 @@ mod tests {
         let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
         assert!(store.has_content(&id_str));
         assert_eq!(store.stats().cached_items, 1);
+    }
+
+    #[test]
+    fn discovered_peer_hints_persist_reload_and_deduplicate() {
+        let dir = tempdir().unwrap();
+        let multiaddr =
+            "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
+
+        {
+            let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+            store
+                .record_discovered_peer_hint(multiaddr, "bootstrap")
+                .unwrap();
+            store
+                .record_discovered_peer_hint(multiaddr, "bootstrap")
+                .unwrap();
+        }
+
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        let hints = store.load_discovered_peer_hints().unwrap();
+
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].multiaddr, multiaddr);
+        assert_eq!(hints[0].source, "bootstrap");
+        assert_eq!(hints[0].failure_count, 0);
+    }
+
+    #[test]
+    fn discovered_peer_hints_are_bounded() {
+        let dir = tempdir().unwrap();
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+
+        for port in 4000..4070 {
+            store
+                .record_discovered_peer_hint(
+                    &format!(
+                        "/ip4/127.0.0.1/tcp/{port}/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
+                    ),
+                    "routing",
+                )
+                .unwrap();
+        }
+
+        assert_eq!(store.load_discovered_peer_hints().unwrap().len(), 64);
+    }
+
+    #[test]
+    fn discovered_peer_hints_are_ignored_after_repeated_failures() {
+        let dir = tempdir().unwrap();
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        let multiaddr =
+            "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
+
+        store
+            .record_discovered_peer_hint(multiaddr, "bootstrap")
+            .unwrap();
+        store.mark_discovered_peer_hint_failure(multiaddr).unwrap();
+        store.mark_discovered_peer_hint_failure(multiaddr).unwrap();
+        store.mark_discovered_peer_hint_failure(multiaddr).unwrap();
+
+        assert!(store.load_discovered_peer_hints().unwrap().is_empty());
     }
 
     // --- Phase 2: LRU eviction ---

@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** M5
-**Status:** Ready
+**Status:** Done
 **Blocked by:** None
 
 ## Why
@@ -33,15 +33,20 @@ The cache should prefer addresses that helped with:
 
 The cache should be bounded and safe to discard.
 
+Cached peer addresses are only opportunistic reachability hints. They do not
+grant trust, authority, content ownership, or permission to bypass signed Jolt
+records. Configured bootstrap relays remain the stable fallback and source of
+operator intent.
+
 ## Acceptance Criteria
 
-- [ ] Node persists discovered useful relay/node addresses.
-- [ ] Node uses cached addresses on later starts in addition to configured bootstrap relays.
-- [ ] Configured relays remain the fallback when cache is empty or stale.
-- [ ] Cache is bounded to a reasonable maximum size.
-- [ ] Cache entries can be expired or ignored when repeatedly unreachable.
-- [ ] Tests cover cache write, reload, fallback, and duplicate handling.
-- [ ] Docs explain cached peers are hints, not trusted authorities.
+- [x] Node persists discovered useful relay/node addresses.
+- [x] Node uses cached addresses on later starts in addition to configured bootstrap relays.
+- [x] Configured relays remain the fallback when cache is empty or stale.
+- [x] Cache is bounded to a reasonable maximum size.
+- [x] Cache entries can be expired or ignored when repeatedly unreachable.
+- [x] Tests cover cache write, reload, fallback, and duplicate handling.
+- [x] Docs explain cached peers are hints, not trusted authorities.
 
 ## Non-Goals
 
