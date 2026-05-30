@@ -28,7 +28,9 @@ pub struct UpdateLogResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jolt_core::{ContentId, IdentityId, UpdateAction, UpdateLogEntry};
+    use jolt_core::{
+        ContentId, IdentityId, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
+    };
     use jolt_identity::NodeIdentity;
 
     #[test]
@@ -96,5 +98,31 @@ mod tests {
         let decoded: UpdateLogResponse = ciborium::from_reader(&buf[..]).unwrap();
 
         assert_eq!(decoded.entries, vec![entry]);
+    }
+
+    #[test]
+    fn relay_record_cbor_round_trip() {
+        let identity = NodeIdentity::generate();
+        let record = RelayRecord::new(
+            identity.public_key_bytes(),
+            identity.peer_id().to_string(),
+            vec!["/ip4/127.0.0.1/tcp/4001".to_string()],
+            vec![
+                RelayRecordCapability::Bootstrap,
+                RelayRecordCapability::Discovery,
+                RelayRecordCapability::Pinning,
+            ],
+            100,
+            200,
+            |bytes| identity.sign(bytes),
+        )
+        .unwrap();
+
+        let mut buf = Vec::new();
+        ciborium::into_writer(&record, &mut buf).unwrap();
+        let decoded: RelayRecord = ciborium::from_reader(&buf[..]).unwrap();
+
+        assert_eq!(decoded, record);
+        assert_eq!(decoded.verify_at(150), Ok(()));
     }
 }

@@ -259,6 +259,42 @@ async fn test_status_endpoint_reports_home_relay_config() {
 }
 
 #[tokio::test]
+async fn test_status_endpoint_reports_relay_record_in_relay_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = NodeIdentity::generate();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(identity, store, relay_config()).unwrap();
+    let p2p_port = free_tcp_port();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{p2p_port}"))
+        .unwrap();
+    let (port, handle, _dir) = start_test_server_from_node(relay, dir).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{}/api/v1/status", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["bootstrap_relay"], true);
+    assert_eq!(body["relay_record"]["body"]["peer_id"], body["peer_id"]);
+    assert_eq!(
+        body["relay_record"]["body"]["capabilities"],
+        serde_json::json!(["Bootstrap", "Discovery", "Pinning"])
+    );
+    assert!(body["relay_record"]["body"]["addrs"][0]
+        .as_str()
+        .unwrap()
+        .contains(&format!("/tcp/{p2p_port}")));
+    assert!(body["relay_record"]["signature"].is_array());
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_status_endpoint_reports_connected_bootstrap_peer() {
     let relay_dir = tempfile::tempdir().unwrap();
     let alice_dir = tempfile::tempdir().unwrap();
