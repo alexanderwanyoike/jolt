@@ -12,9 +12,9 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, warn};
 
 use jolt_core::{
-    resolve_jolt_address, verify_update_log_for_identity, ContentId, ContentManifest, IdentityId,
-    JoltAddress, PinRequest, RelayRecord, RelayRecordCapability, ResolvedJoltTarget, UpdateAction,
-    UpdateLogEntry,
+    resolve_jolt_address, verify_update_log_for_identity, ContentId, ContentManifest,
+    IdentityHeadHint, IdentityId, JoltAddress, PinRequest, RelayRecord, RelayRecordCapability,
+    ResolvedJoltTarget, UpdateAction, UpdateLogEntry,
 };
 use jolt_identity::NodeIdentity;
 use jolt_store::{ContentStore, HomeRelayPinRecord};
@@ -149,6 +149,8 @@ pub struct NetworkNode {
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
     /// Verified update logs by owner identity.
     update_logs: HashMap<IdentityId, Vec<UpdateLogEntry>>,
+    /// Signed, expiring identity-head hints learned through relay gossip.
+    identity_head_hints: HashMap<IdentityId, Vec<IdentityHeadHint>>,
     /// Connection quality tracking: peer -> connection info
     peer_connections: HashMap<libp2p::PeerId, PeerConnectionInfo>,
     /// When the node was created (for uptime reporting)
@@ -188,6 +190,9 @@ const IDENTITY_PROVIDER_QUERY_LIMIT: u16 = 8;
 const IDENTITY_PROVIDER_QUERY_TTL: u8 = 3;
 const IDENTITY_PROVIDER_QUERY_TIMEOUT: Duration = Duration::from_secs(8);
 const SEEN_IDENTITY_PROVIDER_QUERY_TTL: Duration = Duration::from_secs(30);
+const IDENTITY_HEAD_HINT_MAX_GLOBAL: usize = 1024;
+const IDENTITY_HEAD_HINT_MAX_PER_IDENTITY: usize = 4;
+const IDENTITY_HEAD_HINT_EXCHANGE_MAX: usize = 32;
 
 impl NetworkNode {
     /// Create a new network node with iroh transport.
@@ -296,6 +301,7 @@ impl NetworkNode {
             pending_resolves: HashMap::new(),
             discovered_providers: HashMap::new(),
             update_logs,
+            identity_head_hints: HashMap::new(),
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
@@ -412,6 +418,7 @@ impl NetworkNode {
             pending_resolves: HashMap::new(),
             discovered_providers: HashMap::new(),
             update_logs,
+            identity_head_hints: HashMap::new(),
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
@@ -510,11 +517,28 @@ impl NetworkNode {
             );
         }
 
+        let announce_hints = self.identity_head_hints_for_exchange(now);
+        if !announce_hints.is_empty() {
+            self.swarm.behaviour_mut().relay_exchange.send_request(
+                peer,
+                RelayExchangeRequest::AnnounceIdentityHeads {
+                    hints: announce_hints,
+                },
+            );
+        }
+
         self.swarm.behaviour_mut().relay_exchange.send_request(
             peer,
             RelayExchangeRequest::GetRelays {
                 limit: RELAY_EXCHANGE_MAX_RECORDS as u16,
                 capabilities: Vec::new(),
+            },
+        );
+
+        self.swarm.behaviour_mut().relay_exchange.send_request(
+            peer,
+            RelayExchangeRequest::GetIdentityHeads {
+                limit: IDENTITY_HEAD_HINT_EXCHANGE_MAX as u16,
             },
         );
     }
@@ -563,6 +587,125 @@ impl NetworkNode {
             }
         }
         (accepted, rejected)
+    }
+
+    fn identity_head_hints_for_exchange(&self, now: u64) -> Vec<IdentityHeadHint> {
+        let mut hints: Vec<_> = self
+            .identity_head_hints
+            .values()
+            .flat_map(|hints| hints.iter())
+            .filter(|hint| hint.verify_at(now).is_ok())
+            .cloned()
+            .collect();
+
+        hints.sort_by(|a, b| {
+            b.body
+                .latest_sequence
+                .cmp(&a.body.latest_sequence)
+                .then_with(|| {
+                    a.body
+                        .identity
+                        .to_string()
+                        .cmp(&b.body.identity.to_string())
+                })
+                .then_with(|| a.body.provider_peer_id.cmp(&b.body.provider_peer_id))
+        });
+        hints.truncate(IDENTITY_HEAD_HINT_EXCHANGE_MAX);
+        hints
+    }
+
+    pub fn record_identity_head_hint(
+        &mut self,
+        hint: IdentityHeadHint,
+    ) -> Result<(), NetworkError> {
+        let now = unix_now();
+        hint.verify_at(now)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        self.record_identity_head_hints(vec![hint], now);
+        Ok(())
+    }
+
+    fn record_identity_head_hints(&mut self, hints: Vec<IdentityHeadHint>, now: u64) -> (u16, u16) {
+        self.prune_identity_head_hints(now);
+        let mut accepted = 0u16;
+        let mut rejected = 0u16;
+
+        for hint in hints.into_iter().take(IDENTITY_HEAD_HINT_EXCHANGE_MAX) {
+            if let Err(e) = hint.verify_at(now) {
+                debug!("Rejected identity-head hint: {e}");
+                rejected = rejected.saturating_add(1);
+                continue;
+            }
+
+            let identity = hint.body.identity.clone();
+            let provider = hint.body.provider_peer_id.clone();
+            let entry = self.identity_head_hints.entry(identity).or_default();
+            if let Some(existing) = entry
+                .iter_mut()
+                .find(|existing| existing.body.provider_peer_id == provider)
+            {
+                if hint.body.latest_sequence <= existing.body.latest_sequence {
+                    rejected = rejected.saturating_add(1);
+                    continue;
+                }
+                *existing = hint;
+            } else {
+                entry.push(hint);
+            }
+
+            entry.sort_by(|a, b| {
+                b.body
+                    .latest_sequence
+                    .cmp(&a.body.latest_sequence)
+                    .then_with(|| b.body.expires_at.cmp(&a.body.expires_at))
+            });
+            entry.truncate(IDENTITY_HEAD_HINT_MAX_PER_IDENTITY);
+            accepted = accepted.saturating_add(1);
+        }
+
+        self.enforce_identity_head_hint_global_bound();
+        (accepted, rejected)
+    }
+
+    fn prune_identity_head_hints(&mut self, now: u64) {
+        self.identity_head_hints.retain(|_, hints| {
+            hints.retain(|hint| hint.verify_at(now).is_ok());
+            !hints.is_empty()
+        });
+    }
+
+    fn enforce_identity_head_hint_global_bound(&mut self) {
+        self.enforce_identity_head_hint_global_bound_with_limit(IDENTITY_HEAD_HINT_MAX_GLOBAL);
+    }
+
+    fn enforce_identity_head_hint_global_bound_with_limit(&mut self, limit: usize) {
+        let mut ranked = Vec::new();
+        for (identity, hints) in &self.identity_head_hints {
+            for hint in hints {
+                ranked.push((
+                    identity.clone(),
+                    hint.body.provider_peer_id.clone(),
+                    hint.body.latest_sequence,
+                    hint.body.expires_at,
+                ));
+            }
+        }
+        if ranked.len() <= limit {
+            return;
+        }
+
+        ranked.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| b.3.cmp(&a.3)));
+        let keep: HashSet<_> = ranked
+            .into_iter()
+            .take(limit)
+            .map(|(identity, provider, _, _)| (identity, provider))
+            .collect();
+        self.identity_head_hints.retain(|identity, hints| {
+            hints.retain(|hint| {
+                keep.contains(&(identity.clone(), hint.body.provider_peer_id.clone()))
+            });
+            !hints.is_empty()
+        });
     }
 
     fn relay_record_peer_addr(record: &RelayRecord) -> Option<(libp2p::PeerId, Multiaddr)> {
@@ -724,6 +867,18 @@ impl NetworkNode {
             }
         }
 
+        if let Some(hints) = self.identity_head_hints.get(identity) {
+            for hint in hints {
+                if hint.verify_at(now).is_err() {
+                    continue;
+                }
+                candidates.push(IdentityProviderCandidate {
+                    peer_id: hint.body.provider_peer_id.clone(),
+                    addrs: hint.body.provider_addrs.clone(),
+                });
+            }
+        }
+
         Self::dedupe_identity_provider_candidates(candidates, limit)
     }
 
@@ -859,7 +1014,12 @@ impl NetworkNode {
             providers.len()
         );
 
-        if already_seen || ttl == 0 || deadline_unix_ms <= now_ms || providers.len() >= limit {
+        if already_seen
+            || !providers.is_empty()
+            || ttl == 0
+            || deadline_unix_ms <= now_ms
+            || providers.len() >= limit
+        {
             self.respond_identity_providers(channel, query_id, identity, providers, limit);
             return;
         }
@@ -1021,6 +1181,9 @@ impl NetworkNode {
         if let Err(e) = self.announce_update_log_provider(&identity) {
             debug!("Update-log DHT announcement skipped: {e}");
         }
+        if let Err(e) = self.refresh_local_identity_head_hint(&identity) {
+            debug!("Identity-head hint refresh skipped: {e}");
+        }
 
         Ok((content_id, address, latest_sequence))
     }
@@ -1056,6 +1219,58 @@ impl NetworkNode {
         }
 
         Ok(Some(content_id))
+    }
+
+    fn refresh_local_identity_head_hint(
+        &mut self,
+        identity: &IdentityId,
+    ) -> Result<(), NetworkError> {
+        if identity != &self.identity.identity_id() {
+            return Ok(());
+        }
+
+        let Some(entries) = self.update_logs.get(identity) else {
+            return Ok(());
+        };
+        let Some(latest) = entries.last() else {
+            return Ok(());
+        };
+
+        let now = unix_now();
+        let provider_addrs = self
+            .swarm
+            .listeners()
+            .map(|addr| {
+                if addr
+                    .iter()
+                    .any(|protocol| matches!(protocol, Protocol::P2p(_)))
+                {
+                    addr.to_string()
+                } else {
+                    addr.clone()
+                        .with(Protocol::P2p(*self.swarm.local_peer_id()))
+                        .to_string()
+                }
+            })
+            .collect::<Vec<_>>();
+        if provider_addrs.is_empty() {
+            return Ok(());
+        }
+
+        let hint = IdentityHeadHint::new(
+            self.identity.public_key_bytes(),
+            identity.clone(),
+            self.swarm.local_peer_id().to_string(),
+            provider_addrs,
+            None,
+            latest.body.sequence,
+            latest.entry_hash(),
+            now,
+            now + RELAY_RECORD_TTL_SECS,
+            |bytes| self.identity.sign(bytes),
+        )
+        .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        self.record_identity_head_hint(hint)
     }
 
     /// Request content from connected peers by ContentId.
@@ -1197,7 +1412,10 @@ impl NetworkNode {
             .map(|current| candidate_sequence > current)
             .unwrap_or(true)
         {
-            self.update_logs.insert(identity, entries);
+            self.update_logs.insert(identity.clone(), entries);
+            if let Err(e) = self.refresh_local_identity_head_hint(&identity) {
+                debug!("Identity-head hint refresh skipped: {e}");
+            }
         }
 
         Ok(())
@@ -2046,6 +2264,19 @@ impl NetworkNode {
                         let (accepted, rejected) = self.store_relay_records(records, now);
                         RelayExchangeResponse::Announced { accepted, rejected }
                     }
+                    RelayExchangeRequest::GetIdentityHeads { limit } => {
+                        RelayExchangeResponse::IdentityHeads {
+                            hints: self
+                                .identity_head_hints_for_exchange(now)
+                                .into_iter()
+                                .take(usize::from(limit).min(IDENTITY_HEAD_HINT_EXCHANGE_MAX))
+                                .collect(),
+                        }
+                    }
+                    RelayExchangeRequest::AnnounceIdentityHeads { hints } => {
+                        let (accepted, rejected) = self.record_identity_head_hints(hints, now);
+                        RelayExchangeResponse::Announced { accepted, rejected }
+                    }
                     RelayExchangeRequest::FindIdentityProviders {
                         query_id,
                         identity,
@@ -2100,6 +2331,14 @@ impl NetworkNode {
                 RelayExchangeResponse::Announced { accepted, rejected } => {
                     self.mark_relay_peer_success(&peer, unix_now());
                     debug!("Relay announcement response: {accepted} accepted, {rejected} rejected");
+                }
+                RelayExchangeResponse::IdentityHeads { hints } => {
+                    let now = unix_now();
+                    let (accepted, rejected) = self.record_identity_head_hints(hints, now);
+                    self.mark_relay_peer_success(&peer, now);
+                    debug!(
+                        "Stored identity-head gossip response hints: {accepted} accepted, {rejected} rejected"
+                    );
                 }
                 RelayExchangeResponse::IdentityProviders {
                     query_id: _,
@@ -2882,6 +3121,46 @@ mod tests {
         .expect("test relay record should be valid")
     }
 
+    fn identity_head_hint(
+        identity: &NodeIdentity,
+        provider: libp2p::PeerId,
+        sequence: u64,
+        observed_at: u64,
+        expires_at: u64,
+    ) -> IdentityHeadHint {
+        IdentityHeadHint::new(
+            identity.public_key_bytes(),
+            identity.identity_id(),
+            provider.to_string(),
+            vec![format!("/ip4/127.0.0.1/tcp/4001/p2p/{provider}")],
+            None,
+            sequence,
+            jolt_core::UpdateLogEntryHash([sequence as u8; 32]),
+            observed_at,
+            expires_at,
+            |bytes| identity.sign(bytes),
+        )
+        .expect("test identity-head hint should be valid")
+    }
+
+    #[tokio::test]
+    async fn local_identity_head_hint_requires_provider_addresses() {
+        let dir = tempdir().unwrap();
+        let identity = NodeIdentity::generate();
+        let identity_id = identity.identity_id();
+        let update_log = signed_profile_log(&identity, b"addressless hint");
+        let store = make_store(dir.path());
+        let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+
+        node.store_verified_update_log(identity_id.clone(), update_log)
+            .unwrap();
+
+        assert!(node
+            .identity_head_hints
+            .get(&identity_id)
+            .is_none_or(Vec::is_empty));
+    }
+
     #[tokio::test]
     async fn new_tcp_creates_node_without_error() {
         let dir = tempdir().unwrap();
@@ -2959,6 +3238,72 @@ mod tests {
             node.store().known_relay_count(150).unwrap(),
             RELAY_EXCHANGE_MAX_RECORDS
         );
+    }
+
+    #[tokio::test]
+    async fn identity_head_hints_reject_invalid_expired_and_stale_records() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let owner = NodeIdentity::generate();
+        let provider = libp2p::PeerId::random();
+        let current = identity_head_hint(&owner, provider, 2, 100, 200);
+        let stale = identity_head_hint(&owner, provider, 1, 100, 200);
+        let expired = identity_head_hint(&owner, libp2p::PeerId::random(), 3, 100, 120);
+        let mut tampered = identity_head_hint(&owner, libp2p::PeerId::random(), 4, 100, 200);
+        tampered.body.latest_sequence = 5;
+
+        let (accepted, rejected) =
+            node.record_identity_head_hints(vec![current.clone(), stale, expired, tampered], 150);
+
+        assert_eq!((accepted, rejected), (1, 3));
+        assert_eq!(
+            node.identity_head_hints
+                .get(&owner.identity_id())
+                .expect("fresh hint should be stored"),
+            &vec![current]
+        );
+    }
+
+    #[tokio::test]
+    async fn identity_head_hints_are_bounded_per_identity() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let owner = NodeIdentity::generate();
+        let hints: Vec<_> = (0..8)
+            .map(|index| identity_head_hint(&owner, libp2p::PeerId::random(), index, 100, 200))
+            .collect();
+
+        let (accepted, rejected) = node.record_identity_head_hints(hints, 150);
+
+        assert_eq!((accepted, rejected), (8, 0));
+        let stored = node
+            .identity_head_hints
+            .get(&owner.identity_id())
+            .expect("identity hints should be stored");
+        assert_eq!(stored.len(), IDENTITY_HEAD_HINT_MAX_PER_IDENTITY);
+        assert_eq!(stored[0].body.latest_sequence, 7);
+        assert_eq!(
+            stored[IDENTITY_HEAD_HINT_MAX_PER_IDENTITY - 1]
+                .body
+                .latest_sequence,
+            4
+        );
+    }
+
+    #[tokio::test]
+    async fn identity_head_hints_are_bounded_globally() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+
+        for index in 0..8 {
+            let owner = NodeIdentity::generate();
+            let hint = identity_head_hint(&owner, libp2p::PeerId::random(), index as u64, 100, 200);
+            node.record_identity_head_hints(vec![hint], 150);
+        }
+        node.enforce_identity_head_hint_global_bound_with_limit(4);
+
+        let stored_count: usize = node.identity_head_hints.values().map(Vec::len).sum();
+        assert_eq!(stored_count, 4);
     }
 
     #[tokio::test]
