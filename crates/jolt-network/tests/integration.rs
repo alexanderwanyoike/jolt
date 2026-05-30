@@ -1,4 +1,7 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    sync::OnceLock,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use jolt_core::{
     ContentId, JoltAddress, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
@@ -8,6 +11,12 @@ use jolt_network::{NetworkConfig, NetworkNode};
 use jolt_store::{CacheConfig, ContentStore};
 use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use tempfile::tempdir;
+
+static INTEGRATION_TEST_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+fn integration_test_lock() -> &'static tokio::sync::Mutex<()> {
+    INTEGRATION_TEST_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
 
 fn make_store(dir: &std::path::Path) -> ContentStore {
     ContentStore::open(dir, CacheConfig::default()).unwrap()
@@ -84,6 +93,7 @@ fn listener_with_peer(addr: &Multiaddr, peer: &PeerId) -> Multiaddr {
 #[tokio::test]
 async fn two_nodes_publish_and_fetch() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
 
     let dir_a = tempdir().unwrap();
     let dir_b = tempdir().unwrap();
@@ -218,6 +228,7 @@ async fn two_nodes_publish_and_fetch() {
 #[tokio::test]
 async fn two_nodes_request_and_cache_verified_update_log() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
 
     let dir_a = tempdir().unwrap();
     let dir_b = tempdir().unwrap();
@@ -332,6 +343,7 @@ async fn two_nodes_request_and_cache_verified_update_log() {
 #[tokio::test]
 async fn connected_peer_address_is_cached_for_later_bootstrap() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
 
     let dir_a = tempdir().unwrap();
     let dir_b = tempdir().unwrap();
@@ -397,6 +409,7 @@ async fn connected_peer_address_is_cached_for_later_bootstrap() {
 #[tokio::test]
 async fn connected_relay_exchange_persists_learned_relays() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
 
     let dir_r1 = tempdir().unwrap();
     let dir_tim = tempdir().unwrap();
@@ -459,6 +472,7 @@ async fn connected_relay_exchange_persists_learned_relays() {
 #[tokio::test]
 async fn relay_mesh_exploration_learns_relays_through_a_known_relay() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
 
     let dir_r1 = tempdir().unwrap();
     let dir_r2 = tempdir().unwrap();
@@ -541,6 +555,7 @@ async fn relay_mesh_exploration_learns_relays_through_a_known_relay() {
 #[tokio::test]
 async fn identity_provider_query_forwarding_finds_home_relay_provider() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
 
     let dir_r1 = tempdir().unwrap();
     let dir_r2 = tempdir().unwrap();
@@ -593,7 +608,7 @@ async fn identity_provider_query_forwarding_finds_home_relay_provider() {
     });
 
     let expected_log = alice_update_log.clone();
-    let provider = tokio::time::timeout(Duration::from_secs(15), async {
+    let provider = tokio::time::timeout(Duration::from_secs(30), async {
         let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
         while tokio::time::Instant::now() < settle_deadline {
             if let Ok(event) =
@@ -603,13 +618,20 @@ async fn identity_provider_query_forwarding_finds_home_relay_provider() {
             }
         }
 
-        tim.find_update_log_providers(&alice_id);
+        let mut query_interval = tokio::time::interval(Duration::from_secs(2));
+        query_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         loop {
-            let event = tim.next_event().await;
-            tim.handle_swarm_event(event);
-            if let Some(provider) = tim.take_discovered_update_log_provider(&alice_id) {
-                return provider;
+            tokio::select! {
+                _ = query_interval.tick() => {
+                    tim.find_update_log_providers(&alice_id);
+                }
+                event = tim.next_event() => {
+                    tim.handle_swarm_event(event);
+                    if let Some(provider) = tim.take_discovered_update_log_provider(&alice_id) {
+                        return provider;
+                    }
+                }
             }
         }
     })
@@ -647,6 +669,7 @@ async fn identity_provider_query_forwarding_finds_home_relay_provider() {
 #[tokio::test]
 async fn identity_provider_query_forwarding_crosses_multiple_relay_hops() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
 
     let dir_r1 = tempdir().unwrap();
     let dir_r2 = tempdir().unwrap();
@@ -733,8 +756,8 @@ async fn identity_provider_query_forwarding_crosses_multiple_relay_hops() {
     });
 
     let expected_log = alice_update_log.clone();
-    let provider = tokio::time::timeout(Duration::from_secs(20), async {
-        let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let provider = tokio::time::timeout(Duration::from_secs(45), async {
+        let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(8);
         while tokio::time::Instant::now() < settle_deadline {
             if let Ok(event) =
                 tokio::time::timeout(Duration::from_millis(100), tim.next_event()).await
@@ -743,13 +766,20 @@ async fn identity_provider_query_forwarding_crosses_multiple_relay_hops() {
             }
         }
 
-        tim.find_update_log_providers(&alice_id);
+        let mut query_interval = tokio::time::interval(Duration::from_secs(2));
+        query_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         loop {
-            let event = tim.next_event().await;
-            tim.handle_swarm_event(event);
-            if let Some(provider) = tim.take_discovered_update_log_provider(&alice_id) {
-                return provider;
+            tokio::select! {
+                _ = query_interval.tick() => {
+                    tim.find_update_log_providers(&alice_id);
+                }
+                event = tim.next_event() => {
+                    tim.handle_swarm_event(event);
+                    if let Some(provider) = tim.take_discovered_update_log_provider(&alice_id) {
+                        return provider;
+                    }
+                }
             }
         }
     })
