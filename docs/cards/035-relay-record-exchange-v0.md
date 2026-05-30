@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** M5+  
-**Status:** Ready  
+**Status:** Done
 **Blocked by:** 033, 034
 
 ## Why
@@ -49,12 +49,12 @@ When a node connects to a relay:
 
 ## Acceptance Criteria
 
-- [ ] A node can request relay records from a connected relay.
-- [ ] A node can announce verified relay records to a relay.
-- [ ] Invalid relay records are rejected.
-- [ ] Exchange is bounded by count and record validity.
-- [ ] Learned relays persist in the local relay address book.
-- [ ] Existing bootstrap behavior still works without relay exchange.
+- [x] A node can request relay records from a connected relay.
+- [x] A node can announce verified relay records to a relay.
+- [x] Invalid relay records are rejected.
+- [x] Exchange is bounded by count and record validity.
+- [x] Learned relays persist in the local relay address book.
+- [x] Existing bootstrap behavior still works without relay exchange.
 
 ## One-Machine Process Demo
 

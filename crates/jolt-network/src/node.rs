@@ -28,7 +28,10 @@ use crate::command::{
 use crate::config::{HomeRelayConfig, NetworkConfig};
 use crate::error::NetworkError;
 use crate::fetch_manager::FetchManager;
-use crate::protocol::{ContentRequest, ContentResponse, UpdateLogRequest, UpdateLogResponse};
+use crate::protocol::{
+    ContentRequest, ContentResponse, RelayExchangeRequest, RelayExchangeResponse, UpdateLogRequest,
+    UpdateLogResponse,
+};
 
 struct PendingResolve {
     address: JoltAddress,
@@ -40,6 +43,16 @@ struct PendingResolve {
 struct PendingUpdateLogPin {
     identity: IdentityId,
     response_tx: oneshot::Sender<Result<u64, NetworkError>>,
+}
+
+fn relay_record_matches_capabilities(
+    record: &RelayRecord,
+    capabilities: &[RelayRecordCapability],
+) -> bool {
+    capabilities.is_empty()
+        || capabilities
+            .iter()
+            .any(|capability| record.body.capabilities.contains(capability))
 }
 
 struct PendingDaemonResolve {
@@ -150,6 +163,7 @@ pub struct NetworkNode {
 }
 
 const RELAY_RECORD_TTL_SECS: u64 = 60 * 60;
+const RELAY_EXCHANGE_MAX_RECORDS: usize = 32;
 
 impl NetworkNode {
     /// Create a new network node with iroh transport.
@@ -204,6 +218,13 @@ impl NetworkNode {
             )],
             request_response::Config::default(),
         );
+        let relay_exchange = request_response::cbor::Behaviour::new(
+            [(
+                StreamProtocol::new("/jolt/relays/1.0.0"),
+                ProtocolSupport::Full,
+            )],
+            request_response::Config::default(),
+        );
 
         let mut kad_config = libp2p::kad::Config::new(StreamProtocol::new("/jolt/kad/1.0.0"));
         kad_config.set_query_timeout(Duration::from_secs(60));
@@ -219,6 +240,7 @@ impl NetworkNode {
             mdns,
             content_fetch,
             update_log_sync,
+            relay_exchange,
             kademlia,
             identify,
         };
@@ -307,6 +329,13 @@ impl NetworkNode {
             )],
             request_response::Config::default(),
         );
+        let relay_exchange = request_response::cbor::Behaviour::new(
+            [(
+                StreamProtocol::new("/jolt/relays/1.0.0"),
+                ProtocolSupport::Full,
+            )],
+            request_response::Config::default(),
+        );
 
         let mut kad_config = libp2p::kad::Config::new(StreamProtocol::new("/jolt/kad/1.0.0"));
         kad_config.set_query_timeout(Duration::from_secs(60));
@@ -322,6 +351,7 @@ impl NetworkNode {
             mdns,
             content_fetch,
             update_log_sync,
+            relay_exchange,
             kademlia,
             identify,
         };
@@ -424,6 +454,81 @@ impl NetworkNode {
         .map_err(|e| NetworkError::Protocol(e.to_string()));
 
         record.map(Some)
+    }
+
+    fn start_relay_record_exchange(&mut self, peer: &libp2p::PeerId) {
+        let now = unix_now();
+        let mut known_records =
+            self.relay_records_for_exchange(RELAY_EXCHANGE_MAX_RECORDS, &[], now);
+
+        let announce_records: Vec<_> = known_records
+            .drain(..)
+            .filter(|record| record.body.peer_id != peer.to_string())
+            .take(RELAY_EXCHANGE_MAX_RECORDS)
+            .collect();
+
+        if !announce_records.is_empty() {
+            self.swarm.behaviour_mut().relay_exchange.send_request(
+                peer,
+                RelayExchangeRequest::AnnounceRelays {
+                    records: announce_records,
+                },
+            );
+        }
+
+        self.swarm.behaviour_mut().relay_exchange.send_request(
+            peer,
+            RelayExchangeRequest::GetRelays {
+                limit: RELAY_EXCHANGE_MAX_RECORDS as u16,
+                capabilities: Vec::new(),
+            },
+        );
+    }
+
+    fn relay_records_for_exchange(
+        &self,
+        limit: usize,
+        capabilities: &[RelayRecordCapability],
+        now: u64,
+    ) -> Vec<RelayRecord> {
+        let mut records: Vec<RelayRecord> = self
+            .store
+            .load_relay_records(now)
+            .map(|records| {
+                records
+                    .into_iter()
+                    .map(|stored| stored.relay_record)
+                    .collect()
+            })
+            .unwrap_or_else(|e| {
+                debug!("Failed to load relay address book for exchange: {e}");
+                Vec::new()
+            });
+
+        if let Ok(Some(local_record)) = self.local_relay_record(now) {
+            records.push(local_record);
+        }
+
+        records.retain(|record| relay_record_matches_capabilities(record, capabilities));
+        records.sort_by_key(|record| record.body.relay_id.to_string());
+        records.dedup_by(|a, b| a.body.relay_id == b.body.relay_id);
+        records.truncate(limit.min(RELAY_EXCHANGE_MAX_RECORDS));
+        records
+    }
+
+    fn store_relay_records(&self, records: Vec<RelayRecord>, now: u64) -> (u16, u16) {
+        let mut accepted = 0u16;
+        let mut rejected = 0u16;
+        for record in records.into_iter().take(RELAY_EXCHANGE_MAX_RECORDS) {
+            match self.store.record_relay_record(record, now) {
+                Ok(()) => accepted = accepted.saturating_add(1),
+                Err(e) => {
+                    debug!("Rejected exchanged relay record: {e}");
+                    rejected = rejected.saturating_add(1);
+                }
+            }
+        }
+        (accepted, rejected)
     }
 
     /// Publish a file to the content store. Returns the ContentId.
@@ -1491,6 +1596,71 @@ impl NetworkNode {
                 }
             }
 
+            // --- Relay Record Exchange ---
+            SwarmEvent::Behaviour(JoltBehaviourEvent::RelayExchange(
+                request_response::Event::Message {
+                    message:
+                        request_response::Message::Request {
+                            request, channel, ..
+                        },
+                    ..
+                },
+            )) => {
+                let now = unix_now();
+                let response = match request {
+                    RelayExchangeRequest::GetRelays {
+                        limit,
+                        capabilities,
+                    } => RelayExchangeResponse::Relays {
+                        records: self.relay_records_for_exchange(
+                            limit as usize,
+                            &capabilities,
+                            now,
+                        ),
+                    },
+                    RelayExchangeRequest::AnnounceRelays { records } => {
+                        let (accepted, rejected) = self.store_relay_records(records, now);
+                        RelayExchangeResponse::Announced { accepted, rejected }
+                    }
+                };
+
+                if let Err(e) = self
+                    .swarm
+                    .behaviour_mut()
+                    .relay_exchange
+                    .send_response(channel, response)
+                {
+                    warn!("Failed to send relay exchange response: {e:?}");
+                }
+            }
+
+            SwarmEvent::Behaviour(JoltBehaviourEvent::RelayExchange(
+                request_response::Event::Message {
+                    message:
+                        request_response::Message::Response {
+                            request_id: _,
+                            response,
+                        },
+                    ..
+                },
+            )) => match response {
+                RelayExchangeResponse::Relays { records } => {
+                    let (accepted, rejected) = self.store_relay_records(records, unix_now());
+                    debug!(
+                        "Stored relay exchange response records: {accepted} accepted, {rejected} rejected"
+                    );
+                }
+                RelayExchangeResponse::Announced { accepted, rejected } => {
+                    debug!("Relay announcement response: {accepted} accepted, {rejected} rejected");
+                }
+            },
+
+            SwarmEvent::Behaviour(JoltBehaviourEvent::RelayExchange(
+                request_response::Event::OutboundFailure { error, .. },
+            )) => {
+                debug!("Outbound relay exchange failed: {error}");
+            }
+
             // --- Identify ---
             SwarmEvent::Behaviour(JoltBehaviourEvent::Identify(
                 libp2p::identify::Event::Received { peer_id, info, .. },
@@ -1616,6 +1786,7 @@ impl NetworkNode {
                 }
                 if self.bootstrap_peer_ids.contains(&peer_id) {
                     self.last_bootstrap_error = None;
+                    self.start_relay_record_exchange(&peer_id);
                 }
                 let source = if self.bootstrap_peer_ids.contains(&peer_id) {
                     "bootstrap"
@@ -2134,6 +2305,22 @@ mod tests {
         .unwrap()]
     }
 
+    fn relay_record(identity: &NodeIdentity, observed_at: u64, expires_at: u64) -> RelayRecord {
+        RelayRecord::new(
+            identity.public_key_bytes(),
+            identity.peer_id().to_string(),
+            vec!["/ip4/127.0.0.1/tcp/4001".to_string()],
+            vec![
+                RelayRecordCapability::Bootstrap,
+                RelayRecordCapability::Discovery,
+            ],
+            observed_at,
+            expires_at,
+            |bytes| identity.sign(bytes),
+        )
+        .expect("test relay record should be valid")
+    }
+
     #[tokio::test]
     async fn new_tcp_creates_node_without_error() {
         let dir = tempdir().unwrap();
@@ -2176,6 +2363,40 @@ mod tests {
         assert_eq!(
             node.update_log_entries(&identity),
             Some(expected.as_slice())
+        );
+    }
+
+    #[tokio::test]
+    async fn relay_exchange_rejects_invalid_records() {
+        let dir = tempdir().unwrap();
+        let node = make_node(dir.path());
+        let identity = NodeIdentity::generate();
+        let mut invalid = relay_record(&identity, 100, 200);
+        invalid.body.addrs = vec!["/ip4/127.0.0.1/tcp/5001".to_string()];
+
+        let (accepted, rejected) = node.store_relay_records(vec![invalid], 150);
+
+        assert_eq!((accepted, rejected), (0, 1));
+        assert_eq!(node.store().known_relay_count(150).unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn relay_exchange_is_bounded() {
+        let dir = tempdir().unwrap();
+        let node = make_node(dir.path());
+        let records: Vec<_> = (0..40)
+            .map(|index| {
+                let identity = NodeIdentity::generate();
+                relay_record(&identity, 100 + index, 300)
+            })
+            .collect();
+
+        let (accepted, rejected) = node.store_relay_records(records, 150);
+
+        assert_eq!((accepted, rejected), (RELAY_EXCHANGE_MAX_RECORDS as u16, 0));
+        assert_eq!(
+            node.store().known_relay_count(150).unwrap(),
+            RELAY_EXCHANGE_MAX_RECORDS
         );
     }
 
