@@ -28,7 +28,7 @@ Use the following v0 decisions:
 - No hardcoded public production relays yet.
 - A node may be marked as a bootstrap/discovery relay, but ordinary nodes can still be dialed explicitly.
 - DHT provider records are the first discovery mechanism. Relay gossip is a later card.
-- Bootstrap management CLI is a later card. This card can expose config and status without adding `dweb bootstrap add/remove`.
+- Bootstrap management CLI is a later card. This card can expose config and status without adding `jolt bootstrap add/remove`.
 
 ## What to Build
 
@@ -56,7 +56,7 @@ The first implementation can keep current `--bootstrap` behavior working. Persis
 
 ## Non-Goals
 
-- `dweb bootstrap add/remove/list`. That belongs in Card 023.
+- `jolt bootstrap add/remove/list`. That belongs in Card 023.
 - Proving DHT provider discovery through a relay. That belongs in Card 024.
 - Discovered relay/peer cache. That belongs in Card 025.
 - Dashboard bootstrap state. That belongs in Card 026.

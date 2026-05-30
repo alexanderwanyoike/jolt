@@ -35,4 +35,4 @@ The relay should verify the request before accepting it.
 
 Do not add relay-to-relay replication. This card is only owner -> selected relay.
 
-Implemented as `PinRequest` in `dweb-core`, signed over canonical bytes with the owner's identity key.
+Implemented as `PinRequest` in `jolt-core`, signed over canonical bytes with the owner's identity key.

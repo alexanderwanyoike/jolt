@@ -2,15 +2,15 @@
 
 ## M1: Two Nodes Talking
 
-**Goal:** Two dweb nodes on a LAN discover each other and exchange a file.
+**Goal:** Two jolt nodes on a LAN discover each other and exchange a file.
 
 **Deliverables:**
-- Rust workspace with `dweb-core`, `dweb-identity`, `dweb-network`, `dweb-node` crates
+- Rust workspace with `jolt-core`, `jolt-identity`, `jolt-network`, `jolt-node` crates
 - Ed25519 keypair generation and storage
 - libp2p node with mDNS discovery
 - Content-addressed file publishing (hash, store, announce)
 - Content fetch protocol (request by ContentId, receive, verify)
-- CLI interface: `dweb start`, `dweb publish <file>`, `dweb fetch <content-id>`
+- CLI interface: `jolt start`, `jolt publish <file>`, `jolt fetch <content-id>`
 
 **Success criteria:** Node A publishes a file, Node B fetches it by ContentId, file integrity is verified.
 
@@ -25,7 +25,7 @@
 - Cache size configuration
 - Nodes serve cached content to requesters (automatic re-sharing)
 - Content pinning (prevent eviction)
-- Cache statistics CLI: `dweb cache stats`, `dweb cache list`
+- Cache statistics CLI: `jolt cache stats`, `jolt cache list`
 
 **Success criteria:** Node A publishes, Node B fetches and caches, Node A goes offline, Node C fetches from Node B's cache.
 
@@ -33,20 +33,20 @@
 
 ## M3: Daemon Architecture, HTTP API, and Protocol Design
 
-**Goal:** The dweb node runs as a persistent daemon. CLI commands and browser UI are thin clients that talk to the daemon via a localhost HTTP API. Connections stay alive for hole punching and content serving.
+**Goal:** The jolt node runs as a persistent daemon. CLI commands and browser UI are thin clients that talk to the daemon via a localhost HTTP API. Connections stay alive for hole punching and content serving.
 
 **Deliverables:**
 - Protocol design document (connection lifecycle, content routing, handshake)
 - Daemon process management (start, stop, status, auto-restart)
-- `dweb-server` crate with axum HTTP server (localhost REST API)
+- `jolt-server` crate with axum HTTP server (localhost REST API)
 - CLI commands refactored to call the daemon's API instead of creating throwaway nodes
 - Persistent connection management (relay circuits maintained, dcutr completes)
 - Docker Compose test environment (3-node network simulation)
 - Basic browser UI: node status, peer list, publish/fetch content
-- Register `dweb://` as OS protocol handler on install
-- URI resolution: `dweb://` links resolve through the daemon
+- Register `jolt://` as OS protocol handler on install
+- URI resolution: `jolt://` links resolve through the daemon
 
-**Success criteria:** Daemon stays running, maintains relay circuits and DHT presence. `dweb fetch` talks to the daemon and gets content without creating a new node. dcutr hole-punching completes because connections persist. Docker tests verify the full flow.
+**Success criteria:** Daemon stays running, maintains relay circuits and DHT presence. `jolt fetch` talks to the daemon and gets content without creating a new node. dcutr hole-punching completes because connections persist. Docker tests verify the full flow.
 
 ---
 
@@ -59,7 +59,7 @@
 - Update log sync protocol
 - Mutable content resolution (PeerId -> latest content root)
 - User profile (display name, bio)
-- CLI: `dweb publish --update <path>`, `dweb resolve <peer-id>`
+- CLI: `jolt publish --update <path>`, `jolt resolve <peer-id>`
 
 **Success criteria:** User publishes v1 of a file, updates to v2, other nodes resolve and fetch v2 by the user's PeerId.
 
@@ -107,12 +107,12 @@
 **Goal:** Users can publish private content encrypted for specific recipients or groups.
 
 **Deliverables:**
-- `dweb-crypto` crate
+- `jolt-crypto` crate
 - X25519 key derivation from Ed25519 identity
 - Encrypt content for single recipient
 - Group key management (create, distribute, rotate)
 - Visibility levels: public, private, group
-- CLI: `dweb publish --private --recipient <peer-id>`
+- CLI: `jolt publish --private --recipient <peer-id>`
 
 **Success criteria:** Alice publishes encrypted content for Bob. Bob decrypts it. Carol cannot.
 
@@ -137,7 +137,7 @@
 **Goal:** The node can execute WASM applications in a sandboxed environment.
 
 **Deliverables:**
-- `dweb-runtime` crate with wasmtime integration
+- `jolt-runtime` crate with wasmtime integration
 - Host API: storage (KV), logging
 - Capability-based permission system
 - Resource limits (memory, CPU, storage)
@@ -152,10 +152,10 @@
 **Goal:** Users can install, run, update, and remove apps.
 
 **Deliverables:**
-- `dweb-apps` crate
+- `jolt-apps` crate
 - App manifest format
-- App packaging: `dweb app pack`
-- App publishing: `dweb app publish`
+- App packaging: `jolt app pack`
+- App publishing: `jolt app publish`
 - App installation from network
 - App update detection and installation
 - App removal
@@ -213,17 +213,17 @@
 
 ## M12: Developer SDK and Documentation
 
-**Goal:** Developers can build dweb apps easily.
+**Goal:** Developers can build jolt apps easily.
 
 **Deliverables:**
-- `dweb-sdk-rust` crate with ergonomic host API wrappers
-- `dweb-sdk-js` npm package (for QuickJS-based apps)
+- `jolt-sdk-rust` crate with ergonomic host API wrappers
+- `jolt-sdk-js` npm package (for QuickJS-based apps)
 - App development tutorial
 - API reference documentation
 - Example apps: blog, chat, file sharing
-- App template: `dweb app init --template <name>`
+- App template: `jolt app init --template <name>`
 
-**Success criteria:** A developer with no dweb experience can follow the tutorial and publish a working app within an afternoon.
+**Success criteria:** A developer with no jolt experience can follow the tutorial and publish a working app within an afternoon.
 
 ---
 

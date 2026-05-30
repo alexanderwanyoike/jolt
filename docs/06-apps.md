@@ -137,9 +137,9 @@ flowchart TD
     Write["Write app in any WASM-compatible language"]
     Write --> Compile["Compile to WASM target"]
     Compile --> Manifest["Create manifest.toml"]
-    Manifest --> Pack["dweb app pack ./my-app/"]
-    Pack --> DWEB[".dweb archive\n(wasm + assets + manifest)"]
-    DWEB --> Publish["dweb app publish"]
+    Manifest --> Pack["jolt app pack ./my-app/"]
+    Pack --> JOLT[".jolt archive\n(wasm + assets + manifest)"]
+    JOLT --> Publish["jolt app publish"]
 
     Publish --> Sign["Sign with developer key"]
     Sign --> CAddr["Content-address the package"]
@@ -164,11 +164,11 @@ There is no centralized app store. Discovery can be decentralized and community-
 ```mermaid
 sequenceDiagram
     participant User
-    participant Node as dweb Node
+    participant Node as jolt Node
     participant Net as Network
 
     User->>Node: Install app (ContentId)
-    Node->>Net: Fetch .dweb package
+    Node->>Net: Fetch .jolt package
     Net-->>Node: Package bytes
     Node->>Node: Verify content hash matches ContentId
     Node->>Node: Verify developer signature
@@ -224,7 +224,7 @@ sequenceDiagram
 ### Uninstalling
 
 ```
-1. User clicks "Uninstall" (or: dweb app uninstall <app-id>)
+1. User clicks "Uninstall" (or: jolt app uninstall <app-id>)
 2. WASM binary and assets deleted
 3. User chooses: keep data or delete data
 4. If keep: data remains in per-app namespace, accessible if reinstalled
@@ -252,14 +252,14 @@ The user explicitly grants inter-app communication permissions.
 
 ## Developer SDK
 
-dweb provides SDK packages that wrap the host API:
+jolt provides SDK packages that wrap the host API:
 
 ### Rust SDK Example
 
 ```rust
-use dweb_sdk::prelude::*;
+use jolt_sdk::prelude::*;
 
-#[dweb::main]
+#[jolt::main]
 async fn handle_request(req: Request) -> Response {
     // Read from app's KV store
     let count: u64 = kv::get("visit_count").unwrap_or(0);
@@ -280,7 +280,7 @@ async fn handle_request(req: Request) -> Response {
 ### JavaScript SDK Example
 
 ```javascript
-import { kv, network, identity } from 'dweb-sdk';
+import { kv, network, identity } from 'jolt-sdk';
 
 // Handle incoming chat messages
 network.onPeerMessage(async (peer, data) => {
@@ -307,13 +307,13 @@ Apps are signed with the developer's Ed25519 key. This provides:
 
 ### Trust Model
 
-dweb does not have a central review process. Trust is distributed:
+jolt does not have a central review process. Trust is distributed:
 
 ```mermaid
 graph TD
     Trust["Trust Signals"]
     Trust --> DevKey["Developer's public key<br/>(consistent identity across apps)"]
-    Trust --> Reviews["Community ratings/reviews<br/>(signed by real dweb identities)"]
+    Trust --> Reviews["Community ratings/reviews<br/>(signed by real jolt identities)"]
     Trust --> Curated["Curated directories<br/>(trusted community members vouch)"]
     Trust --> Source["Source code availability<br/>(published alongside WASM)"]
     Trust --> Perms["Permission requests<br/>(minimal = more trustworthy)"]
@@ -331,14 +331,14 @@ graph TD
 
 ## Example Apps
 
-### dweb-blog (Client-Side)
+### jolt-blog (Client-Side)
 A blogging platform. Write posts in markdown, publish to the network. Readers subscribe to your update log. Client-side rendering, no server component needed.
 
-### dweb-chat (Hybrid)
+### jolt-chat (Hybrid)
 Encrypted peer-to-peer messaging. Server component receives messages when browser is closed and syncs history. Client component provides the chat UI.
 
-### dweb-video (Client-Side)
+### jolt-video (Client-Side)
 Publish and stream video. Videos are chunked and content-addressed. Viewers stream from multiple peers simultaneously (swarm). Subscriptions via update logs.
 
-### dweb-forum (Hybrid)
+### jolt-forum (Hybrid)
 Discussion boards. Topics and replies stored per-user. Server component indexes and aggregates across peers for search. Moderation by community-elected keys.

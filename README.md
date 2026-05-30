@@ -103,10 +103,10 @@ cargo build --release
 
 ```bash
 # Start as a bootstrap node (public server with fixed UDP port)
-./target/release/dweb start --no-bootstrap --p2p-port 4001 --api-bind 0.0.0.0
+./target/release/jolt start --no-bootstrap --p2p-port 4001 --api-bind 0.0.0.0
 
 # Start a client node (connects to bootstrap)
-./target/release/dweb start \
+./target/release/jolt start \
   --bootstrap "/ip4/<BOOTSTRAP_IP>/udp/<PORT>/p2p/<BOOTSTRAP_PEER_ID>"
 ```
 
@@ -115,21 +115,21 @@ cargo build --release
 ```bash
 curl -F "file=@myfile.txt" http://127.0.0.1:9862/api/v1/publish
 # {"content_id": "bafkr4i...", "size": 1234}
-dweb publish ./myfile.txt --path /notes/hello --pin-home-relay
+jolt publish ./myfile.txt --path /notes/hello --pin-home-relay
 ```
 
 ### Configure A Home Relay
 
 ```bash
-dweb home-relay set "/ip4/<RELAY_IP>/tcp/<PORT>/p2p/<RELAY_PEER_ID>" \
+jolt home-relay set "/ip4/<RELAY_IP>/tcp/<PORT>/p2p/<RELAY_PEER_ID>" \
   --capability pinning \
   --api-url "http://<RELAY_API_HOST>:9862"
-dweb home-relay show
-dweb home-relay pin <CONTENT_ID>
-dweb status
+jolt home-relay show
+jolt home-relay pin <CONTENT_ID>
+jolt status
 ```
 
-The home relay is Alice's delegated availability node. It is stored locally, loaded when the daemon starts, and reported by `dweb status` and `GET /api/v1/status`. The `api-url` is the v0 relay HTTP control endpoint used for owner-signed pin requests.
+The home relay is Alice's delegated availability node. It is stored locally, loaded when the daemon starts, and reported by `jolt status` and `GET /api/v1/status`. The `api-url` is the v0 relay HTTP control endpoint used for owner-signed pin requests.
 
 ### Fetch Content
 
@@ -148,7 +148,7 @@ cargo build
 
 # Terminal 1: node A
 JOLT_A=$(mktemp -d)
-XDG_DATA_HOME="$JOLT_A" target/debug/dweb start \
+XDG_DATA_HOME="$JOLT_A" target/debug/jolt start \
   --transport tcp \
   --p2p-port 4901 \
   --api-port 9871 \
@@ -156,7 +156,7 @@ XDG_DATA_HOME="$JOLT_A" target/debug/dweb start \
 
 # Terminal 2: node B
 JOLT_B=$(mktemp -d)
-XDG_DATA_HOME="$JOLT_B" target/debug/dweb start \
+XDG_DATA_HOME="$JOLT_B" target/debug/jolt start \
   --transport tcp \
   --p2p-port 4902 \
   --api-port 9872 \
@@ -227,11 +227,11 @@ Test matrix:
 | Layer | Command | Default? | Notes |
 |---|---|---:|---|
 | Deterministic local suite | `./scripts/test-local.sh` | Yes | Normal pre-PR check. |
-| Pure crates only | `cargo test -p dweb-core -p dweb-identity -p dweb-store` | Yes | Fast protocol, identity, and store feedback. |
-| Local TCP network tests | `cargo test -p dweb-network --lib --tests` | Yes | Uses TCP transport for local determinism. |
-| Daemon/API tests | `cargo test -p dweb-node -p dweb-server` | Yes | Covers CLI parsing, daemon config, and HTTP routes. |
-| iroh smoke test | `cargo test -p dweb-network new_iroh_creates_node_without_error -- --ignored` | No | Manual because it creates an iroh endpoint and may depend on local network or relay availability. |
-| Patchbay topologies | `cargo test -p dweb-network --test nat_traversal -- --ignored` | No | Linux/user-namespace tests for LAN, NAT, CGNAT, and DHT topology simulation. |
+| Pure crates only | `cargo test -p jolt-core -p jolt-identity -p jolt-store` | Yes | Fast protocol, identity, and store feedback. |
+| Local TCP network tests | `cargo test -p jolt-network --lib --tests` | Yes | Uses TCP transport for local determinism. |
+| Daemon/API tests | `cargo test -p jolt-node -p jolt-server` | Yes | Covers CLI parsing, daemon config, and HTTP routes. |
+| iroh smoke test | `cargo test -p jolt-network new_iroh_creates_node_without_error -- --ignored` | No | Manual because it creates an iroh endpoint and may depend on local network or relay availability. |
+| Patchbay topologies | `cargo test -p jolt-network --test nat_traversal -- --ignored` | No | Linux/user-namespace tests for LAN, NAT, CGNAT, and DHT topology simulation. |
 | Docker topology harness | `cd tests/docker && bash test-all.sh` | No | Optional/manual harness for old container topology checks. Not part of the normal dev loop. |
 | Real-world canary | Public relay/bootstrap plus two client machines on different networks | No | Final confidence check for NAT/CGNAT behavior. |
 
@@ -239,10 +239,10 @@ Manual network checks:
 
 ```bash
 # Linux network namespace / patchbay topology tests
-cargo test -p dweb-network --test nat_traversal -- --ignored
+cargo test -p jolt-network --test nat_traversal -- --ignored
 
 # Manual iroh transport smoke test
-cargo test -p dweb-network new_iroh_creates_node_without_error -- --ignored
+cargo test -p jolt-network new_iroh_creates_node_without_error -- --ignored
 
 # Optional Docker topology harness
 cd tests/docker && bash test-all.sh
@@ -253,7 +253,7 @@ Real-world release canary remains the strongest confidence test: a public bootst
 ## Architecture
 
 ```
-dweb node
+jolt node
   +-- HTTP API (axum, localhost:9862)
   +-- Daemon Loop (tokio::select!)
   |     +-- FetchManager (state machine)
@@ -272,12 +272,12 @@ dweb node
 
 | Crate | Purpose |
 |---|---|
-| `dweb-core` | Content addressing (SHA-256 + CIDv1), shared types |
-| `dweb-identity` | Ed25519 keypair management, signing, verification |
-| `dweb-store` | Content store with LRU cache, pinning, eviction |
-| `dweb-network` | NetworkNode, DaemonHandle, FetchManager, P2P behaviours |
-| `dweb-server` | axum HTTP API server |
-| `dweb-node` | CLI binary and daemon management |
+| `jolt-core` | Content addressing (SHA-256 + CIDv1), shared types |
+| `jolt-identity` | Ed25519 keypair management, signing, verification |
+| `jolt-store` | Content store with LRU cache, pinning, eviction |
+| `jolt-network` | NetworkNode, DaemonHandle, FetchManager, P2P behaviours |
+| `jolt-server` | axum HTTP API server |
+| `jolt-node` | CLI binary and daemon management |
 
 ## Roadmap
 

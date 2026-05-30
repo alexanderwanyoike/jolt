@@ -1,5 +1,5 @@
 #!/bin/bash
-# Node entrypoint: sets up routing, discovers bootstrap peer ID, starts dweb
+# Node entrypoint: sets up routing, discovers bootstrap peer ID, starts jolt
 set -e
 
 GATEWAY_IP="$1"
@@ -30,4 +30,4 @@ fi
 BOOTSTRAP_ADDR="/ip4/${BOOTSTRAP_IP}/udp/${BOOTSTRAP_PORT}/quic-v1/p2p/${PEER_ID}"
 echo "Bootstrap: $BOOTSTRAP_ADDR"
 
-exec dweb start --p2p-port "$PORT" --api-port 9862 --api-bind 0.0.0.0 --bootstrap "$BOOTSTRAP_ADDR"
+exec jolt start --p2p-port "$PORT" --api-port 9862 --api-bind 0.0.0.0 --bootstrap "$BOOTSTRAP_ADDR"

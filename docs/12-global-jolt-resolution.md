@@ -237,7 +237,7 @@ alice -> alice_identity.jolt
 
 Recommended implementation order:
 
-1. Add reachability types to `dweb-core`.
+1. Add reachability types to `jolt-core`.
 2. Add `UpdateAction::SetReachability`.
 3. Extend latest-record replay to include reachability.
 4. Add a pure resolver from `JoltAddress + UpdateLogEntry[]` to `ResolvedJoltTarget`.

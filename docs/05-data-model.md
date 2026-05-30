@@ -16,7 +16,7 @@
 Data created by an app during use. Stored in a per-app isolated namespace on the user's node.
 
 ```
-~/.dweb/data/
+~/.jolt/data/
   apps/
     <app-content-id>/
       kv/           # key-value store (sled/sqlite)
@@ -41,7 +41,7 @@ This data:
 Content the user has explicitly published to the network. Content-addressed and signed.
 
 ```
-~/.dweb/data/
+~/.jolt/data/
   published/
     <content-id>/
       content       # the actual bytes
@@ -66,7 +66,7 @@ This content:
 Content fetched from other nodes and cached locally for performance and availability.
 
 ```
-~/.dweb/data/
+~/.jolt/data/
   cache/
     <content-id>/
       content
@@ -86,7 +86,7 @@ This content:
 WASM binaries and assets for installed applications.
 
 ```
-~/.dweb/data/
+~/.jolt/data/
   installed_apps/
     <app-content-id>/
       app.wasm          # the WASM binary
@@ -227,8 +227,8 @@ The runtime enforces that WASM app A can never obtain a handle to app B's data s
 Users can export their data at any time:
 
 ```
-dweb export --app dweb-chat --format json > my-chat-history.json
-dweb export --all --format tar > my-dweb-data.tar
+jolt export --app jolt-chat --format json > my-chat-history.json
+jolt export --all --format tar > my-jolt-data.tar
 ```
 
 This is a core principle: your data is never trapped. You can:
@@ -241,7 +241,7 @@ This is a core principle: your data is never trapped. You can:
 
 ```toml
 [storage]
-total_limit = "10GB"          # total disk usage for dweb
+total_limit = "10GB"          # total disk usage for jolt
 cache_limit = "2GB"           # max cached content from other nodes
 per_app_limit = "500MB"       # max data per installed app
 published_limit = "5GB"       # max published content
@@ -271,7 +271,7 @@ Relays should not create durable relay-to-relay copies unless the owner explicit
 Users can ask trusted peers to pin their published content:
 
 ```
-dweb pin request --peer <peer-id> --content <content-id>
+jolt pin request --peer <peer-id> --content <content-id>
 ```
 
 The pinning peer stores a copy and serves it to the network. Mutual pinning arrangements ("I pin yours, you pin mine") improve availability for both parties.

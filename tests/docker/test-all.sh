@@ -1,12 +1,12 @@
 #!/bin/bash
-# Run all dweb Docker network simulation tests
+# Run all jolt Docker network simulation tests
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "================================================"
-echo "  dweb Docker Network Simulation Tests"
+echo "  jolt Docker Network Simulation Tests"
 echo "================================================"
 echo ""
 

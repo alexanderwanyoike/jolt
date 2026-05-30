@@ -3,16 +3,16 @@
 **Status: COMPLETE** (2026-03-26)
 
 M3 (daemon architecture) and M5 (internet-wide networking) were delivered together.
-dweb nodes now discover each other, connect across NATs, and transfer content
+jolt nodes now discover each other, connect across NATs, and transfer content
 over the internet as a true peer-to-peer mesh.
 
 ## What Works
 
 ### Daemon Architecture
-- Persistent daemon process with `dweb start` / `dweb stop` / `dweb status`
+- Persistent daemon process with `jolt start` / `jolt stop` / `jolt status`
 - Command channel architecture: `DaemonCommand` enum over mpsc, `DaemonHandle` for async API
 - `FetchManager` state machine: TryingPeers -> QueryingDht -> WaitingForProvider -> FetchingFromProvider
-- HTTP API (`dweb-server` crate, axum): health, status, peers, publish, fetch, cache stats/entries, pin/unpin
+- HTTP API (`jolt-server` crate, axum): health, status, peers, publish, fetch, cache stats/entries, pin/unpin
 - CLI as thin client to daemon API
 
 ### P2P Networking
@@ -51,12 +51,12 @@ over the internet as a true peer-to-peer mesh.
 
 ### Crate Structure
 ```
-dweb-core        ContentId, ContentManifest, types
-dweb-identity    Ed25519 keypair, signing, verification
-dweb-store       Content store with LRU cache, pinning
-dweb-network     NetworkNode, DaemonHandle, FetchManager, behaviours
-dweb-server      axum HTTP API
-dweb-node        CLI binary, daemon management
+jolt-core        ContentId, ContentManifest, types
+jolt-identity    Ed25519 keypair, signing, verification
+jolt-store       Content store with LRU cache, pinning
+jolt-network     NetworkNode, DaemonHandle, FetchManager, behaviours
+jolt-server      axum HTTP API
+jolt-node        CLI binary, daemon management
 ```
 
 ### Key Dependencies
@@ -69,13 +69,13 @@ dweb-node        CLI binary, daemon management
 
 ### Start a bootstrap node (public server)
 ```bash
-dweb start --api-bind 0.0.0.0 --no-bootstrap --p2p-port 4001
+jolt start --api-bind 0.0.0.0 --no-bootstrap --p2p-port 4001
 ```
 Note the Peer ID from the output.
 
 ### Start a client node
 ```bash
-dweb start --bootstrap "/ip4/<SERVER_IP>/udp/4001/p2p/<PEER_ID>"
+jolt start --bootstrap "/ip4/<SERVER_IP>/udp/4001/p2p/<PEER_ID>"
 ```
 
 ### Publish content
@@ -111,7 +111,7 @@ DEL  /api/v1/cache/pin/{id}  - Unpin content
 
 3. **Daemon event loop stability**: The event loop can hang after prolonged use. The forked libp2p-iroh fixes the actor panic but the underlying cause needs more investigation.
 
-4. **PID file on macOS**: The daemon PID file isn't written correctly on macOS, so `dweb status` and `dweb fetch` CLI commands fail. Use curl to the HTTP API directly as a workaround.
+4. **PID file on macOS**: The daemon PID file isn't written correctly on macOS, so `jolt status` and `jolt fetch` CLI commands fail. Use curl to the HTTP API directly as a workaround.
 
 ## What's Next (M4)
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-dweb supports both public and private content. Public content is accessible to anyone on the network. Private content is encrypted and only readable by authorized users. Access control is enforced cryptographically -- there is no server to bypass.
+jolt supports both public and private content. Public content is accessible to anyone on the network. Private content is encrypted and only readable by authorized users. Access control is enforced cryptographically -- there is no server to bypass.
 
 Encryption must be crypto-agile. The protocol should be able to move from today's algorithms to post-quantum-safe or hybrid schemes without changing the ownership model. Relays and caches store ciphertext; authorization lives in keys and signed records, not in relay-side access checks.
 
@@ -91,7 +91,7 @@ sequenceDiagram
 4. Revoked member is immediately locked out of new content
 ```
 
-The revoked member may still have copies of old content they previously downloaded and decrypted -- this is a physical reality, not a dweb limitation. The same is true of email, Slack, or any other system. Once bytes are on someone's device, no protocol can force deletion. What matters is that revocation is **immediate and forward-secure**: from the moment of revocation, the removed member cannot decrypt anything new.
+The revoked member may still have copies of old content they previously downloaded and decrypted -- this is a physical reality, not a jolt limitation. The same is true of email, Slack, or any other system. Once bytes are on someone's device, no protocol can force deletion. What matters is that revocation is **immediate and forward-secure**: from the moment of revocation, the removed member cannot decrypt anything new.
 
 ## Access Control in Apps
 
@@ -100,7 +100,7 @@ Apps can use the access control system to implement features:
 ### Private Messaging
 
 ```
-App: dweb-chat
+App: jolt-chat
 
 Sending a DM:
   1. Encrypt message for recipient using crypto host API
@@ -112,7 +112,7 @@ Sending a DM:
 ### Private Communities
 
 ```
-App: dweb-forum
+App: jolt-forum
 
 Creating a private forum:
   1. Forum creator generates group key
@@ -131,7 +131,7 @@ Paid content is intentionally outside the core protocol for now. The access-cont
 ### Key Storage
 
 ```
-~/.dweb/
+~/.jolt/
   identity/
     keypair.enc               # master Ed25519 keypair (encrypted at rest)
     x25519_derived.enc        # derived X25519 key for encryption
@@ -148,8 +148,8 @@ Paid content is intentionally outside the core protocol for now. The access-cont
 graph TD
     Master["Master Ed25519 Keypair"]
     Master --> X25519["X25519 Key<br/><i>RFC 8032 Ed25519-to-X25519</i>"]
-    Master --> AppSign["Per-app Signing Key<br/><i>HKDF(master_private, 'dweb-app-key' || app_id)</i>"]
-    X25519 --> AppEnc["Per-app Encryption Key<br/><i>HKDF(x25519_private, 'dweb-app-enc' || app_id)</i>"]
+    Master --> AppSign["Per-app Signing Key<br/><i>HKDF(master_private, 'jolt-app-key' || app_id)</i>"]
+    X25519 --> AppEnc["Per-app Encryption Key<br/><i>HKDF(x25519_private, 'jolt-app-enc' || app_id)</i>"]
 
     style Master fill:#e94560,stroke:#fff,color:#fff
     style X25519 fill:#0f3460,stroke:#fff,color:#fff
@@ -180,7 +180,7 @@ Group membership:
 
 ## Threat Model
 
-### What dweb Protects Against
+### What jolt Protects Against
 
 - **Eavesdropping:** all P2P connections are encrypted (Noise protocol). Private content is end-to-end encrypted.
 - **Data theft from servers:** there are no servers. Data is on user nodes, encrypted at rest.
@@ -189,7 +189,7 @@ Group membership:
 - **Impersonation:** all content is signed. Forging content requires the private key.
 - **Metadata analysis (partial):** DHT queries are distributed, not centralized. But a determined observer can still see who talks to whom at the network level.
 
-### What dweb Does Not Protect Against
+### What jolt Does Not Protect Against
 
 - **Compromised node:** if your machine is compromised, your keys are compromised. This is true of all client-side systems.
 - **Key loss:** if you lose your private key and have no backup, your identity and encrypted data are gone.

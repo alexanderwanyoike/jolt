@@ -12,9 +12,9 @@ Persistent bootstrap config is useful only if a user or operator can inspect and
 The current `--bootstrap` flag is fine for one-off demos, but a real node needs persistent bootstrap relay management:
 
 ```text
-dweb bootstrap list
-dweb bootstrap add <multiaddr>
-dweb bootstrap remove <multiaddr>
+jolt bootstrap list
+jolt bootstrap add <multiaddr>
+jolt bootstrap remove <multiaddr>
 ```
 
 This is configuration UX, not relay discovery itself.
@@ -28,9 +28,9 @@ The commands should operate on the same node config introduced in Card 019.
 Suggested shape:
 
 ```text
-dweb bootstrap list
-dweb bootstrap add /dns4/bootstrap.example/udp/4001/quic-v1/p2p/12D3...
-dweb bootstrap remove /dns4/bootstrap.example/udp/4001/quic-v1/p2p/12D3...
+jolt bootstrap list
+jolt bootstrap add /dns4/bootstrap.example/udp/4001/quic-v1/p2p/12D3...
+jolt bootstrap remove /dns4/bootstrap.example/udp/4001/quic-v1/p2p/12D3...
 ```
 
 The command output should distinguish:

@@ -1,4 +1,4 @@
-# Docker Compose network simulation for dweb
+# Docker Compose network simulation for jolt
 #
 # Topology (after setup.sh connects second interfaces):
 #   internet (10.100.0.0/24): bootstrap, nat-gw1, nat-gw2, cgnat-gw
@@ -103,7 +103,7 @@ services:
         ipv4_address: 10.104.0.2
 
   # === Nodes ===
-  # node-entrypoint.sh: sets default route, discovers bootstrap peer ID, starts dweb
+  # node-entrypoint.sh: sets default route, discovers bootstrap peer ID, starts jolt
   # Args: <gateway_ip> <listen_port> <bootstrap_ip> <bootstrap_port>
 
   node1:

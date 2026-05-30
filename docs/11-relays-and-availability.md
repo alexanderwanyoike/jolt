@@ -2,7 +2,7 @@
 
 ## Problem
 
-dweb can prove ownership with keys and content hashes, but availability is a physical problem. If Bob's node is offline and no other online node has Bob's content, nobody can fetch it.
+jolt can prove ownership with keys and content hashes, but availability is a physical problem. If Bob's node is offline and no other online node has Bob's content, nobody can fetch it.
 
 The current web has the same constraint:
 
@@ -10,11 +10,11 @@ The current web has the same constraint:
 2. Run a VPS and host it yourself.
 3. Ask someone else to keep it online.
 
-dweb does not remove that constraint. It changes the authority model. In dweb, Bob's key is the authority, and relays are replaceable availability providers.
+jolt does not remove that constraint. It changes the authority model. In jolt, Bob's key is the authority, and relays are replaceable availability providers.
 
 ## Relay Definition
 
-A relay is an always-online dweb node that helps other nodes remain reachable.
+A relay is an always-online jolt node that helps other nodes remain reachable.
 
 Relays can provide one or more capabilities:
 

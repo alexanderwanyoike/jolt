@@ -7,4 +7,4 @@ cd "$ROOT_DIR"
 echo "==> Running deterministic Alice -> Relay -> Bob canary"
 echo "==> Proves Bob discovers Alice's update-log provider through a configured relay/DHT path"
 
-cargo test --locked -p dweb-network bob_discovers_alice_update_log_provider_through_bootstrap_relay -- --nocapture
+cargo test --locked -p jolt-network bob_discovers_alice_update_log_provider_through_bootstrap_relay -- --nocapture

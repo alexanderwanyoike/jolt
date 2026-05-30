@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/dweb-core",
-    "crates/dweb-identity",
-    "crates/dweb-store",
-    "crates/dweb-network",
-    "crates/dweb-server",
-    "crates/dweb-node",
+    "crates/jolt-core",
+    "crates/jolt-identity",
+    "crates/jolt-store",
+    "crates/jolt-network",
+    "crates/jolt-server",
+    "crates/jolt-node",
 ]
 
 [workspace.package]
@@ -16,11 +16,11 @@ license = "MIT"
 
 [workspace.dependencies]
 # Internal crates
-dweb-core = { path = "crates/dweb-core" }
-dweb-identity = { path = "crates/dweb-identity" }
-dweb-store = { path = "crates/dweb-store" }
-dweb-network = { path = "crates/dweb-network" }
-dweb-server = { path = "crates/dweb-server" }
+jolt-core = { path = "crates/jolt-core" }
+jolt-identity = { path = "crates/jolt-identity" }
+jolt-store = { path = "crates/jolt-store" }
+jolt-network = { path = "crates/jolt-network" }
+jolt-server = { path = "crates/jolt-server" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

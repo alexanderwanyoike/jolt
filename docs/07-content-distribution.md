@@ -2,9 +2,9 @@
 
 ## Overview
 
-dweb distributes content across the network using content addressing and peer-to-peer transfers. Popular content naturally replicates as more nodes cache it, improving availability and performance. This is particularly important for bandwidth-heavy use cases like video and music streaming.
+jolt distributes content across the network using content addressing and peer-to-peer transfers. Popular content naturally replicates as more nodes cache it, improving availability and performance. This is particularly important for bandwidth-heavy use cases like video and music streaming.
 
-Availability is not magic. If the publisher's node is offline, some other online node must have the content. dweb's answer is owner-directed relay pinning plus opportunistic caching:
+Availability is not magic. If the publisher's node is offline, some other online node must have the content. jolt's answer is owner-directed relay pinning plus opportunistic caching:
 
 - **Pinning** is intentional. The owner or local user asks a node to keep content.
 - **Caching** is opportunistic. A node may keep content it fetched and may evict it later.
@@ -272,7 +272,7 @@ graph TD
 
 ## Bandwidth Contribution
 
-dweb has no built-in token or payment system for bandwidth. For the core protocol, payment is out of scope. Participation relies on:
+jolt has no built-in token or payment system for bandwidth. For the core protocol, payment is out of scope. Participation relies on:
 
 1. **Reciprocity** -- nodes that download also upload (cache sharing)
 2. **Social incentive** -- redundancy groups are mutual arrangements

@@ -58,7 +58,7 @@ Bob should start with only bootstrap relay configuration, not Alice's peer ID, r
 6. Stop Alice.
 7. Fetch from Bob with the `.jolt` address. Bob should resolve Alice's signed update log through the relay and fetch the content from the relay, without knowing Alice's peer ID, CID, direct address, or cached state.
 
-The automated smoke test is `test_offline_publisher_content_is_resolved_and_fetched_through_relay` in `crates/dweb-server/tests/api_integration.rs`.
+The automated smoke test is `test_offline_publisher_content_is_resolved_and_fetched_through_relay` in `crates/jolt-server/tests/api_integration.rs`.
 
 ## Non-Goals
 

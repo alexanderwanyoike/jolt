@@ -2,7 +2,7 @@
 
 ## Identity Model
 
-Every dweb user is identified by an Ed25519 keypair. There is no central identity registry. Your public key is your identity.
+Every jolt user is identified by an Ed25519 keypair. There is no central identity registry. Your public key is your identity.
 
 ```mermaid
 graph LR
@@ -23,7 +23,7 @@ graph LR
 On first launch, the node generates an Ed25519 keypair and stores it in the local configuration directory.
 
 ```
-~/.dweb/
+~/.jolt/
   identity/
     keypair.enc        # encrypted with a user passphrase
     public_key.pub     # shareable public key
@@ -96,7 +96,7 @@ Signatures provide:
 
 ### Encryption
 
-dweb uses a hybrid encryption scheme for private content.
+jolt uses a hybrid encryption scheme for private content.
 
 #### Encrypting for a Single Recipient
 
@@ -142,7 +142,7 @@ Group membership changes:
 
 ### Content Addressing
 
-All content in dweb is addressed by its hash.
+All content in jolt is addressed by its hash.
 
 ```mermaid
 graph LR

@@ -19,7 +19,7 @@ Run:
 The script runs:
 
 ```sh
-cargo test --locked -p dweb-network bob_discovers_alice_update_log_provider_through_bootstrap_relay -- --nocapture
+cargo test --locked -p jolt-network bob_discovers_alice_update_log_provider_through_bootstrap_relay -- --nocapture
 ```
 
 Expected result:
@@ -47,7 +47,7 @@ Use three machines or networks when possible:
 Build first:
 
 ```sh
-cargo build --release -p dweb-node
+cargo build --release -p jolt-node
 ```
 
 Use separate data homes so the canary does not touch your normal Jolt node.
@@ -58,8 +58,8 @@ On the public relay host:
 
 ```sh
 export XDG_DATA_HOME="$HOME/.jolt-canary/relay"
-mkdir -p "$XDG_DATA_HOME/dweb"
-cat > "$XDG_DATA_HOME/dweb/config.json" <<'JSON'
+mkdir -p "$XDG_DATA_HOME/jolt"
+cat > "$XDG_DATA_HOME/jolt/config.json" <<'JSON'
 {
   "bootstrap_relays": [],
   "use_builtin_bootstrap_relays": false,
@@ -68,14 +68,14 @@ cat > "$XDG_DATA_HOME/dweb/config.json" <<'JSON'
 }
 JSON
 
-target/release/dweb start --api-bind 0.0.0.0 --api-port 9862 --p2p-port 4001
+target/release/jolt start --api-bind 0.0.0.0 --api-port 9862 --p2p-port 4001
 ```
 
 In another relay terminal:
 
 ```sh
 export XDG_DATA_HOME="$HOME/.jolt-canary/relay"
-target/release/dweb status
+target/release/jolt status
 ```
 
 Record:
@@ -94,7 +94,7 @@ On Alice's machine:
 
 ```sh
 export XDG_DATA_HOME="$HOME/.jolt-canary/alice"
-target/release/dweb start --api-port 9863 --bootstrap /p2p/<relay-peer-id>
+target/release/jolt start --api-port 9863 --bootstrap /p2p/<relay-peer-id>
 ```
 
 In another Alice terminal:
@@ -102,8 +102,8 @@ In another Alice terminal:
 ```sh
 export XDG_DATA_HOME="$HOME/.jolt-canary/alice"
 printf 'hello from alice canary\n' > /tmp/jolt-alice-canary.txt
-target/release/dweb publish /tmp/jolt-alice-canary.txt --path /canary/profile
-target/release/dweb status
+target/release/jolt publish /tmp/jolt-alice-canary.txt --path /canary/profile
+target/release/jolt status
 ```
 
 Record Alice's Jolt address from status, then build the content address:
@@ -126,16 +126,16 @@ On Bob's machine:
 
 ```sh
 export XDG_DATA_HOME="$HOME/.jolt-canary/bob"
-target/release/dweb start --api-port 9864 --bootstrap /p2p/<relay-peer-id>
+target/release/jolt start --api-port 9864 --bootstrap /p2p/<relay-peer-id>
 ```
 
 In another Bob terminal:
 
 ```sh
 export XDG_DATA_HOME="$HOME/.jolt-canary/bob"
-target/release/dweb status
-target/release/dweb resolve <alice-identity>.jolt/canary/profile
-target/release/dweb fetch <alice-identity>.jolt/canary/profile -o /tmp/jolt-bob-canary.txt
+target/release/jolt status
+target/release/jolt resolve <alice-identity>.jolt/canary/profile
+target/release/jolt fetch <alice-identity>.jolt/canary/profile -o /tmp/jolt-bob-canary.txt
 cat /tmp/jolt-bob-canary.txt
 ```
 
@@ -169,7 +169,7 @@ The node has a bootstrap address but has not connected to it. Verify the relay p
 
 `Bootstrap: degraded`
 
-A bootstrap attempt failed. Run `dweb status` and inspect the bootstrap error. Remove stale cached hints if needed by deleting the canary data home, then retry from the configured relay.
+A bootstrap attempt failed. Run `jolt status` and inspect the bootstrap error. Remove stale cached hints if needed by deleting the canary data home, then retry from the configured relay.
 
 ## Cleanup
 
@@ -177,7 +177,7 @@ Stop each daemon with `Ctrl-C` in the terminal where it is running, or:
 
 ```sh
 export XDG_DATA_HOME="$HOME/.jolt-canary/alice"
-target/release/dweb stop
+target/release/jolt stop
 ```
 
 Repeat with the relay and Bob `XDG_DATA_HOME` values.

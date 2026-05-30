@@ -47,7 +47,7 @@ echo "=== Step 5: Fix gateway default routes ==="
 $COMPOSE exec -T home-gw sh -c 'ip route del default 2>/dev/null; ip route add default via 10.103.0.2'
 echo "  home-gw: default via 10.103.0.2 (cgnat-gw)"
 
-echo "=== Step 6: Start dweb nodes ==="
+echo "=== Step 6: Start jolt nodes ==="
 $COMPOSE up -d node1 node2 node3 node4
 
 echo "=== Step 7: Wait for all nodes healthy ==="

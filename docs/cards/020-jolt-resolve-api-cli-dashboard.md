@@ -22,7 +22,7 @@ and see what the node resolved, which signatures were accepted, and which conten
 Add a user-facing resolve flow:
 
 ```text
-dweb resolve {identity}.jolt/feed
+jolt resolve {identity}.jolt/feed
 ```
 
 and HTTP/dashboard equivalents.
@@ -40,7 +40,7 @@ The flow should:
 
 ## Acceptance Criteria
 
-- [x] CLI has `dweb resolve <jolt-address>`.
+- [x] CLI has `jolt resolve <jolt-address>`.
 - [x] HTTP API exposes `POST /api/v1/resolve`.
 - [x] Dashboard has a `.jolt` resolve input separate from raw peer connect.
 - [x] Resolve output shows identity, path, selected sequence, content ID, and reachability hints.

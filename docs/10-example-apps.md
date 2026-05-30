@@ -2,11 +2,11 @@
 
 ## Overview
 
-These are example applications that demonstrate what can be built on dweb. Each follows the same model: installed locally, data owned by the user, communication via P2P.
+These are example applications that demonstrate what can be built on jolt. Each follows the same model: installed locally, data owned by the user, communication via P2P.
 
 ---
 
-## dweb-video
+## jolt-video
 
 **Decentralized video platform. YouTube without YouTube.**
 
@@ -42,7 +42,7 @@ sequenceDiagram
 
 ---
 
-## dweb-chat
+## jolt-chat
 
 **End-to-end encrypted messaging. Signal without the phone number.**
 
@@ -75,7 +75,7 @@ sequenceDiagram
 
 ---
 
-## dweb-blog
+## jolt-blog
 
 **Personal publishing. Your blog, your rules, forever.**
 
@@ -105,7 +105,7 @@ graph LR
 
 ---
 
-## dweb-drive
+## jolt-drive
 
 **Personal file storage and sharing. Dropbox without the cloud.**
 
@@ -119,7 +119,7 @@ graph TD
     end
 
     subgraph sharing["Sharing"]
-        Public["Public: dweb:// link"]
+        Public["Public: jolt:// link"]
         Private["Private: encrypted for recipients"]
         Group["Group: shared folder model"]
     end
@@ -138,7 +138,7 @@ graph TD
 
 ---
 
-## dweb-music
+## jolt-music
 
 **Music streaming and distribution. Spotify without the middleman.**
 
@@ -169,7 +169,7 @@ graph LR
 
 ---
 
-## dweb-market
+## jolt-market
 
 **Peer-to-peer marketplace. eBay/Etsy without the fees.**
 
@@ -178,7 +178,7 @@ Type: Client-side
 ```mermaid
 sequenceDiagram
     participant Seller
-    participant Net as dweb Network
+    participant Net as jolt Network
     participant Buyer
 
     Seller->>Net: Create listing (photos, description, price)
@@ -192,13 +192,13 @@ sequenceDiagram
     Note over Net: No listing fee, no transaction fee<br/>No platform cut, seller keeps 100%
 ```
 
-**Trust:** Signed reviews from verified buyers, reviews tied to real dweb identities (Sybil-resistant), public transaction history
+**Trust:** Signed reviews from verified buyers, reviews tied to real jolt identities (Sybil-resistant), public transaction history
 
 **Permissions:** storage, network, identity, crypto
 
 ---
 
-## dweb-social
+## jolt-social
 
 **Social networking. The feed without the algorithm.**
 
@@ -234,7 +234,7 @@ graph TD
 
 ---
 
-## dweb-wiki
+## jolt-wiki
 
 **Collaborative knowledge base. Wikipedia without the foundation.**
 

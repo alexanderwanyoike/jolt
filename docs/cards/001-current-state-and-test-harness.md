@@ -28,11 +28,11 @@ This should answer:
 - [ ] `cargo test` guidance in `README.md` matches the tests that actually work.
 - [ ] Stale Docker commands using old CLI flags are fixed or the Docker harness is explicitly archived.
 - [ ] iroh-backed unit tests either pass reliably or are moved behind an ignored/manual test path.
-- [ ] `cargo test -p dweb-core -p dweb-identity -p dweb-store -p dweb-node` passes.
-- [ ] Focused `dweb-network` unit tests pass without hanging.
+- [ ] `cargo test -p jolt-core -p jolt-identity -p jolt-store -p jolt-node` passes.
+- [ ] Focused `jolt-network` unit tests pass without hanging.
 - [ ] Known manual/real-hardware tests are documented separately from regular CI/local tests.
 
 ## Notes
 
-The previous local check showed the non-network crates passing and focused `dweb-network` tests passing. Full workspace tests hung in `NetworkNode::new` tests using iroh transport.
+The previous local check showed the non-network crates passing and focused `jolt-network` tests passing. Full workspace tests hung in `NetworkNode::new` tests using iroh transport.
 

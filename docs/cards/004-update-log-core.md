@@ -38,4 +38,4 @@ This card only needs local data structures and tests. It does not need network s
 
 ## Notes
 
-Prefer putting shared primitives in `dweb-core` unless implementation pressure shows a better crate boundary.
+Prefer putting shared primitives in `jolt-core` unless implementation pressure shows a better crate boundary.

@@ -46,7 +46,7 @@ If relay/home-relay data is not implemented yet, include a placeholder section t
 
 Keep this deliberately simple:
 
-- Static HTML/CSS/JS served by `dweb-server`.
+- Static HTML/CSS/JS served by `jolt-server`.
 - No React/Vite build unless there is a strong reason.
 - No auth system yet; preserve localhost-only default.
 - Design should feel like a quiet node console, not a marketing page.

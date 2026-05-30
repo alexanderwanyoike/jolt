@@ -36,10 +36,10 @@ The goal is to make it obvious which command to run for each layer and which tes
 The preferred local default is:
 
 ```text
-cargo test -p dweb-core -p dweb-identity -p dweb-store -p dweb-node
-cargo test -p dweb-network fetch_manager::
-cargo test -p dweb-network bootstrap::
-cargo test -p dweb-network protocol::
+cargo test -p jolt-core -p jolt-identity -p jolt-store -p jolt-node
+cargo test -p jolt-network fetch_manager::
+cargo test -p jolt-network bootstrap::
+cargo test -p jolt-network protocol::
 ```
 
 Then expand as the test harness improves.

@@ -1125,112 +1125,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c3cf4824e2d5f025c7b531afcb2325364084a16806f6d47fbc1f5fbd9960590"
 
 [[package]]
-name = "dweb-core"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "cid",
- "data-encoding",
- "ed25519-dalek 2.2.0",
- "multihash",
- "multihash-codetable",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "dweb-identity"
-version = "0.1.0"
-dependencies = [
- "dweb-core",
- "ed25519-dalek 2.2.0",
- "libp2p",
- "rand 0.8.5",
- "serde",
- "tempfile",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "dweb-network"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ciborium",
- "dweb-core",
- "dweb-identity",
- "dweb-store",
- "iroh",
- "libp2p",
- "libp2p-iroh",
- "patchbay",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "dweb-node"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "directories",
- "dweb-core",
- "dweb-identity",
- "dweb-network",
- "dweb-server",
- "dweb-store",
- "hex",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "dweb-server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "axum-extra",
- "dweb-core",
- "dweb-identity",
- "dweb-network",
- "dweb-store",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tower-http",
- "tracing",
-]
-
-[[package]]
-name = "dweb-store"
-version = "0.1.0"
-dependencies = [
- "dweb-core",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2352,6 +2246,112 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "jolt-core"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cid",
+ "data-encoding",
+ "ed25519-dalek 2.2.0",
+ "multihash",
+ "multihash-codetable",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "jolt-identity"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek 2.2.0",
+ "jolt-core",
+ "libp2p",
+ "rand 0.8.5",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "jolt-network"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ciborium",
+ "iroh",
+ "jolt-core",
+ "jolt-identity",
+ "jolt-store",
+ "libp2p",
+ "libp2p-iroh",
+ "patchbay",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "jolt-node"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "directories",
+ "hex",
+ "jolt-core",
+ "jolt-identity",
+ "jolt-network",
+ "jolt-server",
+ "jolt-store",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "jolt-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "axum-extra",
+ "jolt-core",
+ "jolt-identity",
+ "jolt-network",
+ "jolt-store",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
+name = "jolt-store"
+version = "0.1.0"
+dependencies = [
+ "jolt-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+]
 
 [[package]]
 name = "js-sys"
