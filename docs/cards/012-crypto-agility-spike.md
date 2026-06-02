@@ -1,8 +1,8 @@
-# 010: Crypto Agility Spike
+# 012: Crypto Agility Spike
 
 **Type:** HITL  
 **Milestone:** M6 preparation  
-**Status:** Later  
+**Status:** Superseded by 049
 **Blocked by:** None
 
 ## Why
@@ -31,3 +31,6 @@ Produce a short design note answering:
 
 This is intentionally HITL. Do not implement crypto based only on this card.
 
+## Superseded
+
+Private Pastey made this concrete. Continue the crypto design work through [049](049-crypto-agility-encrypted-object-envelope.md), which focuses on encrypted object envelopes, suite identifiers, recipient key wrapping, and post-quantum-hybrid migration.

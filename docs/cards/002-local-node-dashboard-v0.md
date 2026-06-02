@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** Developer experience / M3.5  
-**Status:** Ready  
+**Status:** Superseded by 045
 **Blocked by:** None
 
 ## Why
@@ -51,3 +51,8 @@ Keep this deliberately simple:
 - No auth system yet; preserve localhost-only default.
 - Design should feel like a quiet node console, not a marketing page.
 
+## Superseded
+
+The local dashboard was implemented and then grew into a more important product concern: the daemon needs a real local control surface for identities, relays, app sessions, permissions, and diagnostics.
+
+Continue this work through [045](045-jolt-console-shell-v0.md) instead of implementing this original dashboard card literally.

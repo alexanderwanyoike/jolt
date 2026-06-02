@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** Developer experience / M3.5
-**Status:** Ready
+**Status:** Superseded by 054
 **Blocked by:** 002
 
 ## Why
@@ -56,3 +56,9 @@ Do not hide the iroh issue. Document the distinction clearly:
 - Deterministic local demo transport: TCP, unless iroh local pairing is made equally reliable.
 
 This card can be implemented before the broader testing strategy card because it gives the dashboard a meaningful multi-node workflow to observe.
+
+## Superseded
+
+The local two-node need is still valid, but Pastey exposed a better demo shape: start Alice and Bob daemons plus two external app clients, then prove Bob can fetch Alice's `.jolt` paste through the app surface.
+
+Continue this work through [054](054-pastey-two-node-local-demo-harness.md).

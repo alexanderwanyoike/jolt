@@ -2,7 +2,7 @@
 
 **Type:** HITL
 **Milestone:** M6 / Product Proof
-**Status:** Discussion
+**Status:** Superseded by external app prototypes
 **Blocked by:** 026, 028
 
 ## Why
@@ -68,3 +68,9 @@ Possible demo shapes:
 - General schema registry.
 - Full permissions or private object access.
 - Rich authoring tools.
+
+## Superseded
+
+Pastey proved the more useful direction: application-shaped experiences should live outside the protocol repo and consume Jolt through the daemon/API.
+
+Do not build a built-in lens in the daemon for now. Keep the protocol repo focused on the daemon/app boundary, sessions, permissions, encryption, and app-facing APIs. External apps such as Pastey and Drops should pressure-test the product shape.

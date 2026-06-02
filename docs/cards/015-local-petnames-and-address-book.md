@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** Human addressing / M4.5
-**Status:** Deferred until 020
+**Status:** Deferred
 **Blocked by:** 020
 
 ## Why
