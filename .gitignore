@@ -1,4 +1,5 @@
 /target
+.notes/
 *.swp
 *.swo
 .DS_Store
