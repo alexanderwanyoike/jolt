@@ -72,13 +72,34 @@ The current focus is:
 29. Run one relay-mesh milestone canary after the local slices pass.
 30. Add local petnames after the global path works.
 
+## Next Sprint: App Boundary and Private Sharing Foundations
+
+Pastey proved that a separate app can consume Jolt through the daemon. That moves the next useful work away from more raw protocol plumbing and toward the daemon/app boundary:
+
+```text
+Jolt daemon = local authority, identities, keys, network access
+Jolt Console = privileged local control surface
+Jolt apps = untrusted clients with scoped sessions
+```
+
+The immediate next sprint should focus on:
+
+1. Designing app sessions and capability grants.
+2. Adding a session store and approval API.
+3. Adding capability-checked app-facing endpoints.
+4. Turning the dashboard into a Jolt Console shell.
+5. Moving Pastey from trusted `/api/v1/*` calls to app sessions.
+6. Designing encrypted object envelopes and crypto agility before private Pastey.
+
+Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/app boundary and private sharing model.
+
 ## Cards
 
 | Card | Type | Status | Summary |
 |---|---|---|---|
 | [001](001-current-state-and-test-harness.md) | AFK | Done | Stabilize current test/dev ground and remove stale drift. |
-| [002](002-local-node-dashboard-v0.md) | AFK | Ready | Add localhost dashboard for node/relay debugging. |
-| [014](014-local-multi-node-demo-mode.md) | AFK | Ready after 002 | Make two local dashboard nodes connect and transfer content predictably. |
+| [002](002-local-node-dashboard-v0.md) | AFK | Superseded by 045 | Original localhost dashboard card; continue through Jolt Console work. |
+| [014](014-local-multi-node-demo-mode.md) | AFK | Superseded by 054 | Original local dashboard demo; continue through Pastey two-node harness. |
 | [003](003-testing-strategy-and-harness.md) | AFK | Done | Define and automate the test layers. |
 | [004](004-update-log-core.md) | AFK | Done | Add signed append-only update log primitives. |
 | [005](005-resolve-latest-record.md) | AFK | Done | Resolve latest signed state for an identity. |
@@ -95,13 +116,13 @@ The current focus is:
 | [020](020-jolt-resolve-api-cli-dashboard.md) | AFK | Done | Let users resolve `.jolt` addresses through CLI, API, and dashboard. |
 | [021](021-fetch-by-jolt-address.md) | AFK | Done | Fetch content from a `.jolt` address instead of a raw CID. |
 | [022](022-offline-publisher-through-relay-smoke-test.md) | AFK | Done | Prove Bob can fetch Alice's content while Alice is offline. |
-| [015](015-local-petnames-and-address-book.md) | AFK | Deferred until 020 | Add local aliases for identity addresses after global resolution is usable. |
+| [015](015-local-petnames-and-address-book.md) | AFK | Deferred | Add local aliases for identity addresses after app sessions/identity UX settle. |
 | [006](006-signed-path-publishing-v0.md) | AFK | Done | Publish and resolve generic signed path bindings. |
 | [030](030-persistent-update-log-store.md) | AFK | Done | Persist the owner's update log so `.jolt` paths survive daemon restarts. |
 | [007](007-home-relay-configuration.md) | AFK | Done | Configure a user's home relay. |
 | [029](029-home-relay-publish-pinning-ux.md) | AFK | Done | Let users pin published content to their configured home relay from API, CLI, and dashboard. |
 | [031](031-published-content-inventory-dashboard.md) | AFK | Done | Show local published content, relay pin state, stale paths, and repin actions in the dashboard. |
-| [032](032-built-in-space-lens-demo.md) | HITL | Discussion | Show a useful built-in space/application experience before building a WASM runtime. |
+| [032](032-built-in-space-lens-demo.md) | HITL | Superseded by external app prototypes | Pastey/Drops should pressure-test app shape outside the protocol repo. |
 | [033](033-relay-records-v0.md) | AFK | Done | Define signed relay records so relays can describe how they are reached. |
 | [034](034-relay-address-book-v0.md) | AFK | Done | Persist verified relay records with expiry, deduplication, and bounds. |
 | [035](035-relay-record-exchange-v0.md) | AFK | Done | Let nodes and relays exchange bounded sets of verified relay records. |
@@ -115,8 +136,21 @@ The current focus is:
 | [009](009-relay-pinning-and-provider-announcement.md) | AFK | Done | Relay accepts pins, stores content, announces providers. |
 | [010](010-offline-fetch-through-home-relay.md) | AFK | Superseded by 022 | End-to-end offline publisher flow. |
 | [011](011-availability-checks-v0.md) | AFK | Done | Node checks whether home relay still serves pinned content. |
-| [012](012-crypto-agility-spike.md) | HITL | Later | Decide post-quantum-aware encryption direction. |
+| [012](012-crypto-agility-spike.md) | HITL | Superseded by 049 | Original crypto-agility spike; continue through encrypted object envelope work. |
 | [013](013-wasm-runtime-parking-lot.md) | HITL | Later | Park app runtime work until relay/mutable content lands. |
+| [042](042-app-boundary-session-design.md) | HITL | Ready | Define daemon/app sessions, capabilities, console/admin boundary, and forbidden app powers. |
+| [043](043-app-session-store-approval-api.md) | AFK | Ready after 042 | Persist pending/approved/revoked app sessions and approval APIs. |
+| [044](044-capability-checked-app-api-v0.md) | AFK | Ready after 043 | Add session-token app APIs for resolve/fetch/publish/inventory/pin. |
+| [045](045-jolt-console-shell-v0.md) | AFK | Ready after 042 | Turn the dashboard into a local daemon console with sidebar sections. |
+| [046](046-app-permission-approval-ui.md) | AFK | Ready after 043 and 045 | Let Console approve/reject/revoke app permission requests. |
+| [047](047-pastey-app-session-integration.md) | AFK | Ready after 044 and 046 | Move Pastey from trusted daemon APIs to session-token app APIs. |
+| [048](048-identity-import-v0.md) | HITL | Ready for design | Define admin-only identity import/export v0 and shared-key risks. |
+| [049](049-crypto-agility-encrypted-object-envelope.md) | HITL | Ready | Define encrypted object envelope, suite IDs, wrapping, and PQ-hybrid direction. |
+| [050](050-identity-encryption-key-records.md) | AFK | Ready after 049 | Publish and resolve signed public encryption keys for identities. |
+| [051](051-encrypted-object-implementation-v0.md) | AFK | Ready after 049 and 050 | Encrypt content once and wrap content keys for recipients. |
+| [052](052-daemon-encrypt-decrypt-api.md) | AFK | Ready after 044 and 051 | Let the daemon encrypt/decrypt for app sessions without exposing keys. |
+| [053](053-pastey-private-paste-v0.md) | AFK | Ready after 052 | Prove Alice can share an encrypted Pastey paste with Bob. |
+| [054](054-pastey-two-node-local-demo-harness.md) | AFK | Ready | Add a repeatable local Alice/Bob/Pastey demo harness. |
 
 ## Card Format
 
