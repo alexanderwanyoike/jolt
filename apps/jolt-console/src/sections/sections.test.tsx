@@ -88,6 +88,17 @@ describe("Console section pages", () => {
         if (path === "/admin/v1/app-requests") {
           return [
             {
+              request_id: "req_scratch",
+              app_id: "scratch.local",
+              app_name: "Scratch",
+              app_origin: "http://127.0.0.1:5190",
+              requested_identity: "alice.jolt",
+              requested_capabilities: ["resolve:public"],
+              granted_capabilities: [],
+              status: "pending",
+              created_at: 1_780_000_300
+            },
+            {
               request_id: "req_pastey",
               app_id: "pastey.local",
               app_name: "Pastey",
@@ -108,6 +119,20 @@ describe("Console section pages", () => {
         }
         if (path === "/admin/v1/app-sessions") {
           return [
+            {
+              request_id: "req_pastey_active",
+              session_id: "sess_pastey",
+              app_id: "pastey.local",
+              app_name: "Pastey",
+              app_origin: "http://127.0.0.1:5174",
+              identity: "alice.jolt",
+              requested_capabilities: ["resolve:public", "publish:/pastes/*"],
+              granted_capabilities: ["resolve:public", "publish:/pastes/*"],
+              status: "active",
+              created_at: 1_780_000_300,
+              approved_at: 1_780_000_300,
+              last_used_at: 1_780_000_400
+            },
             {
               request_id: "req_notes",
               session_id: "sess_notes",
@@ -130,13 +155,23 @@ describe("Console section pages", () => {
 
     render(<AppsPage client={client} />);
 
-    expect(await screen.findByText("Pastey")).toBeInTheDocument();
+    const pendingRows = await screen.findAllByRole("button", { name: /request details/i });
+    expect(pendingRows[0]).toHaveTextContent("Scratch");
+    expect(pendingRows[1]).toHaveTextContent("Pastey");
+
+    const sessionRows = screen.getAllByRole("button", { name: /session details/i });
+    expect(sessionRows[0]).toHaveTextContent("Pastey");
+    expect(sessionRows[1]).toHaveTextContent("Notes");
+
+    expect(screen.queryByText("create or update signed paths under /pastes/*")).not.toBeInTheDocument();
+
+    await userEvent.click(pendingRows[1]);
     expect(screen.getAllByText("alice.jolt")).not.toHaveLength(0);
     expect(screen.getByText("create or update signed paths under /pastes/*")).toBeInTheDocument();
     expect(screen.getByText("admin-only request: cannot be approved")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve Pastey" })).toBeDisabled();
 
-    expect(screen.getByText("Notes")).toBeInTheDocument();
+    await userEvent.click(sessionRows[1]);
     expect(screen.getByText("Last used 2026-05-28 20:30")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Reject Pastey" }));
