@@ -65,6 +65,10 @@ POST /admin/v1/app-sessions/{session_id}/revoke
   capabilities.
 - Added daemon-side app session grant validation so forbidden capability strings
   cannot be approved even if a client bypasses Console.
+- Follow-up UI density pass: sorted pending requests and sessions from newest
+  to oldest, changed permission grants into compact accordion rows, kept
+  approve/reject/revoke actions available from the row header, and made the
+  Console shell use the maximized window width.
 
 ## Verification
 
@@ -82,6 +86,10 @@ POST /admin/v1/app-sessions/{session_id}/revoke
   with the Apps empty/error states usable and no visible overlap. Plain browser
   mode cannot exercise Tauri `invoke`, so the live admin API path remains covered
   by Vitest and the TypeScript build.
+- Follow-up UI checks:
+  - `npx vitest run src/sections/sections.test.tsx`
+  - `npm test` in `apps/jolt-console`
+  - `npm run build` in `apps/jolt-console`
 
 ## Notes
 

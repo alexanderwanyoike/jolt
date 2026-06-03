@@ -28,6 +28,7 @@ export function AppsPage({ client = tauriDaemonClient }: AppsPageProps) {
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -58,8 +59,29 @@ export function AppsPage({ client = tauriDaemonClient }: AppsPageProps) {
     }
   }
 
-  const pending = permissions.requests.filter((request) => request.status === "pending");
-  const sessions = permissions.sessions;
+  const pending = useMemo(
+    () =>
+      permissions.requests
+        .filter((request) => request.status === "pending")
+        .sort(compareGrantRecency),
+    [permissions.requests]
+  );
+  const sessions = useMemo(
+    () => [...permissions.sessions].sort(compareGrantRecency),
+    [permissions.sessions]
+  );
+
+  function toggleRow(rowId: string) {
+    setExpandedRows((current) => {
+      const next = new Set(current);
+      if (next.has(rowId)) {
+        next.delete(rowId);
+      } else {
+        next.add(rowId);
+      }
+      return next;
+    });
+  }
 
   return (
     <SectionPanel eyebrow="Apps" summary="approve, reject, and revoke app authority" hero>
@@ -80,6 +102,8 @@ export function AppsPage({ client = tauriDaemonClient }: AppsPageProps) {
               key={request.request_id}
               request={request}
               busy={action !== null}
+              expanded={expandedRows.has(rowKey("request", request))}
+              onToggle={() => toggleRow(rowKey("request", request))}
               onApprove={() =>
                 runAction(`approve-${request.request_id}`, () =>
                   approveRequest(client, request)
@@ -102,6 +126,8 @@ export function AppsPage({ client = tauriDaemonClient }: AppsPageProps) {
               key={session.session_id ?? session.request_id}
               session={session}
               busy={action !== null}
+              expanded={expandedRows.has(rowKey("session", session))}
+              onToggle={() => toggleRow(rowKey("session", session))}
               onRevoke={() => {
                 if (!session.session_id) return Promise.resolve();
                 return runAction(`revoke-${session.session_id}`, () =>
@@ -128,11 +154,15 @@ function PermissionColumn({ title, children }: { title: string; children: ReactN
 function PermissionRequestCard({
   request,
   busy,
+  expanded,
+  onToggle,
   onApprove,
   onReject
 }: {
   request: AppSessionGrant;
   busy: boolean;
+  expanded: boolean;
+  onToggle: () => void;
   onApprove: () => Promise<unknown>;
   onReject: () => Promise<unknown>;
 }) {
@@ -144,23 +174,50 @@ function PermissionRequestCard({
   const identity = request.requested_identity ?? "a selected identity";
 
   return (
-    <article className="permission-card pending">
-      <PermissionHeader grant={request} status={request.status} />
-      <p className="permission-intent">
-        {request.app_name} wants to use <span className="mono">{identity}</span> for this authority.
-      </p>
-      <CapabilityList capabilities={capabilities} />
-      {blocked ? (
-        <div className="permission-warning">admin-only request: cannot be approved</div>
-      ) : null}
-      <div className="permission-actions">
-        <button type="button" onClick={onApprove} disabled={busy || blocked}>
-          Approve {request.app_name}
+    <article className={`permission-row pending ${expanded ? "expanded" : ""}`}>
+      <div className="permission-row-header">
+        <PermissionSummaryButton
+          grant={request}
+          label="request details"
+          expanded={expanded}
+          onToggle={onToggle}
+          detail={`${request.app_name} wants ${capabilities.length} capabilities for ${identity}`}
+        />
+        <div className="permission-quick-actions">
+        <button
+          type="button"
+          aria-label={`Approve ${request.app_name}`}
+          onClick={onApprove}
+          disabled={busy || blocked}
+        >
+          Approve
         </button>
-        <button type="button" className="danger-button" onClick={onReject} disabled={busy}>
-          Reject {request.app_name}
+        <button
+          type="button"
+          className="danger-button"
+          aria-label={`Reject ${request.app_name}`}
+          onClick={onReject}
+          disabled={busy}
+        >
+          Reject
         </button>
+        </div>
       </div>
+      {expanded ? (
+        <div className="permission-row-body">
+          <p className="permission-intent">
+            {request.app_name} wants to use <span className="mono">{identity}</span> for this authority.
+          </p>
+          <CapabilityList capabilities={capabilities} />
+          {blocked ? (
+            <div className="permission-warning">admin-only request: cannot be approved</div>
+          ) : null}
+          <div className="permission-meta">
+            <span>Created {formatTimestamp(request.created_at)}</span>
+            {request.expires_at ? <span>Expires {formatTimestamp(request.expires_at)}</span> : null}
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -168,56 +225,91 @@ function PermissionRequestCard({
 function SessionCard({
   session,
   busy,
+  expanded,
+  onToggle,
   onRevoke
 }: {
   session: AppSessionGrant;
   busy: boolean;
+  expanded: boolean;
+  onToggle: () => void;
   onRevoke: () => Promise<unknown>;
 }) {
   const capabilities = session.granted_capabilities.map(capabilityInfo);
   const revocable = session.status === "active" && Boolean(session.session_id);
 
   return (
-    <article className={`permission-card ${session.status}`}>
-      <PermissionHeader grant={session} status={session.status} />
-      <p className="permission-intent">
-        Granted identity <span className="mono">{session.identity ?? session.requested_identity ?? "--"}</span>
-      </p>
-      <CapabilityList capabilities={capabilities} />
-      <div className="permission-meta">
-        <span>Created {formatTimestamp(session.created_at)}</span>
-        {session.last_used_at ? <span>Last used {formatTimestamp(session.last_used_at)}</span> : null}
-        {session.expires_at ? <span>Expires {formatTimestamp(session.expires_at)}</span> : null}
-      </div>
-      <div className="permission-actions">
+    <article className={`permission-row ${session.status} ${expanded ? "expanded" : ""}`}>
+      <div className="permission-row-header">
+        <PermissionSummaryButton
+          grant={session}
+          label="session details"
+          expanded={expanded}
+          onToggle={onToggle}
+          detail={`${capabilities.length} capabilities granted to ${session.identity ?? session.requested_identity ?? "--"}`}
+        />
+        <div className="permission-quick-actions">
         <button
           type="button"
           className="danger-button"
+          aria-label={`Revoke ${session.app_name}`}
           onClick={onRevoke}
           disabled={busy || !revocable}
         >
-          Revoke {session.app_name}
+          Revoke
         </button>
+        </div>
       </div>
+      {expanded ? (
+        <div className="permission-row-body">
+          <p className="permission-intent">
+            Granted identity <span className="mono">{session.identity ?? session.requested_identity ?? "--"}</span>
+          </p>
+          <CapabilityList capabilities={capabilities} />
+          <div className="permission-meta">
+            <span>Created {formatTimestamp(session.created_at)}</span>
+            {session.last_used_at ? <span>Last used {formatTimestamp(session.last_used_at)}</span> : null}
+            {session.expires_at ? <span>Expires {formatTimestamp(session.expires_at)}</span> : null}
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
 
-function PermissionHeader({
+function PermissionSummaryButton({
   grant,
-  status
+  label,
+  expanded,
+  onToggle,
+  detail
 }: {
   grant: AppSessionGrant;
-  status: AppSessionGrant["status"];
+  label: string;
+  expanded: boolean;
+  onToggle: () => void;
+  detail: string;
 }) {
   return (
-    <header className="permission-card-header">
-      <div>
-        <strong>{grant.app_name}</strong>
+    <button
+      type="button"
+      className="permission-summary-button"
+      aria-expanded={expanded}
+      onClick={onToggle}
+    >
+      <span className="permission-disclosure" aria-hidden="true">
+        {expanded ? "-" : "+"}
+      </span>
+      <div className="permission-summary-copy">
+        <span className="permission-summary-title">
+          <strong>{grant.app_name}</strong>
+          <span className={`grant-status ${grant.status}`}>{grant.status}</span>
+        </span>
         <span className="mono">{grant.app_origin ?? grant.app_id}</span>
+        <span className="permission-summary-detail">{detail}</span>
       </div>
-      <span className={`grant-status ${status}`}>{status}</span>
-    </header>
+      <span className="visually-hidden">{label}</span>
+    </button>
   );
 }
 
@@ -236,6 +328,24 @@ function CapabilityList({ capabilities }: { capabilities: CapabilityInfo[] }) {
 
 function EmptyState({ label }: { label: string }) {
   return <div className="permission-empty">{label}</div>;
+}
+
+function rowKey(kind: "request" | "session", grant: AppSessionGrant) {
+  return `${kind}:${grant.session_id ?? grant.request_id}`;
+}
+
+function compareGrantRecency(a: AppSessionGrant, b: AppSessionGrant) {
+  return grantRecency(b) - grantRecency(a);
+}
+
+function grantRecency(grant: AppSessionGrant) {
+  return (
+    grant.last_used_at ??
+    grant.revoked_at ??
+    grant.rejected_at ??
+    grant.approved_at ??
+    grant.created_at
+  );
 }
 
 async function approveRequest(client: DaemonClient, request: AppSessionGrant) {

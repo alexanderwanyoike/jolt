@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Ready after 044 and 046  
+**Status:** Implemented in Pastey PR  
 **Blocked by:** 044, 046
 
 ## Why
@@ -24,13 +24,31 @@ In `jolt-apps`, update Pastey so it:
 
 ## Acceptance Criteria
 
-- [ ] Fresh Pastey start creates a pending app session request.
-- [ ] Jolt Console can approve Pastey.
-- [ ] Pastey switches to ready state after approval.
-- [ ] Pastey can publish under `/pastes/*` using the app API.
-- [ ] Pastey can fetch public `.jolt` paste addresses using the app API.
-- [ ] Pastey cannot publish outside `/pastes/*`.
-- [ ] Pastey handles revoked sessions clearly.
+- [x] Fresh Pastey start creates a pending app session request.
+- [x] Jolt Console can approve Pastey.
+- [x] Pastey switches to ready state after approval.
+- [x] Pastey can publish under `/pastes/*` using the app API.
+- [x] Pastey can fetch public `.jolt` paste addresses using the app API.
+- [x] Pastey cannot publish outside `/pastes/*`.
+- [x] Pastey handles revoked sessions clearly.
+
+## Implementation Notes
+
+- Pastey lives in `https://github.com/alexanderwanyoike/pastey`.
+- PR: `https://github.com/alexanderwanyoike/pastey/pull/1`.
+- Pastey requests a scoped app session for public resolve/fetch plus
+  `/pastes/*` publish, inventory, and own-pin authority.
+- Pastey uses bearer-token `/app/v1/*` calls for publish, list, fetch, resolve,
+  and home-relay pin operations.
+- Pastey clears stale stored request IDs when a throwaway daemon no longer knows
+  the request, then creates a fresh pending app-session request.
+
+## Verification
+
+- `npm test` in Pastey.
+- `npm run build` in Pastey.
+- Manual local smoke with Jolt daemon and Jolt Console: request, approve,
+  publish/list, revoke, and revoked-state recovery.
 
 ## Notes
 
