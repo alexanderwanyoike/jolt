@@ -6,15 +6,55 @@ use tracing::info;
 use jolt_network::DaemonHandle;
 
 use crate::routes;
+use crate::session_store::AppSessionStore;
 use crate::state::AppState;
 
 /// Build the axum router with all API routes.
 pub fn build_router(daemon: DaemonHandle) -> Router {
-    let state = AppState { daemon };
+    let sessions = AppSessionStore::open_default()
+        .unwrap_or_else(|err| panic!("failed to open app session store: {err}"));
+    build_router_with_session_store(daemon, sessions)
+}
+
+/// Build the axum router with an explicit app session store.
+pub fn build_router_with_session_store(daemon: DaemonHandle, sessions: AppSessionStore) -> Router {
+    let state = AppState { daemon, sessions };
 
     Router::new()
         .route("/", get(routes::dashboard::dashboard))
         .route("/dashboard", get(routes::dashboard::dashboard))
+        .route(
+            "/app/v1/sessions/request",
+            post(routes::app_sessions::request_session),
+        )
+        .route(
+            "/app/v1/sessions/{request_id}",
+            get(routes::app_sessions::get_request_status),
+        )
+        .route(
+            "/app/v1/session",
+            get(routes::app_sessions::current_session),
+        )
+        .route(
+            "/admin/v1/app-requests",
+            get(routes::app_sessions::list_requests),
+        )
+        .route(
+            "/admin/v1/app-requests/{request_id}/approve",
+            post(routes::app_sessions::approve_request),
+        )
+        .route(
+            "/admin/v1/app-requests/{request_id}/reject",
+            post(routes::app_sessions::reject_request),
+        )
+        .route(
+            "/admin/v1/app-sessions",
+            get(routes::app_sessions::list_sessions),
+        )
+        .route(
+            "/admin/v1/app-sessions/{session_id}/revoke",
+            post(routes::app_sessions::revoke_session),
+        )
         .route("/api/v1/health", get(routes::health::health))
         .route("/api/v1/status", get(routes::status::get_status))
         .route("/api/v1/peers", get(routes::peers::list_peers))
@@ -65,6 +105,23 @@ pub async fn start_server_with_addr(
     port: u16,
 ) -> Result<(u16, tokio::task::JoinHandle<()>), Box<dyn std::error::Error + Send + Sync>> {
     let app = build_router(daemon);
+    start_server_with_router(app, port).await
+}
+
+/// Start the server with an explicit app session store and return the actual bound port.
+pub async fn start_server_with_session_store(
+    daemon: DaemonHandle,
+    port: u16,
+    sessions: AppSessionStore,
+) -> Result<(u16, tokio::task::JoinHandle<()>), Box<dyn std::error::Error + Send + Sync>> {
+    let app = build_router_with_session_store(daemon, sessions);
+    start_server_with_router(app, port).await
+}
+
+async fn start_server_with_router(
+    app: Router,
+    port: u16,
+) -> Result<(u16, tokio::task::JoinHandle<()>), Box<dyn std::error::Error + Send + Sync>> {
     let listener = TcpListener::bind(("127.0.0.1", port)).await?;
     let addr = listener.local_addr()?;
     let actual_port = addr.port();
