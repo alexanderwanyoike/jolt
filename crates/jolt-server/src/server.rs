@@ -35,6 +35,14 @@ pub fn build_router_with_session_store(daemon: DaemonHandle, sessions: AppSessio
             "/app/v1/session",
             get(routes::app_sessions::current_session),
         )
+        .route("/app/v1/resolve", post(routes::app_api::resolve_address))
+        .route("/app/v1/fetch", post(routes::app_api::fetch_content))
+        .route("/app/v1/publish", post(routes::app_api::publish_file))
+        .route("/app/v1/published", get(routes::app_api::list_published))
+        .route(
+            "/app/v1/home-relay/pins",
+            post(routes::app_api::pin_home_relay),
+        )
         .route(
             "/admin/v1/app-requests",
             get(routes::app_sessions::list_requests),

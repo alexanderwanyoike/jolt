@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Ready after 043  
+**Status:** Done
 **Blocked by:** 043
 
 ## Why
@@ -28,13 +28,24 @@ Every app endpoint must:
 
 ## Acceptance Criteria
 
-- [ ] App resolve requires `resolve:public` or equivalent.
-- [ ] App fetch requires `fetch:public` or equivalent.
-- [ ] App publish requires a granted identity and path prefix such as `/pastes/*`.
-- [ ] App inventory filters to the granted path prefix.
-- [ ] App pin only allows own published content within the granted path prefix.
-- [ ] Admin/debug `/api/v1/*` behavior remains available for now.
-- [ ] Tests cover allowed and denied operations.
+- [x] App resolve requires `resolve:public` or equivalent.
+- [x] App fetch requires `fetch:public` or equivalent.
+- [x] App publish requires a granted identity and path prefix such as `/pastes/*`.
+- [x] App inventory filters to the granted path prefix.
+- [x] App pin only allows own published content within the granted path prefix.
+- [x] Admin/debug `/api/v1/*` behavior remains available for now.
+- [x] Tests cover allowed and denied operations.
+
+## Result
+
+- Added capability-checked app endpoints for resolve, fetch, publish, published inventory, and home-relay pin requests.
+- App endpoints require a valid bearer app-session token.
+- Public reads require `resolve:public` or `fetch:public`.
+- Own writes require the session identity to match the local daemon identity.
+- Path-scoped operations use granted path capabilities such as `publish:/pastes/*`, `inventory:/pastes/*`, and `pin:own:/pastes/*`.
+- App publish rejects path escapes before delegating to the daemon.
+- Trusted/debug `/api/v1/*` endpoints remain unchanged.
+- Added integration tests for allowed and denied app operations.
 
 ## Notes
 
