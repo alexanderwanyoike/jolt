@@ -1,22 +1,46 @@
-# 045: Jolt Console Shell v0
+# 045: Jolt Console Tauri Shell v0
 
 **Type:** AFK  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Ready after 042  
-**Blocked by:** 042
+**Status:** Ready
+**Blocked by:** None
 
 ## Why
 
-The daemon needs a proper local control UI. The existing dashboard is useful, but Jolt now needs a console for daemon status, identities, relays, app sessions, permissions, published content, and diagnostics.
+Jolt needs a proper local control application. The daemon is the protocol/runtime process, but the Console is the user-facing trust surface: it is where users understand their node, identity, app permissions, relay state, published content, and diagnostics.
+
+The current localhost dashboard is useful as a temporary debug surface, but it should not become the production Console. The production Console should feel like a real desktop control center that can live in the tray/taskbar and make daemon state understandable without asking users to operate raw HTTP APIs or CLI commands.
 
 ## What to Build
 
-Turn the current localhost dashboard/control surface into a sidebar shell.
+Create a first Tauri-based Jolt Console application in this repo.
 
-Sections:
+Recommended location:
+
+```text
+apps/jolt-console/
+```
+
+This app is part of Jolt's architecture and belongs in this repository while the daemon API is still evolving. External apps such as Pastey remain outside this repository in `jolt-apps`.
+
+For v0, build a small but polished shell:
+
+- Desktop window launched as a local control app.
+- Tray/taskbar presence if practical in v0.
+- Connection to the local Jolt daemon over the existing localhost API.
+- Overview section for daemon health.
+- Current identity section.
+- Network/relay state section.
+- App sessions section placeholder for [046](046-app-permission-approval-ui.md).
+- Published/cache section placeholder or basic read-only inventory.
+- Diagnostics section placeholder.
+
+Do not spend significant effort redesigning the existing static dashboard. It can remain as an emergency/debug page until the Tauri Console replaces it.
+
+Suggested sections:
 
 - Overview
-- Identities
+- Identity
 - Apps
 - Network
 - Relays
@@ -25,18 +49,21 @@ Sections:
 - Settings
 - Diagnostics
 
-For v0, sections can reuse existing API data and include explicit placeholders for features that are not implemented yet.
-
 ## Acceptance Criteria
 
-- [ ] The console is served locally by the daemon.
-- [ ] Sidebar navigation works without a frontend build step.
-- [ ] Existing dashboard functionality remains reachable.
-- [ ] Overview shows daemon state, identity address, peer counts, relay state, and published/cache counts.
-- [ ] Apps section exists and explains app sessions if [043](043-app-session-store-approval-api.md) is not implemented yet.
-- [ ] Identities section shows the current identity and clearly marks multi-identity management as future work if not implemented.
-- [ ] UI remains localhost-first and does not expose a new remote attack surface by default.
+- [ ] `apps/jolt-console` exists as a Tauri app in this repo.
+- [ ] Console can connect to a running local Jolt daemon.
+- [ ] Console shows daemon health and connection state.
+- [ ] Console shows current `.jolt` identity and peer ID.
+- [ ] Console shows basic network, relay, published, and cache counts from existing APIs.
+- [ ] Console has clear navigation sections for Overview, Identity, Apps, Network, Relays, Published, Cache, Settings, and Diagnostics.
+- [ ] Apps section exists as a placeholder for permission approval work in [046](046-app-permission-approval-ui.md).
+- [ ] Existing localhost dashboard remains reachable as a temporary debug page.
+- [ ] No new remote attack surface is exposed by default.
+- [ ] PR description explains that this is the production Console direction, not a static dashboard rewrite.
 
 ## Notes
 
-This is a web UI implementation, but the daemon is not a web app. The console is a local control surface for a Rust daemon.
+The Console is not a Jolt app in the same sense as Pastey or Drops. It is a first-party control surface for the daemon.
+
+Keep v0 focused. The goal is not to implement every setting yet; the goal is to establish the production shell and architecture so permission approval can be built in the right place.
