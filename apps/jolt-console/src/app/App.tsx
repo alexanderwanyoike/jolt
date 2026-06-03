@@ -29,7 +29,7 @@ export function ConsoleApp({
         <Routes>
           <Route index element={<OverviewPage snapshot={snapshot} />} />
           <Route path="/identity" element={<IdentityPage snapshot={snapshot} />} />
-          <Route path="/apps" element={<AppsPage />} />
+          <Route path="/apps" element={<AppsPage client={client} />} />
           <Route path="/network" element={<NetworkPage snapshot={snapshot} />} />
           <Route path="/relays" element={<RelaysPage snapshot={snapshot} />} />
           <Route path="/published" element={<PublishedPage snapshot={snapshot} />} />

@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Ready  
+**Status:** Implemented in PR
 **Blocked by:** None
 
 ## Why
@@ -42,16 +42,46 @@ POST /admin/v1/app-sessions/{session_id}/revoke
 
 ## Acceptance Criteria
 
-- [ ] Pending app requests are visible in Console.
-- [ ] User can approve a request.
-- [ ] User can reject a request.
-- [ ] Active grants are visible with app name, identity, capabilities, and status.
-- [ ] User can revoke an active grant.
-- [ ] Revoked grants stop working for app API calls.
-- [ ] Dangerous/admin-only operations are not grantable through normal app requests.
-- [ ] UI copy distinguishes routine public read capabilities from identity-scoped write/pin capabilities.
-- [ ] Broad path scopes are visually obvious.
-- [ ] Console continues to work if there are no pending requests or sessions.
+- [x] Pending app requests are visible in Console.
+- [x] User can approve a request.
+- [x] User can reject a request.
+- [x] Active grants are visible with app name, identity, capabilities, and status.
+- [x] User can revoke an active grant.
+- [x] Revoked grants stop working for app API calls.
+- [x] Dangerous/admin-only operations are not grantable through normal app requests.
+- [x] UI copy distinguishes routine public read capabilities from identity-scoped write/pin capabilities.
+- [x] Broad path scopes are visually obvious.
+- [x] Console continues to work if there are no pending requests or sessions.
+
+## Implementation Notes
+
+- Replaced the Console Apps placeholder with a live permission view backed by
+  `GET /admin/v1/app-requests` and `GET /admin/v1/app-sessions`.
+- Added Console actions for approve, reject, refresh, and revoke through a new
+  Tauri `daemon_post` bridge.
+- Rendered public read capabilities separately from identity-scoped publish,
+  inventory, and pin authority, with wildcard path scopes called out.
+- Disabled approval for requests that include non-grantable/admin-only
+  capabilities.
+- Added daemon-side app session grant validation so forbidden capability strings
+  cannot be approved even if a client bypasses Console.
+
+## Verification
+
+- Red: added focused Console tests for permission loading/actions and a daemon
+  regression test showing forbidden capabilities were previously approved.
+- Green:
+  - `npx vitest run src/daemon/client.test.ts src/sections/sections.test.tsx`
+  - `npm test` in `apps/jolt-console`
+  - `npm run build` in `apps/jolt-console`
+  - `cargo test -p jolt-server app_session`
+  - `cargo test -p jolt-server test_admin_cannot_approve_forbidden_app_session_capabilities`
+  - `cargo fmt --check`
+  - `./scripts/test-local.sh`
+- Browser smoke: headless Chrome rendered `http://127.0.0.1:1420/#/apps`
+  with the Apps empty/error states usable and no visible overlap. Plain browser
+  mode cannot exercise Tauri `invoke`, so the live admin API path remains covered
+  by Vitest and the TypeScript build.
 
 ## Notes
 

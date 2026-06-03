@@ -144,6 +144,8 @@ pub enum AppSessionStoreError {
     RequestNotPending(String),
     #[error("approved session requires an identity")]
     MissingIdentity,
+    #[error("app session capability is not grantable: {0}")]
+    CapabilityNotGrantable(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -245,6 +247,13 @@ impl AppSessionStore {
         } else {
             approval.capabilities
         };
+        for capability in &capabilities {
+            if !is_grantable_app_capability(capability) {
+                return Err(AppSessionStoreError::CapabilityNotGrantable(
+                    capability.clone(),
+                ));
+            }
+        }
         let session_id = new_id("sess");
         let session_token = new_token();
 
@@ -393,6 +402,22 @@ fn load_state(path: &Path) -> std::io::Result<AppSessionState> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(AppSessionState::default()),
         Err(err) => Err(err),
     }
+}
+
+fn is_grantable_app_capability(capability: &str) -> bool {
+    capability == "resolve:public"
+        || capability == "fetch:public"
+        || is_grantable_path_capability(capability, "publish:")
+        || is_grantable_path_capability(capability, "inventory:")
+        || is_grantable_path_capability(capability, "pin:own:")
+}
+
+fn is_grantable_path_capability(capability: &str, prefix: &str) -> bool {
+    let Some(scope) = capability.strip_prefix(prefix) else {
+        return false;
+    };
+
+    scope.starts_with('/') && !scope.contains("..")
 }
 
 fn save_state(path: &Path, state: &AppSessionState) -> std::io::Result<()> {

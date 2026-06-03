@@ -44,7 +44,8 @@ describe("ConsoleApp", () => {
           ];
         }
         throw new Error(`unexpected path ${path}`);
-      })
+      }),
+      post: vi.fn()
     };
 
     render(<ConsoleApp client={client} refreshIntervalMs={0} />);
