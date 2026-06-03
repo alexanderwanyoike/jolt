@@ -2,8 +2,8 @@
 
 **Type:** AFK  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Ready after 043 and 045  
-**Blocked by:** 043, 045
+**Status:** Ready  
+**Blocked by:** None
 
 ## Why
 

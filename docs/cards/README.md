@@ -1,31 +1,41 @@
 # Work Cards
 
-This folder tracks the next practical slices of Jolt work.
+This folder tracks the next practical slices of Jolt work. On a fresh agent
+session, read this file first, then open the next active card and
+`.notes/current-context.md` if it exists.
 
 ## Where We Are
 
-Jolt has proved the hard transport path:
+Jolt has proved the hard network path:
 
-- Nodes can discover each other.
-- Nodes can connect across NAT and CGNAT through iroh/libp2p.
-- Nodes can publish immutable content by CID.
-- Other nodes can fetch, verify, cache, and re-serve that content.
-- The daemon and HTTP API exist.
+- Nodes can discover, connect, publish, fetch, verify, cache, and re-serve CID-addressed content.
+- Identities expose signed `.jolt` paths through append-only update logs.
+- Fresh nodes can resolve global `.jolt` addresses through bootstrap relays, DHT/provider discovery, relay records, relay exchange, relay mesh exploration, provider query forwarding, and signed identity-head gossip.
+- Home relays can pin owner-authorized content and update logs so Bob can fetch Alice's content while Alice is offline.
+- Relay discovery and `.jolt` resolution failures are now structured enough to explain.
+- A real three-node relay mesh canary has passed.
+- The daemon has a persistent app-session store and capability-checked app APIs.
+- A first Tauri-based Jolt Console shell exists under `apps/jolt-console`.
 
-The project is currently between two phases:
+The project is now between two phases:
 
 ```text
 Done:
-  Fetch immutable content from peers.
-  Resolve signed state from verified update logs in deterministic tests.
+  Network/discovery proof.
+  Offline publisher through relay.
+  App session store and capability-checked app API.
+  Jolt Console shell.
 
-Now proven:
-  Let a fresh node join the mesh, resolve a .jolt space/community address, and fetch while the publisher is offline.
+Next:
+  Make app permissions visible and controllable in Jolt Console.
+  Move Pastey onto app sessions.
+  Add a repeatable local Alice/Bob/Pastey harness.
+  Design identity import and encrypted object envelopes before private Pastey.
 ```
 
 The next useful product/protocol bridge is:
 
-> Alice creates a signed space/community. Her home relay pins its content and update log. Bob can resolve Alice and fetch authorized content while Alice's device is offline.
+> Pastey asks to act as Alice for `/pastes/*`. Jolt Console shows the request, Alice approves it, and Pastey can publish/fetch through scoped app APIs without receiving Alice's private keys.
 
 There is also a product risk to keep visible while choosing technical slices:
 
@@ -35,42 +45,17 @@ The answer should shape the next proof. This is a product discussion, not an imp
 
 ## Current Focus
 
-Do not start with WASM apps, storage markets, payments, or storage-market mechanics.
+Do not start with WASM apps, storage markets, payments, Drops, or storage-market mechanics.
 
-Relay-to-relay communication is now part of the global discovery problem, not a future monetization feature. The v0 version should focus on bootstrapping, DHT/provider discovery, and signed update-log reachability. It should not copy user content between relays without owner intent.
+The relay mesh milestone is complete enough for now. The current focus is
+**App Boundary and Private Sharing Foundations**:
 
-The current focus is:
-
-1. Stabilize and clarify the existing proof.
-2. Add a local dashboard so nodes and relays are observable.
-3. Make a local two-node dashboard demo reliable.
-4. Implement signed mutable records.
-5. Resolve latest state by identity.
-6. Add canonical identity addresses so people can be addressed globally.
-7. Design and implement global `.jolt` resolution through signed reachability.
-8. Add network-backed update-log discovery for global `.jolt` lookup.
-9. Add bootstrap config and relay mode so fresh nodes can have durable entry points.
-10. Add bootstrap management UX.
-11. Prove DHT-backed update-log discovery through a configured bootstrap relay.
-12. Cache discovered relay/peer addresses after a successful join.
-13. Make bootstrap/discovery state observable in status and dashboard.
-14. Wire `.jolt` resolution into CLI, API, and dashboard.
-15. Fetch content by `.jolt` address, not just by CID.
-16. Add home relay / owner-directed pinning.
-17. Prove Alice-offline/Bob-fresh fetch through a relay.
-18. Add user-facing publish-to-home-relay pinning.
-19. Make local published state and relay-backed state understandable in the dashboard.
-20. Show a built-in space/application demo before committing to a WASM runtime.
-21. Define signed relay records.
-22. Add a bounded relay address book.
-23. Let nodes and relays exchange verified relay records.
-24. Let relays explore the relay mesh from one known relay.
-25. Add relay-to-relay identity provider query forwarding.
-26. Add bounded identity-head gossip for common lookups.
-27. Make identity-head gossip batches fair across identities.
-28. Make relay discovery and `.jolt` resolution failures explainable.
-29. Run one relay-mesh milestone canary after the local slices pass.
-30. Add local petnames after the global path works.
+1. Add app permission approval/reject/revoke UI to Jolt Console.
+2. Move Pastey from trusted `/api/v1/*` calls to scoped `/app/v1/*` sessions.
+3. Add a repeatable one-machine Alice/Bob/Pastey demo harness.
+4. Review the app-boundary design debt in [042](042-app-boundary-session-design.md).
+5. Design identity import/export v0 before sharing one identity across devices.
+6. Design encrypted object envelopes and crypto agility before implementing private Pastey.
 
 ## Next Sprint: App Boundary and Private Sharing Foundations
 
@@ -82,14 +67,13 @@ Jolt Console = privileged local control surface
 Jolt apps = untrusted clients with scoped sessions
 ```
 
-The immediate next sprint should focus on:
+The next open work is:
 
-1. Designing app sessions and capability grants.
-2. Adding a session store and approval API.
-3. Adding capability-checked app-facing endpoints.
-4. Turning the dashboard into a Jolt Console shell.
-5. Moving Pastey from trusted `/api/v1/*` calls to app sessions.
-6. Designing encrypted object envelopes and crypto agility before private Pastey.
+1. [046](046-app-permission-approval-ui.md): add Console approval UI for app permissions.
+2. [047](047-pastey-app-session-integration.md): move Pastey onto app sessions in `jolt-apps`.
+3. [054](054-pastey-two-node-local-demo-harness.md): make the Alice/Bob/Pastey demo repeatable on one machine.
+4. [048](048-identity-import-v0.md): design admin-only identity import/export v0.
+5. [049](049-crypto-agility-encrypted-object-envelope.md): design encrypted object envelopes and suite IDs.
 
 Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/app boundary and private sharing model.
 
@@ -138,14 +122,14 @@ Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/
 | [011](011-availability-checks-v0.md) | AFK | Done | Node checks whether home relay still serves pinned content. |
 | [012](012-crypto-agility-spike.md) | HITL | Superseded by 049 | Original crypto-agility spike; continue through encrypted object envelope work. |
 | [013](013-wasm-runtime-parking-lot.md) | HITL | Later | Park app runtime work until relay/mutable content lands. |
-| [042](042-app-boundary-session-design.md) | HITL | Ready for review | Define daemon/app sessions, capabilities, console/admin boundary, and forbidden app powers. |
-| [043](043-app-session-store-approval-api.md) | AFK | Ready after 042 | Persist pending/approved/revoked app sessions and approval APIs. |
-| [044](044-capability-checked-app-api-v0.md) | AFK | Ready after 043 | Add session-token app APIs for resolve/fetch/publish/inventory/pin. |
-| [045](045-jolt-console-shell-v0.md) | AFK | Ready after 042 | Turn the dashboard into a local daemon console with sidebar sections. |
-| [046](046-app-permission-approval-ui.md) | AFK | Ready after 043 and 045 | Let Console approve/reject/revoke app permission requests. |
+| [042](042-app-boundary-session-design.md) | HITL | Needs review cleanup | Define daemon/app sessions, capabilities, console/admin boundary, and forbidden app powers. |
+| [043](043-app-session-store-approval-api.md) | AFK | Done | Persist pending/approved/revoked app sessions and approval APIs. |
+| [044](044-capability-checked-app-api-v0.md) | AFK | Done | Add session-token app APIs for resolve/fetch/publish/inventory/pin. |
+| [045](045-jolt-console-shell-v0.md) | AFK | Done | Turn the dashboard into a local daemon console with sidebar sections. |
+| [046](046-app-permission-approval-ui.md) | AFK | Ready | Let Console approve/reject/revoke app permission requests. |
 | [047](047-pastey-app-session-integration.md) | AFK | Ready after 044 and 046 | Move Pastey from trusted daemon APIs to session-token app APIs. |
 | [048](048-identity-import-v0.md) | HITL | Ready for design | Define admin-only identity import/export v0 and shared-key risks. |
-| [049](049-crypto-agility-encrypted-object-envelope.md) | HITL | Ready | Define encrypted object envelope, suite IDs, wrapping, and PQ-hybrid direction. |
+| [049](049-crypto-agility-encrypted-object-envelope.md) | HITL | Ready after 042 review | Define encrypted object envelope, suite IDs, wrapping, and PQ-hybrid direction. |
 | [050](050-identity-encryption-key-records.md) | AFK | Ready after 049 | Publish and resolve signed public encryption keys for identities. |
 | [051](051-encrypted-object-implementation-v0.md) | AFK | Ready after 049 and 050 | Encrypt content once and wrap content keys for recipients. |
 | [052](052-daemon-encrypt-decrypt-api.md) | AFK | Ready after 044 and 051 | Let the daemon encrypt/decrypt for app sessions without exposing keys. |

@@ -2,7 +2,7 @@
 
 **Type:** HITL  
 **Milestone:** Private Sharing Foundations  
-**Status:** Ready  
+**Status:** Ready after 042 review  
 **Blocked by:** 042
 
 ## Why

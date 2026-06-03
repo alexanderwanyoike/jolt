@@ -2,7 +2,7 @@
 
 **Type:** HITL  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Ready for review
+**Status:** Needs review cleanup
 **Blocked by:** None
 
 ## Why
@@ -46,4 +46,8 @@ Prompt for authority expansion, not routine use. Pastey should not ask on every 
 
 Design note: [App Boundary and Sessions](../15-app-boundary-and-sessions.md).
 
-This card remains open for human review before implementation begins.
+Implementation cards [043](043-app-session-store-approval-api.md) and
+[044](044-capability-checked-app-api-v0.md) have landed from this design. This
+card remains open as review/design debt: confirm the direction, clean up any
+rough edges discovered during implementation, and close the human-review
+checkbox when the model is accepted.
