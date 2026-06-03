@@ -9,9 +9,11 @@
 
 Pastey currently talks to trusted daemon endpoints through a dev proxy. That was useful for proving the app boundary, but it should move to capability-checked app sessions once the daemon supports them.
 
+Pastey is an external Jolt app and should remain outside this repository in `jolt-apps`. This card tracks the cross-repo integration point: the daemon and Jolt Console live here; Pastey changes happen in the app repository.
+
 ## What to Build
 
-Update Pastey so it:
+In `jolt-apps`, update Pastey so it:
 
 - Requests a session on startup.
 - Requests capabilities for `/pastes/*`.
@@ -33,3 +35,5 @@ Update Pastey so it:
 ## Notes
 
 Pastey remains public-only in this card. Private encrypted pastes come later.
+
+Do not move Pastey into this repository. Jolt Console is first-party daemon architecture; Pastey is a separate app built on top of Jolt.
