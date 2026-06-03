@@ -108,6 +108,45 @@ fn base_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
+async fn approve_app_session(
+    client: &reqwest::Client,
+    port: u16,
+    identity: &str,
+    capabilities: &[&str],
+) -> String {
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": identity,
+            "requested_capabilities": capabilities
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": identity,
+            "capabilities": capabilities,
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(approve_resp.status(), 200);
+    let approved: serde_json::Value = approve_resp.json().await.unwrap();
+    approved["session_token"].as_str().unwrap().to_string()
+}
+
 fn free_tcp_port() -> u16 {
     loop {
         let port = NEXT_TEST_PORT.fetch_add(1, Ordering::Relaxed);
@@ -614,6 +653,278 @@ async fn test_revoked_app_session_token_is_rejected() {
         .await
         .unwrap();
     assert_eq!(revoked_current_resp.status(), 401);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_publish_requires_session_and_path_capability() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &["publish:/pastes/*", "inventory:/pastes/*"],
+    )
+    .await;
+    let wrong_identity_token =
+        approve_app_session(&client, port, "wrongidentity.jolt", &["publish:/pastes/*"]).await;
+
+    let unauthorized_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"missing token".to_vec()).file_name("paste.txt"),
+        )
+        .text("path", "/pastes/one");
+    let unauthorized = client
+        .post(format!("{}/app/v1/publish", base_url(port)))
+        .multipart(unauthorized_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unauthorized.status(), 401);
+
+    let denied_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"outside prefix".to_vec()).file_name("secret.txt"),
+        )
+        .text("path", "/secrets/one");
+    let denied = client
+        .post(format!("{}/app/v1/publish", base_url(port)))
+        .bearer_auth(&token)
+        .multipart(denied_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 403);
+
+    let escape_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"path escape".to_vec()).file_name("escape.txt"),
+        )
+        .text("path", "/pastes/../secrets");
+    let escaped = client
+        .post(format!("{}/app/v1/publish", base_url(port)))
+        .bearer_auth(&token)
+        .multipart(escape_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(escaped.status(), 400);
+
+    let wrong_identity_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"wrong identity".to_vec()).file_name("wrong.txt"),
+        )
+        .text("path", "/pastes/wrong");
+    let wrong_identity = client
+        .post(format!("{}/app/v1/publish", base_url(port)))
+        .bearer_auth(&wrong_identity_token)
+        .multipart(wrong_identity_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(wrong_identity.status(), 403);
+
+    let allowed_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"app paste".to_vec()).file_name("paste.txt"),
+        )
+        .text("path", "/pastes/one");
+    let allowed = client
+        .post(format!("{}/app/v1/publish", base_url(port)))
+        .bearer_auth(&token)
+        .multipart(allowed_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(allowed.status(), 200);
+    let published: serde_json::Value = allowed.json().await.unwrap();
+    assert_eq!(published["path"], "/pastes/one");
+    assert_eq!(published["address"], format!("{identity}/pastes/one"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_inventory_is_filtered_to_granted_prefix() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(&client, port, &identity, &["inventory:/pastes/*"]).await;
+
+    for (path, data) in [
+        ("/pastes/visible", b"visible paste".to_vec()),
+        ("/notes/hidden", b"hidden note".to_vec()),
+    ] {
+        let form = reqwest::multipart::Form::new()
+            .part(
+                "file",
+                reqwest::multipart::Part::bytes(data).file_name("item.txt"),
+            )
+            .text("path", path.to_string());
+        let publish_resp = client
+            .post(format!("{}/api/v1/publish", base_url(port)))
+            .multipart(form)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(publish_resp.status(), 200);
+    }
+
+    let inventory_resp = client
+        .get(format!("{}/app/v1/published", base_url(port)))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(inventory_resp.status(), 200);
+    let inventory: serde_json::Value = inventory_resp.json().await.unwrap();
+    let items = inventory.as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["path"], "/pastes/visible");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_resolve_and_fetch_require_public_capabilities() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"public paste".to_vec()).file_name("paste.txt"),
+        )
+        .text("path", "/pastes/public");
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(port)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    let address = published["address"].as_str().unwrap();
+    let content_id = published["content_id"].as_str().unwrap();
+
+    let resolve_only = approve_app_session(&client, port, &identity, &["resolve:public"]).await;
+    let fetch_only = approve_app_session(&client, port, &identity, &["fetch:public"]).await;
+
+    let denied_resolve = client
+        .post(format!("{}/app/v1/resolve", base_url(port)))
+        .bearer_auth(&fetch_only)
+        .json(&serde_json::json!({ "address": address }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied_resolve.status(), 403);
+
+    let resolved_resp = client
+        .post(format!("{}/app/v1/resolve", base_url(port)))
+        .bearer_auth(&resolve_only)
+        .json(&serde_json::json!({ "address": address }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resolved_resp.status(), 200);
+    let resolved: serde_json::Value = resolved_resp.json().await.unwrap();
+    assert_eq!(resolved["content_id"], content_id);
+
+    let denied_fetch = client
+        .post(format!("{}/app/v1/fetch", base_url(port)))
+        .bearer_auth(&resolve_only)
+        .json(&serde_json::json!({ "target": content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied_fetch.status(), 403);
+
+    let fetched_resp = client
+        .post(format!("{}/app/v1/fetch", base_url(port)))
+        .bearer_auth(&fetch_only)
+        .json(&serde_json::json!({ "target": content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(fetched_resp.status(), 200);
+    let fetched: serde_json::Value = fetched_resp.json().await.unwrap();
+    assert_eq!(fetched["content_id"], content_id);
+    let data: Vec<u8> = fetched["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(data, b"public paste");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_pin_requires_own_published_content_in_granted_prefix() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(&client, port, &identity, &["pin:own:/pastes/*"]).await;
+
+    let hidden_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"hidden".to_vec()).file_name("hidden.txt"),
+        )
+        .text("path", "/notes/hidden");
+    let hidden_resp = client
+        .post(format!("{}/api/v1/publish", base_url(port)))
+        .multipart(hidden_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(hidden_resp.status(), 200);
+    let hidden: serde_json::Value = hidden_resp.json().await.unwrap();
+    let hidden_content_id = hidden["content_id"].as_str().unwrap();
+
+    let denied = client
+        .post(format!("{}/app/v1/home-relay/pins", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "content_id": hidden_content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 403);
+
+    let visible_form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"visible".to_vec()).file_name("visible.txt"),
+        )
+        .text("path", "/pastes/visible");
+    let visible_resp = client
+        .post(format!("{}/api/v1/publish", base_url(port)))
+        .multipart(visible_form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(visible_resp.status(), 200);
+    let visible: serde_json::Value = visible_resp.json().await.unwrap();
+    let visible_content_id = visible["content_id"].as_str().unwrap();
+
+    let authorized_without_home_relay = client
+        .post(format!("{}/app/v1/home-relay/pins", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "content_id": visible_content_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorized_without_home_relay.status(), 400);
 
     handle.shutdown().await.ok();
 }

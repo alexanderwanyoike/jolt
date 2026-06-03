@@ -40,7 +40,7 @@ pub async fn fetch_content(
     Ok(Json(result))
 }
 
-fn fetch_error_for_target(err: NetworkError, content_id: &str) -> NetworkError {
+pub fn fetch_error_for_target(err: NetworkError, content_id: &str) -> NetworkError {
     match err {
         NetworkError::ProviderNotFound(id) => NetworkError::DiscoveryFailed {
             code: DiscoveryFailureCode::ContentProviderNotFound,
