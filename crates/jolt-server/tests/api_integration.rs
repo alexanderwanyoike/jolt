@@ -8,6 +8,7 @@ use jolt_network::{
     PeerId,
 };
 use jolt_store::{CacheConfig, ContentStore};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU16, Ordering};
 use tokio::sync::mpsc;
 
@@ -20,6 +21,31 @@ async fn start_test_server() -> (u16, DaemonHandle, tempfile::TempDir) {
 
 async fn start_test_server_with_tcp_port(p2p_port: u16) -> (u16, DaemonHandle, tempfile::TempDir) {
     start_test_server_with_node(Some(p2p_port)).await
+}
+
+async fn start_test_server_with_session_path(
+    session_path: PathBuf,
+) -> (u16, DaemonHandle, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = NodeIdentity::generate();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    node.set_fetch_timeout(std::time::Duration::from_secs(2));
+    node.set_resolve_timeout(std::time::Duration::from_secs(2));
+
+    let (cmd_tx, cmd_rx) = mpsc::channel(64);
+    let handle = DaemonHandle::new(cmd_tx);
+    tokio::spawn(async move {
+        node.run_daemon_loop(cmd_rx).await;
+    });
+
+    let sessions = jolt_server::session_store::AppSessionStore::open(session_path).unwrap();
+    let (port, _server_handle) =
+        jolt_server::server::start_server_with_session_store(handle.clone(), 0, sessions)
+            .await
+            .unwrap();
+
+    (port, handle, dir)
 }
 
 async fn start_test_server_with_node(
@@ -55,9 +81,13 @@ async fn start_test_server_from_node(
     });
 
     // Start HTTP server on random port
-    let (port, _server_handle) = jolt_server::server::start_server_with_addr(handle.clone(), 0)
-        .await
-        .unwrap();
+    let sessions =
+        jolt_server::session_store::AppSessionStore::open(dir.path().join("app-sessions.json"))
+            .unwrap();
+    let (port, _server_handle) =
+        jolt_server::server::start_server_with_session_store(handle.clone(), 0, sessions)
+            .await
+            .unwrap();
 
     (port, handle, dir)
 }
@@ -197,6 +227,459 @@ async fn test_health_endpoint() {
     assert_eq!(body["status"], "ok");
 
     handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_session_request_is_visible_to_admin() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "app_origin": "http://127.0.0.1:5174",
+            "requested_identity": "alice-public.jolt",
+            "requested_capabilities": [
+                "resolve:public",
+                "fetch:public",
+                "publish:/pastes/*",
+                "inventory:/pastes/*",
+                "pin:own:/pastes/*"
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+    assert!(!request_id.is_empty());
+    assert_eq!(requested["status"], "pending");
+
+    let admin_resp = client
+        .get(format!("{}/admin/v1/app-requests", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(admin_resp.status(), 200);
+    let requests: serde_json::Value = admin_resp.json().await.unwrap();
+    let requests = requests.as_array().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0]["request_id"], request_id);
+    assert_eq!(requests[0]["status"], "pending");
+    assert_eq!(requests[0]["app_id"], "pastey.local");
+    assert_eq!(requests[0]["app_name"], "Pastey");
+    assert_eq!(requests[0]["requested_identity"], "alice-public.jolt");
+    assert_eq!(
+        requests[0]["requested_capabilities"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_can_approve_app_session_request() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": "alice-public.jolt",
+            "requested_capabilities": [
+                "resolve:public",
+                "fetch:public",
+                "publish:/pastes/*"
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": "alice-public.jolt",
+            "capabilities": [
+                "resolve:public",
+                "fetch:public",
+                "publish:/pastes/*"
+            ],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(approve_resp.status(), 200);
+    let approved: serde_json::Value = approve_resp.json().await.unwrap();
+    let session_id = approved["session_id"].as_str().unwrap();
+    let session_token = approved["session_token"].as_str().unwrap();
+    assert!(!session_id.is_empty());
+    assert!(!session_token.is_empty());
+    assert_eq!(approved["request_id"], request_id);
+    assert_eq!(approved["status"], "active");
+    assert_eq!(approved["identity"], "alice-public.jolt");
+
+    let sessions_resp = client
+        .get(format!("{}/admin/v1/app-sessions", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(sessions_resp.status(), 200);
+    let sessions: serde_json::Value = sessions_resp.json().await.unwrap();
+    let sessions = sessions.as_array().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0]["session_id"], session_id);
+    assert_eq!(sessions[0]["request_id"], request_id);
+    assert_eq!(sessions[0]["status"], "active");
+    assert_eq!(sessions[0]["identity"], "alice-public.jolt");
+    assert!(sessions[0].get("session_token").is_none());
+    assert!(sessions[0].get("token_hash").is_none());
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_can_poll_approved_session_request() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": "alice-public.jolt",
+            "requested_capabilities": ["resolve:public"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let pending_resp = client
+        .get(format!("{}/app/v1/sessions/{request_id}", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pending_resp.status(), 200);
+    let pending: serde_json::Value = pending_resp.json().await.unwrap();
+    assert_eq!(pending["status"], "pending");
+    assert!(pending["session_token"].is_null());
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": "alice-public.jolt",
+            "capabilities": ["resolve:public"],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(approve_resp.status(), 200);
+    let approved_by_admin: serde_json::Value = approve_resp.json().await.unwrap();
+
+    let approved_resp = client
+        .get(format!("{}/app/v1/sessions/{request_id}", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(approved_resp.status(), 200);
+    let approved: serde_json::Value = approved_resp.json().await.unwrap();
+    assert_eq!(approved["status"], "active");
+    assert_eq!(approved["request_id"], request_id);
+    assert_eq!(approved["session_id"], approved_by_admin["session_id"]);
+    assert_eq!(
+        approved["session_token"],
+        approved_by_admin["session_token"]
+    );
+    assert_eq!(approved["identity"], "alice-public.jolt");
+    assert_eq!(
+        approved["capabilities"].as_array().unwrap(),
+        approved_by_admin["capabilities"].as_array().unwrap()
+    );
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_can_reject_app_session_request() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_capabilities": ["resolve:public"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let reject_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/reject",
+            base_url(port)
+        ))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(reject_resp.status(), 200);
+    let rejected: serde_json::Value = reject_resp.json().await.unwrap();
+    assert_eq!(rejected["request_id"], request_id);
+    assert_eq!(rejected["status"], "rejected");
+
+    let pending_resp = client
+        .get(format!("{}/admin/v1/app-requests", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pending_resp.status(), 200);
+    let pending: serde_json::Value = pending_resp.json().await.unwrap();
+    assert_eq!(pending.as_array().unwrap().len(), 0);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_can_revoke_active_app_session() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": "alice-public.jolt",
+            "requested_capabilities": ["resolve:public"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": "alice-public.jolt",
+            "capabilities": ["resolve:public"],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(approve_resp.status(), 200);
+    let approved: serde_json::Value = approve_resp.json().await.unwrap();
+    let session_id = approved["session_id"].as_str().unwrap();
+
+    let revoke_resp = client
+        .post(format!(
+            "{}/admin/v1/app-sessions/{session_id}/revoke",
+            base_url(port)
+        ))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(revoke_resp.status(), 200);
+    let revoked: serde_json::Value = revoke_resp.json().await.unwrap();
+    assert_eq!(revoked["session_id"], session_id);
+    assert_eq!(revoked["status"], "revoked");
+
+    let sessions_resp = client
+        .get(format!("{}/admin/v1/app-sessions", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sessions_resp.status(), 200);
+    let sessions: serde_json::Value = sessions_resp.json().await.unwrap();
+    assert_eq!(sessions.as_array().unwrap().len(), 1);
+    assert_eq!(sessions[0]["session_id"], session_id);
+    assert_eq!(sessions[0]["status"], "revoked");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_revoked_app_session_token_is_rejected() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": "alice-public.jolt",
+            "requested_capabilities": ["resolve:public"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": "alice-public.jolt",
+            "capabilities": ["resolve:public"],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(approve_resp.status(), 200);
+    let approved: serde_json::Value = approve_resp.json().await.unwrap();
+    let session_id = approved["session_id"].as_str().unwrap();
+    let session_token = approved["session_token"].as_str().unwrap();
+
+    let current_resp = client
+        .get(format!("{}/app/v1/session", base_url(port)))
+        .bearer_auth(session_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(current_resp.status(), 200);
+    let current: serde_json::Value = current_resp.json().await.unwrap();
+    assert_eq!(current["session_id"], session_id);
+    assert_eq!(current["status"], "active");
+    assert!(current.get("session_token").is_none());
+    assert!(current.get("token_hash").is_none());
+
+    let revoke_resp = client
+        .post(format!(
+            "{}/admin/v1/app-sessions/{session_id}/revoke",
+            base_url(port)
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoke_resp.status(), 200);
+
+    let revoked_poll_resp = client
+        .get(format!("{}/app/v1/sessions/{request_id}", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoked_poll_resp.status(), 200);
+    let revoked_poll: serde_json::Value = revoked_poll_resp.json().await.unwrap();
+    assert_eq!(revoked_poll["status"], "revoked");
+    assert!(revoked_poll["session_token"].is_null());
+
+    let revoked_current_resp = client
+        .get(format!("{}/app/v1/session", base_url(port)))
+        .bearer_auth(session_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoked_current_resp.status(), 401);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_sessions_persist_across_server_restart() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (first_port, first_handle, _first_dir) =
+        start_test_server_with_session_path(session_path.clone()).await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(first_port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": "alice-public.jolt",
+            "requested_capabilities": ["resolve:public"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(first_port)
+        ))
+        .json(&serde_json::json!({
+            "identity": "alice-public.jolt",
+            "capabilities": ["resolve:public"],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(approve_resp.status(), 200);
+    let approved: serde_json::Value = approve_resp.json().await.unwrap();
+    let session_id = approved["session_id"].as_str().unwrap().to_string();
+    assert!(!approved["session_token"].as_str().unwrap().is_empty());
+
+    first_handle.shutdown().await.ok();
+
+    let (second_port, second_handle, _second_dir) =
+        start_test_server_with_session_path(session_path).await;
+    let sessions_resp = client
+        .get(format!("{}/admin/v1/app-sessions", base_url(second_port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(sessions_resp.status(), 200);
+    let sessions: serde_json::Value = sessions_resp.json().await.unwrap();
+    let sessions = sessions.as_array().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0]["session_id"], session_id);
+    assert_eq!(sessions[0]["status"], "active");
+    assert_eq!(sessions[0]["identity"], "alice-public.jolt");
+    assert!(sessions[0].get("session_token").is_none());
+    assert!(sessions[0].get("token_hash").is_none());
+
+    second_handle.shutdown().await.ok();
 }
 
 #[tokio::test]

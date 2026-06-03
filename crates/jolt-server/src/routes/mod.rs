@@ -1,3 +1,4 @@
+pub mod app_sessions;
 pub mod cache;
 pub mod dashboard;
 pub mod fetch;
