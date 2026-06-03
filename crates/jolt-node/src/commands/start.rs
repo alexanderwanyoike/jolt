@@ -64,6 +64,7 @@ pub async fn run(
         &cached_bootstrap,
         p2p_port,
         no_mdns,
+        no_bootstrap,
     );
     let published_ids: Vec<String> = store.published_ids();
 
@@ -166,19 +167,24 @@ fn build_network_config(
     cached_bootstrap: &[String],
     p2p_port: u16,
     no_mdns: bool,
+    no_bootstrap: bool,
 ) -> (NetworkConfig, Vec<String>) {
-    let mut effective_bootstrap =
-        settings.effective_bootstrap_relays(cli_bootstrap, builtin_bootstrap);
-    for relay in learned_relay_bootstrap {
-        if !effective_bootstrap.contains(relay) {
-            effective_bootstrap.push(relay.clone());
+    let effective_bootstrap = if no_bootstrap {
+        Vec::new()
+    } else {
+        let mut relays = settings.effective_bootstrap_relays(cli_bootstrap, builtin_bootstrap);
+        for relay in learned_relay_bootstrap {
+            if !relays.contains(relay) {
+                relays.push(relay.clone());
+            }
         }
-    }
-    for relay in cached_bootstrap {
-        if !effective_bootstrap.contains(relay) {
-            effective_bootstrap.push(relay.clone());
+        for relay in cached_bootstrap {
+            if !relays.contains(relay) {
+                relays.push(relay.clone());
+            }
         }
-    }
+        relays
+    };
     let mut net_config = NetworkConfig::default();
     net_config.enable_mdns = !no_mdns;
     net_config.p2p_port = p2p_port;
@@ -229,7 +235,7 @@ mod tests {
         let builtins = vec![BUILTIN.to_string()];
 
         let (config, effective) =
-            build_network_config(&settings, &cli, &builtins, &[], &[], 4001, false);
+            build_network_config(&settings, &cli, &builtins, &[], &[], 4001, false, false);
 
         assert_eq!(effective, vec![CONFIGURED.to_string(), CLI.to_string()]);
         assert_eq!(config.bootstrap_peers.len(), 2);
@@ -255,7 +261,7 @@ mod tests {
         let learned = vec![BUILTIN.to_string(), CONFIGURED.to_string()];
 
         let (config, effective) =
-            build_network_config(&settings, &[], &[], &learned, &cached, 4001, false);
+            build_network_config(&settings, &[], &[], &learned, &cached, 4001, false, false);
 
         assert_eq!(
             effective,
@@ -274,7 +280,7 @@ mod tests {
         let builtins = vec![BUILTIN.to_string()];
 
         let (config, effective) =
-            build_network_config(&settings, &[], &builtins, &[], &[], 0, false);
+            build_network_config(&settings, &[], &builtins, &[], &[], 0, false, false);
 
         assert_eq!(effective, vec![BUILTIN.to_string()]);
         assert_eq!(config.bootstrap_peers.len(), 1);
@@ -290,8 +296,28 @@ mod tests {
             home_relay: None,
         };
 
-        let (config, _) = build_network_config(&settings, &[], &[], &[], &[], 4001, true);
+        let (config, _) = build_network_config(&settings, &[], &[], &[], &[], 4001, true, false);
 
         assert!(!config.enable_mdns);
+    }
+
+    #[test]
+    fn build_network_config_can_disable_bootstrap_relays() {
+        let settings = NodeSettings {
+            bootstrap_relays: vec![CONFIGURED.to_string()],
+            use_builtin_bootstrap_relays: true,
+            bootstrap_relay: false,
+            home_relay: None,
+        };
+        let builtins = vec![BUILTIN.to_string()];
+        let learned = vec![CLI.to_string()];
+
+        let (config, effective) =
+            build_network_config(&settings, &[], &builtins, &learned, &[], 4001, false, true);
+
+        assert!(effective.is_empty());
+        assert!(config.effective_bootstrap_relays.is_empty());
+        assert!(config.bootstrap_peers.is_empty());
+        assert_eq!(config.configured_bootstrap_relays, vec![CONFIGURED]);
     }
 }
