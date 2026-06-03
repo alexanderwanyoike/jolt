@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Ready
+**Status:** Done
 **Blocked by:** None
 
 ## Why
@@ -51,19 +51,42 @@ Suggested sections:
 
 ## Acceptance Criteria
 
-- [ ] `apps/jolt-console` exists as a Tauri app in this repo.
-- [ ] Console can connect to a running local Jolt daemon.
-- [ ] Console shows daemon health and connection state.
-- [ ] Console shows current `.jolt` identity and peer ID.
-- [ ] Console shows basic network, relay, published, and cache counts from existing APIs.
-- [ ] Console has clear navigation sections for Overview, Identity, Apps, Network, Relays, Published, Cache, Settings, and Diagnostics.
-- [ ] Apps section exists as a placeholder for permission approval work in [046](046-app-permission-approval-ui.md).
-- [ ] Existing localhost dashboard remains reachable as a temporary debug page.
-- [ ] No new remote attack surface is exposed by default.
-- [ ] PR description explains that this is the production Console direction, not a static dashboard rewrite.
+- [x] `apps/jolt-console` exists as a Tauri app in this repo.
+- [x] Console can connect to a running local Jolt daemon.
+- [x] Console shows daemon health and connection state.
+- [x] Console shows current `.jolt` identity and peer ID.
+- [x] Console shows basic network, relay, published, and cache counts from existing APIs.
+- [x] Console has clear navigation sections for Overview, Identity, Apps, Network, Relays, Published, Cache, Settings, and Diagnostics.
+- [x] Apps section exists as a placeholder for permission approval work in [046](046-app-permission-approval-ui.md).
+- [x] Existing localhost dashboard remains reachable as a temporary debug page.
+- [x] No new remote attack surface is exposed by default.
+- [x] PR description explains that this is the production Console direction, not a static dashboard rewrite.
 
 ## Notes
 
 The Console is not a Jolt app in the same sense as Pastey or Drops. It is a first-party control surface for the daemon.
 
 Keep v0 focused. The goal is not to implement every setting yet; the goal is to establish the production shell and architecture so permission approval can be built in the right place.
+
+## Result
+
+Implemented a first Tauri/Vite/React/TypeScript Console shell under
+`apps/jolt-console`. The shell connects to the local daemon through a Tauri
+command rather than direct browser fetches, so v0 does not require opening a new
+remote API surface.
+
+The Console currently provides read-only overview, identity, app placeholder,
+network, relay, published, cache, settings, and diagnostics sections. The app
+permission approval flow remains the follow-up in [046](046-app-permission-approval-ui.md).
+The frontend is split into route definitions, daemon client/state boundaries,
+shared UI primitives, and section components so the Console can absorb future
+features without layering everything into one entrypoint.
+
+Verification:
+
+```bash
+npm test
+npm run build
+cargo check -p jolt-console
+./scripts/test-local.sh
+```
