@@ -17,6 +17,18 @@ WASM is useful because it lets a space carry or reference its preferred interfac
 
 Apps are distributed software packages. A developer compiles an app to WASM, publishes it to the Jolt network, and users install it on their nodes. Apps run locally, store data in scoped local namespaces, and communicate with other users peer-to-peer through node capabilities.
 
+## Near-Term App Boundary
+
+The first real app proof is not the WASM runtime. Pastey proved a nearer boundary:
+
+```text
+external app -> local Jolt daemon -> Jolt network
+```
+
+In this model, the daemon is the local authority for identities, keys, settings, content, and network access. Apps are untrusted clients that request scoped sessions. Jolt Console is the privileged local control surface where the user approves and revokes app grants.
+
+The session model is defined in [App Boundary and Sessions](15-app-boundary-and-sessions.md). The WASM/runtime material below remains a longer-term direction, not the immediate implementation path.
+
 ## Role in the Stack
 
 ```text
