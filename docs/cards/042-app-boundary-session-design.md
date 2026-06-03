@@ -2,7 +2,7 @@
 
 **Type:** HITL  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Ready  
+**Status:** Ready for review
 **Blocked by:** None
 
 ## Why
@@ -31,13 +31,19 @@ Write a design note covering:
 
 ## Acceptance Criteria
 
-- [ ] A design note exists under `docs/`.
-- [ ] It defines app sessions, app grants, capabilities, and revocation.
-- [ ] It explicitly separates app APIs from console/admin APIs.
-- [ ] It lists forbidden normal-app capabilities such as exporting keys or deleting identities.
-- [ ] It defines v0 capabilities for Pastey: resolve, fetch, publish `/pastes/*`, inventory `/pastes/*`, and pin own content.
+- [x] A design note exists under `docs/`.
+- [x] It defines app sessions, app grants, capabilities, and revocation.
+- [x] It explicitly separates app APIs from console/admin APIs.
+- [x] It lists forbidden normal-app capabilities such as exporting keys or deleting identities.
+- [x] It defines v0 capabilities for Pastey: resolve, fetch, publish `/pastes/*`, inventory `/pastes/*`, and pin own content.
 - [ ] Human review confirms the direction before implementation cards begin.
 
 ## Notes
 
 Prompt for authority expansion, not routine use. Pastey should not ask on every paste once `/pastes/*` has been granted.
+
+## Result
+
+Design note: [App Boundary and Sessions](../15-app-boundary-and-sessions.md).
+
+This card remains open for human review before implementation begins.

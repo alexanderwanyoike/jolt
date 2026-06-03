@@ -138,7 +138,7 @@ Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/
 | [011](011-availability-checks-v0.md) | AFK | Done | Node checks whether home relay still serves pinned content. |
 | [012](012-crypto-agility-spike.md) | HITL | Superseded by 049 | Original crypto-agility spike; continue through encrypted object envelope work. |
 | [013](013-wasm-runtime-parking-lot.md) | HITL | Later | Park app runtime work until relay/mutable content lands. |
-| [042](042-app-boundary-session-design.md) | HITL | Ready | Define daemon/app sessions, capabilities, console/admin boundary, and forbidden app powers. |
+| [042](042-app-boundary-session-design.md) | HITL | Ready for review | Define daemon/app sessions, capabilities, console/admin boundary, and forbidden app powers. |
 | [043](043-app-session-store-approval-api.md) | AFK | Ready after 042 | Persist pending/approved/revoked app sessions and approval APIs. |
 | [044](044-capability-checked-app-api-v0.md) | AFK | Ready after 043 | Add session-token app APIs for resolve/fetch/publish/inventory/pin. |
 | [045](045-jolt-console-shell-v0.md) | AFK | Ready after 042 | Turn the dashboard into a local daemon console with sidebar sections. |
