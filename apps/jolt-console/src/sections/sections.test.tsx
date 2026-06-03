@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DaemonClient } from "../daemon/client";
 import type { DaemonSnapshot } from "../daemon/useDaemonSnapshot";
 import { AppsPage } from "./AppsPage";
 import { CachePage } from "./CachePage";
@@ -11,6 +13,10 @@ import { OverviewPage } from "./OverviewPage";
 import { PublishedPage } from "./PublishedPage";
 import { RelaysPage } from "./RelaysPage";
 import { SettingsPage } from "./SettingsPage";
+
+afterEach(() => {
+  cleanup();
+});
 
 function snapshot(overrides: Partial<DaemonSnapshot> = {}): DaemonSnapshot {
   return {
@@ -75,11 +81,88 @@ describe("Console section pages", () => {
     expect(screen.getByText("12D3KooAlice")).toBeInTheDocument();
   });
 
-  it("renders the apps permission placeholder", () => {
-    render(<AppsPage />);
+  it("renders app permission requests and can approve, reject, and revoke grants", async () => {
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/app-requests") {
+          return [
+            {
+              request_id: "req_pastey",
+              app_id: "pastey.local",
+              app_name: "Pastey",
+              app_origin: "http://127.0.0.1:5174",
+              requested_identity: "alice.jolt",
+              requested_capabilities: [
+                "resolve:public",
+                "fetch:public",
+                "publish:/pastes/*",
+                "pin:own:/pastes/*",
+                "export:keys"
+              ],
+              granted_capabilities: [],
+              status: "pending",
+              created_at: 1_780_000_000
+            }
+          ];
+        }
+        if (path === "/admin/v1/app-sessions") {
+          return [
+            {
+              request_id: "req_notes",
+              session_id: "sess_notes",
+              app_id: "notes.local",
+              app_name: "Notes",
+              identity: "alice.jolt",
+              requested_capabilities: ["resolve:public"],
+              granted_capabilities: ["resolve:public"],
+              status: "active",
+              created_at: 1_780_000_000,
+              approved_at: 1_780_000_100,
+              last_used_at: 1_780_000_200
+            }
+          ];
+        }
+        throw new Error(`unexpected path ${path}`);
+      }),
+      post: vi.fn(async () => ({ ok: true }))
+    };
+
+    render(<AppsPage client={client} />);
+
+    expect(await screen.findByText("Pastey")).toBeInTheDocument();
+    expect(screen.getAllByText("alice.jolt")).not.toHaveLength(0);
+    expect(screen.getByText("create or update signed paths under /pastes/*")).toBeInTheDocument();
+    expect(screen.getByText("admin-only request: cannot be approved")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve Pastey" })).toBeDisabled();
+
+    expect(screen.getByText("Notes")).toBeInTheDocument();
+    expect(screen.getByText("Last used 2026-05-28 20:30")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Reject Pastey" }));
+    expect(client.post).toHaveBeenCalledWith("/admin/v1/app-requests/req_pastey/reject");
+
+    await userEvent.click(screen.getByRole("button", { name: "Revoke Notes" }));
+    expect(client.post).toHaveBeenCalledWith("/admin/v1/app-sessions/sess_notes/revoke");
+  });
+
+  it("renders apps empty state when there are no requests or sessions", async () => {
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/app-requests") return [];
+        if (path === "/admin/v1/app-sessions") return [];
+        throw new Error(path);
+      }),
+      post: vi.fn()
+    };
+
+    render(<AppsPage client={client} />);
 
     expect(screen.getByText(/admin\/v1\/app-requests/)).toBeInTheDocument();
     expect(screen.getByText(/admin\/v1\/app-sessions/)).toBeInTheDocument();
+    expect(await screen.findByText("No pending app requests.")).toBeInTheDocument();
+    expect(screen.getByText("No app sessions yet.")).toBeInTheDocument();
   });
 
   it("renders network peer counts", () => {

@@ -45,3 +45,29 @@ export type DaemonPayload = {
   cacheStats: CacheStats;
   published: PublishedContent[];
 };
+
+export type AppSessionStatus = "pending" | "active" | "rejected" | "revoked" | "expired";
+
+export type AppSessionGrant = {
+  request_id: string;
+  session_id?: string | null;
+  app_id: string;
+  app_name: string;
+  app_origin?: string | null;
+  requested_identity?: string | null;
+  identity?: string | null;
+  requested_capabilities: string[];
+  granted_capabilities: string[];
+  status: AppSessionStatus;
+  created_at: number;
+  approved_at?: number | null;
+  rejected_at?: number | null;
+  revoked_at?: number | null;
+  expires_at?: number | null;
+  last_used_at?: number | null;
+};
+
+export type AppPermissionsPayload = {
+  requests: AppSessionGrant[];
+  sessions: AppSessionGrant[];
+};

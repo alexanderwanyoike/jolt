@@ -126,7 +126,7 @@ Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/
 | [043](043-app-session-store-approval-api.md) | AFK | Done | Persist pending/approved/revoked app sessions and approval APIs. |
 | [044](044-capability-checked-app-api-v0.md) | AFK | Done | Add session-token app APIs for resolve/fetch/publish/inventory/pin. |
 | [045](045-jolt-console-shell-v0.md) | AFK | Done | Turn the dashboard into a local daemon console with sidebar sections. |
-| [046](046-app-permission-approval-ui.md) | AFK | Ready | Let Console approve/reject/revoke app permission requests. |
+| [046](046-app-permission-approval-ui.md) | AFK | Implemented in PR | Let Console approve/reject/revoke app permission requests. |
 | [047](047-pastey-app-session-integration.md) | AFK | Ready after 044 and 046 | Move Pastey from trusted daemon APIs to session-token app APIs. |
 | [048](048-identity-import-v0.md) | HITL | Ready for design | Define admin-only identity import/export v0 and shared-key risks. |
 | [049](049-crypto-agility-encrypted-object-envelope.md) | HITL | Ready after 042 review | Define encrypted object envelope, suite IDs, wrapping, and PQ-hybrid direction. |

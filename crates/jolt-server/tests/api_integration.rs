@@ -397,6 +397,59 @@ async fn test_admin_can_approve_app_session_request() {
 }
 
 #[tokio::test]
+async fn test_admin_cannot_approve_forbidden_app_session_capabilities() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": "alice-public.jolt",
+            "requested_capabilities": [
+                "resolve:public",
+                "export:keys",
+                "delete:identity"
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": "alice-public.jolt",
+            "capabilities": [
+                "resolve:public",
+                "export:keys",
+                "delete:identity"
+            ],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(approve_resp.status(), 400);
+    let body: serde_json::Value = approve_resp.json().await.unwrap();
+    assert_eq!(body["code"], "app_session_store_error");
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("capability is not grantable"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_can_poll_approved_session_request() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();

@@ -80,7 +80,9 @@ impl IntoResponse for AppSessionApiError {
             AppSessionStoreError::RequestNotFound(_) | AppSessionStoreError::SessionNotFound(_) => {
                 (StatusCode::NOT_FOUND, "app_session_store_error")
             }
-            AppSessionStoreError::RequestNotPending(_) | AppSessionStoreError::MissingIdentity => {
+            AppSessionStoreError::RequestNotPending(_)
+            | AppSessionStoreError::MissingIdentity
+            | AppSessionStoreError::CapabilityNotGrantable(_) => {
                 (StatusCode::BAD_REQUEST, "app_session_store_error")
             }
             AppSessionStoreError::Io(_) => {
