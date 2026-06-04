@@ -9,3 +9,4 @@ echo "==> This excludes ignored manual tests for iroh smoke checks and patchbay 
 echo "==> This excludes the Tauri desktop shell, which has native Linux WebKit/GTK prerequisites"
 
 cargo test --locked --workspace --exclude jolt-console
+./scripts/test-pastey-two-node-demo-harness.sh

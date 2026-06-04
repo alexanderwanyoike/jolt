@@ -141,57 +141,33 @@ curl -X POST http://127.0.0.1:9862/api/v1/fetch \
   -d '{"content_id": "bafkr4i..."}'
 ```
 
-### Local Two-Node Dashboard Demo
+### Local Alice/Bob/Pastey Demo
 
-The default daemon transport is iroh for real P2P and NAT traversal. For a deterministic one-machine demo, use TCP transport and separate data directories:
-
-```bash
-cargo build
-
-# Terminal 1: node A
-JOLT_A=$(mktemp -d)
-XDG_DATA_HOME="$JOLT_A" target/debug/jolt start \
-  --transport tcp \
-  --p2p-port 4901 \
-  --api-port 9871 \
-  --no-bootstrap
-
-# Terminal 2: node B
-JOLT_B=$(mktemp -d)
-XDG_DATA_HOME="$JOLT_B" target/debug/jolt start \
-  --transport tcp \
-  --p2p-port 4902 \
-  --api-port 9872 \
-  --no-bootstrap
-```
-
-Open the dashboards:
-
-- Node A: http://127.0.0.1:9871/dashboard
-- Node B: http://127.0.0.1:9872/dashboard
-
-Connect node B to node A:
+The default daemon transport is iroh for real P2P and NAT traversal. For a
+deterministic one-machine app demo, use the Pastey harness. It starts isolated
+Alice and Bob daemons over TCP, connects Bob to Alice, and starts two Pastey dev
+clients pointed at the two daemon APIs.
 
 ```bash
-PEER_A=$(curl -sS http://127.0.0.1:9871/api/v1/status \
-  | sed -n 's/.*"peer_id":"\([^"]*\)".*/\1/p')
-
-curl -sS -X POST http://127.0.0.1:9872/api/v1/peers/connect \
-  -H 'Content-Type: application/json' \
-  -d "{\"multiaddr\":\"/ip4/127.0.0.1/tcp/4901/p2p/$PEER_A\"}"
+./scripts/pastey-two-node-demo.sh
 ```
 
-Then publish on node A and fetch from node B:
+The harness prints:
+
+- Alice Pastey: http://127.0.0.1:5174
+- Bob Pastey: http://127.0.0.1:5175
+- Alice daemon API: http://127.0.0.1:9871
+- Bob daemon API: http://127.0.0.1:9872
+
+Use `Ctrl-C` in the harness terminal to stop all spawned daemons and Pastey
+clients. Use the automated app-API smoke when you want a non-interactive check:
 
 ```bash
-printf 'hello from node A' > /tmp/jolt-demo.txt
-CID=$(curl -sS -F "file=@/tmp/jolt-demo.txt" http://127.0.0.1:9871/api/v1/publish \
-  | sed -n 's/.*"content_id":"\([^"]*\)".*/\1/p')
-
-curl -sS -X POST http://127.0.0.1:9872/api/v1/fetch \
-  -H 'Content-Type: application/json' \
-  -d "{\"content_id\":\"$CID\"}"
+./scripts/pastey-two-node-demo.sh --smoke --no-pastey
 ```
+
+`--smoke` approves scoped app sessions, publishes Alice's
+`/pastes/two-node-demo`, and verifies Bob can fetch it through `/app/v1`.
 
 ### API Endpoints
 
@@ -219,16 +195,18 @@ Normal local development should use the deterministic suite:
 That script currently runs:
 
 ```bash
-cargo test --workspace
+cargo test --locked --workspace --exclude jolt-console
+./scripts/test-pastey-two-node-demo-harness.sh
 ```
 
-`cargo test --workspace` is expected to be boring and repeatable on a normal developer machine. It includes pure protocol/storage/identity tests, server API tests, CLI tests, and TCP-backed local multi-node network tests. It excludes ignored manual tests for iroh transport smoke checks and patchbay network namespaces.
+The cargo portion is expected to be boring and repeatable on a normal developer machine. It includes pure protocol/storage/identity tests, server API tests, CLI tests, and TCP-backed local multi-node network tests. It excludes ignored manual tests for iroh transport smoke checks and patchbay network namespaces.
 
 Test matrix:
 
 | Layer | Command | Default? | Notes |
 |---|---|---:|---|
 | Deterministic local suite | `./scripts/test-local.sh` | Yes | Normal pre-PR check. |
+| Pastey demo harness dry-run | `./scripts/test-pastey-two-node-demo-harness.sh` | Yes | Fast contract check for the Alice/Bob/Pastey harness. |
 | Pure crates only | `cargo test -p jolt-core -p jolt-identity -p jolt-store` | Yes | Fast protocol, identity, and store feedback. |
 | Local TCP network tests | `cargo test -p jolt-network --lib --tests` | Yes | Uses TCP transport for local determinism. |
 | Daemon/API tests | `cargo test -p jolt-node -p jolt-server` | Yes | Covers CLI parsing, daemon config, and HTTP routes. |

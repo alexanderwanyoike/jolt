@@ -134,7 +134,7 @@ Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/
 | [051](051-encrypted-object-implementation-v0.md) | AFK | Ready after 049 and 050 | Encrypt content once and wrap content keys for recipients. |
 | [052](052-daemon-encrypt-decrypt-api.md) | AFK | Ready after 044 and 051 | Let the daemon encrypt/decrypt for app sessions without exposing keys. |
 | [053](053-pastey-private-paste-v0.md) | AFK | Ready after 052 | Prove Alice can share an encrypted Pastey paste with Bob. |
-| [054](054-pastey-two-node-local-demo-harness.md) | AFK | Ready | Add a repeatable local Alice/Bob/Pastey demo harness. |
+| [054](054-pastey-two-node-local-demo-harness.md) | AFK | Implemented in PR | Add a repeatable local Alice/Bob/Pastey demo harness. |
 | [055](055-jolt-console-native-daemon-ux-debt.md) | HITL | Tech debt | Make Console realtime, daemon-lifecycle aware, OS-native, and focus permission prompts. |
 
 ## Card Format

@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** Developer Experience / App Dogfooding  
-**Status:** Ready  
+**Status:** Implemented in PR  
 **Blocked by:** None
 
 ## Why
@@ -31,13 +31,39 @@ The harness should print:
 
 ## Acceptance Criteria
 
-- [ ] One command starts Alice and Bob daemons locally.
-- [ ] One command starts or clearly instructs how to start two Pastey clients.
-- [ ] Bob is connected to Alice.
-- [ ] Alice can publish a paste.
-- [ ] Bob can fetch Alice's paste through the Bob Pastey client.
-- [ ] Cleanup stops all spawned processes.
-- [ ] The harness does not require Docker, Hetzner, or multiple machines.
+- [x] One command starts Alice and Bob daemons locally.
+- [x] One command starts or clearly instructs how to start two Pastey clients.
+- [x] Bob is connected to Alice.
+- [x] Alice can publish a paste.
+- [x] Bob can fetch Alice's paste through the Bob Pastey client.
+- [x] Cleanup stops all spawned processes.
+- [x] The harness does not require Docker, Hetzner, or multiple machines.
+
+## Implementation Notes
+
+- Added `scripts/pastey-two-node-demo.sh`.
+- Default mode starts:
+  - Alice daemon on API `9871`, P2P `4901`.
+  - Bob daemon on API `9872`, P2P `4902`.
+  - Alice Pastey on `5174`.
+  - Bob Pastey on `5175`.
+- `--smoke --no-pastey` runs a non-interactive app API proof:
+  - create and approve scoped app sessions;
+  - publish Alice's `/pastes/two-node-demo`;
+  - fetch Alice's `.jolt` paste through Bob's app session.
+- `--dry-run` prints the planned ports, URLs, data dirs, and smoke behavior for
+  a fast focused test.
+
+## Verification
+
+- Red: `./scripts/test-pastey-two-node-demo-harness.sh` failed while the
+  harness script was missing.
+- Green:
+  - `./scripts/test-pastey-two-node-demo-harness.sh`
+  - `bash -n scripts/pastey-two-node-demo.sh scripts/test-pastey-two-node-demo-harness.sh`
+  - `./scripts/pastey-two-node-demo.sh --smoke --no-pastey`
+  - timeout-based interactive startup smoke verified both Pastey dev clients
+    start and cleanup stops spawned processes.
 
 ## Notes
 
