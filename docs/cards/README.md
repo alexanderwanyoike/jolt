@@ -131,7 +131,7 @@ Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/
 | [046](046-app-permission-approval-ui.md) | AFK | Done | Let Console approve/reject/revoke app permission requests. |
 | [047](047-pastey-app-session-integration.md) | AFK | Done | Move Pastey from trusted daemon APIs to session-token app APIs. |
 | [048](048-identity-import-v0.md) | HITL | Ready for design | Define admin-only identity import/export v0 and shared-key risks. |
-| [049](049-crypto-agility-encrypted-object-envelope.md) | HITL | Ready after 042 review | Define encrypted object envelope, suite IDs, wrapping, and PQ-hybrid direction. |
+| [049](049-crypto-agility-encrypted-object-envelope.md) | HITL | Design in PR | Define encrypted object envelope, suite IDs, wrapping, and PQ-hybrid direction. |
 | [050](050-identity-encryption-key-records.md) | AFK | Ready after 049 | Publish and resolve signed public encryption keys for identities. |
 | [051](051-encrypted-object-implementation-v0.md) | AFK | Ready after 049 and 050 | Encrypt content once and wrap content keys for recipients. |
 | [052](052-daemon-encrypt-decrypt-api.md) | AFK | Ready after 044 and 051 | Let the daemon encrypt/decrypt for app sessions without exposing keys. |

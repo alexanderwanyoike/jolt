@@ -98,6 +98,11 @@ Signatures provide:
 
 jolt uses a hybrid encryption scheme for private content.
 
+> Design update: encrypted object work continues in
+> [Encrypted Object Envelope](16-encrypted-object-envelope.md). That design uses
+> separate identity encryption key records signed by the identity, rather than
+> deriving X25519 encryption keys from the Ed25519 identity key.
+
 #### Encrypting for a Single Recipient
 
 ```mermaid
@@ -105,15 +110,15 @@ sequenceDiagram
     participant Alice as Alice (sender)
     participant Bob as Bob (recipient)
 
-    Alice->>Alice: Derive X25519 key from Ed25519 key
-    Alice->>Alice: Derive X25519 from Bob's Ed25519 public key
-    Alice->>Alice: X25519 key exchange -> shared secret
-    Alice->>Alice: HKDF(shared_secret) -> symmetric key
-    Alice->>Alice: ChaCha20-Poly1305 encrypt(symmetric_key, plaintext)
-    Alice->>Bob: Send ciphertext
-    Bob->>Bob: X25519 key exchange -> shared secret
-    Bob->>Bob: HKDF(shared_secret) -> symmetric key
-    Bob->>Bob: ChaCha20-Poly1305 decrypt -> plaintext
+    Alice->>Alice: Resolve Bob's signed X25519 encryption key record
+    Alice->>Alice: Generate random content key
+    Alice->>Alice: ChaCha20-Poly1305 encrypt plaintext with content key
+    Alice->>Alice: HPKE-wrap content key to Bob's X25519 public key
+    Alice->>Alice: Sign encrypted envelope with Alice's Ed25519 identity key
+    Alice->>Bob: Publish encrypted envelope
+    Bob->>Bob: Verify Alice's envelope signature
+    Bob->>Bob: HPKE-open recipient wrap with Bob's X25519 private key
+    Bob->>Bob: ChaCha20-Poly1305 decrypt ciphertext with content key
 ```
 
 #### Encrypting for a Group
