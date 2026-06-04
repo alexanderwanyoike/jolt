@@ -5,6 +5,7 @@ pub mod dashboard;
 pub mod fetch;
 pub mod health;
 pub mod home_relay;
+pub mod identity_encryption_keys;
 pub mod peers;
 pub mod publish;
 pub mod published;

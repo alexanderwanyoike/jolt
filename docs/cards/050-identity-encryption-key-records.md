@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** Private Sharing Foundations  
-**Status:** Ready after 049  
+**Status:** Implemented in PR
 **Blocked by:** 049
 
 ## Why
@@ -32,13 +32,24 @@ select usable key for encryption
 
 ## Acceptance Criteria
 
-- [ ] Core type exists for identity encryption key records.
-- [ ] Records are signed by the identity signing key.
-- [ ] Resolver verifies key records against the target identity.
-- [ ] Daemon/API can expose verified public encryption keys for an identity.
-- [ ] Tests reject keys signed by the wrong identity.
-- [ ] Tests reject expired or unsupported keys if expiry/support is part of v0.
+- [x] Core type exists for identity encryption key records.
+- [x] Records are signed by the identity signing key.
+- [x] Resolver verifies key records against the target identity.
+- [x] Daemon/API can expose verified public encryption keys for an identity.
+- [x] Tests reject keys signed by the wrong identity.
+- [x] Tests reject expired or unsupported keys if expiry/support is part of v0.
 
 ## Notes
 
 Do not derive app access policy from this card. This card only binds public encryption keys to identities.
+
+## Implementation Notes
+
+- v0 identity encryption key records publish under `/.well-known/jolt/encryption-keys`.
+- The core verifier accepts owner-signed records for the requested identity and returns current usable `x25519-hkdf-sha256` / `OKP` / `X25519` active keys.
+- The server exposes `GET /api/v1/identities/{identity}/encryption-keys`, which resolves the reserved signed path, fetches the record content, verifies it, and returns verified public keys.
+
+## Verification
+
+- `cargo test -p jolt-core identity_encryption_key -- --nocapture`
+- `cargo test -p jolt-server test_identity_encryption_keys_endpoint_returns_verified_record_keys -- --nocapture`
