@@ -702,7 +702,9 @@ fn relay_addr_with_peer(addr: &str, peer_id: &str) -> String {
 mod tests {
     use super::*;
     use jolt_core::{
-        RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry, UpdateLogEntryBody,
+        decrypt_encrypted_object_for_recipient, generate_identity_encryption_keypair,
+        EncryptedObjectEnvelope, EncryptedObjectRecipient, RelayRecord, RelayRecordCapability,
+        UpdateAction, UpdateLogEntry, UpdateLogEntryBody,
     };
     use jolt_identity::NodeIdentity;
     use tempfile::tempdir;
@@ -803,6 +805,48 @@ mod tests {
         assert_eq!(result.data, data);
         assert_eq!(result.publisher_key, vec![10, 20]);
         assert_eq!(result.signature, vec![30, 40]);
+    }
+
+    #[test]
+    fn encrypted_object_bytes_can_be_cached_pinned_and_read_back() {
+        let dir = tempdir().unwrap();
+        let mut store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        let author = NodeIdentity::generate();
+        let recipient = NodeIdentity::generate();
+        let (recipient_public_key, recipient_private_key) = generate_identity_encryption_keypair(
+            recipient.identity_id(),
+            "recipient_x25519".to_string(),
+            100,
+        );
+        let envelope = EncryptedObjectEnvelope::encrypt(
+            author.public_key_bytes(),
+            author.identity_id(),
+            b"stored encrypted bytes",
+            "application/octet-stream".to_string(),
+            None,
+            vec![EncryptedObjectRecipient {
+                identity: recipient.identity_id(),
+                key: recipient_public_key,
+            }],
+            120,
+            |bytes| author.sign(bytes),
+        )
+        .unwrap();
+        let data = envelope.to_bytes().unwrap();
+        let id = ContentId::from_bytes(&data).to_string();
+        store
+            .cache_content(&id, &data, &author.public_key_bytes(), &envelope.signature)
+            .unwrap();
+
+        store.pin(&id).unwrap();
+        let stored = store.get_content(&id).unwrap();
+        let decoded = EncryptedObjectEnvelope::from_bytes(&stored.data).unwrap();
+        let plaintext =
+            decrypt_encrypted_object_for_recipient(&decoded, &recipient_private_key).unwrap();
+
+        assert_eq!(stored.data, data);
+        assert_eq!(plaintext, b"stored encrypted bytes");
+        assert!(store.cache_index.entries.get(&id).unwrap().pinned);
     }
 
     #[test]

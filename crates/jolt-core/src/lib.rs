@@ -1,4 +1,5 @@
 pub mod content_id;
+pub mod encrypted_object;
 pub mod error;
 pub mod identity_address;
 pub mod identity_encryption_key;
@@ -9,6 +10,11 @@ pub mod types;
 pub mod update_log;
 
 pub use content_id::ContentId;
+pub use encrypted_object::{
+    decrypt_encrypted_object_for_recipient, generate_identity_encryption_keypair,
+    EncryptedObjectEnvelope, EncryptedObjectError, EncryptedObjectRecipient,
+    IdentityEncryptionPrivateKey, ENCRYPTED_OBJECT_SUITE_ID,
+};
 pub use error::JoltError;
 pub use identity_address::{IdentityId, JoltAddress};
 pub use identity_encryption_key::{
