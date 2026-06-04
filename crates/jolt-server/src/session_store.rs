@@ -146,6 +146,8 @@ pub enum AppSessionStoreError {
     MissingIdentity,
     #[error("app session capability is not grantable: {0}")]
     CapabilityNotGrantable(String),
+    #[error("app session capability was not requested: {0}")]
+    CapabilityNotRequested(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -250,6 +252,11 @@ impl AppSessionStore {
         for capability in &capabilities {
             if !is_grantable_app_capability(capability) {
                 return Err(AppSessionStoreError::CapabilityNotGrantable(
+                    capability.clone(),
+                ));
+            }
+            if !capability_was_requested(capability, &record.requested_capabilities) {
+                return Err(AppSessionStoreError::CapabilityNotRequested(
                     capability.clone(),
                 ));
             }
@@ -404,20 +411,134 @@ fn load_state(path: &Path) -> std::io::Result<AppSessionState> {
     }
 }
 
-fn is_grantable_app_capability(capability: &str) -> bool {
-    capability == "resolve:public"
-        || capability == "fetch:public"
-        || is_grantable_path_capability(capability, "publish:")
-        || is_grantable_path_capability(capability, "inventory:")
-        || is_grantable_path_capability(capability, "pin:own:")
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum AppCapability {
+    ResolvePublic,
+    FetchPublic,
+    Path {
+        action: PathCapabilityAction,
+        scope: PathScope,
+    },
 }
 
-fn is_grantable_path_capability(capability: &str, prefix: &str) -> bool {
-    let Some(scope) = capability.strip_prefix(prefix) else {
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum PathCapabilityAction {
+    Publish,
+    Inventory,
+    PinOwn,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum PathScope {
+    Exact(String),
+    Prefix(String),
+}
+
+impl AppCapability {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "resolve:public" => Some(Self::ResolvePublic),
+            "fetch:public" => Some(Self::FetchPublic),
+            _ => parse_path_capability(raw),
+        }
+    }
+
+    fn contains(&self, granted: &Self) -> bool {
+        match (self, granted) {
+            (Self::ResolvePublic, Self::ResolvePublic) | (Self::FetchPublic, Self::FetchPublic) => {
+                true
+            }
+            (
+                Self::Path {
+                    action: requested_action,
+                    scope: requested_scope,
+                },
+                Self::Path {
+                    action: granted_action,
+                    scope: granted_scope,
+                },
+            ) if requested_action == granted_action => requested_scope.contains(granted_scope),
+            _ => false,
+        }
+    }
+}
+
+impl PathScope {
+    fn parse(raw: &str) -> Option<Self> {
+        if !raw.starts_with('/')
+            || raw.contains('?')
+            || raw.contains('#')
+            || raw.chars().any(char::is_whitespace)
+        {
+            return None;
+        }
+
+        let wildcard_count = raw.chars().filter(|ch| *ch == '*').count();
+        if wildcard_count > 1 {
+            return None;
+        }
+        if wildcard_count == 1 {
+            let base = raw.strip_suffix("/*")?;
+            if !is_valid_exact_scope_base(base) {
+                return None;
+            }
+            return Some(Self::Prefix(format!("{base}/")));
+        }
+
+        if !is_valid_exact_scope_base(raw) {
+            return None;
+        }
+        Some(Self::Exact(raw.to_string()))
+    }
+
+    fn contains(&self, granted: &Self) -> bool {
+        match (self, granted) {
+            (Self::Exact(requested), Self::Exact(granted)) => requested == granted,
+            (Self::Prefix(prefix), Self::Exact(granted)) => granted.starts_with(prefix),
+            (Self::Prefix(requested), Self::Prefix(granted)) => granted.starts_with(requested),
+            (Self::Exact(_), Self::Prefix(_)) => false,
+        }
+    }
+}
+
+fn parse_path_capability(raw: &str) -> Option<AppCapability> {
+    for (prefix, action) in [
+        ("publish:", PathCapabilityAction::Publish),
+        ("inventory:", PathCapabilityAction::Inventory),
+        ("pin:own:", PathCapabilityAction::PinOwn),
+    ] {
+        let Some(scope) = raw.strip_prefix(prefix) else {
+            continue;
+        };
+        return Some(AppCapability::Path {
+            action,
+            scope: PathScope::parse(scope)?,
+        });
+    }
+
+    None
+}
+
+fn is_valid_exact_scope_base(scope: &str) -> bool {
+    scope != "/"
+        && scope
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .all(|segment| segment != "." && segment != "..")
+}
+
+fn is_grantable_app_capability(capability: &str) -> bool {
+    AppCapability::parse(capability).is_some()
+}
+
+fn capability_was_requested(capability: &str, requested: &[String]) -> bool {
+    let Some(granted) = AppCapability::parse(capability) else {
         return false;
     };
-
-    scope.starts_with('/') && !scope.contains("..")
+    requested
+        .iter()
+        .filter_map(|raw| AppCapability::parse(raw))
+        .any(|requested| requested.contains(&granted))
 }
 
 fn save_state(path: &Path, state: &AppSessionState) -> std::io::Result<()> {

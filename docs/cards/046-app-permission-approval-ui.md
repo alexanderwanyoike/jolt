@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Implemented in PR
+**Status:** Done
 **Blocked by:** None
 
 ## Why

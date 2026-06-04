@@ -54,8 +54,9 @@ The relay mesh milestone is complete enough for now. The current focus is
 2. Move Pastey from trusted `/api/v1/*` calls to scoped `/app/v1/*` sessions.
 3. Add a repeatable one-machine Alice/Bob/Pastey demo harness.
 4. Review the app-boundary design debt in [042](042-app-boundary-session-design.md).
-5. Design identity import/export v0 before sharing one identity across devices.
-6. Design encrypted object envelopes and crypto agility before implementing private Pastey.
+5. Harden app capability grants before adding private/decrypt authority.
+6. Design identity import/export v0 before sharing one identity across devices.
+7. Design encrypted object envelopes and crypto agility before implementing private Pastey.
 
 ## Next Sprint: App Boundary and Private Sharing Foundations
 
@@ -67,13 +68,14 @@ Jolt Console = privileged local control surface
 Jolt apps = untrusted clients with scoped sessions
 ```
 
-The next open work is:
+The sprint sequence is:
 
 1. [046](046-app-permission-approval-ui.md): add Console approval UI for app permissions.
 2. [047](047-pastey-app-session-integration.md): move Pastey onto app sessions in `jolt-apps`.
 3. [054](054-pastey-two-node-local-demo-harness.md): make the Alice/Bob/Pastey demo repeatable on one machine.
-4. [048](048-identity-import-v0.md): design admin-only identity import/export v0.
-5. [049](049-crypto-agility-encrypted-object-envelope.md): design encrypted object envelopes and suite IDs.
+4. [056](056-app-capability-grant-hardening.md): tighten grant validation before private app authority.
+5. [048](048-identity-import-v0.md): design admin-only identity import/export v0.
+6. [049](049-crypto-agility-encrypted-object-envelope.md): design encrypted object envelopes and suite IDs.
 
 Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/app boundary and private sharing model.
 
@@ -122,20 +124,21 @@ Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/
 | [011](011-availability-checks-v0.md) | AFK | Done | Node checks whether home relay still serves pinned content. |
 | [012](012-crypto-agility-spike.md) | HITL | Superseded by 049 | Original crypto-agility spike; continue through encrypted object envelope work. |
 | [013](013-wasm-runtime-parking-lot.md) | HITL | Later | Park app runtime work until relay/mutable content lands. |
-| [042](042-app-boundary-session-design.md) | HITL | Needs review cleanup | Define daemon/app sessions, capabilities, console/admin boundary, and forbidden app powers. |
+| [042](042-app-boundary-session-design.md) | HITL | Reviewed in PR | Define daemon/app sessions, capabilities, console/admin boundary, and forbidden app powers. |
 | [043](043-app-session-store-approval-api.md) | AFK | Done | Persist pending/approved/revoked app sessions and approval APIs. |
 | [044](044-capability-checked-app-api-v0.md) | AFK | Done | Add session-token app APIs for resolve/fetch/publish/inventory/pin. |
 | [045](045-jolt-console-shell-v0.md) | AFK | Done | Turn the dashboard into a local daemon console with sidebar sections. |
-| [046](046-app-permission-approval-ui.md) | AFK | Implemented in PR | Let Console approve/reject/revoke app permission requests. |
-| [047](047-pastey-app-session-integration.md) | AFK | Ready after 044 and 046 | Move Pastey from trusted daemon APIs to session-token app APIs. |
+| [046](046-app-permission-approval-ui.md) | AFK | Done | Let Console approve/reject/revoke app permission requests. |
+| [047](047-pastey-app-session-integration.md) | AFK | Done | Move Pastey from trusted daemon APIs to session-token app APIs. |
 | [048](048-identity-import-v0.md) | HITL | Ready for design | Define admin-only identity import/export v0 and shared-key risks. |
 | [049](049-crypto-agility-encrypted-object-envelope.md) | HITL | Ready after 042 review | Define encrypted object envelope, suite IDs, wrapping, and PQ-hybrid direction. |
 | [050](050-identity-encryption-key-records.md) | AFK | Ready after 049 | Publish and resolve signed public encryption keys for identities. |
 | [051](051-encrypted-object-implementation-v0.md) | AFK | Ready after 049 and 050 | Encrypt content once and wrap content keys for recipients. |
 | [052](052-daemon-encrypt-decrypt-api.md) | AFK | Ready after 044 and 051 | Let the daemon encrypt/decrypt for app sessions without exposing keys. |
 | [053](053-pastey-private-paste-v0.md) | AFK | Ready after 052 | Prove Alice can share an encrypted Pastey paste with Bob. |
-| [054](054-pastey-two-node-local-demo-harness.md) | AFK | Implemented in PR | Add a repeatable local Alice/Bob/Pastey demo harness. |
+| [054](054-pastey-two-node-local-demo-harness.md) | AFK | Done | Add a repeatable local Alice/Bob/Pastey demo harness. |
 | [055](055-jolt-console-native-daemon-ux-debt.md) | HITL | Tech debt | Make Console realtime, daemon-lifecycle aware, OS-native, and focus permission prompts. |
+| [056](056-app-capability-grant-hardening.md) | AFK | Implemented in PR | Tighten app capability grant validation before private app authority. |
 
 ## Card Format
 

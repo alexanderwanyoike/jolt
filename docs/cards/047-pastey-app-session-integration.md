@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Implemented in Pastey PR  
+**Status:** Done  
 **Blocked by:** 044, 046
 
 ## Why
