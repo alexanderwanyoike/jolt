@@ -6,6 +6,11 @@ jolt supports both public and private content. Public content is accessible to a
 
 Encryption must be crypto-agile. The protocol should be able to move from today's algorithms to post-quantum-safe or hybrid schemes without changing the ownership model. Relays and caches store ciphertext; authorization lives in keys and signed records, not in relay-side access checks.
 
+> Design update: the current encrypted object direction is
+> [Encrypted Object Envelope](16-encrypted-object-envelope.md). Identity
+> encryption keys are separate signed records, not keys derived from the Ed25519
+> identity key.
+
 ## Visibility Levels
 
 ### Public
@@ -134,7 +139,7 @@ Paid content is intentionally outside the core protocol for now. The access-cont
 ~/.jolt/
   identity/
     keypair.enc               # master Ed25519 keypair (encrypted at rest)
-    x25519_derived.enc        # derived X25519 key for encryption
+    encryption_keys.enc       # private encryption keys for signed key records
   keys/
     groups/
       <group-id>.enc          # group keys (encrypted with master key)
@@ -142,22 +147,23 @@ Paid content is intentionally outside the core protocol for now. The access-cont
       <app-id>.enc            # per-app derived keys
 ```
 
-### Key Derivation Hierarchy
+### Key Authority
 
 ```mermaid
 graph TD
     Master["Master Ed25519 Keypair"]
-    Master --> X25519["X25519 Key<br/><i>RFC 8032 Ed25519-to-X25519</i>"]
-    Master --> AppSign["Per-app Signing Key<br/><i>HKDF(master_private, 'jolt-app-key' || app_id)</i>"]
-    X25519 --> AppEnc["Per-app Encryption Key<br/><i>HKDF(x25519_private, 'jolt-app-enc' || app_id)</i>"]
+    Master --> EncRecord["Signed encryption key record"]
+    EncPriv["Local X25519 private encryption key"] --> EncRecord
+    EncRecord --> Wraps["Recipient content-key wraps"]
 
     style Master fill:#e94560,stroke:#fff,color:#fff
-    style X25519 fill:#0f3460,stroke:#fff,color:#fff
-    style AppSign fill:#0f3460,stroke:#fff,color:#fff
-    style AppEnc fill:#0f3460,stroke:#fff,color:#fff
+    style EncPriv fill:#0f3460,stroke:#fff,color:#fff
+    style EncRecord fill:#0f3460,stroke:#fff,color:#fff
+    style Wraps fill:#0f3460,stroke:#fff,color:#fff
 ```
 
-This allows apps to have their own keys without exposing the master key.
+The identity signing key authorizes which encryption public keys belong to an
+identity. It does not derive those encryption keys.
 
 ## Permissions and Consent
 
