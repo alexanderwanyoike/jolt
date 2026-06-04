@@ -106,9 +106,9 @@ The future hybrid suite direction means:
 An identity's signing key is the root of authority. It should not also be the
 encryption key.
 
-Each identity publishes signed encryption key records under normal signed Jolt
-paths. Card 050 will define the exact path and update-log behavior, but the
-record should have this shape:
+Each identity publishes signed encryption key records under the normal signed
+Jolt path `/.well-known/jolt/encryption-keys`. The record has this logical
+shape:
 
 ```json
 {
@@ -138,6 +138,8 @@ record should have this shape:
 Rules:
 
 - The record is signed by the identity signing key.
+- Resolvers verify the record against the requested identity before returning
+  any public encryption keys.
 - Recipients are addressed by identity plus encryption `key_id`.
 - Decrypting nodes only use local private keys that match a recipient wrap's
   `key_id`.

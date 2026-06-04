@@ -1,6 +1,7 @@
 use jolt_core::{
-    ContentId, JoltAddress, PinRequest, RelayRecord, RelayRecordCapability, UpdateAction,
-    UpdateLogEntry,
+    ContentId, IdentityEncryptionKey, IdentityEncryptionKeyRecord, JoltAddress, PinRequest,
+    RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
+    IDENTITY_ENCRYPTION_KEYS_PATH,
 };
 use jolt_identity::NodeIdentity;
 use jolt_network::{
@@ -2882,6 +2883,75 @@ async fn test_publish_endpoint_can_bind_content_to_jolt_path() {
     assert_eq!(resolved["content_id"], content_id.to_string());
     assert_eq!(resolved["latest_sequence"], 0);
     assert_eq!(resolved["source"], "cache");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_identity_encryption_keys_endpoint_returns_verified_record_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = NodeIdentity::generate();
+    let identity_label = identity.identity_id().to_string();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let record = IdentityEncryptionKeyRecord::new(
+        identity.public_key_bytes(),
+        identity.identity_id(),
+        vec![IdentityEncryptionKey {
+            key_id: "enc_x25519_test".to_string(),
+            suite_family: "x25519-hkdf-sha256".to_string(),
+            key_type: "OKP".to_string(),
+            curve: "X25519".to_string(),
+            public_key: vec![11; 32],
+            created_at: now,
+            not_before: now.saturating_sub(60),
+            expires_at: Some(now + 3600),
+            status: "active".to_string(),
+        }],
+        7,
+        now,
+        |bytes| identity.sign(bytes),
+    )
+    .unwrap();
+    let record_json = serde_json::to_vec(&record).unwrap();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
+    let client = reqwest::Client::new();
+
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(record_json).file_name("encryption-keys.json"),
+        )
+        .text("path", IDENTITY_ENCRYPTION_KEYS_PATH.to_string());
+
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(port)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+
+    let keys_resp = client
+        .get(format!(
+            "{}/api/v1/identities/{identity_label}/encryption-keys",
+            base_url(port)
+        ))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(keys_resp.status(), 200);
+    let body: serde_json::Value = keys_resp.json().await.unwrap();
+    assert_eq!(body["identity"], identity_label);
+    assert_eq!(body["latest_sequence"], 7);
+    assert_eq!(body["keys"].as_array().unwrap().len(), 1);
+    assert_eq!(body["keys"][0]["key_id"], "enc_x25519_test");
+    assert_eq!(body["keys"][0]["suite_family"], "x25519-hkdf-sha256");
 
     handle.shutdown().await.ok();
 }

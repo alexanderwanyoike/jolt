@@ -72,6 +72,10 @@ pub fn build_router_with_session_store(daemon: DaemonHandle, sessions: AppSessio
         .route("/api/v1/fetch", post(routes::fetch::fetch_content))
         .route("/api/v1/resolve", post(routes::resolve::resolve_address))
         .route(
+            "/api/v1/identities/{identity}/encryption-keys",
+            get(routes::identity_encryption_keys::get_identity_encryption_keys),
+        )
+        .route(
             "/api/v1/home-relay/availability",
             get(routes::home_relay::availability),
         )
