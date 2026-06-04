@@ -132,8 +132,8 @@ Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/
 | [047](047-pastey-app-session-integration.md) | AFK | Done | Move Pastey from trusted daemon APIs to session-token app APIs. |
 | [048](048-identity-import-v0.md) | HITL | Ready for design | Define admin-only identity import/export v0 and shared-key risks. |
 | [049](049-crypto-agility-encrypted-object-envelope.md) | HITL | Done | Define encrypted object envelope, suite IDs, wrapping, and PQ-hybrid direction. |
-| [050](050-identity-encryption-key-records.md) | AFK | Implemented in PR | Publish and resolve signed public encryption keys for identities. |
-| [051](051-encrypted-object-implementation-v0.md) | AFK | Ready after 049 and 050 | Encrypt content once and wrap content keys for recipients. |
+| [050](050-identity-encryption-key-records.md) | AFK | Done | Publish and resolve signed public encryption keys for identities. |
+| [051](051-encrypted-object-implementation-v0.md) | AFK | Implemented in PR | Encrypt content once and wrap content keys for recipients. |
 | [052](052-daemon-encrypt-decrypt-api.md) | AFK | Ready after 044 and 051 | Let the daemon encrypt/decrypt for app sessions without exposing keys. |
 | [053](053-pastey-private-paste-v0.md) | AFK | Ready after 052 | Prove Alice can share an encrypted Pastey paste with Bob. |
 | [054](054-pastey-two-node-local-demo-harness.md) | AFK | Done | Add a repeatable local Alice/Bob/Pastey demo harness. |
