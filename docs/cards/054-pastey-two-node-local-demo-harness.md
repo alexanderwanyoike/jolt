@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** Developer Experience / App Dogfooding  
-**Status:** Implemented in PR  
+**Status:** Done  
 **Blocked by:** None
 
 ## Why

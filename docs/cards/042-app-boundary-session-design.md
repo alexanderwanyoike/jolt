@@ -2,7 +2,7 @@
 
 **Type:** HITL  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Needs review cleanup
+**Status:** Reviewed in PR
 **Blocked by:** None
 
 ## Why
@@ -36,7 +36,7 @@ Write a design note covering:
 - [x] It explicitly separates app APIs from console/admin APIs.
 - [x] It lists forbidden normal-app capabilities such as exporting keys or deleting identities.
 - [x] It defines v0 capabilities for Pastey: resolve, fetch, publish `/pastes/*`, inventory `/pastes/*`, and pin own content.
-- [ ] Human review confirms the direction before implementation cards begin.
+- [x] Human review confirms the direction before implementation cards begin.
 
 ## Notes
 
@@ -48,6 +48,14 @@ Design note: [App Boundary and Sessions](../15-app-boundary-and-sessions.md).
 
 Implementation cards [043](043-app-session-store-approval-api.md) and
 [044](044-capability-checked-app-api-v0.md) have landed from this design. This
-card remains open as review/design debt: confirm the direction, clean up any
-rough edges discovered during implementation, and close the human-review
-checkbox when the model is accepted.
+card was reviewed after Pastey and the Console exercised the model locally.
+
+## Review Outcome
+
+Human review accepted the daemon/app/console boundary with one required
+hardening slice before private Pastey work: [056](056-app-capability-grant-hardening.md).
+
+Card 056 tightens app grant validation so approved capabilities must be exactly
+what the app requested or a narrower path scope. It also rejects malformed path
+wildcards before private `encrypt`, `decrypt`, and `share` capabilities are
+introduced.

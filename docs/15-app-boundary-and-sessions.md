@@ -292,6 +292,10 @@ This keeps current CLI, dashboard, tests, and canaries stable.
 
 Long term, these endpoints should either become Console/admin-only or require a local admin channel.
 
+Private operations must not be added to this legacy trusted surface. Encryption,
+decryption, and sharing authority should go through capability-checked
+`/app/v1/*` APIs or explicit Console/admin APIs.
+
 ### App API
 
 New external app endpoints should live under `/app/v1/*` and require a session token:
@@ -473,8 +477,16 @@ v0 can implement `Always until revoked` first. The data model should allow short
 
 ## Open Questions
 
-- Should v0 support `Once` and `Until Quit`, or only persistent grants plus revoke?
-- Should app session tokens be bearer tokens only, or should app requests also include app origin checks?
-- How should Console/admin endpoints be protected if the API is ever bound away from localhost?
-- Do path-scoped capabilities need explicit read versus write separation for inventory and fetch?
-- Should capability names be strings in v0 or structured records from the start?
+- v0 supports persistent grants plus explicit revoke first. `Once` and
+  `Until Quit` can be added later because the data model already has expiry.
+- v0 app session tokens are bearer tokens. `app_origin` remains display and
+  audit metadata, not cryptographic proof of app identity.
+- Console/admin endpoints remain localhost-first. Binding admin APIs away from
+  localhost requires a separate admin-channel design.
+- Path-scoped capabilities keep operation separation: `publish`, `inventory`,
+  and `pin:own` are distinct grants. Future private grants should be distinct
+  too: `encrypt`, `decrypt`, and `share`.
+- Capability names remain strings on the wire for v0, but the daemon parses
+  them into strict internal capability values before approval and enforcement.
+  Approval may grant exactly what the app requested or a narrower path scope,
+  never broader authority.

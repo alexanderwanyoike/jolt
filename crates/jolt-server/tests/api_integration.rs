@@ -450,6 +450,149 @@ async fn test_admin_cannot_approve_forbidden_app_session_capabilities() {
 }
 
 #[tokio::test]
+async fn test_admin_cannot_approve_capabilities_beyond_app_request() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": "alice-public.jolt",
+            "requested_capabilities": [
+                "publish:/pastes/*"
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": "alice-public.jolt",
+            "capabilities": [
+                "publish:/drops/*"
+            ],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(approve_resp.status(), 400);
+    let body: serde_json::Value = approve_resp.json().await.unwrap();
+    assert_eq!(body["code"], "app_session_store_error");
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("was not requested"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_can_approve_narrower_path_scope_than_app_requested() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": "alice-public.jolt",
+            "requested_capabilities": [
+                "publish:/pastes/*"
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": "alice-public.jolt",
+            "capabilities": [
+                "publish:/pastes/public"
+            ],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(approve_resp.status(), 200);
+    let approved: serde_json::Value = approve_resp.json().await.unwrap();
+    assert_eq!(approved["capabilities"][0], "publish:/pastes/public");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_cannot_approve_malformed_path_scope_capabilities() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": "alice-public.jolt",
+            "requested_capabilities": [
+                "publish:/pastes*"
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": "alice-public.jolt",
+            "capabilities": [
+                "publish:/pastes*"
+            ],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(approve_resp.status(), 400);
+    let body: serde_json::Value = approve_resp.json().await.unwrap();
+    assert_eq!(body["code"], "app_session_store_error");
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("capability is not grantable"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_can_poll_approved_session_request() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
