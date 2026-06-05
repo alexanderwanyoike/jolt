@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Milestone:** Console Native Daemon UX  
-**Status:** Ready after 064
+**Status:** Implemented in PR
 **Blocked by:** 045, 064
 
 ## Why
@@ -46,13 +46,53 @@ Windows Services.
 
 ## Acceptance Criteria
 
-- [ ] A short design note or implementation PR defines daemon ownership states.
-- [ ] Console can tell "daemon unavailable" from "daemon running but unhealthy".
-- [ ] Console can start a local daemon in dev or packaged mode.
-- [ ] Console does not stop an externally started daemon without explicit user
+- [x] A short design note or implementation PR defines daemon ownership states.
+- [x] Console can tell "daemon unavailable" from "daemon running but unhealthy".
+- [x] Console can start a local daemon in dev or packaged mode.
+- [x] Console does not stop an externally started daemon without explicit user
       intent.
-- [ ] Startup failures are visible in Console.
-- [ ] Tests cover process command construction and ownership-state rendering.
+- [x] Startup failures are visible in Console.
+- [x] Tests cover process command construction and ownership-state rendering.
+
+## Implementation Notes
+
+Ownership states for v0:
+
+- `none`: no local daemon is responding on the configured local daemon URL.
+- `external`: a local daemon endpoint is reachable, but Console did not start
+  the process and must not stop or restart it.
+- `console`: Console started the daemon sidecar as a normal per-user child
+  process and may stop or restart that child.
+
+Reachability states for v0:
+
+- `healthy`: `/api/v1/health` responds successfully.
+- `unhealthy`: a local endpoint or Console-owned child exists but health is not
+  currently good.
+- `unavailable`: no local endpoint is responding and Console does not own a
+  child process.
+
+Console uses `JOLT_DAEMON_BINARY` in dev when provided, otherwise it resolves a
+sidecar-like `jolt`/`jolt.exe` binary next to the Console executable. The start
+command is `jolt start --api-port <configured port> --api-bind 127.0.0.1`.
+
+The sidecar stdout/stderr are written to a per-user temp log path by default
+and tailed into the Settings page. `JOLT_CONSOLE_DAEMON_LOG` can override the
+log path for dev/manual testing.
+
+## Verification
+
+- Red: `npx vitest run src/sections/sections.test.tsx` failed while Settings
+  still rendered the read-only placeholder instead of lifecycle controls.
+- Green: `npx vitest run src/sections/sections.test.tsx`.
+- Red: `cargo test -p jolt-console daemon_start_plan_uses_configured_binary_and_local_api_port`
+  failed while daemon start command planning did not exist.
+- Green: `cargo test -p jolt-console --lib`.
+- Green: `npx vitest run src/daemon/client.test.ts`.
+- Green: `npm test` in `apps/jolt-console`.
+- Green: `npm run build` in `apps/jolt-console`.
+- Green: `cargo check -p jolt-console`.
+- Green: `./scripts/test-local.sh`.
 
 ## Notes
 

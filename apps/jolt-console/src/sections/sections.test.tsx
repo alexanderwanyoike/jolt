@@ -3,6 +3,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonClient } from "../daemon/client";
+import type { DaemonLifecycleClient } from "../daemon/lifecycle";
 import type { DaemonSnapshot } from "../daemon/useDaemonSnapshot";
 import { AppsPage } from "./AppsPage";
 import { CachePage } from "./CachePage";
@@ -402,10 +403,68 @@ describe("Console section pages", () => {
     expect(screen.getByText("Available")).toBeInTheDocument();
   });
 
-  it("renders settings as read-only in v0", () => {
-    render(<SettingsPage />);
+  it("renders daemon lifecycle ownership and runs allowed controls", async () => {
+    const states = [
+      {
+        daemon_url: "http://127.0.0.1:9862",
+        reachability: "unavailable",
+        ownership: "none",
+        message: "No local daemon is responding"
+      },
+      {
+        daemon_url: "http://127.0.0.1:9862",
+        reachability: "healthy",
+        ownership: "external",
+        pid: 4242,
+        message: "Connected to an externally started daemon"
+      },
+      {
+        daemon_url: "http://127.0.0.1:9862",
+        reachability: "healthy",
+        ownership: "console",
+        pid: 4343,
+        message: "Console owns this daemon"
+      }
+    ] as const;
+    let statusIndex = 0;
+    const lifecycleClient: DaemonLifecycleClient = {
+      status: vi.fn(async () => states[Math.min(statusIndex, states.length - 1)]),
+      start: vi.fn(async () => {
+        statusIndex = 2;
+        return states[2];
+      }),
+      stop: vi.fn(async () => {
+        statusIndex = 0;
+        return states[0];
+      }),
+      restart: vi.fn(async () => {
+        statusIndex = 2;
+        return states[2];
+      })
+    };
 
-    expect(screen.getByText(/Settings are intentionally read-only/)).toBeInTheDocument();
+    render(<SettingsPage lifecycleClient={lifecycleClient} />);
+
+    expect(await screen.findByText("No local daemon is responding")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Start daemon" }));
+    expect(lifecycleClient.start).toHaveBeenCalledOnce();
+    expect(await screen.findByText("Console owns this daemon")).toBeInTheDocument();
+
+    statusIndex = 1;
+    await userEvent.click(screen.getByRole("button", { name: "Refresh lifecycle" }));
+    expect(await screen.findByText("Connected to an externally started daemon")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop daemon" })).toBeDisabled();
+    expect(screen.getByText(/Console will not stop or restart it/)).toBeInTheDocument();
+
+    statusIndex = 2;
+    await userEvent.click(screen.getByRole("button", { name: "Refresh lifecycle" }));
+    expect(await screen.findByText("Console owns this daemon")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Restart daemon" }));
+    expect(lifecycleClient.restart).toHaveBeenCalledOnce();
+
+    vi.mocked(lifecycleClient.stop).mockRejectedValueOnce(new Error("failed to terminate child"));
+    await userEvent.click(screen.getByRole("button", { name: "Stop daemon" }));
+    expect(screen.getByText(/failed to terminate child/)).toBeInTheDocument();
   });
 
   it("renders diagnostics error state", () => {
