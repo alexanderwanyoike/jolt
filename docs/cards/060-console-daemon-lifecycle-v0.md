@@ -1,8 +1,8 @@
 # 060: Console Daemon Lifecycle v0
 
-**Type:** HITL  
+**Type:** AFK
 **Milestone:** Console Native Daemon UX  
-**Status:** Ready for design  
+**Status:** Ready after 064
 **Blocked by:** 045, 064
 
 ## Why
@@ -28,17 +28,21 @@ Define the lifecycle contract between Console and daemon:
 
 ## Candidate Direction
 
-Prefer:
+Card 064 chose the simple v0 packaging/lifecycle model:
 
 ```text
 Jolt Console app bundle
-  starts/manages a jolt daemon sidecar when needed
-  may include the jolt CLI for terminal users
-  treats externally started daemons as externally owned
+  starts/manages a jolt daemon sidecar as a normal user child process
+  does not install an OS service, tray app, launch agent, or autostart entry
+  treats terminal/script/supervisor-started daemons as externally owned
 ```
 
 Console can show controls such as Start, Restart, Stop only when the ownership
 state makes them honest.
+
+The implementation should stay cross-platform by relying on sidecar process
+management and per-user paths, not Linux systemd units, macOS launch agents, or
+Windows Services.
 
 ## Acceptance Criteria
 

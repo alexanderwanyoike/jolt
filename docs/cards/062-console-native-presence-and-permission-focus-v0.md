@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** Console Native Daemon UX  
-**Status:** Ready after 059  
+**Status:** Deferred after simple lifecycle
 **Blocked by:** 045, 046, 059
 
 ## Why
@@ -37,3 +37,7 @@ Add native Console behavior around daemon/app-session state:
 
 This card depends on automatic app-request refresh from card 059. Without that,
 Console will not reliably know when a new permission request appears.
+
+Card 064 deliberately defers tray/menu-bar/taskbar presence from the simple v0
+packaging and daemon lifecycle path. Revisit this after Console can start and
+supervise its daemon sidecar without OS service or autostart behavior.
