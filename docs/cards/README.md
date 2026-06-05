@@ -27,10 +27,10 @@ Done:
   Jolt Console shell.
 
 Next:
-  Make app permissions visible and controllable in Jolt Console.
-  Move Pastey onto app sessions.
-  Add a repeatable local Alice/Bob/Pastey harness.
-  Design identity import and encrypted object envelopes before private Pastey.
+  Make Jolt Console feel like the native control surface for the daemon.
+  Move bootstrap/home relay configuration into Console Settings.
+  Decide the installer/binary distribution shape.
+  Discuss bidirectional/realtime communication before messaging-style apps.
 ```
 
 The next useful product/protocol bridge is:
@@ -68,22 +68,30 @@ Jolt Console = privileged local control surface
 Jolt apps = untrusted clients with scoped sessions
 ```
 
-The sprint sequence is:
+The completed app-boundary sequence is:
 
 1. [046](046-app-permission-approval-ui.md): add Console approval UI for app permissions.
 2. [047](047-pastey-app-session-integration.md): move Pastey onto app sessions in `jolt-apps`.
 3. [054](054-pastey-two-node-local-demo-harness.md): make the Alice/Bob/Pastey demo repeatable on one machine.
 4. [056](056-app-capability-grant-hardening.md): tighten grant validation before private app authority.
-5. [048](048-identity-import-v0.md): design admin-only identity import/export v0.
-6. [049](049-crypto-agility-encrypted-object-envelope.md): design encrypted object envelopes and suite IDs.
+5. [049](049-crypto-agility-encrypted-object-envelope.md): design encrypted object envelopes and suite IDs.
+6. [057](057-pastey-private-open-performance-and-self-private-ux.md): make private Pastey open fast and self-only private paste creation natural.
 
 Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/app boundary and private sharing model.
 
-After the private Pastey polish in [057](057-pastey-private-open-performance-and-self-private-ux.md),
+The next practical product track is Console-native daemon UX:
+
+1. [059](059-console-realtime-state-v0.md): make Console state update without manual refresh.
+2. [064](064-jolt-distribution-packaging-design.md): decide the installable product shape.
+3. [060](060-console-daemon-lifecycle-v0.md): let Console start/manage the local daemon honestly.
+4. [061](061-console-network-settings-v0.md): move bootstrap and home relay config into Console Settings.
+5. [062](062-console-native-presence-and-permission-focus-v0.md): add tray/native presence and focus permission prompts.
+6. [063](063-debug-dashboard-retirement.md): remove or demote the old daemon-served debug dashboard.
+
+Before messaging/email/realtime application work,
 park and discuss [058](058-bidirectional-communication-and-realtime-rendezvous-design.md)
-before attempting messaging/email/realtime features. Secure bidirectional
-communication is important, but it should not pull app concepts such as inboxes
-or contacts into the protocol layer.
+first. Secure bidirectional communication is important, but it should not pull
+app concepts such as inboxes or contacts into the protocol layer.
 
 ## Cards
 
@@ -143,10 +151,16 @@ or contacts into the protocol layer.
 | [052](052-daemon-encrypt-decrypt-api.md) | AFK | Ready after 044 and 051 | Let the daemon encrypt/decrypt for app sessions without exposing keys. |
 | [053](053-pastey-private-paste-v0.md) | AFK | Implemented in Pastey PR | Prove Alice can share an encrypted Pastey paste with Bob. |
 | [054](054-pastey-two-node-local-demo-harness.md) | AFK | Done | Add a repeatable local Alice/Bob/Pastey demo harness. |
-| [055](055-jolt-console-native-daemon-ux-debt.md) | HITL | Tech debt | Make Console realtime, daemon-lifecycle aware, OS-native, and focus permission prompts. |
+| [055](055-jolt-console-native-daemon-ux-debt.md) | HITL | Split into follow-up cards | Umbrella for Console realtime, daemon lifecycle, native presence, settings, debug dashboard retirement, and distribution. |
 | [056](056-app-capability-grant-hardening.md) | AFK | Implemented in PR | Tighten app capability grant validation before private app authority. |
 | [057](057-pastey-private-open-performance-and-self-private-ux.md) | AFK | Implemented in PR | Make private Pastey open fast and self-only private paste creation natural. |
 | [058](058-bidirectional-communication-and-realtime-rendezvous-design.md) | HITL | Parked after 057 | Decide how Jolt supports secure bidirectional and realtime communication without protocol-level inbox semantics. |
+| [059](059-console-realtime-state-v0.md) | AFK | Ready | Make Console state update without manual refresh. |
+| [060](060-console-daemon-lifecycle-v0.md) | HITL | Ready for design | Define and implement honest Console-owned daemon startup/lifecycle behavior. |
+| [061](061-console-network-settings-v0.md) | AFK | Ready | Manage bootstrap and home relay configuration from Console Settings. |
+| [062](062-console-native-presence-and-permission-focus-v0.md) | AFK | Ready after 059 | Add tray/native presence and focus Console for new app permission requests. |
+| [063](063-debug-dashboard-retirement.md) | AFK | Ready after 061 | Remove, gate, or demote the old daemon-served debug dashboard. |
+| [064](064-jolt-distribution-packaging-design.md) | HITL | Ready for design | Decide the installable Jolt product shape: Console, daemon sidecar, and CLI. |
 
 ## Card Format
 
