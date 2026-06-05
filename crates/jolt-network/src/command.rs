@@ -72,6 +72,12 @@ pub enum DaemonCommand {
         latest_sequence: u64,
         response_tx: oneshot::Sender<Result<(), NetworkError>>,
     },
+    UpdateNetworkSettings {
+        configured_bootstrap_relays: Vec<String>,
+        effective_bootstrap_relays: Vec<String>,
+        home_relay: Option<HomeRelayConfig>,
+        response_tx: oneshot::Sender<Result<(), NetworkError>>,
+    },
     PinUpdateLog {
         identity: IdentityId,
         response_tx: oneshot::Sender<Result<u64, NetworkError>>,

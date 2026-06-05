@@ -3149,6 +3149,19 @@ impl NetworkNode {
                 let result = self.record_home_relay_pin(&content_id, path, relay, latest_sequence);
                 let _ = response_tx.send(result);
             }
+            DaemonCommand::UpdateNetworkSettings {
+                configured_bootstrap_relays,
+                effective_bootstrap_relays,
+                home_relay,
+                response_tx,
+            } => {
+                self.bootstrap_peer_ids =
+                    Self::parse_bootstrap_peer_ids(&effective_bootstrap_relays);
+                self.configured_bootstrap_relays = configured_bootstrap_relays;
+                self.effective_bootstrap_relays = effective_bootstrap_relays;
+                self.home_relay = home_relay;
+                let _ = response_tx.send(Ok(()));
+            }
             DaemonCommand::PinUpdateLog {
                 identity,
                 response_tx,

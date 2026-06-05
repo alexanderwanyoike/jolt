@@ -5,6 +5,7 @@ use tracing::info;
 
 use jolt_network::DaemonHandle;
 
+use crate::network_settings::NetworkSettingsStore;
 use crate::routes;
 use crate::session_store::AppSessionStore;
 use crate::state::AppState;
@@ -18,7 +19,21 @@ pub fn build_router(daemon: DaemonHandle) -> Router {
 
 /// Build the axum router with an explicit app session store.
 pub fn build_router_with_session_store(daemon: DaemonHandle, sessions: AppSessionStore) -> Router {
-    let state = AppState { daemon, sessions };
+    let network_settings = NetworkSettingsStore::open_default()
+        .unwrap_or_else(|err| panic!("failed to open network settings store: {err}"));
+    build_router_with_stores(daemon, sessions, network_settings)
+}
+
+pub fn build_router_with_stores(
+    daemon: DaemonHandle,
+    sessions: AppSessionStore,
+    network_settings: NetworkSettingsStore,
+) -> Router {
+    let state = AppState {
+        daemon,
+        sessions,
+        network_settings,
+    };
 
     Router::new()
         .route("/", get(routes::dashboard::dashboard))
@@ -74,6 +89,26 @@ pub fn build_router_with_session_store(daemon: DaemonHandle, sessions: AppSessio
         .route(
             "/admin/v1/app-sessions/{session_id}/revoke",
             post(routes::app_sessions::revoke_session),
+        )
+        .route(
+            "/admin/v1/network-settings",
+            get(routes::network_settings::get_settings),
+        )
+        .route(
+            "/admin/v1/bootstrap-relays",
+            post(routes::network_settings::add_bootstrap_relay),
+        )
+        .route(
+            "/admin/v1/bootstrap-relays/remove",
+            post(routes::network_settings::remove_bootstrap_relay),
+        )
+        .route(
+            "/admin/v1/home-relay",
+            post(routes::network_settings::set_home_relay),
+        )
+        .route(
+            "/admin/v1/home-relay/clear",
+            post(routes::network_settings::clear_home_relay),
         )
         .route("/api/v1/health", get(routes::health::health))
         .route("/api/v1/status", get(routes::status::get_status))
@@ -139,6 +174,16 @@ pub async fn start_server_with_session_store(
     sessions: AppSessionStore,
 ) -> Result<(u16, tokio::task::JoinHandle<()>), Box<dyn std::error::Error + Send + Sync>> {
     let app = build_router_with_session_store(daemon, sessions);
+    start_server_with_router(app, port).await
+}
+
+pub async fn start_server_with_session_store_and_network_settings(
+    daemon: DaemonHandle,
+    port: u16,
+    sessions: AppSessionStore,
+    network_settings: NetworkSettingsStore,
+) -> Result<(u16, tokio::task::JoinHandle<()>), Box<dyn std::error::Error + Send + Sync>> {
+    let app = build_router_with_stores(daemon, sessions, network_settings);
     start_server_with_router(app, port).await
 }
 
