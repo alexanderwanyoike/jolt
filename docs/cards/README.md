@@ -79,6 +79,12 @@ The sprint sequence is:
 
 Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/app boundary and private sharing model.
 
+After the private Pastey polish in [057](057-pastey-private-open-performance-and-self-private-ux.md),
+park and discuss [058](058-bidirectional-communication-and-realtime-rendezvous-design.md)
+before attempting messaging/email/realtime features. Secure bidirectional
+communication is important, but it should not pull app concepts such as inboxes
+or contacts into the protocol layer.
+
 ## Cards
 
 | Card | Type | Status | Summary |
@@ -140,6 +146,7 @@ Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/
 | [055](055-jolt-console-native-daemon-ux-debt.md) | HITL | Tech debt | Make Console realtime, daemon-lifecycle aware, OS-native, and focus permission prompts. |
 | [056](056-app-capability-grant-hardening.md) | AFK | Implemented in PR | Tighten app capability grant validation before private app authority. |
 | [057](057-pastey-private-open-performance-and-self-private-ux.md) | AFK | Ready | Make private Pastey open fast and self-only private paste creation natural. |
+| [058](058-bidirectional-communication-and-realtime-rendezvous-design.md) | HITL | Parked after 057 | Decide how Jolt supports secure bidirectional and realtime communication without protocol-level inbox semantics. |
 
 ## Card Format
 
