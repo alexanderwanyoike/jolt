@@ -40,6 +40,8 @@ describe("ConsoleApp", () => {
             available: 8192
           };
         }
+        const inventory = defaultInventoryEndpoint(path);
+        if (inventory !== undefined) return inventory;
         if (path === "/api/v1/published") {
           return [
             {
@@ -90,6 +92,8 @@ describe("ConsoleApp", () => {
           };
         }
         if (path === "/api/v1/cache/stats") return {};
+        const inventory = defaultInventoryEndpoint(path);
+        if (inventory !== undefined) return inventory;
         if (path === "/api/v1/published") return [];
         throw new Error(`unexpected path ${path}`);
       }),
@@ -119,6 +123,8 @@ describe("ConsoleApp", () => {
           throw new Error("daemon offline");
         }
         if (path === "/api/v1/cache/stats") return {};
+        const inventory = defaultInventoryEndpoint(path);
+        if (inventory !== undefined) return inventory;
         if (path === "/api/v1/published") return [];
         throw new Error(`unexpected path ${path}`);
       }),
@@ -130,17 +136,17 @@ describe("ConsoleApp", () => {
     );
 
     await act(async () => {});
-    expect(client.get).toHaveBeenCalledTimes(3);
+    expect(client.get).toHaveBeenCalledTimes(5);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(client.get).toHaveBeenCalledTimes(3);
+    expect(client.get).toHaveBeenCalledTimes(5);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(client.get).toHaveBeenCalledTimes(6);
+    expect(client.get).toHaveBeenCalledTimes(10);
   });
 
   it("starts the local daemon automatically when Console opens and no daemon is running", async () => {
@@ -157,6 +163,8 @@ describe("ConsoleApp", () => {
           };
         }
         if (path === "/api/v1/cache/stats") return {};
+        const inventory = defaultInventoryEndpoint(path);
+        if (inventory !== undefined) return inventory;
         if (path === "/api/v1/published") return [];
         throw new Error(`unexpected path ${path}`);
       }),
@@ -201,4 +209,10 @@ function healthyLifecycleClient(): DaemonLifecycleClient {
     stop: vi.fn(),
     restart: vi.fn()
   };
+}
+
+function defaultInventoryEndpoint(path: string) {
+  if (path === "/api/v1/peers") return [];
+  if (path === "/api/v1/cache/entries") return [];
+  return undefined;
 }

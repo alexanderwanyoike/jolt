@@ -3,10 +3,10 @@
 Jolt Console is the first-party desktop control surface for the local Jolt daemon.
 It is not an external Jolt app like Pastey or Drops; it is part of the daemon
 architecture and is where identity, permissions, relay state, published content,
-cache state, and diagnostics will move over time.
+cache state, and diagnostics live.
 
-The daemon root points users to Jolt Console. The old localhost page remains
-available only as a debug dashboard at `/debug/dashboard`.
+The daemon root points users to Jolt Console. The old daemon-served dashboard
+has been retired; use Console Diagnostics for daemon troubleshooting.
 
 ## Run
 

@@ -161,6 +161,8 @@ app concepts such as inboxes or contacts into the protocol layer.
 | [062](062-console-native-presence-and-permission-focus-v0.md) | AFK | Deferred after simple lifecycle | Add tray/native presence and focus Console for new app permission requests. |
 | [063](063-debug-dashboard-retirement.md) | AFK | Implemented in PR | Remove, gate, or demote the old daemon-served debug dashboard. |
 | [064](064-jolt-distribution-packaging-design.md) | HITL | Designed in PR | Decide the installable Jolt product shape: Console, daemon sidecar, and CLI. |
+| [065](065-console-diagnostics-and-dashboard-removal.md) | AFK | Implemented in PR | Move remaining debug dashboard diagnostics into Console and remove the old daemon HTML dashboard. |
+| [066](066-relay-operator-diagnostics-v0.md) | HITL | Ready for design | Define CLI/admin/logging diagnostics for headless server-facing relays. |
 
 ## Card Format
 

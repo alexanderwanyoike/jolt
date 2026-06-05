@@ -71,12 +71,33 @@ describe("tauriDaemonLifecycleClient", () => {
 });
 
 describe("loadDaemonPayload", () => {
-  it("loads status, cache stats, and published content as one snapshot", async () => {
+  it("loads status, peer inventory, cache inventory, and published content as one snapshot", async () => {
     const client: DaemonClient = {
       daemonUrl: "http://127.0.0.1:9862",
       get: vi.fn(async (path: string) => {
         if (path === "/api/v1/status") return { peer_id: "peer" };
+        if (path === "/api/v1/peers") {
+          return [
+            {
+              peer_id: "12D3KooPeer",
+              is_relayed: false,
+              transport: "tcp",
+              remote_addr: "/ip4/127.0.0.1/tcp/4001"
+            }
+          ];
+        }
         if (path === "/api/v1/cache/stats") return { total_cached: 10 };
+        if (path === "/api/v1/cache/entries") {
+          return [
+            {
+              content_id: "bafkcacheentry",
+              size: 10,
+              cached_at: 1_780_000_000,
+              last_accessed: 1_780_000_100,
+              pinned: true
+            }
+          ];
+        }
         if (path === "/api/v1/published") return [{ content_id: "cid", size: 1 }];
         throw new Error(path);
       }),
@@ -85,7 +106,24 @@ describe("loadDaemonPayload", () => {
 
     await expect(loadDaemonPayload(client)).resolves.toEqual({
       status: { peer_id: "peer" },
+      peers: [
+        {
+          peer_id: "12D3KooPeer",
+          is_relayed: false,
+          transport: "tcp",
+          remote_addr: "/ip4/127.0.0.1/tcp/4001"
+        }
+      ],
       cacheStats: { total_cached: 10 },
+      cacheEntries: [
+        {
+          content_id: "bafkcacheentry",
+          size: 10,
+          cached_at: 1_780_000_000,
+          last_accessed: 1_780_000_100,
+          pinned: true
+        }
+      ],
       published: [{ content_id: "cid", size: 1 }]
     });
   });
