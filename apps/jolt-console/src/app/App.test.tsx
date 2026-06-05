@@ -1,9 +1,15 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonClient } from "../daemon/client";
 import { ConsoleApp } from "./App";
+
+afterEach(() => {
+  vi.useRealTimers();
+  cleanup();
+  window.location.hash = "";
+});
 
 describe("ConsoleApp", () => {
   it("loads daemon state and routes between console sections", async () => {
@@ -61,5 +67,73 @@ describe("ConsoleApp", () => {
 
     await userEvent.click(screen.getByRole("link", { name: "Diagnostics" }));
     expect(await screen.findByText(/12D3KooAlice/)).toBeInTheDocument();
+  });
+
+  it("updates daemon status summaries without manual refresh", async () => {
+    vi.useFakeTimers();
+    let statusCalls = 0;
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/api/v1/status") {
+          statusCalls += 1;
+          return {
+            identity_address: "alice.jolt",
+            peer_id: "12D3KooAlice",
+            connected_peers: statusCalls === 1 ? 17 : 29,
+            published_count: 1,
+            cached_count: 4,
+            bootstrap_state: "connected",
+            known_relay_count: 2
+          };
+        }
+        if (path === "/api/v1/cache/stats") return {};
+        if (path === "/api/v1/published") return [];
+        throw new Error(`unexpected path ${path}`);
+      }),
+      post: vi.fn()
+    };
+
+    render(<ConsoleApp client={client} refreshIntervalMs={1000} />);
+
+    await act(async () => {});
+    expect(screen.getByText("17")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(screen.getByText("29")).toBeInTheDocument();
+  });
+
+  it("backs off daemon status polling after an API failure", async () => {
+    vi.useFakeTimers();
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/api/v1/status") {
+          throw new Error("daemon offline");
+        }
+        if (path === "/api/v1/cache/stats") return {};
+        if (path === "/api/v1/published") return [];
+        throw new Error(`unexpected path ${path}`);
+      }),
+      post: vi.fn()
+    };
+
+    render(<ConsoleApp client={client} refreshIntervalMs={1000} />);
+
+    await act(async () => {});
+    expect(client.get).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(client.get).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(client.get).toHaveBeenCalledTimes(6);
   });
 });
