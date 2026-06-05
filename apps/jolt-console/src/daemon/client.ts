@@ -2,11 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppPermissionsPayload,
   AppSessionGrant,
+  CacheEntry,
   CacheStats,
   DaemonPayload,
   DaemonStatus,
   HomeRelayConfig,
   NetworkSettingsPayload,
+  PeerInfo,
   PublishedContent
 } from "./types";
 
@@ -29,13 +31,15 @@ export const tauriDaemonClient: DaemonClient = {
 };
 
 export async function loadDaemonPayload(client: DaemonClient): Promise<DaemonPayload> {
-  const [status, cacheStats, published] = await Promise.all([
+  const [status, peers, cacheStats, cacheEntries, published] = await Promise.all([
     client.get<DaemonStatus>("/api/v1/status"),
+    client.get<PeerInfo[]>("/api/v1/peers"),
     client.get<CacheStats>("/api/v1/cache/stats"),
+    client.get<CacheEntry[]>("/api/v1/cache/entries"),
     client.get<PublishedContent[]>("/api/v1/published")
   ]);
 
-  return { status, cacheStats, published };
+  return { status, peers, cacheStats, cacheEntries, published };
 }
 
 export async function loadAppPermissions(client: DaemonClient): Promise<AppPermissionsPayload> {

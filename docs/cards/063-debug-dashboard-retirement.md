@@ -48,6 +48,10 @@ is to remove product confusion, not to remove developer observability.
 - `/dashboard` redirects to `/debug/dashboard` for old bookmarks.
 - No `/api/v1/*`, `/admin/v1/*`, or `/app/v1/*` behavior was changed.
 
+Follow-up: [065](065-console-diagnostics-and-dashboard-removal.md) moved the
+remaining useful diagnostics into Console and removed the old daemon dashboard
+HTML/routes entirely.
+
 ## Verification
 
 - Red: `cargo test -p jolt-server dashboard --test api_integration -- --nocapture`

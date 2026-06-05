@@ -256,8 +256,9 @@ async fn test_dashboard_root_endpoint() {
     let body = resp.text().await.unwrap();
     assert!(body.contains("Jolt Console"));
     assert!(body.contains("first-party desktop control surface"));
-    assert!(body.contains("/debug/dashboard"));
     assert!(!body.contains("Jolt Node Console"));
+    assert!(!body.contains("Jolt Debug Dashboard"));
+    assert!(!body.contains("/debug/dashboard"));
     assert!(!body.contains("/api/v1/publish"));
     assert!(!body.contains("publish-path"));
 
@@ -265,49 +266,19 @@ async fn test_dashboard_root_endpoint() {
 }
 
 #[tokio::test]
-async fn test_debug_dashboard_path_endpoint() {
+async fn test_old_dashboard_paths_are_retired() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
 
-    let resp = client
-        .get(format!("{}/debug/dashboard", base_url(port)))
-        .send()
-        .await
-        .unwrap();
+    for path in ["/dashboard", "/debug/dashboard"] {
+        let resp = client
+            .get(format!("{}{}", base_url(port), path))
+            .send()
+            .await
+            .unwrap();
 
-    assert_eq!(resp.status(), 200);
-    let body = resp.text().await.unwrap();
-    assert!(body.contains("Jolt Debug Dashboard"));
-    assert!(body.contains("debug-only"));
-    assert!(body.contains("/api/v1/cache/entries"));
-    assert!(body.contains("Resolve"));
-
-    handle.shutdown().await.ok();
-}
-
-#[tokio::test]
-async fn test_old_dashboard_path_redirects_to_debug_dashboard() {
-    let (port, handle, _dir) = start_test_server().await;
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .unwrap();
-
-    let resp = client
-        .get(format!("{}/dashboard", base_url(port)))
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(resp.status(), 307);
-    assert_eq!(
-        resp.headers()
-            .get(reqwest::header::LOCATION)
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "/debug/dashboard"
-    );
+        assert_eq!(resp.status(), 404, "{path} should be retired");
+    }
 
     handle.shutdown().await.ok();
 }

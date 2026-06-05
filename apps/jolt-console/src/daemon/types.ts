@@ -31,6 +31,21 @@ export type CacheStats = {
   available?: number;
 };
 
+export type PeerInfo = {
+  peer_id: string;
+  is_relayed: boolean;
+  transport: string;
+  remote_addr: string;
+};
+
+export type CacheEntry = {
+  content_id: string;
+  size: number;
+  cached_at: number;
+  last_accessed: number;
+  pinned: boolean;
+};
+
 export type PublishedContent = {
   content_id: string;
   size: number;
@@ -42,7 +57,9 @@ export type PublishedContent = {
 
 export type DaemonPayload = {
   status: DaemonStatus;
+  peers: PeerInfo[];
   cacheStats: CacheStats;
+  cacheEntries: CacheEntry[];
   published: PublishedContent[];
 };
 

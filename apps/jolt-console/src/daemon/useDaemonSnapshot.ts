@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DaemonClient } from "./client";
 import { loadDaemonPayload } from "./client";
-import type { CacheStats, DaemonStatus, PublishedContent } from "./types";
+import type { CacheEntry, CacheStats, DaemonStatus, PeerInfo, PublishedContent } from "./types";
 
 export type DaemonSnapshot = {
   daemonUrl: string;
   connected: boolean;
   status: DaemonStatus | null;
+  peers: PeerInfo[];
   cacheStats: CacheStats | null;
+  cacheEntries: CacheEntry[];
   published: PublishedContent[];
   lastError: string | null;
   lastRefresh: Date | null;
@@ -24,7 +26,9 @@ export function useDaemonSnapshot(
     daemonUrl: client.daemonUrl,
     connected: false,
     status: null,
+    peers: [],
     cacheStats: null,
+    cacheEntries: [],
     published: [],
     lastError: null,
     lastRefresh: null
@@ -39,7 +43,9 @@ export function useDaemonSnapshot(
         daemonUrl: client.daemonUrl,
         connected: true,
         status: payload.status,
+        peers: payload.peers,
         cacheStats: payload.cacheStats,
+        cacheEntries: payload.cacheEntries,
         published: payload.published,
         lastError: null,
         lastRefresh: new Date()

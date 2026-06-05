@@ -44,12 +44,29 @@ function snapshot(overrides: Partial<DaemonSnapshot> = {}): DaemonSnapshot {
         api_url: "http://127.0.0.1:9870"
       }
     },
+    peers: [
+      {
+        peer_id: "12D3KooPeer",
+        is_relayed: false,
+        transport: "tcp",
+        remote_addr: "/ip4/127.0.0.1/tcp/4001"
+      }
+    ],
     cacheStats: {
       total_cached: 4096,
       total_published: 2048,
       pinned_items: 1,
       available: 8192
     },
+    cacheEntries: [
+      {
+        content_id: "bafkcacheentry",
+        size: 512,
+        cached_at: 1_780_000_000,
+        last_accessed: 1_780_000_100,
+        pinned: true
+      }
+    ],
     published: [
       {
         content_id: "bafkexamplecid000000000000000001",
@@ -663,5 +680,16 @@ describe("Console section pages", () => {
 
     expect(screen.getByText(/daemon request failed/)).toBeInTheDocument();
     expect(screen.getByText(/127.0.0.1:9862/)).toBeInTheDocument();
+  });
+
+  it("renders diagnostics inventories from daemon APIs", () => {
+    render(<DiagnosticsPage snapshot={snapshot()} />);
+
+    expect(screen.getByText("Connected peers")).toBeInTheDocument();
+    expect(screen.getByText("Cache entries")).toBeInTheDocument();
+    expect(screen.getByText("12D3KooPeer")).toBeInTheDocument();
+    expect(screen.getByText("/ip4/127.0.0.1/tcp/4001")).toBeInTheDocument();
+    expect(screen.getByText("bafkcacheentry")).toBeInTheDocument();
+    expect(screen.getByText("512 B - pinned")).toBeInTheDocument();
   });
 });

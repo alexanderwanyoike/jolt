@@ -37,8 +37,6 @@ pub fn build_router_with_stores(
 
     Router::new()
         .route("/", get(routes::dashboard::console_entry))
-        .route("/dashboard", get(routes::dashboard::dashboard_redirect))
-        .route("/debug/dashboard", get(routes::dashboard::debug_dashboard))
         .route(
             "/app/v1/sessions/request",
             post(routes::app_sessions::request_session),

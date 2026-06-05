@@ -294,6 +294,28 @@ button {
   background: var(--ink);
 }
 
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  border-bottom: 1px solid var(--line);
+}
+
+.diagnostics-grid .list-panel {
+  border-right: 1px solid var(--line);
+}
+
+.diagnostics-grid .list-panel:last-child {
+  border-right: 0;
+}
+
+.list-panel h2 {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
 .permission-api-note {
   display: flex;
   align-items: center;
@@ -874,10 +896,16 @@ button {
   .lifecycle-details,
   .network-settings-grid,
   .network-health-grid,
+  .diagnostics-grid,
   .settings-form-row,
   .settings-form-grid,
   .home-relay-summary {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .diagnostics-grid .list-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
   }
 
   .network-settings-card.wide {
