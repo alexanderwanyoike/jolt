@@ -6,6 +6,7 @@ import {
   tauriDaemonClient,
   type DaemonClient
 } from "./client";
+import { tauriDaemonLifecycleClient } from "./lifecycle";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn()
@@ -37,6 +38,30 @@ describe("tauriDaemonClient", () => {
         capabilities: ["resolve:public"]
       }
     });
+  });
+});
+
+describe("tauriDaemonLifecycleClient", () => {
+  beforeEach(() => {
+    vi.mocked(invoke).mockReset();
+  });
+
+  it("routes lifecycle reads and actions through Tauri lifecycle commands", async () => {
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({ ownership: "none" })
+      .mockResolvedValueOnce({ ownership: "console" })
+      .mockResolvedValueOnce({ ownership: "console" })
+      .mockResolvedValueOnce({ ownership: "none" });
+
+    await expect(tauriDaemonLifecycleClient.status()).resolves.toEqual({ ownership: "none" });
+    await expect(tauriDaemonLifecycleClient.start()).resolves.toEqual({ ownership: "console" });
+    await expect(tauriDaemonLifecycleClient.restart()).resolves.toEqual({ ownership: "console" });
+    await expect(tauriDaemonLifecycleClient.stop()).resolves.toEqual({ ownership: "none" });
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "daemon_lifecycle_status");
+    expect(invoke).toHaveBeenNthCalledWith(2, "daemon_lifecycle_start");
+    expect(invoke).toHaveBeenNthCalledWith(3, "daemon_lifecycle_restart");
+    expect(invoke).toHaveBeenNthCalledWith(4, "daemon_lifecycle_stop");
   });
 });
 
