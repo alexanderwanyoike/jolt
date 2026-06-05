@@ -55,7 +55,16 @@ export function SettingsPage({
     setAction(label);
     setError(null);
     try {
-      setState(await operation());
+      const nextState = await operation();
+      setState(nextState);
+      if (label === "start" || label === "restart") {
+        await refreshNetworkSettingsUntilReady();
+        try {
+          setState(await lifecycleClient.status());
+        } catch {
+          // The lifecycle action already succeeded; keep the last known state.
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -77,6 +86,27 @@ export function SettingsPage({
       setNetworkError(err instanceof Error ? err.message : String(err));
     } finally {
       setNetworkLoading(false);
+    }
+  }
+
+  async function refreshNetworkSettingsUntilReady() {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      setNetworkError(null);
+      setNetworkLoading(true);
+      try {
+        setNetworkSettings(await loadNetworkSettings(daemonClient));
+        try {
+          setNetworkStatus(await daemonClient.get<DaemonStatus>("/api/v1/status"));
+        } catch {
+          setNetworkStatus(null);
+        }
+        return;
+      } catch (err) {
+        setNetworkError(err instanceof Error ? err.message : String(err));
+        await delay(500);
+      } finally {
+        setNetworkLoading(false);
+      }
     }
   }
 
@@ -412,4 +442,8 @@ function ownershipLabel(ownership: DaemonLifecycleState["ownership"]) {
   if (ownership === "console") return "Console-owned";
   if (ownership === "external") return "External";
   return "None";
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }

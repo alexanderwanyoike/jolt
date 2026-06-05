@@ -1,6 +1,11 @@
+import { useEffect } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ConsoleShell } from "../components/ConsoleShell";
 import { tauriDaemonClient, type DaemonClient } from "../daemon/client";
+import {
+  tauriDaemonLifecycleClient,
+  type DaemonLifecycleClient
+} from "../daemon/lifecycle";
 import { useDaemonSnapshot } from "../daemon/useDaemonSnapshot";
 import { AppsPage } from "../sections/AppsPage";
 import { CachePage } from "../sections/CachePage";
@@ -14,14 +19,40 @@ import { SettingsPage } from "../sections/SettingsPage";
 
 type ConsoleAppProps = {
   client?: DaemonClient;
+  lifecycleClient?: DaemonLifecycleClient;
   refreshIntervalMs?: number;
 };
 
 export function ConsoleApp({
   client = tauriDaemonClient,
+  lifecycleClient = tauriDaemonLifecycleClient,
   refreshIntervalMs = 5000
 }: ConsoleAppProps) {
   const snapshot = useDaemonSnapshot(client, refreshIntervalMs);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const lifecycle = await lifecycleClient.status();
+        if (lifecycle.reachability !== "unavailable" || lifecycle.ownership !== "none") {
+          return;
+        }
+
+        await lifecycleClient.start();
+        if (!cancelled) {
+          await refreshSnapshotUntilConnected(snapshot.refresh);
+        }
+      } catch {
+        // Snapshot polling and Settings lifecycle controls surface daemon failures.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lifecycleClient, snapshot.refresh]);
 
   return (
     <HashRouter>
@@ -37,11 +68,25 @@ export function ConsoleApp({
           <Route path="/relays" element={<RelaysPage snapshot={snapshot} />} />
           <Route path="/published" element={<PublishedPage snapshot={snapshot} />} />
           <Route path="/cache" element={<CachePage snapshot={snapshot} />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route
+            path="/settings"
+            element={<SettingsPage lifecycleClient={lifecycleClient} daemonClient={client} />}
+          />
           <Route path="/diagnostics" element={<DiagnosticsPage snapshot={snapshot} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ConsoleShell>
     </HashRouter>
   );
+}
+
+async function refreshSnapshotUntilConnected(refresh: () => Promise<boolean>) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (await refresh()) return;
+    await delay(500);
+  }
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
