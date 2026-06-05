@@ -139,6 +139,7 @@ Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/
 | [054](054-pastey-two-node-local-demo-harness.md) | AFK | Done | Add a repeatable local Alice/Bob/Pastey demo harness. |
 | [055](055-jolt-console-native-daemon-ux-debt.md) | HITL | Tech debt | Make Console realtime, daemon-lifecycle aware, OS-native, and focus permission prompts. |
 | [056](056-app-capability-grant-hardening.md) | AFK | Implemented in PR | Tighten app capability grant validation before private app authority. |
+| [057](057-pastey-private-open-performance-and-self-private-ux.md) | AFK | Ready | Make private Pastey open fast and self-only private paste creation natural. |
 
 ## Card Format
 
