@@ -181,6 +181,57 @@ describe("Console section pages", () => {
     expect(client.post).toHaveBeenCalledWith("/admin/v1/app-sessions/sess_notes/revoke");
   });
 
+  it("can approve scoped encrypted Pastey capabilities", async () => {
+    const requestedCapabilities = [
+      "resolve:public",
+      "fetch:public",
+      "publish:/pastes/*",
+      "publish:encrypted:/pastes/*",
+      "inventory:/pastes/*",
+      "pin:own:/pastes/*",
+      "encrypt:/pastes/*",
+      "decrypt:/pastes/*"
+    ];
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/app-requests") {
+          return [
+            {
+              request_id: "req_private_pastey",
+              app_id: "pastey.local",
+              app_name: "Pastey",
+              app_origin: "http://127.0.0.1:5174",
+              requested_identity: "alice.jolt",
+              requested_capabilities: requestedCapabilities,
+              granted_capabilities: [],
+              status: "pending",
+              created_at: 1_780_000_500
+            }
+          ];
+        }
+        if (path === "/admin/v1/app-sessions") return [];
+        throw new Error(`unexpected path ${path}`);
+      }),
+      post: vi.fn(async () => ({ ok: true }))
+    };
+
+    render(<AppsPage client={client} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /request details/i }));
+    expect(screen.getByText("publish encrypted content under /pastes/*")).toBeInTheDocument();
+    expect(screen.getByText("encrypt content under /pastes/*")).toBeInTheDocument();
+    expect(screen.getByText("decrypt content under /pastes/*")).toBeInTheDocument();
+    expect(screen.queryByText("admin-only request: cannot be approved")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Approve Pastey" }));
+    expect(client.post).toHaveBeenCalledWith("/admin/v1/app-requests/req_private_pastey/approve", {
+      identity: "alice.jolt",
+      capabilities: requestedCapabilities,
+      expires_at: null
+    });
+  });
+
   it("renders apps empty state when there are no requests or sessions", async () => {
     const client: DaemonClient = {
       daemonUrl: "http://127.0.0.1:9862",

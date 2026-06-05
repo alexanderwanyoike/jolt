@@ -11,6 +11,7 @@ use jolt_network::{
 };
 use jolt_store::{CacheConfig, ContentStore};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU16, Ordering};
 use tokio::sync::mpsc;
 
@@ -394,6 +395,77 @@ async fn test_admin_can_approve_app_session_request() {
     assert_eq!(sessions[0]["identity"], "alice-public.jolt");
     assert!(sessions[0].get("session_token").is_none());
     assert!(sessions[0].get("token_hash").is_none());
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_approval_of_private_app_capabilities_publishes_identity_encryption_keys() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "app_origin": "http://127.0.0.1:5174",
+            "requested_identity": identity,
+            "requested_capabilities": [
+                "resolve:public",
+                "fetch:public",
+                "encrypt:/pastes/*",
+                "decrypt:/pastes/*",
+                "publish:encrypted:/pastes/*"
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": identity,
+            "capabilities": [
+                "resolve:public",
+                "fetch:public",
+                "encrypt:/pastes/*",
+                "decrypt:/pastes/*",
+                "publish:encrypted:/pastes/*"
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(approve_resp.status(), 200);
+
+    let status = handle.status().await.unwrap();
+    assert_eq!(status.published_count, 1);
+
+    let identity_id = JoltAddress::from_str(&identity)
+        .unwrap()
+        .identity()
+        .to_string();
+    let keys_resp = client
+        .get(format!(
+            "{}/api/v1/identities/{identity_id}/encryption-keys",
+            base_url(port)
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(keys_resp.status(), 200);
+    let keys: serde_json::Value = keys_resp.json().await.unwrap();
+    assert_eq!(keys["identity"], identity_id);
+    assert_eq!(keys["keys"].as_array().unwrap().len(), 1);
 
     handle.shutdown().await.ok();
 }

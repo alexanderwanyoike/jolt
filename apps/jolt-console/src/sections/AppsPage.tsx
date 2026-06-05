@@ -374,6 +374,15 @@ function capabilityInfo(capability: string): CapabilityInfo {
       broadPath: false
     };
   }
+  if (capability.startsWith("publish:encrypted:")) {
+    const scope = capability.slice("publish:encrypted:".length);
+    return {
+      label: `publish encrypted content under ${scope}`,
+      kind: "write",
+      grantable: isGrantablePathCapability("publish:encrypted:", capability),
+      broadPath: isBroadPathScope(scope)
+    };
+  }
   if (capability.startsWith("publish:")) {
     const scope = capability.slice("publish:".length);
     return {
@@ -401,6 +410,24 @@ function capabilityInfo(capability: string): CapabilityInfo {
       broadPath: isBroadPathScope(scope)
     };
   }
+  if (capability.startsWith("encrypt:")) {
+    const scope = capability.slice("encrypt:".length);
+    return {
+      label: `encrypt content under ${scope}`,
+      kind: "write",
+      grantable: isGrantablePathCapability("encrypt:", capability),
+      broadPath: isBroadPathScope(scope)
+    };
+  }
+  if (capability.startsWith("decrypt:")) {
+    const scope = capability.slice("decrypt:".length);
+    return {
+      label: `decrypt content under ${scope}`,
+      kind: "read",
+      grantable: isGrantablePathCapability("decrypt:", capability),
+      broadPath: isBroadPathScope(scope)
+    };
+  }
 
   return {
     label: capability,
@@ -414,9 +441,12 @@ function isGrantableCapability(capability: string) {
   return (
     capability === "resolve:public" ||
     capability === "fetch:public" ||
+    isGrantablePathCapability("publish:encrypted:", capability) ||
     isGrantablePathCapability("publish:", capability) ||
     isGrantablePathCapability("inventory:", capability) ||
-    isGrantablePathCapability("pin:own:", capability)
+    isGrantablePathCapability("pin:own:", capability) ||
+    isGrantablePathCapability("encrypt:", capability) ||
+    isGrantablePathCapability("decrypt:", capability)
   );
 }
 

@@ -2,6 +2,7 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use jolt_network::NetworkError;
 use serde_json::json;
 
 use crate::session_store::{AppSessionRequest, AppSessionStoreError, ApproveAppSessionRequest};
@@ -44,6 +45,9 @@ pub async fn approve_request(
     Json(request): Json<ApproveAppSessionRequest>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
     let response = state.sessions.approve_request(&request_id, request).await?;
+    if grants_private_content_authority(&response.capabilities) {
+        state.daemon.ensure_local_identity_encryption_key().await?;
+    }
     Ok(Json(response))
 }
 
@@ -69,11 +73,28 @@ pub async fn revoke_session(
     Ok(Json(response))
 }
 
-pub struct AppSessionApiError(AppSessionStoreError);
+pub enum AppSessionApiError {
+    Store(AppSessionStoreError),
+    Network(NetworkError),
+}
 
 impl IntoResponse for AppSessionApiError {
     fn into_response(self) -> Response {
-        let (status, code) = match &self.0 {
+        let err = match self {
+            Self::Store(err) => err,
+            Self::Network(err) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "code": "app_session_daemon_error",
+                        "error": err.to_string()
+                    })),
+                )
+                    .into_response();
+            }
+        };
+
+        let (status, code) = match &err {
             AppSessionStoreError::MissingBearerToken | AppSessionStoreError::InvalidToken => {
                 (StatusCode::UNAUTHORIZED, "app_session_unauthorized")
             }
@@ -94,7 +115,7 @@ impl IntoResponse for AppSessionApiError {
             status,
             Json(json!({
                 "code": code,
-                "error": self.0.to_string()
+                "error": err.to_string()
             })),
         )
             .into_response()
@@ -103,8 +124,22 @@ impl IntoResponse for AppSessionApiError {
 
 impl From<AppSessionStoreError> for AppSessionApiError {
     fn from(err: AppSessionStoreError) -> Self {
-        Self(err)
+        Self::Store(err)
     }
+}
+
+impl From<NetworkError> for AppSessionApiError {
+    fn from(err: NetworkError) -> Self {
+        Self::Network(err)
+    }
+}
+
+fn grants_private_content_authority(capabilities: &[String]) -> bool {
+    capabilities.iter().any(|capability| {
+        capability.starts_with("encrypt:")
+            || capability.starts_with("decrypt:")
+            || capability.starts_with("publish:encrypted:")
+    })
 }
 
 fn bearer_token(headers: &HeaderMap) -> Result<&str, AppSessionStoreError> {
