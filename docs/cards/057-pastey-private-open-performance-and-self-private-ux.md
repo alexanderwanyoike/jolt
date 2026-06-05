@@ -57,6 +57,8 @@ keys inside the daemon.
 
 ## Implementation Notes
 
+- Jolt PR: `https://github.com/alexanderwanyoike/jolt/pull/74`.
+- Pastey PR: `https://github.com/alexanderwanyoike/pastey/pull/3`.
 - Added `POST /app/v1/encrypted/open` so apps can ask the daemon to resolve,
   fetch, path-check, and decrypt a private `.jolt` paste in one app API call.
 - The endpoint returns `status: "decrypted"` with plaintext for recipients and
