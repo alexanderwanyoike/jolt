@@ -100,6 +100,25 @@ pub struct EncryptedDecryptResponse {
     pub content_type: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EncryptedOpenStatus {
+    Decrypted,
+    Ciphertext,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EncryptedOpenResponse {
+    pub content_id: String,
+    pub path: String,
+    pub status: EncryptedOpenStatus,
+    pub plaintext: Option<Vec<u8>>,
+    pub ciphertext: Option<Vec<u8>>,
+    pub size: u64,
+    pub content_type: Option<String>,
+    pub decrypt_error: Option<String>,
+}
+
 pub async fn publish_encrypted(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -110,12 +129,6 @@ pub async fn publish_encrypted(
     let path = normalize_path(&req.path)?;
     require_path_capability(&session, "encrypt:", &path)?;
     require_path_capability(&session, "publish:encrypted:", &path)?;
-
-    if req.recipients.is_empty() {
-        return Err(AppApiError::Network(NetworkError::InvalidInput(
-            "encrypted publish requires at least one recipient".to_string(),
-        )));
-    }
 
     let local_key = state.daemon.ensure_local_identity_encryption_key().await?;
     let local_identity = JoltAddress::from_str(&state.daemon.status().await?.identity_address)
@@ -174,6 +187,53 @@ pub async fn decrypt_encrypted(
         size: decrypted.size,
         content_type: decrypted.content_type,
     }))
+}
+
+pub async fn open_encrypted(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<EncryptedDecryptRequest>,
+) -> Result<Json<EncryptedOpenResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+
+    let address = JoltAddress::from_str(&req.target).map_err(|e| {
+        AppApiError::Network(NetworkError::InvalidInput(format!(
+            "encrypted open target must be a .jolt address: {e}"
+        )))
+    })?;
+    let resolved = state.daemon.resolve(address.to_string()).await?;
+    require_path_capability(&session, "decrypt:", &resolved.path)?;
+    let fetched = state
+        .daemon
+        .fetch(resolved.content_id.clone())
+        .await
+        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &resolved.content_id)))?;
+    let ciphertext = fetched.data;
+    let ciphertext_size = fetched.size;
+
+    match state.daemon.decrypt_object(ciphertext.clone()).await {
+        Ok(decrypted) => Ok(Json(EncryptedOpenResponse {
+            content_id: resolved.content_id,
+            path: resolved.path,
+            status: EncryptedOpenStatus::Decrypted,
+            plaintext: Some(decrypted.plaintext),
+            ciphertext: None,
+            size: decrypted.size,
+            content_type: Some(decrypted.content_type),
+            decrypt_error: None,
+        })),
+        Err(err) => Ok(Json(EncryptedOpenResponse {
+            content_id: resolved.content_id,
+            path: resolved.path,
+            status: EncryptedOpenStatus::Ciphertext,
+            plaintext: None,
+            ciphertext: Some(ciphertext),
+            size: ciphertext_size,
+            content_type: None,
+            decrypt_error: Some(err.to_string()),
+        })),
+    }
 }
 
 pub async fn publish_file(

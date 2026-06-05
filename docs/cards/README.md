@@ -145,7 +145,7 @@ or contacts into the protocol layer.
 | [054](054-pastey-two-node-local-demo-harness.md) | AFK | Done | Add a repeatable local Alice/Bob/Pastey demo harness. |
 | [055](055-jolt-console-native-daemon-ux-debt.md) | HITL | Tech debt | Make Console realtime, daemon-lifecycle aware, OS-native, and focus permission prompts. |
 | [056](056-app-capability-grant-hardening.md) | AFK | Implemented in PR | Tighten app capability grant validation before private app authority. |
-| [057](057-pastey-private-open-performance-and-self-private-ux.md) | AFK | Ready | Make private Pastey open fast and self-only private paste creation natural. |
+| [057](057-pastey-private-open-performance-and-self-private-ux.md) | AFK | Implemented in PR | Make private Pastey open fast and self-only private paste creation natural. |
 | [058](058-bidirectional-communication-and-realtime-rendezvous-design.md) | HITL | Parked after 057 | Decide how Jolt supports secure bidirectional and realtime communication without protocol-level inbox semantics. |
 
 ## Card Format
