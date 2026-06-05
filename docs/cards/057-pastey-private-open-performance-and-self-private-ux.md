@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** App Boundary / Private Sharing Foundations  
-**Status:** Ready  
+**Status:** Implemented in PR  
 **Blocked by:** 053
 
 ## Why
@@ -43,17 +43,49 @@ keys inside the daemon.
 
 ## Acceptance Criteria
 
-- [ ] Opening a private `.jolt` paste performs only one resolve and one fetch.
-- [ ] Bob opening a private paste he just sent does not refetch the same
+- [x] Opening a private `.jolt` paste performs only one resolve and one fetch.
+- [x] Bob opening a private paste he just sent does not refetch the same
       ciphertext through a second daemon call.
-- [ ] Carol opening Bob's private paste still fetches ciphertext but fails
+- [x] Carol opening Bob's private paste still fetches ciphertext but fails
       decrypt without seeing plaintext.
-- [ ] Pastey can create a self-only private paste without the user entering
+- [x] Pastey can create a self-only private paste without the user entering
       their own `.jolt` identity as a recipient.
-- [ ] Empty recipient input in private mode means "private to me" or an
+- [x] Empty recipient input in private mode means "private to me" or an
       equivalent explicit UI state, not a confusing validation failure.
-- [ ] Private publish/open error messages remain visible and actionable.
-- [ ] Focused tests cover the app API behavior and Pastey UI behavior.
+- [x] Private publish/open error messages remain visible and actionable.
+- [x] Focused tests cover the app API behavior and Pastey UI behavior.
+
+## Implementation Notes
+
+- Jolt PR: `https://github.com/alexanderwanyoike/jolt/pull/74`.
+- Pastey PR: `https://github.com/alexanderwanyoike/pastey/pull/3`.
+- Added `POST /app/v1/encrypted/open` so apps can ask the daemon to resolve,
+  fetch, path-check, and decrypt a private `.jolt` paste in one app API call.
+- The endpoint returns `status: "decrypted"` with plaintext for recipients and
+  `status: "ciphertext"` with ciphertext plus a decrypt error for non-recipients.
+- Empty encrypted-publish recipient lists now mean self-only private content;
+  the daemon already includes the local author encryption key in the recipient
+  set.
+- Pastey uses `/encrypted/open` for private opens, labels empty private
+  recipient input as `private to me`, and keeps private publish/open errors
+  visible in the page.
+
+## Verification
+
+- Red: `cargo test -p jolt-server test_app_can_encrypt_publish_self_only_private_content --test api_integration -- --nocapture` failed while empty encrypted recipients were rejected.
+- Green: `cargo test -p jolt-server test_app_can_encrypt_publish_self_only_private_content --test api_integration -- --nocapture`.
+- Red: `cargo test -p jolt-server test_app_ --test api_integration -- --nocapture` failed before `/app/v1/encrypted/open` existed.
+- Green: `cargo test -p jolt-server test_app_ --test api_integration -- --nocapture`.
+- Red: `npm test` in Pastey failed while `openPrivatePaste` was missing and empty private recipients were still rejected client-side.
+- Green: `npm test` in Pastey.
+- Green: `npm run build` in Pastey.
+- Green: `./scripts/test-local.sh`.
+- Manual: isolated local daemon on `127.0.0.1:9862`, Jolt Console Tauri
+  approval, and Pastey on `127.0.0.1:5174`; self-only encrypted publish/open
+  worked and private fetch felt fast.
+- Green: automated three-daemon Alice/Bob/Carol app API smoke:
+  Bob published an encrypted paste to Carol, Bob and Carol opened plaintext via
+  `/app/v1/encrypted/open`, and Alice received only `status: "ciphertext"`.
 
 ## Notes
 
