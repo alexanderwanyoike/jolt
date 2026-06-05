@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** Private Sharing Foundations  
-**Status:** Ready after 052  
+**Status:** Implemented in Pastey PR
 **Blocked by:** 047, 052
 
 ## Why
@@ -23,12 +23,22 @@ Update Pastey with a private paste flow:
 
 ## Acceptance Criteria
 
-- [ ] Alice can create a private paste for Bob.
-- [ ] Bob can open Alice's `.jolt` paste address and read it.
-- [ ] Carol can fetch the encrypted bytes but cannot decrypt them.
-- [ ] Relay/cache behavior works with ciphertext.
-- [ ] Pastey clearly labels public versus encrypted pastes.
-- [ ] Tests or a documented local process demo cover Alice, Bob, and unauthorized Carol.
+- [x] Alice can create a private paste for Bob.
+- [x] Bob can open Alice's `.jolt` paste address and read it.
+- [x] Carol can fetch the encrypted bytes but cannot decrypt them.
+- [x] Relay/cache behavior works with ciphertext.
+- [x] Pastey clearly labels public versus encrypted pastes.
+- [x] Tests or a documented local process demo cover Alice, Bob, and unauthorized Carol.
+
+## Verification Notes
+
+- Pastey PR: `https://github.com/alexanderwanyoike/pastey/pull/2`.
+- Pastey now requests `encrypt:/pastes/*`, `decrypt:/pastes/*`, and `publish:encrypted:/pastes/*`.
+- Pastey has explicit Public/Encrypted modes for composing and opening pastes.
+- Encrypted open first fetches ciphertext, then asks the daemon to decrypt; unauthorized readers see a ciphertext-fetched/decrypt-failed state.
+- README documents the Alice/Bob/Carol local process demo.
+- Verified in Pastey with `npm test` and `npm run build`.
+- Checked desktop and mobile layout with Chrome headless screenshots.
 
 ## Notes
 

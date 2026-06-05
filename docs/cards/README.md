@@ -135,7 +135,7 @@ Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/
 | [050](050-identity-encryption-key-records.md) | AFK | Done | Publish and resolve signed public encryption keys for identities. |
 | [051](051-encrypted-object-implementation-v0.md) | AFK | Implemented in PR | Encrypt content once and wrap content keys for recipients. |
 | [052](052-daemon-encrypt-decrypt-api.md) | AFK | Ready after 044 and 051 | Let the daemon encrypt/decrypt for app sessions without exposing keys. |
-| [053](053-pastey-private-paste-v0.md) | AFK | Ready after 052 | Prove Alice can share an encrypted Pastey paste with Bob. |
+| [053](053-pastey-private-paste-v0.md) | AFK | Implemented in Pastey PR | Prove Alice can share an encrypted Pastey paste with Bob. |
 | [054](054-pastey-two-node-local-demo-harness.md) | AFK | Done | Add a repeatable local Alice/Bob/Pastey demo harness. |
 | [055](055-jolt-console-native-daemon-ux-debt.md) | HITL | Tech debt | Make Console realtime, daemon-lifecycle aware, OS-native, and focus permission prompts. |
 | [056](056-app-capability-grant-hardening.md) | AFK | Implemented in PR | Tighten app capability grant validation before private app authority. |
