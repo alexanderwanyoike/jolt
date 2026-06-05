@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** Console Native Daemon UX  
-**Status:** Ready after 061  
+**Status:** Implemented in PR
 **Blocked by:** 045, 046, 061
 
 ## Why
@@ -29,13 +29,29 @@ permissions.
 
 ## Acceptance Criteria
 
-- [ ] The daemon root no longer presents the old dashboard as the product UI.
-- [ ] Any remaining debug dashboard is clearly labeled debug-only.
-- [ ] Docs point users to Jolt Console as the control surface.
-- [ ] Existing API behavior remains available for tests and scripts.
-- [ ] Tests cover the chosen routing/gating behavior.
+- [x] The daemon root no longer presents the old dashboard as the product UI.
+- [x] Any remaining debug dashboard is clearly labeled debug-only.
+- [x] Docs point users to Jolt Console as the control surface.
+- [x] Existing API behavior remains available for tests and scripts.
+- [x] Tests cover the chosen routing/gating behavior.
 
 ## Notes
 
 Do not delete useful diagnostics before Console has a replacement path. The goal
 is to remove product confusion, not to remove developer observability.
+
+## Implementation Notes
+
+- The daemon root now serves a minimal Jolt Console pointer page.
+- The old dashboard is retained at `/debug/dashboard` and labeled
+  `Jolt Debug Dashboard` / `debug-only`.
+- `/dashboard` redirects to `/debug/dashboard` for old bookmarks.
+- No `/api/v1/*`, `/admin/v1/*`, or `/app/v1/*` behavior was changed.
+
+## Verification
+
+- Red: `cargo test -p jolt-server dashboard --test api_integration -- --nocapture`
+  failed while `/` still served the old dashboard.
+- Green: `cargo test -p jolt-server dashboard --test api_integration -- --nocapture`.
+- Green: `cargo check -p jolt-server`.
+- Green: `./scripts/test-local.sh`.
