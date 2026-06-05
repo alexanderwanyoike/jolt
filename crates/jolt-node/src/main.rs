@@ -7,7 +7,7 @@ mod daemon;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use cli::{BootstrapCommands, CacheCommands, Cli, Commands, HomeRelayCommands};
+use cli::{BootstrapCommands, CacheCommands, Cli, Commands, HomeRelayCommands, RelayCommands};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -71,6 +71,9 @@ async fn main() -> anyhow::Result<()> {
             } => commands::home_relay::set(&multiaddr, capability, api_url.as_deref()).await?,
             HomeRelayCommands::Pin { content_id } => commands::home_relay::pin(&content_id).await?,
             HomeRelayCommands::Clear => commands::home_relay::clear().await?,
+        },
+        Commands::Relay { command } => match command {
+            RelayCommands::Status { json } => commands::relay::status(json).await?,
         },
     }
 

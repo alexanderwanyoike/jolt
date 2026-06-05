@@ -95,6 +95,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: HomeRelayCommands,
     },
+
+    /// Inspect and diagnose this node as a relay operator
+    Relay {
+        #[command(subcommand)]
+        command: RelayCommands,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -176,6 +182,16 @@ pub enum HomeRelayCommands {
 
     /// Remove the configured home relay
     Clear,
+}
+
+#[derive(Subcommand)]
+pub enum RelayCommands {
+    /// Show relay operator status
+    Status {
+        /// Emit the admin relay status JSON payload
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(test)]
@@ -286,6 +302,25 @@ mod tests {
     fn parse_status_command() {
         let cli = Cli::parse_from(["jolt", "status"]);
         assert!(matches!(cli.command, Commands::Status));
+    }
+
+    #[test]
+    fn parse_relay_status_commands() {
+        let cli = Cli::parse_from(["jolt", "relay", "status"]);
+        match cli.command {
+            Commands::Relay {
+                command: RelayCommands::Status { json },
+            } => assert!(!json),
+            _ => panic!("expected Relay Status command"),
+        }
+
+        let cli = Cli::parse_from(["jolt", "relay", "status", "--json"]);
+        match cli.command {
+            Commands::Relay {
+                command: RelayCommands::Status { json },
+            } => assert!(json),
+            _ => panic!("expected Relay Status command"),
+        }
     }
 
     #[test]

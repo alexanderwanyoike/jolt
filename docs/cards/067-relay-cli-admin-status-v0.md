@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** Relay Operations  
-**Status:** Ready after 066
+**Status:** Implemented in PR
 **Blocked by:** 066
 
 ## Why
@@ -38,12 +38,12 @@ The status should be derived from existing daemon state where possible:
 
 ## Acceptance Criteria
 
-- [ ] `jolt relay status` renders a compact human-readable relay health summary.
-- [ ] `jolt relay status --json` returns a stable JSON payload.
-- [ ] `GET /admin/v1/relay/status` returns the same relay status payload.
-- [ ] The admin endpoint is local/admin-only and not exposed through app APIs.
-- [ ] The command works over SSH against the local daemon.
-- [ ] Tests cover CLI parsing, API response shape, relay-mode enabled state, and
+- [x] `jolt relay status` renders a compact human-readable relay health summary.
+- [x] `jolt relay status --json` returns a stable JSON payload.
+- [x] `GET /admin/v1/relay/status` returns the same relay status payload.
+- [x] The admin endpoint is local/admin-only and not exposed through app APIs.
+- [x] The command works over SSH against the local daemon.
+- [x] Tests cover CLI parsing, API response shape, relay-mode enabled state, and
       relay-mode disabled state.
 
 ## Notes
@@ -52,3 +52,28 @@ Do not build remote public admin auth in this card. For v0, remote relay
 inspection means SSH into the host or tunnel to localhost.
 
 Do not add app concepts. This card is about node/relay operation only.
+
+## Implementation Notes
+
+- Added `GET /admin/v1/relay/status`.
+- Added `jolt relay status` and `jolt relay status --json`.
+- The relay status payload summarizes existing daemon status and cache state:
+  relay mode, peer/identity/listen addresses, bootstrap health, peer counts,
+  known relay count, relay record, cache/pin totals, and home relay config.
+- The endpoint is under `/admin/v1/*`; `/app/v1/relay/status` is not routed.
+- No remote admin auth or public relay dashboard was added.
+
+## Verification
+
+- Red: `cargo test -p jolt-server admin_relay_status --test api_integration -- --nocapture`
+  failed before `/admin/v1/relay/status` existed.
+- Green: `cargo test -p jolt-server relay_status --test api_integration -- --nocapture`.
+- Red: `cargo test -p jolt-node parse_relay_status_commands -- --nocapture`
+  failed before the `relay status` CLI existed.
+- Green: `cargo test -p jolt-node relay -- --nocapture`.
+- Green: `cargo check -p jolt-server -p jolt-node`.
+- Green: `./scripts/test-local.sh`.
+- Green: manual isolated daemon smoke check with:
+  - `target/debug/jolt relay status`
+  - `target/debug/jolt relay status --json`
+  - `curl http://127.0.0.1:9982/admin/v1/relay/status`
