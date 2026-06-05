@@ -2,7 +2,7 @@
 
 **Type:** HITL  
 **Milestone:** Relay Operations  
-**Status:** Ready for design
+**Status:** Designed in PR
 **Blocked by:** 063, 065
 
 ## Why
@@ -34,17 +34,45 @@ Define the v0 operator surface for headless relays:
 
 ## Acceptance Criteria
 
-- [ ] The design distinguishes local desktop Console diagnostics from headless
+- [x] The design distinguishes local desktop Console diagnostics from headless
       relay operator diagnostics.
-- [ ] The design specifies the first CLI/admin API surfaces for relay health.
-- [ ] The design lists structured events/counters needed to debug relay mesh
+- [x] The design specifies the first CLI/admin API surfaces for relay health.
+- [x] The design lists structured events/counters needed to debug relay mesh
       and identity/provider discovery failures.
-- [ ] The design includes security constraints for admin-only diagnostics on
+- [x] The design includes security constraints for admin-only diagnostics on
       internet-facing hosts.
-- [ ] The design avoids application concepts and stays protocol/operator
+- [x] The design avoids application concepts and stays protocol/operator
       focused.
 
 ## Notes
 
 This is not a product dashboard card. Treat relays as server software first:
 logs, CLI, health APIs, and metrics before any optional UI.
+
+## Design
+
+See [Relay Operator Diagnostics](../17-relay-operator-diagnostics.md).
+
+Key decisions:
+
+- Jolt Console remains the local desktop diagnostics surface.
+- Server-facing relays are debugged through SSH-friendly CLI commands,
+  admin-only HTTP APIs, structured logs, and lightweight counters.
+- Admin diagnostics are localhost-only by default. Public unauthenticated
+  operator endpoints are not acceptable.
+- The first implementation slice should be `jolt relay status --json` plus
+  `GET /admin/v1/relay/status`.
+- The most important later troubleshooting slice is
+  `jolt relay diagnose identity <identity>`, which traces update-log provider
+  discovery and relay forwarding for one identity.
+
+## Follow-Up Implementation Slices
+
+1. Relay CLI/Admin Status v0.
+2. Relay Diagnose Identity v0.
+3. Relay Structured Logs v0.
+4. Relay Metrics v0.
+
+## Verification
+
+Docs-only design. No code tests were run.
