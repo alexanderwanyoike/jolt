@@ -83,6 +83,9 @@ keys inside the daemon.
 - Manual: isolated local daemon on `127.0.0.1:9862`, Jolt Console Tauri
   approval, and Pastey on `127.0.0.1:5174`; self-only encrypted publish/open
   worked and private fetch felt fast.
+- Green: automated three-daemon Alice/Bob/Carol app API smoke:
+  Bob published an encrypted paste to Carol, Bob and Carol opened plaintext via
+  `/app/v1/encrypted/open`, and Alice received only `status: "ciphertext"`.
 
 ## Notes
 
