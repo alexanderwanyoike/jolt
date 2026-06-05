@@ -424,8 +424,11 @@ enum AppCapability {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum PathCapabilityAction {
     Publish,
+    PublishEncrypted,
     Inventory,
     PinOwn,
+    Encrypt,
+    Decrypt,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -503,9 +506,12 @@ impl PathScope {
 
 fn parse_path_capability(raw: &str) -> Option<AppCapability> {
     for (prefix, action) in [
+        ("publish:encrypted:", PathCapabilityAction::PublishEncrypted),
         ("publish:", PathCapabilityAction::Publish),
         ("inventory:", PathCapabilityAction::Inventory),
         ("pin:own:", PathCapabilityAction::PinOwn),
+        ("encrypt:", PathCapabilityAction::Encrypt),
+        ("decrypt:", PathCapabilityAction::Decrypt),
     ] {
         let Some(scope) = raw.strip_prefix(prefix) else {
             continue;

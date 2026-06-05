@@ -2,11 +2,14 @@ use std::path::PathBuf;
 
 use tokio::sync::{mpsc, oneshot};
 
-use jolt_core::{IdentityId, PinRequest, UpdateLogEntry};
+use jolt_core::{
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, PinRequest, UpdateLogEntry,
+};
 
 use crate::command::{
-    CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
-    PeerConnectResponse, PeerInfo, PublishResponse, PublishedContentInfo, ResolveResponse,
+    CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
+    EncryptedObjectResponse, FetchResult, NodeStatus, PeerConnectResponse, PeerInfo,
+    PublishResponse, PublishedContentInfo, ResolveResponse,
 };
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
@@ -64,6 +67,57 @@ impl DaemonHandle {
         self.cmd_tx
             .send(DaemonCommand::Resolve {
                 address,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Ensure the daemon has a local encryption key for its identity.
+    pub async fn ensure_local_identity_encryption_key(
+        &self,
+    ) -> Result<IdentityEncryptionKey, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::EnsureLocalIdentityEncryptionKey { response_tx: tx })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Encrypt plaintext into a signed Jolt encrypted object envelope.
+    pub async fn encrypt_object(
+        &self,
+        plaintext: Vec<u8>,
+        content_type: String,
+        recipients: Vec<EncryptedObjectRecipient>,
+    ) -> Result<EncryptedObjectResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::EncryptObject {
+                plaintext,
+                content_type,
+                recipients,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Decrypt a signed Jolt encrypted object envelope for the local identity.
+    pub async fn decrypt_object(
+        &self,
+        encrypted_object: Vec<u8>,
+    ) -> Result<DecryptedObjectResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::DecryptObject {
+                encrypted_object,
                 response_tx: tx,
             })
             .await

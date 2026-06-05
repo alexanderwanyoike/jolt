@@ -254,7 +254,7 @@ Daemon:
   6. HPKE-wrap the content key for each recipient key.
   7. Include an author/self wrap so the author can read their own object.
   8. Sign the envelope with the author's identity signing key.
-  9. Return encrypted object bytes for publish.
+  9. Publish encrypted object bytes if the app also has publish:encrypted:<path>.
 ```
 
 The app never receives the author's private signing key or recipient private
@@ -288,11 +288,11 @@ revealing which other recipients may be able to decrypt.
 Private operations belong behind capability-checked app APIs, not legacy
 trusted `/api/v1/*` endpoints.
 
-Future app APIs should look like:
+Implemented v0 app APIs:
 
 ```text
-POST /app/v1/encrypt
-POST /app/v1/decrypt
+POST /app/v1/encrypted/publish
+POST /app/v1/encrypted/decrypt
 ```
 
 The daemon chooses the suite from local policy and supported recipient keys. Apps
@@ -305,6 +305,7 @@ Capabilities:
 ```text
 encrypt:/pastes/*
 decrypt:/pastes/*
+publish:encrypted:/pastes/*
 share:/pastes/*
 ```
 
@@ -314,6 +315,8 @@ Meaning:
   that path scope.
 - `decrypt:<path>`: app may ask the daemon to decrypt fetched objects in that
   path scope when the local identity is a recipient.
+- `publish:encrypted:<path>`: app may publish encrypted object bytes under that
+  path scope.
 - `share:<path>`: app may ask the daemon to add or rotate recipient access
   metadata for that path scope. Full sharing semantics come after v0.
 

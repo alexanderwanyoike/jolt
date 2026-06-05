@@ -1,6 +1,7 @@
 use jolt_core::{
-    ContentId, IdentityEncryptionKey, IdentityEncryptionKeyRecord, JoltAddress, PinRequest,
-    RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
+    generate_identity_encryption_keypair, ContentId, EncryptedObjectEnvelope,
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityEncryptionKeyRecord, JoltAddress,
+    PinRequest, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
     IDENTITY_ENCRYPTION_KEYS_PATH,
 };
 use jolt_identity::NodeIdentity;
@@ -1062,6 +1063,299 @@ async fn test_app_resolve_and_fetch_require_public_capabilities() {
         .map(|v| v.as_u64().unwrap() as u8)
         .collect();
     assert_eq!(data, b"public paste");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_can_encrypt_publish_and_decrypt_scoped_content() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/pastes/*",
+            "decrypt:/pastes/*",
+            "publish:encrypted:/pastes/*",
+        ],
+    )
+    .await;
+
+    let publish_resp = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/pastes/private",
+            "plaintext": b"private paste".to_vec(),
+            "content_type": "text/plain",
+            "recipients": [identity]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    assert_eq!(published["path"], "/pastes/private");
+    assert_eq!(published["address"], format!("{identity}/pastes/private"));
+    assert!(published["size"].as_u64().unwrap() > b"private paste".len() as u64);
+
+    let public_fetch = client
+        .post(format!("{}/api/v1/fetch", base_url(port)))
+        .json(&serde_json::json!({ "target": published["content_id"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(public_fetch.status(), 200);
+    let public_body: serde_json::Value = public_fetch.json().await.unwrap();
+    let ciphertext: Vec<u8> = public_body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_ne!(ciphertext, b"private paste");
+
+    let decrypt_resp = client
+        .post(format!("{}/app/v1/encrypted/decrypt", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "target": published["address"] }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(decrypt_resp.status(), 200);
+    let decrypted: serde_json::Value = decrypt_resp.json().await.unwrap();
+    assert_eq!(decrypted["content_id"], published["content_id"]);
+    assert_eq!(decrypted["path"], "/pastes/private");
+    let plaintext: Vec<u8> = decrypted["plaintext"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(plaintext, b"private paste");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_encrypted_publish_and_decrypt_enforce_path_capabilities() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let publish_token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/pastes/*",
+            "decrypt:/pastes/*",
+            "publish:encrypted:/pastes/*",
+        ],
+    )
+    .await;
+
+    let denied_publish = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&publish_token)
+        .json(&serde_json::json!({
+            "path": "/notes/private",
+            "plaintext": b"outside prefix".to_vec(),
+            "recipients": [identity]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied_publish.status(), 403);
+
+    let publish_resp = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&publish_token)
+        .json(&serde_json::json!({
+            "path": "/pastes/private",
+            "plaintext": b"private paste".to_vec(),
+            "recipients": [identity]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+
+    let no_decrypt_token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &["encrypt:/pastes/*", "publish:encrypted:/pastes/*"],
+    )
+    .await;
+    let missing_decrypt = client
+        .post(format!("{}/app/v1/encrypted/decrypt", base_url(port)))
+        .bearer_auth(&no_decrypt_token)
+        .json(&serde_json::json!({ "target": published["address"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing_decrypt.status(), 403);
+
+    let wrong_path_token =
+        approve_app_session(&client, port, &identity, &["decrypt:/notes/*"]).await;
+    let outside_decrypt = client
+        .post(format!("{}/app/v1/encrypted/decrypt", base_url(port)))
+        .bearer_auth(&wrong_path_token)
+        .json(&serde_json::json!({ "target": published["address"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(outside_decrypt.status(), 403);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_decrypt_fails_when_local_identity_is_not_a_recipient() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    handle.ensure_local_identity_encryption_key().await.unwrap();
+
+    let author = NodeIdentity::generate();
+    let recipient_identity = NodeIdentity::generate().identity_id();
+    let (recipient_key, _recipient_private_key) = generate_identity_encryption_keypair(
+        recipient_identity.clone(),
+        "enc_x25519_other_v0".to_string(),
+        1,
+    );
+    let envelope = EncryptedObjectEnvelope::encrypt(
+        author.public_key_bytes(),
+        author.identity_id(),
+        b"not for this daemon",
+        "text/plain".to_string(),
+        None,
+        vec![EncryptedObjectRecipient {
+            identity: recipient_identity,
+            key: recipient_key,
+        }],
+        1,
+        |bytes| author.sign(bytes),
+    )
+    .unwrap();
+    let envelope_bytes = envelope.to_bytes().unwrap();
+
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(envelope_bytes).file_name("encrypted.json"),
+        )
+        .text("path", "/pastes/not-for-me");
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(port)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+
+    let token = approve_app_session(&client, port, &identity, &["decrypt:/pastes/*"]).await;
+    let decrypt_resp = client
+        .post(format!("{}/app/v1/encrypted/decrypt", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "target": published["address"] }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(decrypt_resp.status(), 400);
+    let body: serde_json::Value = decrypt_resp.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+    assert!(body["error"].as_str().unwrap().contains("recipient"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_encrypts_for_verified_remote_recipient_identity() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let local_identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &local_identity,
+        &["encrypt:/shares/*", "publish:encrypted:/shares/*"],
+    )
+    .await;
+
+    let remote = NodeIdentity::generate();
+    let remote_identity = remote.identity_id();
+    let (remote_key, _remote_private_key) = generate_identity_encryption_keypair(
+        remote_identity.clone(),
+        "enc_remote_v0".to_string(),
+        1,
+    );
+    let key_record = IdentityEncryptionKeyRecord::new(
+        remote.public_key_bytes(),
+        remote_identity.clone(),
+        vec![remote_key],
+        0,
+        1,
+        |bytes| remote.sign(bytes),
+    )
+    .unwrap();
+    let record_json = serde_json::to_vec(&key_record).unwrap();
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(record_json).file_name("remote-keys.json"),
+    );
+    let publish_resp = client
+        .post(format!("{}/api/v1/publish", base_url(port)))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published_record: serde_json::Value = publish_resp.json().await.unwrap();
+    let key_record_content_id: ContentId = published_record["content_id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let remote_update_log = vec![UpdateLogEntry::genesis(
+        remote.public_key_bytes(),
+        UpdateAction::SetPath {
+            path: IDENTITY_ENCRYPTION_KEYS_PATH.to_string(),
+            content_id: key_record_content_id,
+        },
+        |bytes| remote.sign(bytes),
+    )
+    .unwrap()];
+    handle
+        .store_update_log(remote_identity.clone(), remote_update_log)
+        .await
+        .unwrap();
+
+    let remote_address = JoltAddress::new(remote_identity, "/").unwrap().to_string();
+    let publish_encrypted = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/shares/remote",
+            "plaintext": b"for a remote recipient".to_vec(),
+            "recipients": [remote_address]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(publish_encrypted.status(), 200);
+    let encrypted: serde_json::Value = publish_encrypted.json().await.unwrap();
+    assert_eq!(encrypted["path"], "/shares/remote");
+    assert_eq!(encrypted["recipient_count"], 2);
 
     handle.shutdown().await.ok();
 }
