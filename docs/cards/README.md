@@ -155,7 +155,7 @@ app concepts such as inboxes or contacts into the protocol layer.
 | [056](056-app-capability-grant-hardening.md) | AFK | Implemented in PR | Tighten app capability grant validation before private app authority. |
 | [057](057-pastey-private-open-performance-and-self-private-ux.md) | AFK | Implemented in PR | Make private Pastey open fast and self-only private paste creation natural. |
 | [058](058-bidirectional-communication-and-realtime-rendezvous-design.md) | HITL | Parked after 057 | Decide how Jolt supports secure bidirectional and realtime communication without protocol-level inbox semantics. |
-| [059](059-console-realtime-state-v0.md) | AFK | Ready | Make Console state update without manual refresh. |
+| [059](059-console-realtime-state-v0.md) | AFK | Implemented in PR | Make Console state update without manual refresh. |
 | [060](060-console-daemon-lifecycle-v0.md) | HITL | Ready for design | Define and implement honest Console-owned daemon startup/lifecycle behavior. |
 | [061](061-console-network-settings-v0.md) | AFK | Ready | Manage bootstrap and home relay configuration from Console Settings. |
 | [062](062-console-native-presence-and-permission-focus-v0.md) | AFK | Ready after 059 | Add tray/native presence and focus Console for new app permission requests. |

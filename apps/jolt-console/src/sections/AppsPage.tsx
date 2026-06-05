@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   loadAppPermissions,
   tauriDaemonClient,
@@ -9,6 +9,7 @@ import { SectionPanel } from "../components/primitives";
 
 type AppsPageProps = {
   client?: DaemonClient;
+  refreshIntervalMs?: number;
 };
 
 type CapabilityInfo = {
@@ -23,28 +24,69 @@ const EMPTY_PERMISSIONS: AppPermissionsPayload = {
   sessions: []
 };
 
-export function AppsPage({ client = tauriDaemonClient }: AppsPageProps) {
+export function AppsPage({ client = tauriDaemonClient, refreshIntervalMs = 5000 }: AppsPageProps) {
   const [permissions, setPermissions] = useState<AppPermissionsPayload>(EMPTY_PERMISSIONS);
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const actionRef = useRef<string | null>(null);
+  const failureCount = useRef(0);
+  actionRef.current = action;
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
+    if (showLoading) {
+      setLoading(true);
+    }
     setError(null);
     try {
       setPermissions(await loadAppPermissions(client));
+      failureCount.current = 0;
+      return true;
     } catch (err) {
+      failureCount.current += 1;
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   }, [client]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let cancelled = false;
+    let timeout: number | undefined;
+    const nextDelay = () =>
+      failureCount.current === 0
+        ? refreshIntervalMs
+        : Math.min(refreshIntervalMs * 2 ** failureCount.current, 30000);
+    const schedule = () => {
+      if (refreshIntervalMs <= 0) return;
+      timeout = window.setTimeout(async () => {
+        if (actionRef.current === null) {
+          await refresh({ showLoading: false });
+        }
+        if (!cancelled) {
+          schedule();
+        }
+      }, nextDelay());
+    };
+
+    void (async () => {
+      await refresh();
+      if (!cancelled) {
+        schedule();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (timeout !== undefined) {
+        window.clearTimeout(timeout);
+      }
+    };
+  }, [refresh, refreshIntervalMs]);
 
   async function runAction(label: string, operation: () => Promise<unknown>) {
     setAction(label);
@@ -88,7 +130,7 @@ export function AppsPage({ client = tauriDaemonClient }: AppsPageProps) {
       <div className="permission-api-note">
         <span className="mono">/admin/v1/app-requests</span>
         <span className="mono">/admin/v1/app-sessions</span>
-        <button type="button" onClick={refresh} disabled={loading || action !== null}>
+        <button type="button" onClick={() => void refresh()} disabled={loading || action !== null}>
           Refresh
         </button>
       </div>

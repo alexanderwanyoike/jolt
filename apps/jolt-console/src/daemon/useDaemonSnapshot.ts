@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DaemonClient } from "./client";
 import { loadDaemonPayload } from "./client";
 import type { CacheStats, DaemonStatus, PublishedContent } from "./types";
@@ -11,7 +11,7 @@ export type DaemonSnapshot = {
   published: PublishedContent[];
   lastError: string | null;
   lastRefresh: Date | null;
-  refresh(): Promise<void>;
+  refresh(): Promise<boolean>;
 };
 
 type SnapshotState = Omit<DaemonSnapshot, "refresh">;
@@ -29,10 +29,12 @@ export function useDaemonSnapshot(
     lastError: null,
     lastRefresh: null
   });
+  const failureCount = useRef(0);
 
   const refresh = useCallback(async () => {
     try {
       const payload = await loadDaemonPayload(client);
+      failureCount.current = 0;
       setState({
         daemonUrl: client.daemonUrl,
         connected: true,
@@ -42,22 +44,49 @@ export function useDaemonSnapshot(
         lastError: null,
         lastRefresh: new Date()
       });
+      return true;
     } catch (error) {
+      failureCount.current += 1;
       setState((previous) => ({
         ...previous,
         daemonUrl: client.daemonUrl,
         connected: false,
         lastError: error instanceof Error ? error.message : String(error)
       }));
+      return false;
     }
   }, [client]);
 
   useEffect(() => {
-    void refresh();
-    if (refreshIntervalMs <= 0) return undefined;
+    let cancelled = false;
+    let timeout: number | undefined;
+    const nextDelay = () =>
+      failureCount.current === 0
+        ? refreshIntervalMs
+        : Math.min(refreshIntervalMs * 2 ** failureCount.current, 30000);
+    const schedule = () => {
+      if (refreshIntervalMs <= 0) return;
+      timeout = window.setTimeout(async () => {
+        await refresh();
+        if (!cancelled) {
+          schedule();
+        }
+      }, nextDelay());
+    };
 
-    const interval = window.setInterval(() => void refresh(), refreshIntervalMs);
-    return () => window.clearInterval(interval);
+    void (async () => {
+      await refresh();
+      if (!cancelled) {
+        schedule();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (timeout !== undefined) {
+        window.clearTimeout(timeout);
+      }
+    };
   }, [refresh, refreshIntervalMs]);
 
   return { ...state, refresh };

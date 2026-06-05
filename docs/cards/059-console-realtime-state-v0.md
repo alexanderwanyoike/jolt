@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** Console Native Daemon UX  
-**Status:** Ready  
+**Status:** Implemented in PR  
 **Blocked by:** 045, 046
 
 ## Why
@@ -30,15 +30,43 @@ reachable WebSocket or unauthenticated event API for this card.
 
 ## Acceptance Criteria
 
-- [ ] Console updates app permission requests without pressing Refresh.
-- [ ] Console updates active/revoked app sessions without pressing Refresh.
-- [ ] Console updates daemon status summaries without pressing Refresh.
-- [ ] Manual Refresh remains available and does not fight with background
+- [x] Console updates app permission requests without pressing Refresh.
+- [x] Console updates active/revoked app sessions without pressing Refresh.
+- [x] Console updates daemon status summaries without pressing Refresh.
+- [x] Manual Refresh remains available and does not fight with background
       refresh.
-- [ ] Polling pauses or backs off when the daemon is unreachable.
-- [ ] Tests cover the refresh loop and state transitions without relying on
+- [x] Polling pauses or backs off when the daemon is unreachable.
+- [x] Tests cover the refresh loop and state transitions without relying on
       real timers where practical.
-- [ ] No new non-local daemon attack surface is introduced.
+- [x] No new non-local daemon attack surface is introduced.
+
+## Implementation Notes
+
+- Kept the v0 mechanism local and frontend/Tauri-side: no daemon WebSocket,
+  SSE, or new unauthenticated event endpoint.
+- `useDaemonSnapshot` now schedules refreshes with a timeout loop and backs off
+  after failures.
+- `AppsPage` now polls app requests and sessions using the same Console refresh
+  interval, performs background refreshes without flashing loading state, skips
+  polling while approve/reject/revoke actions are running, and backs off after
+  permission API failures.
+- Manual Refresh remains available on both the shell and Apps permission page.
+
+## Verification
+
+- Red: `npx vitest run src/sections/sections.test.tsx` failed while app
+  permission requests did not update without manual refresh.
+- Green: `npx vitest run src/sections/sections.test.tsx`.
+- Red: `npx vitest run src/sections/sections.test.tsx` failed while permission
+  polling retried immediately after an API failure.
+- Green: `npx vitest run src/sections/sections.test.tsx`.
+- Red: `npx vitest run src/app/App.test.tsx` failed while daemon status polling
+  retried immediately after an API failure.
+- Green: `npx vitest run src/app/App.test.tsx`.
+- Green: `npm test` in `apps/jolt-console`.
+- Green: `npm run build` in `apps/jolt-console`.
+- Green: `cargo check -p jolt-console`.
+- Green: `./scripts/test-local.sh`.
 
 ## Notes
 

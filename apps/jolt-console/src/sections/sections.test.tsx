@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonClient } from "../daemon/client";
@@ -15,6 +15,7 @@ import { RelaysPage } from "./RelaysPage";
 import { SettingsPage } from "./SettingsPage";
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
 });
 
@@ -249,6 +250,126 @@ describe("Console section pages", () => {
     expect(screen.getByText(/admin\/v1\/app-sessions/)).toBeInTheDocument();
     expect(await screen.findByText("No pending app requests.")).toBeInTheDocument();
     expect(screen.getByText("No app sessions yet.")).toBeInTheDocument();
+  });
+
+  it("updates app permission requests without manual refresh", async () => {
+    vi.useFakeTimers();
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/app-requests") {
+          const requestCalls = vi
+            .mocked(client.get)
+            .mock.calls.filter(([calledPath]) => calledPath === "/admin/v1/app-requests").length;
+          return requestCalls < 2
+            ? []
+            : [
+                {
+                  request_id: "req_pastey",
+                  app_id: "pastey.local",
+                  app_name: "Pastey",
+                  app_origin: "http://127.0.0.1:5174",
+                  requested_identity: "alice.jolt",
+                  requested_capabilities: ["resolve:public"],
+                  granted_capabilities: [],
+                  status: "pending",
+                  created_at: 1_780_000_000
+                }
+              ];
+        }
+        if (path === "/admin/v1/app-sessions") return [];
+        throw new Error(`unexpected path ${path}`);
+      }),
+      post: vi.fn()
+    };
+
+    render(<AppsPage client={client} refreshIntervalMs={1000} />);
+
+    await act(async () => {});
+    expect(screen.getByText("No pending app requests.")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(screen.queryByRole("button", { name: /request details/i })).toHaveTextContent(
+      "Pastey"
+    );
+  });
+
+  it("backs off app permission polling after an API failure", async () => {
+    vi.useFakeTimers();
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/app-requests") {
+          throw new Error("daemon offline");
+        }
+        if (path === "/admin/v1/app-sessions") return [];
+        throw new Error(`unexpected path ${path}`);
+      }),
+      post: vi.fn()
+    };
+
+    render(<AppsPage client={client} refreshIntervalMs={1000} />);
+
+    await act(async () => {});
+    expect(screen.getByText(/daemon offline/)).toBeInTheDocument();
+    expect(client.get).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(client.get).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(client.get).toHaveBeenCalledTimes(4);
+  });
+
+  it("updates active and revoked app sessions without manual refresh", async () => {
+    vi.useFakeTimers();
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/app-requests") return [];
+        if (path === "/admin/v1/app-sessions") {
+          const sessionCalls = vi
+            .mocked(client.get)
+            .mock.calls.filter(([calledPath]) => calledPath === "/admin/v1/app-sessions").length;
+          return [
+            {
+              request_id: "req_pastey",
+              session_id: "sess_pastey",
+              app_id: "pastey.local",
+              app_name: "Pastey",
+              app_origin: "http://127.0.0.1:5174",
+              identity: "alice.jolt",
+              requested_capabilities: ["resolve:public"],
+              granted_capabilities: ["resolve:public"],
+              status: sessionCalls < 2 ? "active" : "revoked",
+              created_at: 1_780_000_000,
+              approved_at: 1_780_000_000,
+              revoked_at: sessionCalls < 2 ? null : 1_780_000_500
+            }
+          ];
+        }
+        throw new Error(`unexpected path ${path}`);
+      }),
+      post: vi.fn()
+    };
+
+    render(<AppsPage client={client} refreshIntervalMs={1000} />);
+
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: /session details/i })).toHaveTextContent("active");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(screen.getByRole("button", { name: /session details/i })).toHaveTextContent("revoked");
   });
 
   it("renders network peer counts", () => {
