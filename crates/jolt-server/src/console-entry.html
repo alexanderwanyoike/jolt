@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jolt Console</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d0f0f;
+      --panel: #171a19;
+      --line: #313833;
+      --text: #f1f0e8;
+      --muted: #a4aa9e;
+      --cyan: #8cd8e8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      margin: 0;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Aptos", "Segoe UI", system-ui, sans-serif;
+    }
+
+    main {
+      width: min(680px, 100%);
+      display: grid;
+      gap: 16px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    h1,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 32px;
+      line-height: 1.1;
+    }
+
+    p {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    a {
+      color: var(--cyan);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Jolt Console</h1>
+    <p>Jolt Console is the first-party desktop control surface for the local Jolt daemon.</p>
+    <p>Use the desktop Console for identity, app permissions, relays, published content, cache, diagnostics, and daemon settings.</p>
+    <p>The old daemon-served page is now debug-only: <a href="/debug/dashboard">open the debug dashboard</a>.</p>
+  </main>
+</body>
+</html>

@@ -5,7 +5,8 @@ It is not an external Jolt app like Pastey or Drops; it is part of the daemon
 architecture and is where identity, permissions, relay state, published content,
 cache state, and diagnostics will move over time.
 
-The existing localhost dashboard remains available as a temporary debug page.
+The daemon root points users to Jolt Console. The old localhost page remains
+available only as a debug dashboard at `/debug/dashboard`.
 
 ## Run
 

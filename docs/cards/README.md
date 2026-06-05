@@ -159,7 +159,7 @@ app concepts such as inboxes or contacts into the protocol layer.
 | [060](060-console-daemon-lifecycle-v0.md) | AFK | Implemented in PR | Define and implement honest Console-owned daemon startup/lifecycle behavior. |
 | [061](061-console-network-settings-v0.md) | AFK | Implemented in PR | Manage bootstrap and home relay configuration from Console Settings. |
 | [062](062-console-native-presence-and-permission-focus-v0.md) | AFK | Deferred after simple lifecycle | Add tray/native presence and focus Console for new app permission requests. |
-| [063](063-debug-dashboard-retirement.md) | AFK | Ready after 061 | Remove, gate, or demote the old daemon-served debug dashboard. |
+| [063](063-debug-dashboard-retirement.md) | AFK | Implemented in PR | Remove, gate, or demote the old daemon-served debug dashboard. |
 | [064](064-jolt-distribution-packaging-design.md) | HITL | Designed in PR | Decide the installable Jolt product shape: Console, daemon sidecar, and CLI. |
 
 ## Card Format
