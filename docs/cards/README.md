@@ -162,7 +162,8 @@ app concepts such as inboxes or contacts into the protocol layer.
 | [063](063-debug-dashboard-retirement.md) | AFK | Implemented in PR | Remove, gate, or demote the old daemon-served debug dashboard. |
 | [064](064-jolt-distribution-packaging-design.md) | HITL | Designed in PR | Decide the installable Jolt product shape: Console, daemon sidecar, and CLI. |
 | [065](065-console-diagnostics-and-dashboard-removal.md) | AFK | Implemented in PR | Move remaining debug dashboard diagnostics into Console and remove the old daemon HTML dashboard. |
-| [066](066-relay-operator-diagnostics-v0.md) | HITL | Ready for design | Define CLI/admin/logging diagnostics for headless server-facing relays. |
+| [066](066-relay-operator-diagnostics-v0.md) | HITL | Designed in PR | Define CLI/admin/logging diagnostics for headless server-facing relays. |
+| [067](067-relay-cli-admin-status-v0.md) | AFK | Ready after 066 | Add SSH-friendly relay status through CLI and admin API. |
 
 ## Card Format
 
