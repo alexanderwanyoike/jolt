@@ -109,6 +109,10 @@ pub fn build_router_with_stores(
             "/admin/v1/home-relay/clear",
             post(routes::network_settings::clear_home_relay),
         )
+        .route(
+            "/admin/v1/relay/status",
+            get(routes::relay_status::get_status),
+        )
         .route("/api/v1/health", get(routes::health::health))
         .route("/api/v1/status", get(routes::status::get_status))
         .route("/api/v1/peers", get(routes::peers::list_peers))

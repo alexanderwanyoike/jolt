@@ -37,6 +37,26 @@ impl DaemonClient {
         Ok(body)
     }
 
+    pub async fn relay_status(&self) -> Result<serde_json::Value> {
+        let resp = self
+            .client
+            .get(format!("{}/admin/v1/relay/status", self.base_url))
+            .send()
+            .await
+            .context("Failed to connect to daemon")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Relay status failed ({status}): {}",
+                format_error_body(&body)
+            );
+        }
+
+        Ok(resp.json().await?)
+    }
+
     pub async fn publish(&self, file_path: &Path, path: Option<&str>) -> Result<serde_json::Value> {
         let data = std::fs::read(file_path)
             .with_context(|| format!("Failed to read file: {}", file_path.display()))?;

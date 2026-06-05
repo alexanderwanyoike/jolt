@@ -2006,6 +2006,90 @@ async fn test_status_endpoint_reports_relay_record_in_relay_mode() {
 }
 
 #[tokio::test]
+async fn test_admin_relay_status_reports_enabled_relay_shape() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = NodeIdentity::generate();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(identity, store, relay_config()).unwrap();
+    let p2p_port = free_tcp_port();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{p2p_port}"))
+        .unwrap();
+    let (port, handle, _dir) = start_test_server_from_node(relay, dir).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{}/admin/v1/relay/status", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["relay_enabled"], true);
+    assert_eq!(
+        body["peer_id"].as_str(),
+        body["relay_record"]["body"]["peer_id"].as_str()
+    );
+    assert!(body["listen_addresses"][0]
+        .as_str()
+        .unwrap()
+        .contains(&format!("/tcp/{p2p_port}")));
+    assert_eq!(body["bootstrap"]["state"], "disconnected");
+    assert_eq!(body["bootstrap"]["connected_peer_count"], 0);
+    assert_eq!(body["bootstrap"]["effective_relay_count"], 0);
+    assert_eq!(body["peers"]["connected"], 0);
+    assert_eq!(body["peers"]["direct"], 0);
+    assert_eq!(body["peers"]["relayed"], 0);
+    assert_eq!(body["known_relay_count"], 0);
+    assert_eq!(body["cache"]["pinned_items"], 0);
+    assert_eq!(
+        body["relay_record"]["body"]["capabilities"],
+        serde_json::json!(["Bootstrap", "Discovery", "Pinning"])
+    );
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_relay_status_reports_disabled_relay_shape() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{}/admin/v1/relay/status", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["relay_enabled"], false);
+    assert!(body["relay_record"].is_null());
+    assert_eq!(body["bootstrap"]["state"], "disconnected");
+    assert_eq!(body["cache"]["pinned_items"], 0);
+    assert!(body["home_relay"].is_null());
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_relay_status_is_not_exposed_through_app_api() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{}/app/v1/relay/status", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_status_endpoint_reports_known_relay_count() {
     let dir = tempfile::tempdir().unwrap();
     let relay_identity = NodeIdentity::generate();
