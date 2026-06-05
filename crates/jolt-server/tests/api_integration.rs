@@ -51,6 +51,40 @@ async fn start_test_server_with_session_path(
     (port, handle, dir)
 }
 
+async fn start_test_server_with_network_settings_path(
+    settings_path: PathBuf,
+) -> (u16, DaemonHandle, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = NodeIdentity::generate();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    node.set_fetch_timeout(std::time::Duration::from_secs(2));
+    node.set_resolve_timeout(std::time::Duration::from_secs(2));
+
+    let (cmd_tx, cmd_rx) = mpsc::channel(64);
+    let handle = DaemonHandle::new(cmd_tx);
+    tokio::spawn(async move {
+        node.run_daemon_loop(cmd_rx).await;
+    });
+
+    let sessions =
+        jolt_server::session_store::AppSessionStore::open(dir.path().join("app-sessions.json"))
+            .unwrap();
+    let network_settings =
+        jolt_server::network_settings::NetworkSettingsStore::open(settings_path).unwrap();
+    let (port, _server_handle) =
+        jolt_server::server::start_server_with_session_store_and_network_settings(
+            handle.clone(),
+            0,
+            sessions,
+            network_settings,
+        )
+        .await
+        .unwrap();
+
+    (port, handle, dir)
+}
+
 async fn start_test_server_with_node(
     p2p_port: Option<u16>,
 ) -> (u16, DaemonHandle, tempfile::TempDir) {
@@ -1822,6 +1856,119 @@ async fn test_status_endpoint_reports_home_relay_config() {
     );
     assert_eq!(body["home_relay"]["capability"], "pinning");
     assert_eq!(body["home_relay"]["api_url"], "http://127.0.0.1:9862");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_network_settings_can_update_bootstrap_and_home_relay() {
+    let settings_dir = tempfile::tempdir().unwrap();
+    let settings_path = settings_dir.path().join("config.json");
+    std::fs::write(&settings_path, r#"{ "future_setting": "keep-me" }"#).unwrap();
+    let (port, handle, _dir) =
+        start_test_server_with_network_settings_path(settings_path.clone()).await;
+    let client = reqwest::Client::new();
+    let relay =
+        "/ip4/89.167.68.65/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
+
+    let initial = client
+        .get(format!("{}/admin/v1/network-settings", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(initial.status(), 200);
+    let initial: serde_json::Value = initial.json().await.unwrap();
+    assert!(initial["configured_bootstrap_relays"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(initial["built_in_bootstrap_relays"].is_array());
+    assert!(initial["effective_bootstrap_relays"].is_array());
+
+    let added = client
+        .post(format!("{}/admin/v1/bootstrap-relays", base_url(port)))
+        .json(&serde_json::json!({ "multiaddr": relay }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(added.status(), 200);
+    let added: serde_json::Value = added.json().await.unwrap();
+    assert_eq!(added["configured_bootstrap_relays"][0], relay);
+    assert_eq!(added["effective_bootstrap_relays"][0], relay);
+
+    let invalid_bootstrap = client
+        .post(format!("{}/admin/v1/bootstrap-relays", base_url(port)))
+        .json(&serde_json::json!({ "multiaddr": "/ip4/127.0.0.1/tcp/4001" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(invalid_bootstrap.status(), 400);
+    let invalid_bootstrap: serde_json::Value = invalid_bootstrap.json().await.unwrap();
+    assert_eq!(invalid_bootstrap["code"], "invalid_network_settings");
+
+    let app_bootstrap = client
+        .post(format!("{}/app/v1/bootstrap-relays", base_url(port)))
+        .json(&serde_json::json!({ "multiaddr": relay }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(app_bootstrap.status(), 404);
+
+    let invalid_home_relay = client
+        .post(format!("{}/admin/v1/home-relay", base_url(port)))
+        .json(&serde_json::json!({
+            "multiaddr": relay,
+            "capability": "pinning",
+            "api_url": "not a url"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(invalid_home_relay.status(), 400);
+
+    let home_relay = client
+        .post(format!("{}/admin/v1/home-relay", base_url(port)))
+        .json(&serde_json::json!({
+            "multiaddr": relay,
+            "capability": "pinning",
+            "api_url": "http://127.0.0.1:9870"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(home_relay.status(), 200);
+    let home_relay: serde_json::Value = home_relay.json().await.unwrap();
+    assert_eq!(home_relay["home_relay"]["multiaddr"], relay);
+    assert_eq!(home_relay["home_relay"]["api_url"], "http://127.0.0.1:9870");
+
+    let cleared = client
+        .post(format!("{}/admin/v1/home-relay/clear", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(cleared.status(), 200);
+    let cleared: serde_json::Value = cleared.json().await.unwrap();
+    assert!(cleared["home_relay"].is_null());
+
+    let removed = client
+        .post(format!(
+            "{}/admin/v1/bootstrap-relays/remove",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "multiaddr": relay }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(removed.status(), 200);
+    let removed: serde_json::Value = removed.json().await.unwrap();
+    assert!(removed["configured_bootstrap_relays"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+
+    let persisted: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(settings_path).unwrap()).unwrap();
+    assert_eq!(persisted["future_setting"], "keep-me");
 
     handle.shutdown().await.ok();
 }

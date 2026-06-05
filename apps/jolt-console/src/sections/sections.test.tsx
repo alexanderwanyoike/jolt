@@ -442,8 +442,29 @@ describe("Console section pages", () => {
         return states[2];
       })
     };
+    const daemonClient: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/network-settings") {
+          return {
+            configured_bootstrap_relays: [],
+            built_in_bootstrap_relays: [],
+            effective_bootstrap_relays: [],
+            configured_bootstrap_relay_count: 0,
+            built_in_bootstrap_relay_count: 0,
+            effective_bootstrap_relay_count: 0,
+            use_builtin_bootstrap_relays: true,
+            bootstrap_relay: false,
+            home_relay: null
+          };
+        }
+        if (path === "/api/v1/status") return {};
+        throw new Error(path);
+      }),
+      post: vi.fn()
+    };
 
-    render(<SettingsPage lifecycleClient={lifecycleClient} />);
+    render(<SettingsPage lifecycleClient={lifecycleClient} daemonClient={daemonClient} />);
 
     expect(await screen.findByText("No local daemon is responding")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Start daemon" }));
@@ -465,6 +486,176 @@ describe("Console section pages", () => {
     vi.mocked(lifecycleClient.stop).mockRejectedValueOnce(new Error("failed to terminate child"));
     await userEvent.click(screen.getByRole("button", { name: "Stop daemon" }));
     expect(screen.getByText(/failed to terminate child/)).toBeInTheDocument();
+  });
+
+  it("renders and updates daemon network settings", async () => {
+    const relay =
+      "/ip4/89.167.68.65/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
+    const builtIn =
+      "/dns4/bootstrap.jolt.test/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
+    const lifecycleClient: DaemonLifecycleClient = {
+      status: vi.fn(async () => ({
+        daemon_url: "http://127.0.0.1:9862",
+        reachability: "healthy",
+        ownership: "external",
+        message: "Connected to an externally started daemon"
+      })),
+      start: vi.fn(),
+      stop: vi.fn(),
+      restart: vi.fn()
+    };
+    const networkPayload = {
+      configured_bootstrap_relays: [relay],
+      built_in_bootstrap_relays: [builtIn],
+      effective_bootstrap_relays: [relay],
+      configured_bootstrap_relay_count: 1,
+      built_in_bootstrap_relay_count: 1,
+      effective_bootstrap_relay_count: 1,
+      use_builtin_bootstrap_relays: true,
+      bootstrap_relay: false,
+      home_relay: null
+    };
+    const daemonClient: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/network-settings") return networkPayload;
+        if (path === "/api/v1/status") {
+          return {
+            bootstrap_state: "connected",
+            connected_bootstrap_peers: 1,
+            known_relay_count: 2
+          };
+        }
+        throw new Error(path);
+      }),
+      post: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/bootstrap-relays") return networkPayload;
+        if (path === "/admin/v1/bootstrap-relays/remove") {
+          return { ...networkPayload, configured_bootstrap_relays: [] };
+        }
+        if (path === "/admin/v1/home-relay") {
+          return {
+            ...networkPayload,
+            home_relay: {
+              peer_id: "12D3KooRelay",
+              multiaddr: relay,
+              capability: "pinning",
+              api_url: "http://127.0.0.1:9870"
+            }
+          };
+        }
+        if (path === "/admin/v1/home-relay/clear") return networkPayload;
+        throw new Error(path);
+      })
+    };
+
+    render(<SettingsPage lifecycleClient={lifecycleClient} daemonClient={daemonClient} />);
+
+    expect(await screen.findByText("Configured bootstrap relays")).toBeInTheDocument();
+    expect(screen.getByText(relay)).toBeInTheDocument();
+    expect(screen.getByText(builtIn)).toBeInTheDocument();
+    expect(screen.getByText("Effective at startup")).toBeInTheDocument();
+    expect(screen.getByText("Bootstrap health")).toBeInTheDocument();
+    expect(screen.getByText("Learned relay count")).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText("Bootstrap relay multiaddr"));
+    await userEvent.type(screen.getByLabelText("Bootstrap relay multiaddr"), relay);
+    await userEvent.click(screen.getByRole("button", { name: "Add bootstrap relay" }));
+    expect(daemonClient.post).toHaveBeenCalledWith("/admin/v1/bootstrap-relays", { multiaddr: relay });
+
+    await userEvent.click(screen.getByRole("button", { name: "Remove bootstrap relay" }));
+    expect(daemonClient.post).toHaveBeenCalledWith("/admin/v1/bootstrap-relays/remove", {
+      multiaddr: relay
+    });
+
+    await userEvent.clear(screen.getByLabelText("Home relay multiaddr"));
+    await userEvent.type(screen.getByLabelText("Home relay multiaddr"), relay);
+    await userEvent.clear(screen.getByLabelText("Home relay API URL"));
+    await userEvent.type(screen.getByLabelText("Home relay API URL"), "http://127.0.0.1:9870");
+    await userEvent.click(screen.getByRole("button", { name: "Set home relay" }));
+    expect(daemonClient.post).toHaveBeenCalledWith("/admin/v1/home-relay", {
+      multiaddr: relay,
+      capability: "pinning",
+      api_url: "http://127.0.0.1:9870"
+    });
+    expect(await screen.findByText("12D3KooRelay")).toBeInTheDocument();
+
+    vi.mocked(daemonClient.post).mockRejectedValueOnce(new Error("invalid home relay API URL"));
+    await userEvent.click(screen.getByRole("button", { name: "Set home relay" }));
+    expect(screen.getByText(/invalid home relay API URL/)).toBeInTheDocument();
+  });
+
+  it("refreshes network settings after starting the daemon from Settings", async () => {
+    let started = false;
+    const relay =
+      "/ip4/89.167.68.65/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
+    const lifecycleClient: DaemonLifecycleClient = {
+      status: vi.fn(async () =>
+        started
+          ? {
+              daemon_url: "http://127.0.0.1:9862",
+              reachability: "healthy",
+              ownership: "console",
+              message: "Console owns this daemon"
+            }
+          : {
+              daemon_url: "http://127.0.0.1:9862",
+              reachability: "unavailable",
+              ownership: "none",
+              message: "No local daemon is responding"
+            }
+      ),
+      start: vi.fn(async () => {
+        started = true;
+        return {
+          daemon_url: "http://127.0.0.1:9862",
+          reachability: "healthy",
+          ownership: "console",
+          message: "Console owns this daemon"
+        };
+      }),
+      stop: vi.fn(),
+      restart: vi.fn()
+    };
+    const daemonClient: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (!started) throw new Error("daemon offline");
+        if (path === "/admin/v1/network-settings") {
+          return {
+            configured_bootstrap_relays: [relay],
+            built_in_bootstrap_relays: [],
+            effective_bootstrap_relays: [relay],
+            configured_bootstrap_relay_count: 1,
+            built_in_bootstrap_relay_count: 0,
+            effective_bootstrap_relay_count: 1,
+            use_builtin_bootstrap_relays: true,
+            bootstrap_relay: false,
+            home_relay: null
+          };
+        }
+        if (path === "/api/v1/status") {
+          return {
+            bootstrap_state: "connected",
+            connected_bootstrap_peers: 1,
+            known_relay_count: 2
+          };
+        }
+        throw new Error(path);
+      }),
+      post: vi.fn()
+    };
+
+    render(<SettingsPage lifecycleClient={lifecycleClient} daemonClient={daemonClient} />);
+
+    expect(await screen.findByText("No local daemon is responding")).toBeInTheDocument();
+    expect(screen.getByText(/daemon offline/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Start daemon" }));
+
+    expect(await screen.findByText("Console owns this daemon")).toBeInTheDocument();
+    expect(await screen.findByText(relay)).toBeInTheDocument();
+    expect(screen.queryByText(/daemon offline/)).not.toBeInTheDocument();
   });
 
   it("renders diagnostics error state", () => {

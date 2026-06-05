@@ -249,6 +249,27 @@ impl DaemonHandle {
             .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
     }
 
+    /// Update runtime network settings after admin configuration changes.
+    pub async fn update_network_settings(
+        &self,
+        configured_bootstrap_relays: Vec<String>,
+        effective_bootstrap_relays: Vec<String>,
+        home_relay: Option<HomeRelayConfig>,
+    ) -> Result<(), NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::UpdateNetworkSettings {
+                configured_bootstrap_relays,
+                effective_bootstrap_relays,
+                home_relay,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
     /// Pin an owner's signed update log and announce this node as its provider.
     pub async fn pin_update_log(&self, identity: IdentityId) -> Result<u64, NetworkError> {
         let (tx, rx) = oneshot::channel();

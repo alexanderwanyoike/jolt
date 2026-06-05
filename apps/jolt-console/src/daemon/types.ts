@@ -71,3 +71,22 @@ export type AppPermissionsPayload = {
   requests: AppSessionGrant[];
   sessions: AppSessionGrant[];
 };
+
+export type HomeRelayConfig = {
+  peer_id?: string;
+  multiaddr: string;
+  capability: string;
+  api_url?: string | null;
+};
+
+export type NetworkSettingsPayload = {
+  configured_bootstrap_relays: string[];
+  built_in_bootstrap_relays: string[];
+  effective_bootstrap_relays: string[];
+  configured_bootstrap_relay_count: number;
+  built_in_bootstrap_relay_count: number;
+  effective_bootstrap_relay_count: number;
+  use_builtin_bootstrap_relays: boolean;
+  bootstrap_relay: boolean;
+  home_relay: HomeRelayConfig | null;
+};

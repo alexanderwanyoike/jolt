@@ -5,6 +5,8 @@ import type {
   CacheStats,
   DaemonPayload,
   DaemonStatus,
+  HomeRelayConfig,
+  NetworkSettingsPayload,
   PublishedContent
 } from "./types";
 
@@ -43,4 +45,35 @@ export async function loadAppPermissions(client: DaemonClient): Promise<AppPermi
   ]);
 
   return { requests, sessions };
+}
+
+export async function loadNetworkSettings(
+  client: DaemonClient
+): Promise<NetworkSettingsPayload> {
+  return client.get<NetworkSettingsPayload>("/admin/v1/network-settings");
+}
+
+export async function addBootstrapRelay(
+  client: DaemonClient,
+  multiaddr: string
+): Promise<NetworkSettingsPayload> {
+  return client.post<NetworkSettingsPayload>("/admin/v1/bootstrap-relays", { multiaddr });
+}
+
+export async function removeBootstrapRelay(
+  client: DaemonClient,
+  multiaddr: string
+): Promise<NetworkSettingsPayload> {
+  return client.post<NetworkSettingsPayload>("/admin/v1/bootstrap-relays/remove", { multiaddr });
+}
+
+export async function setHomeRelay(
+  client: DaemonClient,
+  request: Pick<HomeRelayConfig, "multiaddr" | "capability" | "api_url">
+): Promise<NetworkSettingsPayload> {
+  return client.post<NetworkSettingsPayload>("/admin/v1/home-relay", request);
+}
+
+export async function clearHomeRelay(client: DaemonClient): Promise<NetworkSettingsPayload> {
+  return client.post<NetworkSettingsPayload>("/admin/v1/home-relay/clear");
 }

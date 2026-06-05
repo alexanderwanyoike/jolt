@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** Console Native Daemon UX  
-**Status:** Ready  
+**Status:** Implemented in PR
 **Blocked by:** 045, 023, 029
 
 ## Why
@@ -31,18 +31,51 @@ than shelling out to the CLI from the frontend.
 
 ## Acceptance Criteria
 
-- [ ] Console Settings can list configured bootstrap relays.
-- [ ] Console Settings can add and remove bootstrap relays.
-- [ ] Invalid bootstrap multiaddrs are rejected with visible errors.
-- [ ] Console Settings can show, set, and clear the home relay.
-- [ ] Invalid home relay multiaddrs/API URLs are rejected with visible errors.
-- [ ] Built-in/default, configured, learned, and effective relay concepts are
+- [x] Console Settings can list configured bootstrap relays.
+- [x] Console Settings can add and remove bootstrap relays.
+- [x] Invalid bootstrap multiaddrs are rejected with visible errors.
+- [x] Console Settings can show, set, and clear the home relay.
+- [x] Invalid home relay multiaddrs/API URLs are rejected with visible errors.
+- [x] Built-in/default, configured, learned, and effective relay concepts are
       not collapsed into one confusing list.
-- [ ] External apps cannot change bootstrap or home relay settings.
-- [ ] Tests cover daemon admin validation and Console settings interactions.
+- [x] External apps cannot change bootstrap or home relay settings.
+- [x] Tests cover daemon admin validation and Console settings interactions.
 
 ## Notes
 
 The CLI commands already contain useful validation and persistence behavior.
 Reuse shared validation paths where practical instead of reimplementing string
 checks in the UI.
+
+## Implementation Notes
+
+- Added admin-only daemon endpoints for reading network settings, adding/removing
+  configured bootstrap relays, and setting/clearing the home relay.
+- Console Settings now shows configured relays, built-in defaults, effective
+  startup state, runtime bootstrap health/learned relay counts, and home relay
+  details.
+- Console now auto-starts the local daemon when it opens and no daemon is
+  running, then refreshes status without waiting for the normal poll interval.
+- Settings now refreshes network settings immediately after daemon start/restart
+  instead of requiring a route change.
+- Network settings writes preserve unrelated/future keys in `config.json`.
+- External apps have no `/app/v1/*` route for changing bootstrap or home relay
+  settings.
+
+## Verification
+
+- Red: `cargo test -p jolt-server test_admin_network_settings_can_update_bootstrap_and_home_relay --test api_integration -- --nocapture` failed while unknown config keys were clobbered.
+- Green: `cargo test -p jolt-server test_admin_network_settings_can_update_bootstrap_and_home_relay --test api_integration -- --nocapture`.
+- Green: `npx vitest run src/daemon/client.test.ts src/sections/sections.test.tsx`.
+- Green: `npm test` in `apps/jolt-console`.
+- Green: `npm run build` in `apps/jolt-console`.
+- Green: `cargo check -p jolt-server -p jolt-network`.
+- Green: `./scripts/test-local.sh`.
+- Red after human check: `npx vitest run src/app/App.test.tsx` failed before
+  Console auto-started the daemon on launch.
+- Red after human check: `npx vitest run src/sections/sections.test.tsx` failed
+  before Settings refreshed network settings after daemon start.
+- Green after human check: `npx vitest run src/app/App.test.tsx`.
+- Green after human check: `npx vitest run src/sections/sections.test.tsx`.
+- Green after human check: `npm test` in `apps/jolt-console`.
+- Green after human check: `npm run build` in `apps/jolt-console`.
