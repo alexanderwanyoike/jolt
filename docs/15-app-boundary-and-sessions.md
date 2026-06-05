@@ -218,11 +218,12 @@ Meaning:
 - `inventory:/pastes/*`: app may list local published content under `/pastes/*`.
 - `pin:own:/pastes/*`: app may ask the home relay to pin content it published under `/pastes/*`.
 
-### Future Private Capabilities
+### Private Content Capabilities
 
 ```text
 encrypt:/pastes/*
 decrypt:/pastes/*
+publish:encrypted:/pastes/*
 share:/pastes/*
 ```
 
@@ -230,9 +231,10 @@ Meaning:
 
 - `encrypt:/pastes/*`: app may ask the daemon to encrypt objects under `/pastes/*`.
 - `decrypt:/pastes/*`: app may ask the daemon to decrypt fetched objects under `/pastes/*` when the local identity is an authorized recipient.
+- `publish:encrypted:/pastes/*`: app may publish encrypted object bytes under `/pastes/*`.
 - `share:/pastes/*`: app may update recipient/access metadata for objects under `/pastes/*`.
 
-These require the encrypted object work from later cards.
+Sharing and access-grant mutation require later cards.
 
 ### Future Drops Capabilities
 

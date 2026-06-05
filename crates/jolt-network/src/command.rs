@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
-use jolt_core::{IdentityId, PinRequest, RelayHint, RelayRecord};
+use jolt_core::{
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, PinRequest, RelayHint, RelayRecord,
+};
 
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
@@ -22,6 +24,19 @@ pub enum DaemonCommand {
     Resolve {
         address: String,
         response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
+    },
+    EnsureLocalIdentityEncryptionKey {
+        response_tx: oneshot::Sender<Result<IdentityEncryptionKey, NetworkError>>,
+    },
+    EncryptObject {
+        plaintext: Vec<u8>,
+        content_type: String,
+        recipients: Vec<EncryptedObjectRecipient>,
+        response_tx: oneshot::Sender<Result<EncryptedObjectResponse, NetworkError>>,
+    },
+    DecryptObject {
+        encrypted_object: Vec<u8>,
+        response_tx: oneshot::Sender<Result<DecryptedObjectResponse, NetworkError>>,
     },
     ConnectPeer {
         multiaddr: String,
@@ -103,6 +118,20 @@ pub struct ResolveResponse {
     pub content_id: String,
     pub reachability_hints: Vec<RelayHint>,
     pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptedObjectResponse {
+    pub data: Vec<u8>,
+    pub size: u64,
+    pub recipient_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecryptedObjectResponse {
+    pub plaintext: Vec<u8>,
+    pub size: u64,
+    pub content_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

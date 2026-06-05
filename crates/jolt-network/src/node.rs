@@ -12,9 +12,12 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, warn};
 
 use jolt_core::{
+    decrypt_encrypted_object_for_recipient, generate_identity_encryption_keypair,
     resolve_jolt_address, verify_update_log_for_identity, ContentId, ContentManifest,
-    IdentityHeadHint, IdentityId, JoltAddress, PinRequest, RelayRecord, RelayRecordCapability,
-    ResolvedJoltTarget, UpdateAction, UpdateLogEntry,
+    EncryptedObjectEnvelope, EncryptedObjectRecipient, IdentityEncryptionKey,
+    IdentityEncryptionKeyRecord, IdentityEncryptionPrivateKey, IdentityHeadHint, IdentityId,
+    JoltAddress, PinRequest, RelayRecord, RelayRecordCapability, ResolvedJoltTarget, UpdateAction,
+    UpdateLogEntry, IDENTITY_ENCRYPTION_KEYS_PATH,
 };
 use jolt_identity::NodeIdentity;
 use jolt_store::{ContentStore, HomeRelayPinRecord};
@@ -181,6 +184,10 @@ pub struct NetworkNode {
     bootstrap_relay: bool,
     /// User-selected home relay for delegated availability.
     home_relay: Option<HomeRelayConfig>,
+    /// Local X25519 keypair used to decrypt envelopes addressed to this identity.
+    local_encryption_key: Option<(IdentityEncryptionKey, IdentityEncryptionPrivateKey)>,
+    /// Whether this daemon start has published the local encryption key record.
+    local_encryption_key_published: bool,
 }
 
 const RELAY_RECORD_TTL_SECS: u64 = 60 * 60;
@@ -319,6 +326,8 @@ impl NetworkNode {
             last_bootstrap_error: None,
             bootstrap_relay: config.bootstrap_relay,
             home_relay: config.home_relay,
+            local_encryption_key: None,
+            local_encryption_key_published: false,
         })
     }
 
@@ -437,6 +446,8 @@ impl NetworkNode {
             last_bootstrap_error: None,
             bootstrap_relay: config.bootstrap_relay,
             home_relay: config.home_relay,
+            local_encryption_key: None,
+            local_encryption_key_published: false,
         })
     }
 
@@ -1141,6 +1152,10 @@ impl NetworkNode {
     /// Publish a file to the content store. Returns the ContentId.
     pub fn publish_file(&mut self, file_path: &Path) -> Result<ContentId, NetworkError> {
         let data = std::fs::read(file_path).map_err(NetworkError::Io)?;
+        self.publish_bytes(&data)
+    }
+
+    fn publish_bytes(&mut self, data: &[u8]) -> Result<ContentId, NetworkError> {
         let content_id = ContentId::from_bytes(&data);
 
         let signature = self.identity.sign(&data);
@@ -1172,10 +1187,19 @@ impl NetworkNode {
         file_path: &Path,
         path: &str,
     ) -> Result<(ContentId, JoltAddress, u64), NetworkError> {
+        let data = std::fs::read(file_path).map_err(NetworkError::Io)?;
+        self.publish_bytes_at_path(&data, path)
+    }
+
+    fn publish_bytes_at_path(
+        &mut self,
+        data: &[u8],
+        path: &str,
+    ) -> Result<(ContentId, JoltAddress, u64), NetworkError> {
         let identity = self.identity.identity_id();
         let address = JoltAddress::new(identity.clone(), path)
             .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
-        let content_id = self.publish_file(file_path)?;
+        let content_id = self.publish_bytes(data)?;
         let action = UpdateAction::SetPath {
             path: address.path().to_string(),
             content_id: content_id.clone(),
@@ -1212,6 +1236,93 @@ impl NetworkNode {
         }
 
         Ok((content_id, address, latest_sequence))
+    }
+
+    fn ensure_local_identity_encryption_key(
+        &mut self,
+    ) -> Result<IdentityEncryptionKey, NetworkError> {
+        if self.local_encryption_key.is_none() {
+            let now = unix_now();
+            let (public_key, private_key) = generate_identity_encryption_keypair(
+                self.identity.identity_id(),
+                "enc_x25519_local_v0".to_string(),
+                now,
+            );
+            self.local_encryption_key = Some((public_key, private_key));
+        }
+
+        let public_key = self
+            .local_encryption_key
+            .as_ref()
+            .map(|(public_key, _)| public_key.clone())
+            .expect("local encryption key is initialized");
+        if !self.local_encryption_key_published {
+            let now = unix_now();
+            let record = IdentityEncryptionKeyRecord::new(
+                self.identity.public_key_bytes(),
+                self.identity.identity_id(),
+                vec![public_key.clone()],
+                now,
+                now,
+                |bytes| self.identity.sign(bytes),
+            )
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+            let record_bytes =
+                serde_json::to_vec(&record).map_err(|e| NetworkError::Protocol(e.to_string()))?;
+            self.publish_bytes_at_path(&record_bytes, IDENTITY_ENCRYPTION_KEYS_PATH)?;
+            self.local_encryption_key_published = true;
+        }
+
+        Ok(public_key)
+    }
+
+    fn encrypt_object(
+        &self,
+        plaintext: Vec<u8>,
+        content_type: String,
+        recipients: Vec<EncryptedObjectRecipient>,
+    ) -> Result<crate::command::EncryptedObjectResponse, NetworkError> {
+        let envelope = EncryptedObjectEnvelope::encrypt(
+            self.identity.public_key_bytes(),
+            self.identity.identity_id(),
+            &plaintext,
+            content_type,
+            None,
+            recipients,
+            unix_now(),
+            |bytes| self.identity.sign(bytes),
+        )
+        .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let recipient_count = envelope.body.recipients.len();
+        let data = envelope
+            .to_bytes()
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        Ok(crate::command::EncryptedObjectResponse {
+            size: data.len() as u64,
+            data,
+            recipient_count,
+        })
+    }
+
+    fn decrypt_object(
+        &self,
+        encrypted_object: &[u8],
+    ) -> Result<crate::command::DecryptedObjectResponse, NetworkError> {
+        let Some((_, private_key)) = self.local_encryption_key.as_ref() else {
+            return Err(NetworkError::Protocol(
+                "local identity encryption key is not available".to_string(),
+            ));
+        };
+        let envelope = EncryptedObjectEnvelope::from_bytes(encrypted_object)
+            .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        let content_type = envelope.body.plaintext.media_type.clone();
+        let plaintext = decrypt_encrypted_object_for_recipient(&envelope, private_key)
+            .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        Ok(crate::command::DecryptedObjectResponse {
+            size: plaintext.len() as u64,
+            plaintext,
+            content_type,
+        })
     }
 
     fn publish_update_log_snapshot(
@@ -2853,6 +2964,26 @@ impl NetworkNode {
                             fallback_response,
                         });
                 }
+            }
+            DaemonCommand::EnsureLocalIdentityEncryptionKey { response_tx } => {
+                let result = self.ensure_local_identity_encryption_key();
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::EncryptObject {
+                plaintext,
+                content_type,
+                recipients,
+                response_tx,
+            } => {
+                let result = self.encrypt_object(plaintext, content_type, recipients);
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::DecryptObject {
+                encrypted_object,
+                response_tx,
+            } => {
+                let result = self.decrypt_object(&encrypted_object);
+                let _ = response_tx.send(result);
             }
             DaemonCommand::ConnectPeer {
                 multiaddr,
