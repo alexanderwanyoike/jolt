@@ -1,5 +1,5 @@
 use axum::extract::{Path, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use jolt_network::{DecryptedObjectResponse, IngressRecord};
 use serde::Deserialize;
@@ -26,6 +26,10 @@ pub async fn submit_ingress(
         .submit_ingress(req.receiver_id, req.encrypted_object, req.expires_at)
         .await?;
     Ok(Json(record))
+}
+
+pub async fn ingress_preflight() -> StatusCode {
+    StatusCode::OK
 }
 
 pub async fn list_pending_ingress(

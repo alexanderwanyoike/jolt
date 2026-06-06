@@ -251,6 +251,58 @@ describe("Console section pages", () => {
     });
   });
 
+  it("can approve Spoke ingress review capabilities", async () => {
+    const requestedCapabilities = [
+      "resolve:public",
+      "fetch:public",
+      "publish:/spoke/*",
+      "publish:encrypted:/spoke/*",
+      "inventory:/spoke/*",
+      "pin:own:/spoke/*",
+      "encrypt:/spoke/*",
+      "decrypt:/spoke/*",
+      "ingress:read",
+      "ingress:decide"
+    ];
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/app-requests") {
+          return [
+            {
+              request_id: "req_spoke",
+              app_id: "spoke.local",
+              app_name: "Spoke",
+              app_origin: "http://127.0.0.1:5178",
+              requested_identity: "alice.jolt",
+              requested_capabilities: requestedCapabilities,
+              granted_capabilities: [],
+              status: "pending",
+              created_at: 1_780_000_600
+            }
+          ];
+        }
+        if (path === "/admin/v1/app-sessions") return [];
+        throw new Error(`unexpected path ${path}`);
+      }),
+      post: vi.fn(async () => ({ ok: true }))
+    };
+
+    render(<AppsPage client={client} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /request details/i }));
+    expect(screen.getByText("read pending incoming app objects")).toBeInTheDocument();
+    expect(screen.getByText("accept or reject pending incoming app objects")).toBeInTheDocument();
+    expect(screen.queryByText("admin-only request: cannot be approved")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Approve Spoke" }));
+    expect(client.post).toHaveBeenCalledWith("/admin/v1/app-requests/req_spoke/approve", {
+      identity: "alice.jolt",
+      capabilities: requestedCapabilities,
+      expires_at: null
+    });
+  });
+
   it("renders apps empty state when there are no requests or sessions", async () => {
     const client: DaemonClient = {
       daemonUrl: "http://127.0.0.1:9862",

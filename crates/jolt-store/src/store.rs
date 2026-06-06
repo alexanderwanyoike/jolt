@@ -5,7 +5,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use jolt_core::{ContentId, ContentManifest, IdentityId, RelayRecord, UpdateLogEntry};
+use jolt_core::{
+    ContentId, ContentManifest, IdentityEncryptionKey, IdentityEncryptionPrivateKey, IdentityId,
+    RelayRecord, UpdateLogEntry,
+};
 
 use crate::cache_entry::{CacheEntry, CacheIndex, CacheStats, ContentData};
 use crate::config::CacheConfig;
@@ -16,6 +19,7 @@ pub struct ContentStore {
     cache_dir: PathBuf,
     update_logs_dir: PathBuf,
     home_relay_pins_path: PathBuf,
+    local_identity_encryption_keypair_path: PathBuf,
     discovered_peer_hints_path: PathBuf,
     relay_records_path: PathBuf,
     cache_index: CacheIndex,
@@ -69,6 +73,12 @@ pub struct StoredRelayRecord {
     pub failure_count: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalIdentityEncryptionKeypair {
+    pub public_key: IdentityEncryptionKey,
+    pub private_key: IdentityEncryptionPrivateKey,
+}
+
 impl ContentStore {
     /// Open or create a content store at the given base directory.
     pub fn open(base_dir: &Path, config: CacheConfig) -> Result<Self, StoreError> {
@@ -76,6 +86,8 @@ impl ContentStore {
         let cache_dir = base_dir.join("cache");
         let update_logs_dir = base_dir.join("update_logs");
         let home_relay_pins_path = base_dir.join("home_relay_pins.json");
+        let local_identity_encryption_keypair_path =
+            base_dir.join("local_identity_encryption_keypair.json");
         let discovered_peer_hints_path = base_dir.join("discovered_peer_hints.json");
         let relay_records_path = base_dir.join("relay_records.json");
 
@@ -97,6 +109,7 @@ impl ContentStore {
             cache_dir,
             update_logs_dir,
             home_relay_pins_path,
+            local_identity_encryption_keypair_path,
             discovered_peer_hints_path,
             relay_records_path,
             cache_index,
@@ -304,6 +317,37 @@ impl ContentStore {
         }
         let json = std::fs::read_to_string(&self.home_relay_pins_path)?;
         serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))
+    }
+
+    pub fn save_local_identity_encryption_keypair(
+        &self,
+        keypair: &LocalIdentityEncryptionKeypair,
+    ) -> Result<(), StoreError> {
+        let json = serde_json::to_string_pretty(keypair)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        let tmp_path = self
+            .local_identity_encryption_keypair_path
+            .with_extension("json.tmp");
+        std::fs::write(&tmp_path, json)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        std::fs::rename(tmp_path, &self.local_identity_encryption_keypair_path)?;
+        Ok(())
+    }
+
+    pub fn load_local_identity_encryption_keypair(
+        &self,
+    ) -> Result<Option<LocalIdentityEncryptionKeypair>, StoreError> {
+        if !self.local_identity_encryption_keypair_path.exists() {
+            return Ok(None);
+        }
+        let json = std::fs::read_to_string(&self.local_identity_encryption_keypair_path)?;
+        serde_json::from_str(&json)
+            .map(Some)
+            .map_err(|e| StoreError::Serialization(e.to_string()))
     }
 
     /// Persist a best-effort peer/relay address hint learned from the network.

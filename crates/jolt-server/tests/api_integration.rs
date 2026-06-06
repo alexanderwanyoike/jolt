@@ -3993,6 +3993,36 @@ async fn test_admin_can_publish_and_api_can_verify_signed_reachability() {
 }
 
 #[tokio::test]
+async fn test_recipient_ingress_allows_browser_preflight() {
+    let (port, _handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let preflight_resp = client
+        .request(
+            reqwest::Method::OPTIONS,
+            format!("{}/api/v1/ingress", base_url(port)),
+        )
+        .header(reqwest::header::ORIGIN, "http://127.0.0.1:5179")
+        .header(reqwest::header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+        .header(
+            reqwest::header::ACCESS_CONTROL_REQUEST_HEADERS,
+            "content-type",
+        )
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(preflight_resp.status(), 200);
+    assert_eq!(
+        preflight_resp
+            .headers()
+            .get(reqwest::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap(),
+        "*"
+    );
+}
+
+#[tokio::test]
 async fn test_recipient_ingress_submit_list_and_reject() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();

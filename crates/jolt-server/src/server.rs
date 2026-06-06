@@ -1,6 +1,8 @@
+use axum::http::{header, Method};
 use axum::routing::{delete, get, post};
 use axum::Router;
 use tokio::net::TcpListener;
+use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 use jolt_network::DaemonHandle;
@@ -153,7 +155,12 @@ pub fn build_router_with_stores(
             "/api/v1/identities/{identity}/reachability",
             get(routes::reachability::get_identity_reachability),
         )
-        .route("/api/v1/ingress", post(routes::ingress::submit_ingress))
+        .route(
+            "/api/v1/ingress",
+            post(routes::ingress::submit_ingress)
+                .options(routes::ingress::ingress_preflight)
+                .layer(public_ingress_cors()),
+        )
         .route(
             "/api/v1/home-relay/availability",
             get(routes::home_relay::availability),
@@ -172,6 +179,13 @@ pub fn build_router_with_stores(
             delete(routes::cache::unpin),
         )
         .with_state(state)
+}
+
+fn public_ingress_cors() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::POST, Method::OPTIONS])
+        .allow_headers([header::CONTENT_TYPE])
 }
 
 /// Start the HTTP API server.
