@@ -15,25 +15,28 @@ Jolt has proved the hard network path:
 - Relay discovery and `.jolt` resolution failures are now structured enough to explain.
 - A real three-node relay mesh canary has passed.
 - The daemon has a persistent app-session store and capability-checked app APIs.
-- A first Tauri-based Jolt Console shell exists under `apps/jolt-console`.
+- A Tauri-based Jolt Console exists under `apps/jolt-console`.
 
-The project is now between two phases:
+The project has moved past the first app/Console proof:
 
 ```text
 Done:
   Network/discovery proof.
   Offline publisher through relay.
   App session store and capability-checked app API.
-  Jolt Console shell.
+  Jolt Console shell, permission approval, realtime refresh, daemon lifecycle,
+  network settings, diagnostics, and old dashboard removal.
+  Pastey external app session integration.
+  Private Pastey sharing proof.
+  Basic headless relay status for operators.
 
 Next:
-  Make Jolt Console feel like the native control surface for the daemon.
-  Move bootstrap/home relay configuration into Console Settings.
-  Decide the installer/binary distribution shape.
-  Discuss bidirectional/realtime communication before messaging-style apps.
+  Pick one focused track instead of continuing to expand every surface at once:
+  identity portability, bidirectional/realtime communication design, native
+  Console polish, relay operator diagnostics, or the next product proof.
 ```
 
-The next useful product/protocol bridge is:
+The first useful product/protocol bridge was:
 
 > Pastey asks to act as Alice for `/pastes/*`. Jolt Console shows the request, Alice approves it, and Pastey can publish/fetch through scoped app APIs without receiving Alice's private keys.
 
@@ -43,22 +46,29 @@ There is also a product risk to keep visible while choosing technical slices:
 
 The answer should shape the next proof. This is a product discussion, not an implementation card. Jolt should not drift into a general storage-market project before it can demonstrate one concrete thing communities want that centralized platforms make awkward.
 
-## Current Focus
+## Current Decision Point
 
 Do not start with WASM apps, storage markets, payments, Drops, or storage-market mechanics.
 
-The relay mesh milestone is complete enough for now. The current focus is
-**App Boundary and Private Sharing Foundations**:
+The relay mesh milestone is complete enough for now. The app boundary and
+private sharing foundations are also complete enough for Pastey v0. The next
+step should be chosen deliberately from the remaining product/protocol tracks:
 
-1. Add app permission approval/reject/revoke UI to Jolt Console.
-2. Move Pastey from trusted `/api/v1/*` calls to scoped `/app/v1/*` sessions.
-3. Add a repeatable one-machine Alice/Bob/Pastey demo harness.
-4. Review the app-boundary design debt in [042](042-app-boundary-session-design.md).
-5. Harden app capability grants before adding private/decrypt authority.
-6. Design identity import/export v0 before sharing one identity across devices.
-7. Design encrypted object envelopes and crypto agility before implementing private Pastey.
+1. [048](048-identity-import-v0.md): design identity import/export before
+   supporting one identity across multiple devices.
+2. [058](058-bidirectional-communication-and-realtime-rendezvous-design.md):
+   decide how Jolt supports secure bidirectional and realtime communication
+   without protocol-level inbox semantics.
+3. [062](062-console-native-presence-and-permission-focus-v0.md): add native
+   Console presence and focus permission prompts after the simple lifecycle
+   work.
+4. Relay operator follow-ups from
+   [066](066-relay-operator-diagnostics-v0.md): diagnose identity reachability,
+   structured logs, and metrics.
+5. A new first-use-case/product proof card if Pastey has already answered the
+   app-boundary questions well enough.
 
-## Next Sprint: App Boundary and Private Sharing Foundations
+## Completed Sprint: App Boundary and Private Sharing Foundations
 
 Pastey proved that a separate app can consume Jolt through the daemon. That moves the next useful work away from more raw protocol plumbing and toward the daemon/app boundary:
 
@@ -75,18 +85,26 @@ The completed app-boundary sequence is:
 3. [054](054-pastey-two-node-local-demo-harness.md): make the Alice/Bob/Pastey demo repeatable on one machine.
 4. [056](056-app-capability-grant-hardening.md): tighten grant validation before private app authority.
 5. [049](049-crypto-agility-encrypted-object-envelope.md): design encrypted object envelopes and suite IDs.
-6. [057](057-pastey-private-open-performance-and-self-private-ux.md): make private Pastey open fast and self-only private paste creation natural.
+6. [050](050-identity-encryption-key-records.md): publish and resolve signed public encryption keys.
+7. [051](051-encrypted-object-implementation-v0.md): encrypt content once and wrap content keys for recipients.
+8. [052](052-daemon-encrypt-decrypt-api.md): let app sessions request daemon-owned encrypt/decrypt without exposing keys.
+9. [053](053-pastey-private-paste-v0.md): prove Alice can share an encrypted Pastey paste with Bob.
+10. [057](057-pastey-private-open-performance-and-self-private-ux.md): make private Pastey open fast and self-only private paste creation natural.
 
 Keep Drops out of this sprint. Pastey is already enough pressure for the daemon/app boundary and private sharing model.
 
-The next practical product track is Console-native daemon UX:
+The completed Console-native daemon UX sequence is:
 
 1. [059](059-console-realtime-state-v0.md): make Console state update without manual refresh.
 2. [064](064-jolt-distribution-packaging-design.md): decide the installable product shape.
 3. [060](060-console-daemon-lifecycle-v0.md): let Console start/manage the local daemon honestly.
 4. [061](061-console-network-settings-v0.md): move bootstrap and home relay config into Console Settings.
-5. [062](062-console-native-presence-and-permission-focus-v0.md): add tray/native presence and focus permission prompts.
-6. [063](063-debug-dashboard-retirement.md): remove or demote the old daemon-served debug dashboard.
+5. [063](063-debug-dashboard-retirement.md): remove or demote the old daemon-served debug dashboard.
+6. [065](065-console-diagnostics-and-dashboard-removal.md): move remaining debug dashboard diagnostics into Console and remove the old daemon HTML dashboard.
+
+[062](062-console-native-presence-and-permission-focus-v0.md) remains deferred
+because tray/native presence and OS integration should wait until the simple
+cross-platform lifecycle shape settles.
 
 Before messaging/email/realtime application work,
 park and discuss [058](058-bidirectional-communication-and-realtime-rendezvous-design.md)
@@ -148,7 +166,7 @@ app concepts such as inboxes or contacts into the protocol layer.
 | [049](049-crypto-agility-encrypted-object-envelope.md) | HITL | Done | Define encrypted object envelope, suite IDs, wrapping, and PQ-hybrid direction. |
 | [050](050-identity-encryption-key-records.md) | AFK | Done | Publish and resolve signed public encryption keys for identities. |
 | [051](051-encrypted-object-implementation-v0.md) | AFK | Implemented in PR | Encrypt content once and wrap content keys for recipients. |
-| [052](052-daemon-encrypt-decrypt-api.md) | AFK | Ready after 044 and 051 | Let the daemon encrypt/decrypt for app sessions without exposing keys. |
+| [052](052-daemon-encrypt-decrypt-api.md) | AFK | Implemented in PR | Let the daemon encrypt/decrypt for app sessions without exposing keys. |
 | [053](053-pastey-private-paste-v0.md) | AFK | Implemented in Pastey PR | Prove Alice can share an encrypted Pastey paste with Bob. |
 | [054](054-pastey-two-node-local-demo-harness.md) | AFK | Done | Add a repeatable local Alice/Bob/Pastey demo harness. |
 | [055](055-jolt-console-native-daemon-ux-debt.md) | HITL | Split into follow-up cards | Umbrella for Console realtime, daemon lifecycle, native presence, settings, debug dashboard retirement, and distribution. |
@@ -164,6 +182,7 @@ app concepts such as inboxes or contacts into the protocol layer.
 | [065](065-console-diagnostics-and-dashboard-removal.md) | AFK | Implemented in PR | Move remaining debug dashboard diagnostics into Console and remove the old daemon HTML dashboard. |
 | [066](066-relay-operator-diagnostics-v0.md) | HITL | Designed in PR | Define CLI/admin/logging diagnostics for headless server-facing relays. |
 | [067](067-relay-cli-admin-status-v0.md) | AFK | Implemented in PR | Add SSH-friendly relay status through CLI and admin API. |
+| [068](068-work-map-reset.md) | AFK | Implemented in PR | Refresh the card index after Console, private sharing, and relay-operator slices landed. |
 
 ## Card Format
 
