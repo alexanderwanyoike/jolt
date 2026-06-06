@@ -55,11 +55,19 @@ Implemented as the smallest direct/local ingress primitive:
 - app-session accept/reject:
   `POST /app/v1/ingress/{ingress_id}/accept` and
   `POST /app/v1/ingress/{ingress_id}/reject`;
-- new app capabilities: `ingress:read` and `ingress:decide`;
+- app-session identity-based send: `POST /app/v1/ingress/send`, which resolves
+  the recipient's signed reachability record and submits to a live generic
+  receiver endpoint;
+- new app capabilities: `ingress:send`, `ingress:read`, and `ingress:decide`;
 - daemon validates encrypted object envelope signature and local-recipient
   addressing before storing pending ingress;
 - accepted/rejected ingress changes only local ingress status, not Bob's signed
   namespace.
+- repeated same-status accept/reject decisions are idempotent, so a UI retry
+  cannot strand an already-handled ingress as an application error.
+- daemon `.jolt` resolution now returns verified cached answers immediately
+  when available and refreshes known providers in the background, avoiding app
+  UI stalls while keeping the protocol layer app-agnostic.
 
 Current limits:
 
@@ -73,5 +81,8 @@ Current limits:
 - Red: `cargo test -p jolt-server test_recipient_ingress_submit_list_and_reject --test api_integration -- --nocapture`
   failed with 404 before ingress routes existed.
 - Green: `cargo test -p jolt-server recipient_ingress --test api_integration -- --nocapture`.
+- Green: `cargo test -p jolt-server test_app_can_submit_ingress_by_identity_reachability --test api_integration -- --nocapture`.
+- Green: `cargo test -p jolt-network --lib daemon_resolution -- --nocapture`.
+- Green: `npm test` in `apps/jolt-console`.
 - Green: `cargo check -p jolt-network -p jolt-server`.
 - Green: `./scripts/test-local.sh`.

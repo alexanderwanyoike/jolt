@@ -4128,6 +4128,70 @@ async fn test_recipient_ingress_submit_list_and_reject() {
 }
 
 #[tokio::test]
+async fn test_app_can_submit_ingress_by_identity_reachability() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let (identity, encrypted_object) = encrypted_spoke_reply_for_local_identity(&handle).await;
+    let identity_label = identity.trim_end_matches(".jolt");
+    let token =
+        approve_app_session(&client, port, &identity, &["ingress:send", "ingress:read"]).await;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let publish_reachability_resp = client
+        .post(format!("{}/admin/v1/reachability", base_url(port)))
+        .json(&serde_json::json!({
+            "sequence_hint": 20,
+            "expires_at": now + 3600,
+            "live": [{
+                "transport": "jolt-http-ingress",
+                "peer_id": handle.status().await.unwrap().peer_id,
+                "addresses": [format!("{}/api/v1/ingress", base_url(port))],
+                "relay_hints": [],
+                "protocols": ["recipient-ingress-v1"],
+                "max_payload_bytes": 65536
+            }],
+            "offline_ingress": []
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_reachability_resp.status(), 200);
+
+    let send_resp = client
+        .post(format!("{}/app/v1/ingress/send", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "recipient": identity_label,
+            "encrypted_object": encrypted_object,
+            "expires_at": now + 600
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(send_resp.status(), 200);
+    let sent: serde_json::Value = send_resp.json().await.unwrap();
+    assert_eq!(sent["recipient_identity"], identity_label);
+    assert_eq!(sent["status"], "pending");
+
+    let pending_resp = client
+        .get(format!("{}/app/v1/ingress/pending", base_url(port)))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pending_resp.status(), 200);
+    let pending: serde_json::Value = pending_resp.json().await.unwrap();
+    assert_eq!(pending.as_array().unwrap().len(), 1);
+    assert_eq!(pending[0]["ingress_id"], sent["ingress_id"]);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_recipient_ingress_accept_marks_pending_object_accepted() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
@@ -4174,6 +4238,21 @@ async fn test_recipient_ingress_accept_marks_pending_object_accepted() {
     assert_eq!(accepted["ingress_id"], ingress_id);
     assert_eq!(accepted["status"], "accepted");
     assert!(accepted["accepted_at"].as_u64().is_some());
+
+    let repeated_accept_resp = client
+        .post(format!(
+            "{}/app/v1/ingress/{ingress_id}/accept",
+            base_url(port)
+        ))
+        .bearer_auth(&app_token)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(repeated_accept_resp.status(), 200);
+    let repeated_accept: serde_json::Value = repeated_accept_resp.json().await.unwrap();
+    assert_eq!(repeated_accept["ingress_id"], ingress_id);
+    assert_eq!(repeated_accept["status"], "accepted");
 
     let pending_resp = client
         .get(format!("{}/app/v1/ingress/pending", base_url(port)))

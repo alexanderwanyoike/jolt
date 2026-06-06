@@ -261,6 +261,7 @@ describe("Console section pages", () => {
       "pin:own:/spoke/*",
       "encrypt:/spoke/*",
       "decrypt:/spoke/*",
+      "ingress:send",
       "ingress:read",
       "ingress:decide"
     ];
@@ -291,6 +292,7 @@ describe("Console section pages", () => {
     render(<AppsPage client={client} />);
 
     await userEvent.click(await screen.findByRole("button", { name: /request details/i }));
+    expect(screen.getByText("send incoming app objects by identity")).toBeInTheDocument();
     expect(screen.getByText("read pending incoming app objects")).toBeInTheDocument();
     expect(screen.getByText("accept or reject pending incoming app objects")).toBeInTheDocument();
     expect(screen.queryByText("admin-only request: cannot be approved")).not.toBeInTheDocument();
