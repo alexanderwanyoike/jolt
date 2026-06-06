@@ -9,7 +9,7 @@ use jolt_core::{
 
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
-    EncryptedObjectResponse, FetchResult, NodeStatus, PeerConnectResponse, PeerInfo,
+    EncryptedObjectResponse, FetchResult, IngressRecord, NodeStatus, PeerConnectResponse, PeerInfo,
     PublishReachabilityResponse, PublishResponse, PublishedContentInfo,
     RelayDiagnoseIdentityResponse, ResolveResponse,
 };
@@ -160,6 +160,83 @@ impl DaemonHandle {
                 expires_at,
                 live,
                 offline_ingress,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Submit a recipient-controlled ingress envelope to the local daemon.
+    pub async fn submit_ingress(
+        &self,
+        receiver_id: String,
+        encrypted_object: Vec<u8>,
+        expires_at: Option<u64>,
+    ) -> Result<IngressRecord, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::SubmitIngress {
+                receiver_id,
+                encrypted_object,
+                expires_at,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// List locally pending ingress envelopes.
+    pub async fn list_pending_ingress(&self) -> Result<Vec<IngressRecord>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::ListPendingIngress { response_tx: tx })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Decrypt a pending ingress envelope for local app review.
+    pub async fn open_ingress(
+        &self,
+        ingress_id: String,
+    ) -> Result<DecryptedObjectResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::OpenIngress {
+                ingress_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Accept a pending ingress envelope.
+    pub async fn accept_ingress(&self, ingress_id: String) -> Result<IngressRecord, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::AcceptIngress {
+                ingress_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Reject a pending ingress envelope.
+    pub async fn reject_ingress(&self, ingress_id: String) -> Result<IngressRecord, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::RejectIngress {
+                ingress_id,
                 response_tx: tx,
             })
             .await

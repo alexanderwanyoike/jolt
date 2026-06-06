@@ -50,6 +50,27 @@ pub enum DaemonCommand {
         offline_ingress: Vec<OfflineIngressEndpoint>,
         response_tx: oneshot::Sender<Result<PublishReachabilityResponse, NetworkError>>,
     },
+    SubmitIngress {
+        receiver_id: String,
+        encrypted_object: Vec<u8>,
+        expires_at: Option<u64>,
+        response_tx: oneshot::Sender<Result<IngressRecord, NetworkError>>,
+    },
+    ListPendingIngress {
+        response_tx: oneshot::Sender<Result<Vec<IngressRecord>, NetworkError>>,
+    },
+    OpenIngress {
+        ingress_id: String,
+        response_tx: oneshot::Sender<Result<DecryptedObjectResponse, NetworkError>>,
+    },
+    AcceptIngress {
+        ingress_id: String,
+        response_tx: oneshot::Sender<Result<IngressRecord, NetworkError>>,
+    },
+    RejectIngress {
+        ingress_id: String,
+        response_tx: oneshot::Sender<Result<IngressRecord, NetworkError>>,
+    },
     ConnectPeer {
         multiaddr: String,
         response_tx: oneshot::Sender<Result<PeerConnectResponse, NetworkError>>,
@@ -221,6 +242,33 @@ pub struct PublishReachabilityResponse {
     pub latest_sequence: u64,
     pub content_id: String,
     pub record: VerifiedReachability,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IngressStatus {
+    Pending,
+    Accepted,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngressRecord {
+    pub ingress_id: String,
+    pub receiver_id: String,
+    pub sender_identity: String,
+    pub recipient_identity: String,
+    pub schema_hint: Option<String>,
+    pub status: IngressStatus,
+    pub received_at: u64,
+    pub expires_at: Option<u64>,
+    pub size: u64,
+    #[serde(skip)]
+    pub encrypted_object: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accepted_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rejected_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

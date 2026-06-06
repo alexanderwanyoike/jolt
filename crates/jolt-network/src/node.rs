@@ -25,8 +25,8 @@ use jolt_store::{ContentStore, HomeRelayPinRecord};
 
 use crate::behaviour::{JoltBehaviour, JoltBehaviourEvent};
 use crate::command::{
-    CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
-    PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
+    CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, IngressRecord, IngressStatus,
+    NodeStatus, PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
     PublishedContentInfo, PublishedRelayInfo, RelayDiagnoseCacheObservation,
     RelayDiagnoseForwarding, RelayDiagnoseForwardingAttempt, RelayDiagnoseIdentityHeadObservation,
     RelayDiagnoseIdentityResponse, RelayDiagnoseOutcome, RelayDiagnoseProviderCandidate,
@@ -232,6 +232,8 @@ pub struct NetworkNode {
     local_encryption_key: Option<(IdentityEncryptionKey, IdentityEncryptionPrivateKey)>,
     /// Whether this daemon start has published the local encryption key record.
     local_encryption_key_published: bool,
+    /// Recipient-controlled envelopes received by this daemon and awaiting a decision.
+    pending_ingress: Vec<IngressRecord>,
 }
 
 const RELAY_RECORD_TTL_SECS: u64 = 60 * 60;
@@ -374,6 +376,7 @@ impl NetworkNode {
             home_relay: config.home_relay,
             local_encryption_key: None,
             local_encryption_key_published: false,
+            pending_ingress: Vec::new(),
         })
     }
 
@@ -496,6 +499,7 @@ impl NetworkNode {
             home_relay: config.home_relay,
             local_encryption_key: None,
             local_encryption_key_published: false,
+            pending_ingress: Vec::new(),
         })
     }
 
@@ -1678,6 +1682,116 @@ impl NetworkNode {
             plaintext,
             content_type,
         })
+    }
+
+    fn submit_ingress(
+        &mut self,
+        receiver_id: String,
+        encrypted_object: Vec<u8>,
+        expires_at: Option<u64>,
+    ) -> Result<IngressRecord, NetworkError> {
+        if receiver_id.trim().is_empty() {
+            return Err(NetworkError::InvalidInput(
+                "receiver_id must not be empty".to_string(),
+            ));
+        }
+        let now = unix_now();
+        if expires_at.is_some_and(|expires_at| expires_at <= now) {
+            return Err(NetworkError::InvalidInput(
+                "ingress envelope is expired".to_string(),
+            ));
+        }
+        let envelope = EncryptedObjectEnvelope::from_bytes(&encrypted_object)
+            .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        envelope
+            .verify_signature()
+            .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        let local_identity = self.identity.identity_id();
+        if !envelope
+            .body
+            .recipients
+            .iter()
+            .any(|recipient| recipient.recipient_identity == local_identity)
+        {
+            return Err(NetworkError::InvalidInput(
+                "ingress envelope is not addressed to the local identity".to_string(),
+            ));
+        }
+
+        let ingress_id = format!("ing_{}", ContentId::from_bytes(&encrypted_object));
+        let record = IngressRecord {
+            ingress_id,
+            receiver_id,
+            sender_identity: envelope.body.author.identity.to_string(),
+            recipient_identity: local_identity.to_string(),
+            schema_hint: envelope.body.plaintext.schema,
+            status: IngressStatus::Pending,
+            received_at: now,
+            expires_at,
+            size: encrypted_object.len() as u64,
+            encrypted_object,
+            accepted_at: None,
+            rejected_at: None,
+        };
+        self.pending_ingress.push(record.clone());
+        Ok(record)
+    }
+
+    fn list_pending_ingress(&self) -> Vec<IngressRecord> {
+        self.pending_ingress
+            .iter()
+            .filter(|record| record.status == IngressStatus::Pending)
+            .cloned()
+            .collect()
+    }
+
+    fn accept_ingress(&mut self, ingress_id: &str) -> Result<IngressRecord, NetworkError> {
+        self.decide_ingress(ingress_id, IngressStatus::Accepted)
+    }
+
+    fn open_ingress(
+        &self,
+        ingress_id: &str,
+    ) -> Result<crate::command::DecryptedObjectResponse, NetworkError> {
+        let record = self
+            .pending_ingress
+            .iter()
+            .find(|record| record.ingress_id == ingress_id)
+            .ok_or_else(|| {
+                NetworkError::InvalidInput(format!("ingress envelope not found: {ingress_id}"))
+            })?;
+        self.decrypt_object(&record.encrypted_object)
+    }
+
+    fn reject_ingress(&mut self, ingress_id: &str) -> Result<IngressRecord, NetworkError> {
+        self.decide_ingress(ingress_id, IngressStatus::Rejected)
+    }
+
+    fn decide_ingress(
+        &mut self,
+        ingress_id: &str,
+        status: IngressStatus,
+    ) -> Result<IngressRecord, NetworkError> {
+        let now = unix_now();
+        let record = self
+            .pending_ingress
+            .iter_mut()
+            .find(|record| record.ingress_id == ingress_id)
+            .ok_or_else(|| {
+                NetworkError::InvalidInput(format!("ingress envelope not found: {ingress_id}"))
+            })?;
+        if record.status != IngressStatus::Pending {
+            return Err(NetworkError::InvalidInput(format!(
+                "ingress envelope is not pending: {ingress_id}"
+            )));
+        }
+        record.status = status;
+        match record.status {
+            IngressStatus::Accepted => record.accepted_at = Some(now),
+            IngressStatus::Rejected => record.rejected_at = Some(now),
+            IngressStatus::Pending => {}
+        }
+        Ok(record.clone())
     }
 
     fn publish_reachability(
@@ -3409,6 +3523,39 @@ impl NetworkNode {
             } => {
                 let result =
                     self.publish_reachability(sequence_hint, expires_at, live, offline_ingress);
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::SubmitIngress {
+                receiver_id,
+                encrypted_object,
+                expires_at,
+                response_tx,
+            } => {
+                let result = self.submit_ingress(receiver_id, encrypted_object, expires_at);
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::ListPendingIngress { response_tx } => {
+                let _ = response_tx.send(Ok(self.list_pending_ingress()));
+            }
+            DaemonCommand::OpenIngress {
+                ingress_id,
+                response_tx,
+            } => {
+                let result = self.open_ingress(&ingress_id);
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::AcceptIngress {
+                ingress_id,
+                response_tx,
+            } => {
+                let result = self.accept_ingress(&ingress_id);
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::RejectIngress {
+                ingress_id,
+                response_tx,
+            } => {
+                let result = self.reject_ingress(&ingress_id);
                 let _ = response_tx.send(result);
             }
             DaemonCommand::ConnectPeer {

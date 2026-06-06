@@ -10,9 +10,9 @@ pub mod protocol;
 
 pub use command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
-    EncryptedObjectResponse, FetchResult, NodeStatus, PeerConnectResponse, PeerInfo,
-    PublishReachabilityResponse, PublishResponse, PublishedContentInfo, PublishedRelayInfo,
-    RelayDiagnoseIdentityResponse, ResolveResponse,
+    EncryptedObjectResponse, FetchResult, IngressRecord, IngressStatus, NodeStatus,
+    PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
+    PublishedContentInfo, PublishedRelayInfo, RelayDiagnoseIdentityResponse, ResolveResponse,
 };
 pub use config::{HomeRelayCapability, HomeRelayConfig, NetworkConfig};
 pub use daemon_handle::DaemonHandle;

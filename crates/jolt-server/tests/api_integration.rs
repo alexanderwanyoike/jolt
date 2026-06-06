@@ -1,7 +1,7 @@
 use jolt_core::{
     generate_identity_encryption_keypair, ContentId, EncryptedObjectEnvelope,
-    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityEncryptionKeyRecord, JoltAddress,
-    PinRequest, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityEncryptionKeyRecord, IdentityId,
+    JoltAddress, PinRequest, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
     IDENTITY_ENCRYPTION_KEYS_PATH, SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
@@ -182,6 +182,36 @@ async fn approve_app_session(
     assert_eq!(approve_resp.status(), 200);
     let approved: serde_json::Value = approve_resp.json().await.unwrap();
     approved["session_token"].as_str().unwrap().to_string()
+}
+
+async fn encrypted_spoke_reply_for_local_identity(handle: &DaemonHandle) -> (String, Vec<u8>) {
+    let bob_status = handle.status().await.unwrap();
+    let bob_identity = bob_status
+        .identity_address
+        .trim_end_matches('/')
+        .to_string();
+    let bob_identity_id = IdentityId::from_str(bob_identity.trim_end_matches(".jolt")).unwrap();
+    let bob_key = handle.ensure_local_identity_encryption_key().await.unwrap();
+    let alice = NodeIdentity::generate();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let envelope = EncryptedObjectEnvelope::encrypt(
+        alice.public_key_bytes(),
+        alice.identity_id(),
+        br#"{"post":"bob/post/1","body":"hello"}"#,
+        "application/json".to_string(),
+        Some("application/vnd.spoke.reply+json".to_string()),
+        vec![EncryptedObjectRecipient {
+            identity: bob_identity_id,
+            key: bob_key,
+        }],
+        now,
+        |bytes| alice.sign(bytes),
+    )
+    .unwrap();
+    (bob_identity, envelope.to_bytes().unwrap())
 }
 
 fn free_tcp_port() -> u16 {
@@ -3958,6 +3988,271 @@ async fn test_admin_can_publish_and_api_can_verify_signed_reachability() {
     assert_eq!(body["live"][0]["transport"], "jolt-libp2p-stream");
     assert_eq!(body["live"][0]["protocols"][0], "opaque-app-stream-v1");
     assert_eq!(body["offline_ingress"].as_array().unwrap().len(), 0);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_recipient_ingress_submit_list_and_reject() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let (bob_identity, encrypted_object) = encrypted_spoke_reply_for_local_identity(&handle).await;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let submit_resp = client
+        .post(format!("{}/api/v1/ingress", base_url(port)))
+        .json(&serde_json::json!({
+            "receiver_id": "direct-local",
+            "encrypted_object": encrypted_object,
+            "expires_at": now + 3600
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(submit_resp.status(), 200);
+    let submitted: serde_json::Value = submit_resp.json().await.unwrap();
+    let ingress_id = submitted["ingress_id"].as_str().unwrap();
+    assert_eq!(submitted["status"], "pending");
+    assert_eq!(
+        submitted["recipient_identity"],
+        bob_identity.trim_end_matches(".jolt")
+    );
+    assert_eq!(submitted["schema_hint"], "application/vnd.spoke.reply+json");
+
+    let app_token = approve_app_session(
+        &client,
+        port,
+        &bob_identity,
+        &["ingress:read", "ingress:decide"],
+    )
+    .await;
+
+    let pending_resp = client
+        .get(format!("{}/app/v1/ingress/pending", base_url(port)))
+        .bearer_auth(&app_token)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(pending_resp.status(), 200);
+    let pending: serde_json::Value = pending_resp.json().await.unwrap();
+    let pending_items = pending.as_array().unwrap();
+    assert_eq!(pending_items.len(), 1);
+    assert_eq!(pending_items[0]["ingress_id"], ingress_id);
+    assert_eq!(pending_items[0]["status"], "pending");
+    assert_eq!(
+        pending_items[0]["schema_hint"],
+        "application/vnd.spoke.reply+json"
+    );
+
+    let open_resp = client
+        .post(format!(
+            "{}/app/v1/ingress/{ingress_id}/open",
+            base_url(port)
+        ))
+        .bearer_auth(&app_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(open_resp.status(), 200);
+    let opened: serde_json::Value = open_resp.json().await.unwrap();
+    assert_eq!(opened["content_type"], "application/json");
+    let plaintext: Vec<u8> = opened["plaintext"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(plaintext, br#"{"post":"bob/post/1","body":"hello"}"#);
+
+    let reject_resp = client
+        .post(format!(
+            "{}/app/v1/ingress/{ingress_id}/reject",
+            base_url(port)
+        ))
+        .bearer_auth(&app_token)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(reject_resp.status(), 200);
+    let rejected: serde_json::Value = reject_resp.json().await.unwrap();
+    assert_eq!(rejected["ingress_id"], ingress_id);
+    assert_eq!(rejected["status"], "rejected");
+
+    let pending_after_reject_resp = client
+        .get(format!("{}/app/v1/ingress/pending", base_url(port)))
+        .bearer_auth(&app_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pending_after_reject_resp.status(), 200);
+    let pending_after_reject: serde_json::Value = pending_after_reject_resp.json().await.unwrap();
+    assert!(pending_after_reject.as_array().unwrap().is_empty());
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_recipient_ingress_accept_marks_pending_object_accepted() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let (bob_identity, encrypted_object) = encrypted_spoke_reply_for_local_identity(&handle).await;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let submit_resp = client
+        .post(format!("{}/api/v1/ingress", base_url(port)))
+        .json(&serde_json::json!({
+            "receiver_id": "direct-local",
+            "encrypted_object": encrypted_object,
+            "expires_at": now + 3600
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(submit_resp.status(), 200);
+    let submitted: serde_json::Value = submit_resp.json().await.unwrap();
+    let ingress_id = submitted["ingress_id"].as_str().unwrap();
+
+    let app_token = approve_app_session(
+        &client,
+        port,
+        &bob_identity,
+        &["ingress:read", "ingress:decide"],
+    )
+    .await;
+
+    let accept_resp = client
+        .post(format!(
+            "{}/app/v1/ingress/{ingress_id}/accept",
+            base_url(port)
+        ))
+        .bearer_auth(&app_token)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(accept_resp.status(), 200);
+    let accepted: serde_json::Value = accept_resp.json().await.unwrap();
+    assert_eq!(accepted["ingress_id"], ingress_id);
+    assert_eq!(accepted["status"], "accepted");
+    assert!(accepted["accepted_at"].as_u64().is_some());
+
+    let pending_resp = client
+        .get(format!("{}/app/v1/ingress/pending", base_url(port)))
+        .bearer_auth(&app_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pending_resp.status(), 200);
+    let pending: serde_json::Value = pending_resp.json().await.unwrap();
+    assert!(pending.as_array().unwrap().is_empty());
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_recipient_ingress_app_review_requires_session_and_capability() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let (bob_identity, encrypted_object) = encrypted_spoke_reply_for_local_identity(&handle).await;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let submit_resp = client
+        .post(format!("{}/api/v1/ingress", base_url(port)))
+        .json(&serde_json::json!({
+            "receiver_id": "direct-local",
+            "encrypted_object": encrypted_object,
+            "expires_at": now + 3600
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(submit_resp.status(), 200);
+    let submitted: serde_json::Value = submit_resp.json().await.unwrap();
+    let ingress_id = submitted["ingress_id"].as_str().unwrap();
+
+    let no_token_resp = client
+        .get(format!("{}/app/v1/ingress/pending", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(no_token_resp.status(), 401);
+
+    let read_only_token =
+        approve_app_session(&client, port, &bob_identity, &["ingress:read"]).await;
+    let reject_resp = client
+        .post(format!(
+            "{}/app/v1/ingress/{ingress_id}/reject",
+            base_url(port)
+        ))
+        .bearer_auth(&read_only_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reject_resp.status(), 403);
+    let body: serde_json::Value = reject_resp.json().await.unwrap();
+    assert_eq!(body["code"], "app_session_forbidden");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_recipient_ingress_rejects_envelope_not_addressed_to_local_identity() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let alice = NodeIdentity::generate();
+    let carol = NodeIdentity::generate();
+    let carol_identity = carol.identity_id();
+    let (carol_key, _carol_private_key) =
+        generate_identity_encryption_keypair(carol_identity.clone(), "carol-key".to_string(), 0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let envelope = EncryptedObjectEnvelope::encrypt(
+        alice.public_key_bytes(),
+        alice.identity_id(),
+        b"not for bob",
+        "application/octet-stream".to_string(),
+        Some("application/vnd.spoke.reply+json".to_string()),
+        vec![EncryptedObjectRecipient {
+            identity: carol_identity,
+            key: carol_key,
+        }],
+        now,
+        |bytes| alice.sign(bytes),
+    )
+    .unwrap();
+
+    let submit_resp = client
+        .post(format!("{}/api/v1/ingress", base_url(port)))
+        .json(&serde_json::json!({
+            "receiver_id": "direct-local",
+            "encrypted_object": envelope.to_bytes().unwrap(),
+            "expires_at": now + 3600
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(submit_resp.status(), 400);
+    let body: serde_json::Value = submit_resp.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("not addressed to the local identity"));
 
     handle.shutdown().await.ok();
 }

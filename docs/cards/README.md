@@ -54,10 +54,8 @@ private sharing foundations, Console lifecycle, and minimum relay-operator
 diagnostics are also complete enough for now. The next step should be product
 selection, not more infrastructure polishing:
 
-1. [075](075-recipient-ingress-v0.md): implement the smallest generic ingress
-   primitive needed by Spoke.
-2. [078](078-spoke-social-poc.md): build the human-facing social PoC.
-3. [080](080-v0-freeze-and-bugfix-window.md): hard stop, bug fixes only, then
+1. [078](078-spoke-social-poc.md): build the human-facing social PoC.
+2. [080](080-v0-freeze-and-bugfix-window.md): hard stop, bug fixes only, then
    [081](081-launch-and-postmortem.md): write it up and decide whether Jolt has
    legs.
 
@@ -69,6 +67,8 @@ Supporting cards:
   design is locked.
 - [074](074-reachability-and-rendezvous-clarification.md): direct-first
   reachability and optional relay-assisted delivery terms are clarified.
+- [075](075-recipient-ingress-v0.md): generic direct/local recipient ingress is
+  implemented for Spoke replies/mentions.
 - [076](076-optional-and-authorized-relay-pinning.md): make pinning optional
   and relay-authorized.
 - [077](077-jolt-distribution-v0.md): make Jolt realistically installable as
@@ -214,7 +214,7 @@ into the protocol layer.
 | [072](072-jolt-v0-scope-and-freeze-criteria.md) | HITL | Decided in PR | Lock the v0 boundary, non-goals, freeze criteria, and success/failure signals. |
 | [073](073-two-way-communication-design.md) | HITL | Designed in PR | Design recipient-controlled two-way communication without cross-identity namespace writes. |
 | [074](074-reachability-and-rendezvous-clarification.md) | HITL | Clarified in PR | Clarify reachability, rendezvous, ingress, and app protocol terms for v0. |
-| [075](075-recipient-ingress-v0.md) | AFK after design | Ready after 074 | Implement generic recipient-controlled ingress for Spoke replies/mentions. |
+| [075](075-recipient-ingress-v0.md) | AFK after design | Implemented in PR | Implement generic recipient-controlled ingress for Spoke replies/mentions. |
 | [076](076-optional-and-authorized-relay-pinning.md) | AFK | Ready after 072 | Make pinning optional and relay-policy-authorized. |
 | [077](077-jolt-distribution-v0.md) | AFK | Ready after 072 | Make Jolt realistically installable as Console, daemon, and CLI. |
 | [078](078-spoke-social-poc.md) | HITL then AFK | Ready after 073/075 | Build the small social PoC that tests Jolt's product bet. |
