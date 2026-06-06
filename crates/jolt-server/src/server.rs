@@ -114,6 +114,10 @@ pub fn build_router_with_stores(
             get(routes::relay_status::get_status),
         )
         .route(
+            "/admin/v1/relay/diagnose/identity",
+            post(routes::relay_diagnose::diagnose_identity),
+        )
+        .route(
             "/admin/v1/reachability",
             post(routes::reachability::publish_local_reachability),
         )

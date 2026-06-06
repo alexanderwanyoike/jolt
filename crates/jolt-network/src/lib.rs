@@ -12,7 +12,7 @@ pub use command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
     EncryptedObjectResponse, FetchResult, NodeStatus, PeerConnectResponse, PeerInfo,
     PublishReachabilityResponse, PublishResponse, PublishedContentInfo, PublishedRelayInfo,
-    ResolveResponse,
+    RelayDiagnoseIdentityResponse, ResolveResponse,
 };
 pub use config::{HomeRelayCapability, HomeRelayConfig, NetworkConfig};
 pub use daemon_handle::DaemonHandle;

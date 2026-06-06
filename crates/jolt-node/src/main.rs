@@ -7,7 +7,10 @@ mod daemon;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use cli::{BootstrapCommands, CacheCommands, Cli, Commands, HomeRelayCommands, RelayCommands};
+use cli::{
+    BootstrapCommands, CacheCommands, Cli, Commands, HomeRelayCommands, RelayCommands,
+    RelayDiagnoseCommands,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -74,6 +77,11 @@ async fn main() -> anyhow::Result<()> {
         },
         Commands::Relay { command } => match command {
             RelayCommands::Status { json } => commands::relay::status(json).await?,
+            RelayCommands::Diagnose { command } => match command {
+                RelayDiagnoseCommands::Identity { identity, json } => {
+                    commands::relay::diagnose_identity(&identity, json).await?
+                }
+            },
         },
     }
 

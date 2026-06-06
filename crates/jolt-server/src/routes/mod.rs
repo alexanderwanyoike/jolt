@@ -12,6 +12,7 @@ pub mod publish;
 pub mod published;
 pub mod reachability;
 pub mod relay;
+pub mod relay_diagnose;
 pub mod relay_status;
 pub mod resolve;
 pub mod status;

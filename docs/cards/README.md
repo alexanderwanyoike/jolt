@@ -58,8 +58,7 @@ step should be chosen deliberately from the remaining product/protocol tracks:
    Console presence and focus permission prompts after the simple lifecycle
    work.
 2. Relay operator follow-ups from
-   [066](066-relay-operator-diagnostics-v0.md): diagnose identity reachability,
-   structured logs, and metrics.
+   [066](066-relay-operator-diagnostics-v0.md): structured logs and metrics.
 3. A new first-use-case/product proof card if Pastey has already answered the
    app-boundary questions well enough.
 
@@ -100,6 +99,15 @@ The completed Console-native daemon UX sequence is:
 [062](062-console-native-presence-and-permission-focus-v0.md) remains deferred
 because tray/native presence and OS integration should wait until the simple
 cross-platform lifecycle shape settles.
+
+The relay-operator diagnostics sequence is:
+
+1. [067](067-relay-cli-admin-status-v0.md): add SSH-friendly relay status.
+2. [070](070-relay-diagnose-identity-v0.md): diagnose update-log provider
+   discovery for one identity.
+
+Structured logs and metrics remain as the next relay-operator follow-ups from
+[066](066-relay-operator-diagnostics-v0.md).
 
 Before messaging/email/realtime application work, use the direction in
 [058](058-bidirectional-communication-and-signed-reachability-design.md):
@@ -180,6 +188,7 @@ into the protocol layer.
 | [067](067-relay-cli-admin-status-v0.md) | AFK | Implemented in PR | Add SSH-friendly relay status through CLI and admin API. |
 | [068](068-work-map-reset.md) | AFK | Implemented in PR | Refresh the card index after Console, private sharing, and relay-operator slices landed. |
 | [069](069-signed-reachability-endpoints-v0.md) | AFK | Implemented in PR | Add signed reachability endpoint metadata without messaging/inbox semantics. |
+| [070](070-relay-diagnose-identity-v0.md) | AFK | Implemented in PR | Diagnose update-log provider discovery for one identity through CLI and admin API. |
 
 ## Card Format
 
