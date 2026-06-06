@@ -54,18 +54,16 @@ The relay mesh milestone is complete enough for now. The app boundary and
 private sharing foundations are also complete enough for Pastey v0. The next
 step should be chosen deliberately from the remaining product/protocol tracks:
 
-1. [048](048-identity-import-v0.md): design identity import/export before
-   supporting one identity across multiple devices.
-2. [058](058-bidirectional-communication-and-realtime-rendezvous-design.md):
+1. [058](058-bidirectional-communication-and-realtime-rendezvous-design.md):
    decide how Jolt supports secure bidirectional and realtime communication
    without protocol-level inbox semantics.
-3. [062](062-console-native-presence-and-permission-focus-v0.md): add native
+2. [062](062-console-native-presence-and-permission-focus-v0.md): add native
    Console presence and focus permission prompts after the simple lifecycle
    work.
-4. Relay operator follow-ups from
+3. Relay operator follow-ups from
    [066](066-relay-operator-diagnostics-v0.md): diagnose identity reachability,
    structured logs, and metrics.
-5. A new first-use-case/product proof card if Pastey has already answered the
+4. A new first-use-case/product proof card if Pastey has already answered the
    app-boundary questions well enough.
 
 ## Completed Sprint: App Boundary and Private Sharing Foundations
@@ -162,7 +160,7 @@ app concepts such as inboxes or contacts into the protocol layer.
 | [045](045-jolt-console-shell-v0.md) | AFK | Done | Turn the dashboard into a local daemon console with sidebar sections. |
 | [046](046-app-permission-approval-ui.md) | AFK | Done | Let Console approve/reject/revoke app permission requests. |
 | [047](047-pastey-app-session-integration.md) | AFK | Done | Move Pastey from trusted daemon APIs to session-token app APIs. |
-| [048](048-identity-import-v0.md) | HITL | Ready for design | Define admin-only identity import/export v0 and shared-key risks. |
+| [048](048-identity-import-v0.md) | HITL | Designed in PR | Define admin-only identity import/export v0 and shared-key risks. |
 | [049](049-crypto-agility-encrypted-object-envelope.md) | HITL | Done | Define encrypted object envelope, suite IDs, wrapping, and PQ-hybrid direction. |
 | [050](050-identity-encryption-key-records.md) | AFK | Done | Publish and resolve signed public encryption keys for identities. |
 | [051](051-encrypted-object-implementation-v0.md) | AFK | Implemented in PR | Encrypt content once and wrap content keys for recipients. |

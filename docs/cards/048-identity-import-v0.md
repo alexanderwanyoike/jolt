@@ -1,8 +1,8 @@
 # 048: Identity Import v0
 
-**Type:** HITL  
-**Milestone:** Identity Management  
-**Status:** Ready for design  
+**Type:** HITL
+**Milestone:** Identity Management
+**Status:** Designed in PR
 **Blocked by:** None
 
 ## Why
@@ -22,11 +22,34 @@ Define the v0 import/export story:
 
 ## Acceptance Criteria
 
-- [ ] A design note or card update defines the v0 identity import/export format.
-- [ ] Export is explicitly admin-only and unavailable to normal app sessions.
-- [ ] Risks are documented: compromise, no per-device revocation, concurrent update-log conflicts.
-- [ ] Future delegated device-key model is sketched but not implemented.
+- [x] A design note or card update defines the v0 identity import/export format.
+- [x] Export is explicitly admin-only and unavailable to normal app sessions.
+- [x] Risks are documented: compromise, no per-device revocation, concurrent update-log conflicts.
+- [x] Future delegated device-key model is sketched but not implemented.
 - [ ] Human review confirms the direction before implementation.
+
+## Design
+
+See [Identity Import and Export v0](../18-identity-import-export.md).
+
+Key decisions:
+
+- v0 import/export is an admin/Console trust-class action, never a normal app
+  session capability.
+- The export file is an encrypted recovery bundle, not an app data export.
+- The bundle must include the root identity signing secret and local identity
+  encryption private keys needed to decrypt existing private objects.
+- Export is protected with an explicit export passphrase using Argon2id and
+  XChaCha20-Poly1305.
+- v0 shared-key import is positioned as recovery or deliberate device move, not
+  safe seamless multi-device collaboration.
+- Delegated device keys are the future model for scoped per-device revocation,
+  but are not implemented in this card.
+
+## Verification Notes
+
+- Docs-only design. No code tests were run.
+- Verified by reading the updated design note and card index.
 
 ## Notes
 
