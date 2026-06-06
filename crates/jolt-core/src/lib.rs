@@ -5,6 +5,7 @@ pub mod identity_address;
 pub mod identity_encryption_key;
 pub mod identity_head_hint;
 pub mod pin_request;
+pub mod reachability;
 pub mod relay_record;
 pub mod types;
 pub mod update_log;
@@ -24,6 +25,11 @@ pub use identity_encryption_key::{
 };
 pub use identity_head_hint::{IdentityHeadHint, IdentityHeadHintBody, IdentityHeadHintError};
 pub use pin_request::{PinRequest, PinRequestBody, PinRequestError};
+pub use reachability::{
+    verify_reachability_record_for_identity, LiveReachabilityEndpoint, OfflineIngressEndpoint,
+    ReachabilityRecord, ReachabilityRecordBody, ReachabilityRecordError, VerifiedReachability,
+    SIGNED_REACHABILITY_PATH,
+};
 pub use relay_record::{RelayRecord, RelayRecordBody, RelayRecordCapability, RelayRecordError};
 pub use types::ContentManifest;
 pub use update_log::{

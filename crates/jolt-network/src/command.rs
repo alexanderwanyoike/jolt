@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
 use jolt_core::{
-    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, PinRequest, RelayHint, RelayRecord,
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
+    OfflineIngressEndpoint, PinRequest, RelayHint, RelayRecord, VerifiedReachability,
 };
 
 use crate::config::HomeRelayConfig;
@@ -37,6 +38,13 @@ pub enum DaemonCommand {
     DecryptObject {
         encrypted_object: Vec<u8>,
         response_tx: oneshot::Sender<Result<DecryptedObjectResponse, NetworkError>>,
+    },
+    PublishReachability {
+        sequence_hint: u64,
+        expires_at: u64,
+        live: Vec<LiveReachabilityEndpoint>,
+        offline_ingress: Vec<OfflineIngressEndpoint>,
+        response_tx: oneshot::Sender<Result<PublishReachabilityResponse, NetworkError>>,
     },
     ConnectPeer {
         multiaddr: String,
@@ -138,6 +146,16 @@ pub struct DecryptedObjectResponse {
     pub plaintext: Vec<u8>,
     pub size: u64,
     pub content_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublishReachabilityResponse {
+    pub identity: String,
+    pub path: String,
+    pub address: String,
+    pub latest_sequence: u64,
+    pub content_id: String,
+    pub record: VerifiedReachability,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -16,8 +16,9 @@ use jolt_core::{
     resolve_jolt_address, verify_update_log_for_identity, ContentId, ContentManifest,
     EncryptedObjectEnvelope, EncryptedObjectRecipient, IdentityEncryptionKey,
     IdentityEncryptionKeyRecord, IdentityEncryptionPrivateKey, IdentityHeadHint, IdentityId,
-    JoltAddress, PinRequest, RelayRecord, RelayRecordCapability, ResolvedJoltTarget, UpdateAction,
-    UpdateLogEntry, IDENTITY_ENCRYPTION_KEYS_PATH,
+    JoltAddress, LiveReachabilityEndpoint, OfflineIngressEndpoint, PinRequest, ReachabilityRecord,
+    RelayRecord, RelayRecordCapability, ResolvedJoltTarget, UpdateAction, UpdateLogEntry,
+    VerifiedReachability, IDENTITY_ENCRYPTION_KEYS_PATH, SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
 use jolt_store::{ContentStore, HomeRelayPinRecord};
@@ -25,8 +26,8 @@ use jolt_store::{ContentStore, HomeRelayPinRecord};
 use crate::behaviour::{JoltBehaviour, JoltBehaviourEvent};
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
-    PeerConnectResponse, PeerInfo, PublishResponse, PublishedContentInfo, PublishedRelayInfo,
-    ResolveResponse,
+    PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
+    PublishedContentInfo, PublishedRelayInfo, ResolveResponse,
 };
 use crate::config::{HomeRelayConfig, NetworkConfig};
 use crate::error::{DiscoveryFailureCode, NetworkError};
@@ -1322,6 +1323,48 @@ impl NetworkNode {
             size: plaintext.len() as u64,
             plaintext,
             content_type,
+        })
+    }
+
+    fn publish_reachability(
+        &mut self,
+        sequence_hint: u64,
+        expires_at: u64,
+        live: Vec<LiveReachabilityEndpoint>,
+        offline_ingress: Vec<OfflineIngressEndpoint>,
+    ) -> Result<PublishReachabilityResponse, NetworkError> {
+        let now = unix_now();
+        let identity = self.identity.identity_id();
+        let record = ReachabilityRecord::new(
+            self.identity.public_key_bytes(),
+            identity.clone(),
+            sequence_hint,
+            now,
+            expires_at,
+            live,
+            offline_ingress,
+            |bytes| self.identity.sign(bytes),
+        )
+        .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        let record_bytes =
+            serde_json::to_vec(&record).map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let (content_id, address, latest_sequence) =
+            self.publish_bytes_at_path(&record_bytes, SIGNED_REACHABILITY_PATH)?;
+        let record = VerifiedReachability {
+            identity: identity.clone(),
+            sequence_hint,
+            expires_at,
+            live: record.body.live,
+            offline_ingress: record.body.offline_ingress,
+        };
+
+        Ok(PublishReachabilityResponse {
+            identity: identity.to_string(),
+            path: SIGNED_REACHABILITY_PATH.to_string(),
+            address: address.to_string(),
+            latest_sequence,
+            content_id: content_id.to_string(),
+            record,
         })
     }
 
@@ -2983,6 +3026,17 @@ impl NetworkNode {
                 response_tx,
             } => {
                 let result = self.decrypt_object(&encrypted_object);
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::PublishReachability {
+                sequence_hint,
+                expires_at,
+                live,
+                offline_ingress,
+                response_tx,
+            } => {
+                let result =
+                    self.publish_reachability(sequence_hint, expires_at, live, offline_ingress);
                 let _ = response_tx.send(result);
             }
             DaemonCommand::ConnectPeer {

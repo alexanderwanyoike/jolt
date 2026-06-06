@@ -10,6 +10,7 @@ pub mod network_settings;
 pub mod peers;
 pub mod publish;
 pub mod published;
+pub mod reachability;
 pub mod relay;
 pub mod relay_status;
 pub mod resolve;

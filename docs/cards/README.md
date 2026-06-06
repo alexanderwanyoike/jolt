@@ -54,15 +54,13 @@ The relay mesh milestone is complete enough for now. The app boundary and
 private sharing foundations are also complete enough for Pastey v0. The next
 step should be chosen deliberately from the remaining product/protocol tracks:
 
-1. [069](069-signed-reachability-endpoints-v0.md): add signed reachability metadata
-   before any messaging, stream, or ingress implementation.
-2. [062](062-console-native-presence-and-permission-focus-v0.md): add native
+1. [062](062-console-native-presence-and-permission-focus-v0.md): add native
    Console presence and focus permission prompts after the simple lifecycle
    work.
-3. Relay operator follow-ups from
+2. Relay operator follow-ups from
    [066](066-relay-operator-diagnostics-v0.md): diagnose identity reachability,
    structured logs, and metrics.
-4. A new first-use-case/product proof card if Pastey has already answered the
+3. A new first-use-case/product proof card if Pastey has already answered the
    app-boundary questions well enough.
 
 ## Completed Sprint: App Boundary and Private Sharing Foundations
@@ -181,7 +179,7 @@ into the protocol layer.
 | [066](066-relay-operator-diagnostics-v0.md) | HITL | Designed in PR | Define CLI/admin/logging diagnostics for headless server-facing relays. |
 | [067](067-relay-cli-admin-status-v0.md) | AFK | Implemented in PR | Add SSH-friendly relay status through CLI and admin API. |
 | [068](068-work-map-reset.md) | AFK | Implemented in PR | Refresh the card index after Console, private sharing, and relay-operator slices landed. |
-| [069](069-signed-reachability-endpoints-v0.md) | AFK | Ready after 058 | Add signed reachability endpoint metadata without messaging/inbox semantics. |
+| [069](069-signed-reachability-endpoints-v0.md) | AFK | Implemented in PR | Add signed reachability endpoint metadata without messaging/inbox semantics. |
 
 ## Card Format
 

@@ -113,6 +113,10 @@ pub fn build_router_with_stores(
             "/admin/v1/relay/status",
             get(routes::relay_status::get_status),
         )
+        .route(
+            "/admin/v1/reachability",
+            post(routes::reachability::publish_local_reachability),
+        )
         .route("/api/v1/health", get(routes::health::health))
         .route("/api/v1/status", get(routes::status::get_status))
         .route("/api/v1/peers", get(routes::peers::list_peers))
@@ -124,6 +128,10 @@ pub fn build_router_with_stores(
         .route(
             "/api/v1/identities/{identity}/encryption-keys",
             get(routes::identity_encryption_keys::get_identity_encryption_keys),
+        )
+        .route(
+            "/api/v1/identities/{identity}/reachability",
+            get(routes::reachability::get_identity_reachability),
         )
         .route(
             "/api/v1/home-relay/availability",
