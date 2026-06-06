@@ -2,7 +2,7 @@
 
 **Type:** HITL then AFK  
 **Milestone:** v0 Endgame  
-**Status:** In Progress / PRs Open
+**Status:** Implemented / PRs Open
 **Blocked by:** 073, 075
 
 ## Why
@@ -44,8 +44,8 @@ Jolt should matter because:
 - [x] A user can send a reply/mention through recipient ingress.
 - [x] A recipient can accept/reject incoming social objects.
 - [x] A local feed can be built from known/followed identities.
-- [ ] Pinning is optional.
-- [ ] Human demo works with at least two local identities/nodes.
+- [x] Pinning is optional.
+- [x] Human demo works with at least two local identities/nodes.
 
 ## Non-Goals
 
@@ -95,6 +95,16 @@ to keep a tiny fixture here. Jolt protocol remains app-agnostic.
 - Remaining product issue: Spoke still polls instead of subscribing to daemon
   state/events. The app works, but the local app/daemon interface needs a
   future evented/materialized-view shape before it will feel native.
+- Known-contact replies now auto-accept at the Spoke policy layer. Jolt still
+  stores ingress as pending first; Spoke recognizes local contacts and decides
+  those envelopes automatically. Unknown senders remain visible for manual
+  review.
+- Real daemon ingress records expose bare sender identity IDs while Spoke
+  contacts store `.jolt` addresses. Spoke normalizes identity comparisons so
+  `abc...` and `abc....jolt` match.
+- v0 verdict: Spoke proves Jolt can support a small identity-owned social app,
+  but the product still feels eventually consistent because the app polls and
+  rebuilds state through resolve/fetch/materialization.
 
 ## Verification
 
@@ -117,3 +127,5 @@ to keep a tiny fixture here. Jolt protocol remains app-agnostic.
   causing recursive/N+1 delay; Spoke now stores post `contentId` in feed entries
   and Jolt returns cached verified resolve results immediately while refreshing
   in the background.
+- Green: user verified Bob-to-Alice known-contact replies auto-accept after
+  identity normalization fix.
