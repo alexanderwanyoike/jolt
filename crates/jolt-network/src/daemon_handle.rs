@@ -10,7 +10,8 @@ use jolt_core::{
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
     EncryptedObjectResponse, FetchResult, NodeStatus, PeerConnectResponse, PeerInfo,
-    PublishReachabilityResponse, PublishResponse, PublishedContentInfo, ResolveResponse,
+    PublishReachabilityResponse, PublishResponse, PublishedContentInfo,
+    RelayDiagnoseIdentityResponse, ResolveResponse,
 };
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
@@ -68,6 +69,23 @@ impl DaemonHandle {
         self.cmd_tx
             .send(DaemonCommand::Resolve {
                 address,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Diagnose update-log provider discovery for a Jolt identity.
+    pub async fn diagnose_identity(
+        &self,
+        identity: IdentityId,
+    ) -> Result<RelayDiagnoseIdentityResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::DiagnoseIdentity {
+                identity,
                 response_tx: tx,
             })
             .await

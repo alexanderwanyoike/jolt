@@ -26,6 +26,10 @@ pub enum DaemonCommand {
         address: String,
         response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
     },
+    DiagnoseIdentity {
+        identity: IdentityId,
+        response_tx: oneshot::Sender<Result<RelayDiagnoseIdentityResponse, NetworkError>>,
+    },
     EnsureLocalIdentityEncryptionKey {
         response_tx: oneshot::Sender<Result<IdentityEncryptionKey, NetworkError>>,
     },
@@ -132,6 +136,67 @@ pub struct ResolveResponse {
     pub content_id: String,
     pub reachability_hints: Vec<RelayHint>,
     pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseIdentityResponse {
+    pub identity: String,
+    pub provider_key: String,
+    pub local_update_log_cache: RelayDiagnoseCacheObservation,
+    pub identity_head_hint: RelayDiagnoseIdentityHeadObservation,
+    pub local_provider_candidates: Vec<RelayDiagnoseProviderCandidate>,
+    pub provider_candidates: Vec<RelayDiagnoseProviderCandidate>,
+    pub relay_forwarding: RelayDiagnoseForwarding,
+    pub outcome: RelayDiagnoseOutcome,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseCacheObservation {
+    pub state: String,
+    pub entry_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_sequence: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseIdentityHeadObservation {
+    pub state: String,
+    pub fresh_count: usize,
+    pub expired_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_peer_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RelayDiagnoseProviderCandidate {
+    pub peer_id: String,
+    pub addrs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseForwarding {
+    pub attempted: bool,
+    pub target_count: usize,
+    pub attempts: Vec<RelayDiagnoseForwardingAttempt>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseForwardingAttempt {
+    pub peer_id: String,
+    pub status: String,
+    pub candidate_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseOutcome {
+    pub code: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

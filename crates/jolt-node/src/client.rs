@@ -57,6 +57,30 @@ impl DaemonClient {
         Ok(resp.json().await?)
     }
 
+    pub async fn relay_diagnose_identity(&self, identity: &str) -> Result<serde_json::Value> {
+        let resp = self
+            .client
+            .post(format!(
+                "{}/admin/v1/relay/diagnose/identity",
+                self.base_url
+            ))
+            .json(&serde_json::json!({ "identity": identity }))
+            .send()
+            .await
+            .context("Failed to connect to daemon")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Relay identity diagnosis failed ({status}): {}",
+                format_error_body(&body)
+            );
+        }
+
+        Ok(resp.json().await?)
+    }
+
     pub async fn publish(&self, file_path: &Path, path: Option<&str>) -> Result<serde_json::Value> {
         let data = std::fs::read(file_path)
             .with_context(|| format!("Failed to read file: {}", file_path.display()))?;

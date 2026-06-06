@@ -27,7 +27,10 @@ use crate::behaviour::{JoltBehaviour, JoltBehaviourEvent};
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
     PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
-    PublishedContentInfo, PublishedRelayInfo, ResolveResponse,
+    PublishedContentInfo, PublishedRelayInfo, RelayDiagnoseCacheObservation,
+    RelayDiagnoseForwarding, RelayDiagnoseForwardingAttempt, RelayDiagnoseIdentityHeadObservation,
+    RelayDiagnoseIdentityResponse, RelayDiagnoseOutcome, RelayDiagnoseProviderCandidate,
+    ResolveResponse,
 };
 use crate::config::{HomeRelayConfig, NetworkConfig};
 use crate::error::{DiscoveryFailureCode, NetworkError};
@@ -59,6 +62,18 @@ struct PendingIdentityProviderForwardGroup {
     limit: usize,
 }
 
+struct PendingIdentityProviderDiagnosis {
+    identity: IdentityId,
+    local_update_log_cache: RelayDiagnoseCacheObservation,
+    identity_head_hint: RelayDiagnoseIdentityHeadObservation,
+    local_provider_candidates: Vec<RelayDiagnoseProviderCandidate>,
+    response_tx: oneshot::Sender<Result<RelayDiagnoseIdentityResponse, NetworkError>>,
+    deadline: Instant,
+    attempts: HashMap<OutboundRequestId, RelayDiagnoseForwardingAttempt>,
+    providers: Vec<IdentityProviderCandidate>,
+    limit: usize,
+}
+
 fn relay_record_matches_capabilities(
     record: &RelayRecord,
     capabilities: &[RelayRecordCapability],
@@ -67,6 +82,32 @@ fn relay_record_matches_capabilities(
         || capabilities
             .iter()
             .any(|capability| record.body.capabilities.contains(capability))
+}
+
+impl From<IdentityProviderCandidate> for RelayDiagnoseProviderCandidate {
+    fn from(candidate: IdentityProviderCandidate) -> Self {
+        Self {
+            peer_id: candidate.peer_id,
+            addrs: candidate.addrs,
+        }
+    }
+}
+
+fn dedupe_diagnose_provider_candidates(
+    candidates: Vec<RelayDiagnoseProviderCandidate>,
+    limit: usize,
+) -> Vec<RelayDiagnoseProviderCandidate> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::new();
+    for candidate in candidates {
+        if seen.insert(candidate.peer_id.clone()) {
+            deduped.push(candidate);
+            if deduped.len() >= limit {
+                break;
+            }
+        }
+    }
+    deduped
 }
 
 struct PendingDaemonResolve {
@@ -137,6 +178,8 @@ pub struct NetworkNode {
     pending_update_log_pins: HashMap<OutboundRequestId, PendingUpdateLogPin>,
     pending_identity_provider_forwards: HashMap<OutboundRequestId, String>,
     pending_identity_provider_forward_groups: HashMap<String, PendingIdentityProviderForwardGroup>,
+    pending_identity_provider_diagnostics: HashMap<String, PendingIdentityProviderDiagnosis>,
+    pending_identity_provider_diagnostic_requests: HashMap<OutboundRequestId, String>,
     seen_identity_provider_queries: HashMap<String, Instant>,
     pending_jolt_resolutions: HashMap<
         OutboundRequestId,
@@ -305,6 +348,8 @@ impl NetworkNode {
             pending_update_log_pins: HashMap::new(),
             pending_identity_provider_forwards: HashMap::new(),
             pending_identity_provider_forward_groups: HashMap::new(),
+            pending_identity_provider_diagnostics: HashMap::new(),
+            pending_identity_provider_diagnostic_requests: HashMap::new(),
             seen_identity_provider_queries: HashMap::new(),
             pending_jolt_resolutions: HashMap::new(),
             pending_daemon_resolutions: HashMap::new(),
@@ -425,6 +470,8 @@ impl NetworkNode {
             pending_update_log_pins: HashMap::new(),
             pending_identity_provider_forwards: HashMap::new(),
             pending_identity_provider_forward_groups: HashMap::new(),
+            pending_identity_provider_diagnostics: HashMap::new(),
+            pending_identity_provider_diagnostic_requests: HashMap::new(),
             seen_identity_provider_queries: HashMap::new(),
             pending_jolt_resolutions: HashMap::new(),
             pending_daemon_resolutions: HashMap::new(),
@@ -956,6 +1003,313 @@ impl NetworkNode {
             identity,
             unix_now_ms()
         )
+    }
+
+    fn diagnose_identity(
+        &mut self,
+        identity: IdentityId,
+        response_tx: oneshot::Sender<Result<RelayDiagnoseIdentityResponse, NetworkError>>,
+    ) {
+        let now = unix_now();
+        let local_update_log_cache = self.diagnose_update_log_cache(&identity);
+        let identity_head_hint = self.diagnose_identity_head_hints(&identity, now);
+        let local_provider_candidates: Vec<_> = self
+            .identity_provider_candidates(&identity, IDENTITY_PROVIDER_QUERY_LIMIT as usize, now)
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        let relay_targets = self.relay_query_peers(None);
+        let provider_candidates = local_provider_candidates.clone();
+        if !provider_candidates.is_empty() || relay_targets.is_empty() {
+            let response = self.build_identity_diagnosis_response(
+                &identity,
+                local_update_log_cache,
+                identity_head_hint,
+                local_provider_candidates,
+                provider_candidates,
+                Vec::new(),
+            );
+            let _ = response_tx.send(Ok(response));
+            return;
+        }
+
+        let query_id = self.identity_provider_query_id(&identity);
+        let request = RelayExchangeRequest::FindIdentityProviders {
+            query_id: query_id.clone(),
+            identity: identity.clone(),
+            limit: IDENTITY_PROVIDER_QUERY_LIMIT,
+            ttl: IDENTITY_PROVIDER_QUERY_TTL,
+            deadline_unix_ms: unix_now_ms() + self.resolve_timeout.as_millis() as u64,
+        };
+        let mut attempts = HashMap::new();
+        for peer in relay_targets {
+            let request_id = self
+                .swarm
+                .behaviour_mut()
+                .relay_exchange
+                .send_request(&peer, request.clone());
+            self.pending_identity_provider_diagnostic_requests
+                .insert(request_id, query_id.clone());
+            attempts.insert(
+                request_id,
+                RelayDiagnoseForwardingAttempt {
+                    peer_id: peer.to_string(),
+                    status: "pending".to_string(),
+                    candidate_count: 0,
+                    error: None,
+                },
+            );
+        }
+
+        self.pending_identity_provider_diagnostics.insert(
+            query_id,
+            PendingIdentityProviderDiagnosis {
+                identity,
+                local_update_log_cache,
+                identity_head_hint,
+                local_provider_candidates,
+                response_tx,
+                deadline: Instant::now() + self.resolve_timeout,
+                attempts,
+                providers: Vec::new(),
+                limit: IDENTITY_PROVIDER_QUERY_LIMIT as usize,
+            },
+        );
+    }
+
+    fn build_identity_diagnosis_response(
+        &self,
+        identity: &IdentityId,
+        local_update_log_cache: RelayDiagnoseCacheObservation,
+        identity_head_hint: RelayDiagnoseIdentityHeadObservation,
+        local_provider_candidates: Vec<RelayDiagnoseProviderCandidate>,
+        provider_candidates: Vec<RelayDiagnoseProviderCandidate>,
+        attempts: Vec<RelayDiagnoseForwardingAttempt>,
+    ) -> RelayDiagnoseIdentityResponse {
+        RelayDiagnoseIdentityResponse {
+            identity: identity.to_string(),
+            provider_key: Self::update_log_provider_key(identity),
+            local_update_log_cache,
+            identity_head_hint,
+            local_provider_candidates,
+            provider_candidates: provider_candidates.clone(),
+            relay_forwarding: RelayDiagnoseForwarding {
+                attempted: !attempts.is_empty(),
+                target_count: attempts.len(),
+                attempts,
+            },
+            outcome: self.diagnose_identity_outcome(identity, !provider_candidates.is_empty()),
+        }
+    }
+
+    fn diagnose_update_log_cache(&self, identity: &IdentityId) -> RelayDiagnoseCacheObservation {
+        let Some(entries) = self.update_logs.get(identity) else {
+            return RelayDiagnoseCacheObservation {
+                state: "miss".to_string(),
+                entry_count: 0,
+                latest_sequence: None,
+            };
+        };
+
+        let latest_sequence = verify_update_log_for_identity(identity, entries).ok();
+        RelayDiagnoseCacheObservation {
+            state: if latest_sequence.is_some() {
+                "hit".to_string()
+            } else {
+                "invalid".to_string()
+            },
+            entry_count: entries.len(),
+            latest_sequence,
+        }
+    }
+
+    fn diagnose_identity_head_hints(
+        &self,
+        identity: &IdentityId,
+        now: u64,
+    ) -> RelayDiagnoseIdentityHeadObservation {
+        let Some(hints) = self.identity_head_hints.get(identity) else {
+            return RelayDiagnoseIdentityHeadObservation {
+                state: "miss".to_string(),
+                fresh_count: 0,
+                expired_count: 0,
+                latest_sequence: None,
+                provider_peer_id: None,
+                expires_at: None,
+            };
+        };
+
+        let mut fresh = Vec::new();
+        let mut expired_count = 0;
+        for hint in hints {
+            if hint.verify_at(now).is_ok() {
+                fresh.push(hint);
+            } else {
+                expired_count += 1;
+            }
+        }
+        let best = fresh.iter().max_by_key(|hint| hint.body.latest_sequence);
+
+        RelayDiagnoseIdentityHeadObservation {
+            state: if fresh.is_empty() {
+                "miss".to_string()
+            } else {
+                "hit".to_string()
+            },
+            fresh_count: fresh.len(),
+            expired_count,
+            latest_sequence: best.map(|hint| hint.body.latest_sequence),
+            provider_peer_id: best.map(|hint| hint.body.provider_peer_id.clone()),
+            expires_at: best.map(|hint| hint.body.expires_at),
+        }
+    }
+
+    fn diagnose_identity_outcome(
+        &self,
+        identity: &IdentityId,
+        has_provider_candidates: bool,
+    ) -> RelayDiagnoseOutcome {
+        if has_provider_candidates {
+            return RelayDiagnoseOutcome {
+                code: "provider_candidates_found".to_string(),
+                message: "Provider candidates are known for this identity.".to_string(),
+            };
+        }
+
+        let no_bootstrap_relays = self.effective_bootstrap_relays.is_empty()
+            && self.swarm.connected_peers().next().is_none();
+        let relay_unreachable = !self.effective_bootstrap_relays.is_empty()
+            && self.connected_bootstrap_peer_count() == 0;
+
+        match Self::identity_provider_failure(identity, no_bootstrap_relays, relay_unreachable) {
+            NetworkError::DiscoveryFailed { code, message } => RelayDiagnoseOutcome {
+                code: code.as_str().to_string(),
+                message,
+            },
+            other => RelayDiagnoseOutcome {
+                code: "diagnose_failed".to_string(),
+                message: other.to_string(),
+            },
+        }
+    }
+
+    fn handle_identity_diagnosis_response(
+        &mut self,
+        request_id: OutboundRequestId,
+        providers: Vec<IdentityProviderCandidate>,
+    ) -> bool {
+        let Some(query_id) = self
+            .pending_identity_provider_diagnostic_requests
+            .remove(&request_id)
+        else {
+            return false;
+        };
+
+        let Some(mut pending) = self.pending_identity_provider_diagnostics.remove(&query_id) else {
+            return true;
+        };
+
+        if let Some(attempt) = pending.attempts.get_mut(&request_id) {
+            attempt.status = "responded".to_string();
+            attempt.candidate_count = providers.len();
+        }
+        pending.providers.extend(providers);
+
+        if self.identity_diagnosis_should_finish(&pending) {
+            self.finish_identity_diagnosis(pending);
+        } else {
+            self.pending_identity_provider_diagnostics
+                .insert(query_id, pending);
+        }
+
+        true
+    }
+
+    fn handle_identity_diagnosis_failure(
+        &mut self,
+        request_id: OutboundRequestId,
+        error: String,
+    ) -> bool {
+        let Some(query_id) = self
+            .pending_identity_provider_diagnostic_requests
+            .remove(&request_id)
+        else {
+            return false;
+        };
+
+        let Some(mut pending) = self.pending_identity_provider_diagnostics.remove(&query_id) else {
+            return true;
+        };
+
+        if let Some(attempt) = pending.attempts.get_mut(&request_id) {
+            attempt.status = "failed".to_string();
+            attempt.error = Some(error);
+        }
+
+        if self.identity_diagnosis_should_finish(&pending) {
+            self.finish_identity_diagnosis(pending);
+        } else {
+            self.pending_identity_provider_diagnostics
+                .insert(query_id, pending);
+        }
+
+        true
+    }
+
+    fn identity_diagnosis_should_finish(&self, pending: &PendingIdentityProviderDiagnosis) -> bool {
+        pending
+            .attempts
+            .values()
+            .all(|attempt| attempt.status != "pending")
+            || pending.providers.len() >= pending.limit
+    }
+
+    fn finish_identity_diagnosis(&mut self, pending: PendingIdentityProviderDiagnosis) {
+        for request_id in pending.attempts.keys() {
+            self.pending_identity_provider_diagnostic_requests
+                .remove(request_id);
+        }
+
+        let mut provider_candidates = pending.local_provider_candidates.clone();
+        provider_candidates.extend(
+            Self::dedupe_identity_provider_candidates(pending.providers, pending.limit)
+                .into_iter()
+                .map(Into::into),
+        );
+        provider_candidates =
+            dedupe_diagnose_provider_candidates(provider_candidates, pending.limit);
+
+        let response = self.build_identity_diagnosis_response(
+            &pending.identity,
+            pending.local_update_log_cache,
+            pending.identity_head_hint,
+            pending.local_provider_candidates,
+            provider_candidates,
+            pending.attempts.into_values().collect(),
+        );
+        let _ = pending.response_tx.send(Ok(response));
+    }
+
+    fn check_identity_diagnosis_timeouts(&mut self) {
+        let now = Instant::now();
+        let timed_out: Vec<_> = self
+            .pending_identity_provider_diagnostics
+            .iter()
+            .filter_map(|(query_id, pending)| (pending.deadline <= now).then_some(query_id.clone()))
+            .collect();
+
+        for query_id in timed_out {
+            if let Some(mut pending) = self.pending_identity_provider_diagnostics.remove(&query_id)
+            {
+                for attempt in pending.attempts.values_mut() {
+                    if attempt.status == "pending" {
+                        attempt.status = "timeout".to_string();
+                        attempt.error = Some("relay forwarding timed out".to_string());
+                    }
+                }
+                self.finish_identity_diagnosis(pending);
+            }
+        }
     }
 
     fn start_identity_provider_relay_query(&mut self, identity: &IdentityId) {
@@ -2582,6 +2936,10 @@ impl NetworkNode {
                     identity,
                     providers,
                 } => {
+                    if self.handle_identity_diagnosis_response(request_id, providers.clone()) {
+                        return;
+                    }
+
                     if let Some(query_id) =
                         self.pending_identity_provider_forwards.remove(&request_id)
                     {
@@ -2641,6 +2999,12 @@ impl NetworkNode {
                     ..
                 },
             )) => {
+                if self.handle_identity_diagnosis_failure(request_id, error.to_string()) {
+                    self.mark_relay_peer_failure(&peer);
+                    debug!("Outbound relay exchange failed: {error}");
+                    return;
+                }
+
                 if let Some(query_id) = self.pending_identity_provider_forwards.remove(&request_id)
                 {
                     let mut should_respond = false;
@@ -2867,6 +3231,7 @@ impl NetworkNode {
                     self.fetch_manager.check_timeouts();
                     self.check_resolve_timeouts();
                     self.check_identity_provider_forward_timeouts();
+                    self.check_identity_diagnosis_timeouts();
 
                     // Send content requests for providers that have connected
                     let ready = self.fetch_manager.ready_to_request();
@@ -2885,6 +3250,7 @@ impl NetworkNode {
                 }
                 _ = relay_mesh_interval.tick() => {
                     self.check_identity_provider_forward_timeouts();
+                    self.check_identity_diagnosis_timeouts();
                     self.explore_relay_mesh();
                 }
             }
@@ -3007,6 +3373,12 @@ impl NetworkNode {
                             fallback_response,
                         });
                 }
+            }
+            DaemonCommand::DiagnoseIdentity {
+                identity,
+                response_tx,
+            } => {
+                self.diagnose_identity(identity, response_tx);
             }
             DaemonCommand::EnsureLocalIdentityEncryptionKey { response_tx } => {
                 let result = self.ensure_local_identity_encryption_key();
@@ -3300,6 +3672,7 @@ impl NetworkNode {
                 }
                 _ = relay_mesh_interval.tick() => {
                     self.check_identity_provider_forward_timeouts();
+                    self.check_identity_diagnosis_timeouts();
                     self.explore_relay_mesh();
                 }
             }

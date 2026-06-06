@@ -192,6 +192,25 @@ pub enum RelayCommands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Diagnose relay reachability for a Jolt identity
+    Diagnose {
+        #[command(subcommand)]
+        command: RelayDiagnoseCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum RelayDiagnoseCommands {
+    /// Trace update-log provider discovery for an identity
+    Identity {
+        /// The identity address without the .jolt suffix
+        identity: String,
+
+        /// Emit the admin relay diagnosis JSON payload
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(test)]
@@ -320,6 +339,24 @@ mod tests {
                 command: RelayCommands::Status { json },
             } => assert!(json),
             _ => panic!("expected Relay Status command"),
+        }
+    }
+
+    #[test]
+    fn parse_relay_diagnose_identity_command() {
+        let cli = Cli::parse_from(["jolt", "relay", "diagnose", "identity", "abc123", "--json"]);
+
+        match cli.command {
+            Commands::Relay {
+                command:
+                    RelayCommands::Diagnose {
+                        command: RelayDiagnoseCommands::Identity { identity, json },
+                    },
+            } => {
+                assert_eq!(identity, "abc123");
+                assert!(json);
+            }
+            _ => panic!("expected Relay Diagnose Identity command"),
         }
     }
 

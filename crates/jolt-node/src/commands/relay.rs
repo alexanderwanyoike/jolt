@@ -46,6 +46,47 @@ pub async fn status(json: bool) -> Result<()> {
     Ok(())
 }
 
+pub async fn diagnose_identity(identity: &str, json: bool) -> Result<()> {
+    let config = NodeConfig::default_dirs();
+
+    match daemon::find_single_running_daemon(&config) {
+        Ok(Some(info)) => {
+            if daemon::read_daemon_info(&config).is_some_and(|stored| stored.pid == info.pid)
+                && !daemon::is_daemon_running(&config)
+            {
+                daemon::clear_daemon_info(&config);
+                println!("Daemon is not running (stale PID file cleaned up)");
+                return Ok(());
+            }
+
+            let client = DaemonClient::new(info.port);
+            let diagnosis = client.relay_diagnose_identity(identity).await?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&diagnosis)?);
+            } else {
+                print!("{}", format_identity_diagnosis(&diagnosis));
+            }
+        }
+        Ok(None) => {
+            if daemon::read_daemon_info(&config).is_some() {
+                daemon::clear_daemon_info(&config);
+                println!("Jolt is not running (stale PID file cleaned up)");
+            } else {
+                println!("Jolt is not running. Start with: jolt start");
+            }
+        }
+        Err(daemons) => {
+            println!("Multiple Jolt daemons are running:");
+            for daemon in daemons {
+                println!("  PID {} on API port {}", daemon.pid, daemon.port);
+            }
+            println!("Run relay diagnose with the same XDG_DATA_HOME as the target daemon.");
+        }
+    }
+
+    Ok(())
+}
+
 fn format_relay_status(status: &Value, api_port: Option<u16>) -> String {
     let relay = if bool_field(status, "relay_enabled") {
         "enabled"
@@ -125,6 +166,79 @@ fn format_relay_status(status: &Value, api_port: Option<u16>) -> String {
             for addr in addrs {
                 if let Some(addr) = addr.as_str() {
                     output.push_str(&format!("  {addr}\n"));
+                }
+            }
+        }
+    }
+
+    output
+}
+
+fn format_identity_diagnosis(diagnosis: &Value) -> String {
+    let cache = object_field(diagnosis, "local_update_log_cache");
+    let hint = object_field(diagnosis, "identity_head_hint");
+    let forwarding = object_field(diagnosis, "relay_forwarding");
+    let outcome = object_field(diagnosis, "outcome");
+
+    let mut output = String::new();
+    output.push_str(&format!(
+        "Identity: {}\n",
+        string_field(diagnosis, "identity", "unknown")
+    ));
+    output.push_str(&format!(
+        "Provider key: {}\n",
+        string_field(diagnosis, "provider_key", "unknown")
+    ));
+    output.push_str(&format!(
+        "Local cache: {}",
+        string_field(cache, "state", "unknown")
+    ));
+    if let Some(sequence) = cache.get("latest_sequence").and_then(Value::as_u64) {
+        output.push_str(&format!(" (latest sequence {sequence})"));
+    }
+    output.push('\n');
+    output.push_str(&format!(
+        "Identity-head hint: {} ({} fresh / {} expired)\n",
+        string_field(hint, "state", "unknown"),
+        number_field(hint, "fresh_count"),
+        number_field(hint, "expired_count")
+    ));
+    output.push_str(&format!(
+        "Forwarding: {} ({} target{})\n",
+        if bool_field(forwarding, "attempted") {
+            "available"
+        } else {
+            "not available"
+        },
+        number_field(forwarding, "target_count"),
+        if number_field(forwarding, "target_count") == 1 {
+            ""
+        } else {
+            "s"
+        }
+    ));
+    output.push_str(&format!(
+        "Outcome: {}\n",
+        string_field(outcome, "code", "unknown")
+    ));
+    if let Some(message) = outcome.get("message").and_then(Value::as_str) {
+        output.push_str(&format!("{message}\n"));
+    }
+
+    if let Some(candidates) = diagnosis
+        .get("provider_candidates")
+        .and_then(Value::as_array)
+        .filter(|candidates| !candidates.is_empty())
+    {
+        output.push_str("Candidates:\n");
+        for candidate in candidates {
+            let peer_id = string_field(candidate, "peer_id", "unknown");
+            output.push_str(&format!("  {peer_id}\n"));
+            if let Some(addrs) = candidate.get("addrs").and_then(Value::as_array) {
+                for addr in addrs {
+                    if let Some(addr) = addr.as_str() {
+                        output.push_str(&format!("    {addr}\n"));
+                    }
                 }
             }
         }
@@ -225,5 +339,42 @@ mod tests {
         assert!(output.contains("Relay: disabled"));
         assert!(output.contains("Relay record: none"));
         assert!(output.contains("Home relay: not configured"));
+    }
+
+    #[test]
+    fn formats_identity_diagnosis() {
+        let diagnosis = serde_json::json!({
+            "identity": "abc123",
+            "provider_key": "jolt:update-log:abc123",
+            "local_update_log_cache": {
+                "state": "miss",
+                "entry_count": 0
+            },
+            "identity_head_hint": {
+                "state": "miss",
+                "fresh_count": 0,
+                "expired_count": 0
+            },
+            "local_provider_candidates": [],
+            "provider_candidates": [],
+            "relay_forwarding": {
+                "attempted": false,
+                "target_count": 0,
+                "attempts": []
+            },
+            "outcome": {
+                "code": "no_bootstrap_relays",
+                "message": "No update-log provider found for jolt:update-log:abc123"
+            }
+        });
+
+        let output = format_identity_diagnosis(&diagnosis);
+
+        assert!(output.contains("Identity: abc123"));
+        assert!(output.contains("Provider key: jolt:update-log:abc123"));
+        assert!(output.contains("Local cache: miss"));
+        assert!(output.contains("Identity-head hint: miss (0 fresh / 0 expired)"));
+        assert!(output.contains("Forwarding: not available (0 targets)"));
+        assert!(output.contains("Outcome: no_bootstrap_relays"));
     }
 }

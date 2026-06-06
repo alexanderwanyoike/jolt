@@ -3416,6 +3416,163 @@ async fn test_relay_pin_request_requires_relay_mode() {
 }
 
 #[tokio::test]
+async fn test_admin_relay_diagnose_identity_reports_no_bootstrap_relays() {
+    let (port, handle, _dir) = start_test_server().await;
+    let identity = NodeIdentity::generate().identity_id();
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!(
+            "{}/admin/v1/relay/diagnose/identity",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "identity": identity.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["identity"], identity.to_string());
+    assert_eq!(body["provider_key"], format!("jolt:update-log:{identity}"));
+    assert_eq!(body["local_update_log_cache"]["state"], "miss");
+    assert_eq!(body["identity_head_hint"]["state"], "miss");
+    assert_eq!(body["local_provider_candidates"], serde_json::json!([]));
+    assert_eq!(body["provider_candidates"], serde_json::json!([]));
+    assert_eq!(body["relay_forwarding"]["attempted"], false);
+    assert_eq!(body["relay_forwarding"]["target_count"], 0);
+    assert_eq!(body["outcome"]["code"], "no_bootstrap_relays");
+    assert!(body["outcome"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("no bootstrap relays"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_relay_diagnose_identity_reports_local_provider_candidate() {
+    let (port, handle, _dir) = start_test_server().await;
+    let owner = NodeIdentity::generate();
+    let identity = owner.identity_id();
+    handle
+        .store_update_log(identity.clone(), signed_profile_log(&owner, b"profile"))
+        .await
+        .unwrap();
+    let local_peer_id = handle.status().await.unwrap().peer_id;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!(
+            "{}/admin/v1/relay/diagnose/identity",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "identity": identity.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["identity"], identity.to_string());
+    assert_eq!(body["local_update_log_cache"]["state"], "hit");
+    assert_eq!(body["local_update_log_cache"]["entry_count"], 1);
+    assert_eq!(body["local_update_log_cache"]["latest_sequence"], 0);
+    assert_eq!(body["provider_candidates"][0]["peer_id"], local_peer_id);
+    assert_eq!(
+        body["local_provider_candidates"][0]["peer_id"],
+        local_peer_id
+    );
+    assert_eq!(body["outcome"]["code"], "provider_candidates_found");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_relay_diagnose_identity_reports_forwarded_no_candidates() {
+    let relay_dir = tempfile::tempdir().unwrap();
+    let alice_dir = tempfile::tempdir().unwrap();
+    let relay_p2p = free_tcp_port();
+    let alice_p2p = free_tcp_port();
+
+    let relay_identity = NodeIdentity::generate();
+    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
+    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    relay
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+        .unwrap();
+    let (_relay_api, relay_handle, _relay_dir) =
+        start_test_server_from_node(relay, relay_dir).await;
+    let relay_peer = relay_handle.status().await.unwrap().peer_id;
+    let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
+    let relay_addr: Multiaddr = relay_multiaddr.parse().unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
+    let mut alice_config = no_mdns_config();
+    alice_config.effective_bootstrap_relays = vec![relay_multiaddr];
+    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, alice_config).unwrap();
+    alice
+        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
+        .unwrap();
+    alice.bootstrap_dht(&[relay_addr]).unwrap();
+    let (alice_api, alice_handle, _alice_dir) = start_test_server_from_node(alice, alice_dir).await;
+    wait_for_connected_peers(&alice_handle, 1).await;
+
+    let missing_identity = NodeIdentity::generate().identity_id();
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!(
+            "{}/admin/v1/relay/diagnose/identity",
+            base_url(alice_api)
+        ))
+        .json(&serde_json::json!({ "identity": missing_identity.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["outcome"]["code"], "identity_provider_not_found");
+    assert_eq!(body["relay_forwarding"]["attempted"], true);
+    assert_eq!(body["relay_forwarding"]["target_count"], 1);
+    assert_eq!(
+        body["relay_forwarding"]["attempts"][0]["peer_id"],
+        relay_peer
+    );
+    assert_eq!(
+        body["relay_forwarding"]["attempts"][0]["status"],
+        "responded"
+    );
+    assert_eq!(
+        body["relay_forwarding"]["attempts"][0]["candidate_count"],
+        0
+    );
+    assert_eq!(body["provider_candidates"], serde_json::json!([]));
+
+    relay_handle.shutdown().await.ok();
+    alice_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_relay_diagnose_identity_is_not_exposed_through_app_api() {
+    let (port, handle, _dir) = start_test_server().await;
+    let identity = NodeIdentity::generate().identity_id();
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/app/v1/relay/diagnose/identity", base_url(port)))
+        .json(&serde_json::json!({ "identity": identity.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_resolve_endpoint_reports_no_update_log_provider_candidates() {
     let (port, handle, _dir) = start_test_server().await;
     let missing_identity = NodeIdentity::generate().identity_id();
