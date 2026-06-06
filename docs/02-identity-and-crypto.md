@@ -69,6 +69,10 @@ Users can also set a **display name** in their profile that other nodes can read
 - Import keypair on a new device to maintain identity
 - If the key is lost, the identity is lost (there is no "forgot password" -- this is a conscious trade-off)
 
+See [Identity Import and Export v0](18-identity-import-export.md) for the
+cautious v0 recovery-bundle design, including shared-key risks and the future
+delegated-device direction.
+
 ### Multiple Identities
 
 A user can create multiple keypairs for different contexts (personal, professional, anonymous). The node supports switching between identities.
