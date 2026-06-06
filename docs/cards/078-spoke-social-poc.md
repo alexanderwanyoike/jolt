@@ -2,7 +2,7 @@
 
 **Type:** HITL then AFK  
 **Milestone:** v0 Endgame  
-**Status:** Ready after 073/075
+**Status:** In Progress
 **Blocked by:** 073, 075
 
 ## Why
@@ -60,3 +60,26 @@ Jolt should matter because:
 
 Spoke should live outside the Jolt protocol repo unless there is a strong reason
 to keep a tiny fixture here. Jolt protocol remains app-agnostic.
+
+## Implementation Notes
+
+- Initial local PoC app lives at `/home/alexander/Code/Apps/jolt-apps/spoke`.
+- Spoke uses app-owned JSON schemas only:
+  - `spoke.profile.v1` at `/spoke/profile`;
+  - `spoke.post.v1` at `/spoke/posts/{id}`;
+  - `spoke.feed.v1` at `/spoke/feed`;
+  - `spoke.reply.v1` for encrypted recipient ingress replies.
+- The reply path uses existing daemon APIs without exposing private keys:
+  Spoke encrypts and publishes an outgoing reply object under
+  `/spoke/outgoing/{id}`, fetches the encrypted bytes by CID, and submits those
+  bytes to the recipient daemon's public `/api/v1/ingress` endpoint.
+- Pinning remains optional in this slice; the UI does not require a relay.
+- The current app is not yet backed by a remote Spoke repository/PR.
+
+## Verification
+
+- Green: `npm test` in `/home/alexander/Code/Apps/jolt-apps/spoke`.
+- Green: `npm run build` in `/home/alexander/Code/Apps/jolt-apps/spoke`.
+- Green: `curl -sSf http://127.0.0.1:5178/` while the Spoke Vite dev server is
+  running.
+- Pending: human two-node demo with at least two identities/nodes.
