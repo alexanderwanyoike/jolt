@@ -1,159 +1,197 @@
 # Jolt
 
-Jolt is a local-first peer-to-peer runtime for user-owned apps.
+Jolt is a peer-to-peer distributed content syndication network.
 
-The short version: Jolt gives a user a cryptographic identity, a local daemon,
-scoped app permissions, signed `.jolt` state, encrypted content, optional relay
-availability, and recipient-controlled ingress for two-way app communication.
-Apps such as Pastey and Spoke run outside the daemon and ask the local user for
-permission before acting as that identity.
+It is for platformless content distribution: a person or community publishes
+content under their own cryptographic identity, other nodes can discover and
+fetch that content, and apps can build experiences on top without owning the
+audience, the account, or the keys.
 
-Jolt is not a finished product. v0 is a successful experiment: the core pieces
-work well enough to build with, but the experience is still eventually
+Jolt is experimental v0 software. The protocol and app boundary work, and the
+[Spoke](https://github.com/alexanderwanyoike/spoke) social proof-of-concept can
+publish posts and send replies between users. The system is still eventually
 consistent, developer-oriented, and not yet packaged for normal users.
 
-## Why
+## Why Jolt Exists
 
-Most social, community, and collaboration tools bundle four things together:
+On X, Instagram, Facebook, and similar platforms, distribution is owned by the
+platform:
 
-| Platform bundle | Jolt primitive |
+- your identity is a platform account;
+- your audience is a platform graph;
+- your posts live behind platform APIs and moderation systems;
+- the feed is ranked by platform rules;
+- the app controls what moves, what is hidden, and what can be exported.
+
+That model works because it is convenient. It is also fragile. If a platform
+changes rules, declines, bans an account, shuts down APIs, or stops showing your
+work, your distribution can disappear even if your content still exists.
+
+Jolt explores a different model: content distribution should be anchored in the
+publisher's identity, not in a platform account. Apps can still exist, but they
+should be replaceable views over content and relationships the platform does not
+own.
+
+## How Jolt Is Different
+
+| Platform social apps | Jolt |
 |---|---|
-| Account identity | User-owned signing keys and `.jolt` identity addresses |
-| Hosted content | Content-addressed blobs, signed update logs, encrypted envelopes |
-| Platform distribution | Peer discovery, caching, optional relays, owner-directed pinning |
-| App authority | Scoped local app sessions approved in Jolt Console |
+| Identity is an account on the platform | Identity is a key owned by the user |
+| Posts are stored and distributed by the platform | Content is signed, content-addressed, and fetched peer-to-peer |
+| Followers live in the platform graph | Apps can build contact/follow models over Jolt identities |
+| The feed is the product | The feed is an app-level view over signed content |
+| Apps hold the user's authority | Apps request scoped permission from the local daemon |
+| Availability depends on the platform | Availability can come from peers, caches, and authorized relays |
 
-Jolt's bet is that apps should not own the user's identity or keys. The daemon
-is the local authority. Apps are untrusted clients that request specific
-capabilities, such as publishing under `/spoke/*`, decrypting private Pastey
-objects, or sending recipient ingress.
+The core idea is syndication, not a single social network. A Jolt identity can
+publish signed updates. Different apps can read those updates and render them as
+a feed, profile, gallery, release channel, notebook, or community space.
 
-That model is useful for apps where authorship, portability, private sharing,
-and continuity matter more than global platform reach.
+## What Works Today
 
-## v0 Verdict
+Jolt v0 has working implementations of the core pieces:
 
-The v0 experiment proved enough to stop feature-building and judge the idea:
+- local daemon for identity, content, networking, and app permissions;
+- Jolt Console for approving and revoking app access;
+- `.jolt` identity addresses backed by signing keys;
+- signed update logs for mutable identity-owned paths;
+- content-addressed publish/fetch;
+- encrypted content envelopes;
+- app-scoped APIs with capability checks;
+- peer discovery, local caching, and relay/discovery experiments;
+- signed reachability records;
+- recipient-controlled ingress for two-way app communication.
 
-- A local daemon can own identity, keys, storage, networking, and app sessions.
-- Jolt Console can approve/revoke app authority and start/manage the daemon.
-- External apps can use Jolt without receiving private keys.
-- Pastey proves public and private encrypted sharing.
-- Spoke proves a small social app with posts, contacts, replies, and two-way
-  recipient ingress.
-- Relay/discovery work is good enough for v0; deeper relay operations can wait.
+The current human-facing proof is
+[Spoke](https://github.com/alexanderwanyoike/spoke), a small social app PoC.
+Spoke can:
 
-The main weakness is product feel. Spoke works, but it feels eventually
-consistent because app state is rebuilt through polling, resolve, fetch, and
-local materialization. That is acceptable for v0, but it is not yet the native,
-realtime feel people expect from social or messaging software.
+- create a local profile;
+- publish posts under a Jolt identity;
+- add known contacts by `.jolt` identity;
+- read contact feeds;
+- send encrypted replies through recipient ingress;
+- auto-accept replies from known contacts while leaving unknown senders for
+  manual review.
 
-## What Works
+This is enough to show that Jolt can support platformless social-style
+distribution. It is not yet enough to claim polished social-network UX.
 
-Core protocol/runtime:
+## Who Jolt Is For
 
-- Content-addressed publish/fetch by CID.
-- Ed25519 identity keys and canonical `{identity}.jolt` addresses.
-- Signed update logs for mutable identity-owned paths.
-- `.jolt` resolve/fetch through local daemon APIs.
-- Local content store, cache, pinning, and re-sharing.
-- Kademlia/provider discovery and deterministic local TCP test transport.
-- iroh transport path for real P2P/NAT traversal experiments.
-- Relay mesh/discovery and owner-directed home relay pinning.
-- Signed reachability records for recipient ingress.
+Jolt is currently for:
 
-App/security boundary:
+- developers exploring local-first or peer-to-peer apps;
+- people interested in content distribution that is not tied to one platform;
+- creators or communities who want portable publishing and audience
+  relationships;
+- researchers, hackers, and protocol builders evaluating user-owned identity and
+  signed content systems;
+- future app developers who want to build interfaces without owning the user's
+  keys or account.
 
-- HTTP daemon API and capability-checked `/app/v1/*` API.
-- App session request, approval, revocation, and capability scoping.
-- Jolt Console as the privileged local trust surface.
-- Apps can publish/fetch/resolve only within approved scopes.
-- Apps can request encryption/decryption without receiving private keys.
-- Apps can send recipient ingress by identity without manually entering receiver
-  URLs.
+Jolt is not currently for non-technical users. The setup is still too manual,
+identity addresses are not friendly, and the first installable distribution is
+not done yet.
 
-Proof apps:
+## What Jolt Is Not
 
-- [Pastey](https://github.com/alexanderwanyoike/pastey): public and private
-  paste sharing over Jolt app sessions.
-- [Spoke](https://github.com/alexanderwanyoike/spoke): identity-owned social
-  notebook PoC with contacts, feeds, posts, encrypted replies, and known-contact
-  auto-accept.
+Jolt is not:
 
-## What Needs Work
+- a finished social network;
+- a replacement for X, Instagram, or Facebook today;
+- a blockchain, token system, or storage marketplace;
+- a global search engine;
+- a moderation system;
+- an anonymity network;
+- a guarantee that content stays online forever;
+- a polished realtime messaging system;
+- production-reviewed security software.
 
-These are not hidden. They are the current v0 limitations.
+Jolt provides lower-level distribution, identity, permissions, content, and
+ingress primitives. Apps decide what product experience to build from those
+primitives.
 
-- **Distribution:** Jolt still needs a packaged Console + daemon + optional CLI
-  artifact. Users should not build from source or manually start several
-  processes.
-- **Realtime/local materialization:** apps currently poll and rebuild state.
-  Jolt needs a better local app/daemon interface for subscriptions or
-  materialized app views.
-- **Performance:** recursive resolve/fetch paths have been reduced, but social
-  feed refreshes can still feel slow.
-- **Identity UX:** `.jolt` identity addresses are not human-friendly. Apps can
-  use local contact names, but global search/naming is intentionally not solved.
-- **Offline ingress:** direct recipient ingress works when the recipient is
-  reachable. Store-and-forward/offline inbox semantics need a separate design.
-- **Relay policy:** pinning must remain owner-directed and authorized. Public
-  pinning, quotas, abuse limits, and relay operator policy need hardening.
-- **Operational polish:** logs, metrics, diagnostics, app setup docs, and reset
-  flows need product-level cleanup.
-- **Security review:** crypto uses standard primitives, but the whole system
-  still needs review before anyone treats it as production security software.
+## Current Limitations
+
+The main v0 limitation is product feel. Spoke works, but it feels eventually
+consistent because it polls the daemon and rebuilds local app state through
+resolve/fetch/materialization. That is acceptable for proving the model, but not
+for a polished social product.
+
+Other important limitations:
+
+- **No packaged install yet:** users still need developer tooling.
+- **Identity UX is rough:** `.jolt` addresses are long and not human-friendly.
+- **No global discovery/search:** users need to know identities or receive them
+  out of band.
+- **Offline ingress is not solved:** direct recipient ingress works when the
+  recipient is reachable; store-and-forward needs more design.
+- **Relay policy needs hardening:** pinning must be authorized and abuse-limited.
+- **Security needs review:** standard crypto primitives are used, but v0 has not
+  had a full security review.
+
+## Project Status
+
+Jolt is now in a v0 freeze posture.
+
+The experiment is mildly successful: Jolt can distribute signed content by
+identity, external apps can use scoped local authority, and Spoke proves
+two-way app communication. The next question is not "can this work?" The next
+question is whether packaging and product polish make it worth using.
+
+Near-term work should be limited to:
+
+- packaging Jolt Console with a daemon sidecar;
+- setup and demo documentation;
+- bug fixes found by running Spoke;
+- performance work where it directly improves the demo;
+- clearer explanation of the model.
+
+New protocol features, app-store work, global search, relay metrics, and richer
+social features should wait.
 
 ## Architecture
 
 ```text
 Jolt Console
-  privileged local UI for daemon lifecycle, permissions, settings, diagnostics
-
-External apps
-  Pastey, Spoke, future apps
-  untrusted clients using scoped app sessions
+  local control surface for daemon lifecycle, settings, and app permissions
 
 Jolt daemon
   identity keys
-  content store
   signed update logs
-  encryption/decryption APIs
-  app session authority
-  reachability and ingress
-  P2P networking and relay discovery
+  content store
+  encryption/decryption
+  app capability enforcement
+  peer and relay networking
+  recipient ingress
 
-Jolt network
+Apps
+  untrusted clients with scoped permissions
+  example: Spoke
+
+Network
   peers
-  relays
+  caches
+  optional relays
   provider discovery
-  cached and pinned content
 ```
 
 The protocol layer stays app-agnostic. It knows about identities, content IDs,
 signed paths, update logs, reachability, encrypted objects, relays, pinning, and
-capabilities. It does not know about Spoke posts, Pastey pastes, feeds, inboxes,
-profiles, timelines, or contacts. Those are app-level schemas stored as signed
-content.
+capabilities. It does not know about posts, feeds, profiles, timelines, inboxes,
+or contacts. Those are app-level schemas.
 
-## Crates
+## Try It
 
-| Crate | Purpose |
-|---|---|
-| `jolt-core` | Content IDs, `.jolt` addresses, reachability records, shared protocol types |
-| `jolt-identity` | Ed25519 identity key management, signing, verification |
-| `jolt-store` | Local content store, cache, pinning, eviction |
-| `jolt-network` | Daemon node, P2P networking, fetch/resolve/update-log flows |
-| `jolt-server` | HTTP daemon API and app API |
-| `jolt-node` | CLI binary and daemon commands |
-| `apps/jolt-console` | Tauri desktop Console |
-
-## Quick Start For Developers
+Jolt does not yet have a normal packaged install. For now this is a developer
+workflow.
 
 Prerequisite:
 
 - Rust 1.89+
 
-Build:
+Build Jolt:
 
 ```bash
 cargo build --locked
@@ -171,21 +209,7 @@ Check status:
 curl -fsS http://127.0.0.1:9862/api/v1/status | jq .
 ```
 
-Publish content:
-
-```bash
-curl -fsS -F "file=@README.md" http://127.0.0.1:9862/api/v1/publish | jq .
-```
-
-Fetch content:
-
-```bash
-curl -fsS -X POST http://127.0.0.1:9862/api/v1/fetch \
-  -H 'content-type: application/json' \
-  -d '{"content_id":"bafkr4i..."}' | jq .
-```
-
-Run Jolt Console in development:
+Run Jolt Console:
 
 ```bash
 cd apps/jolt-console
@@ -193,83 +217,28 @@ npm install
 npm run tauri dev
 ```
 
-## Demo Apps
-
-Pastey and Spoke live outside this repository.
+Try the Spoke PoC:
 
 ```bash
-git clone https://github.com/alexanderwanyoike/pastey
 git clone https://github.com/alexanderwanyoike/spoke
 ```
 
-Current local demos use isolated Alice/Bob daemon data directories and Vite dev
-servers pointed at different daemon API ports. They are useful for proving the
-app boundary, permissions, private content, and recipient ingress, but they are
-not yet a normal-user install flow.
+Spoke currently needs a local Jolt daemon and a dev server pointed at that
+daemon. The setup is still manual; packaging Jolt is the next product step.
 
-Pastey has a harness in this repository for deterministic app-API smoke checks:
+## Developer Notes
 
-```bash
-./scripts/pastey-two-node-demo.sh --smoke --no-pastey
-```
+Crates:
 
-For the full human demo, run Jolt Console, run two daemons, start Pastey or
-Spoke against each daemon, approve app sessions in Console, then test:
-
-- public publish/fetch;
-- private encrypted publish/open;
-- contact feed reading;
-- recipient ingress replies;
-- known-contact auto-accept in Spoke.
-
-## API Snapshot
-
-Public daemon API:
-
-```text
-GET    /api/v1/health
-GET    /api/v1/status
-GET    /api/v1/peers
-POST   /api/v1/peers/connect
-POST   /api/v1/publish
-POST   /api/v1/fetch
-POST   /api/v1/resolve
-GET    /api/v1/cache/stats
-GET    /api/v1/cache/entries
-POST   /api/v1/cache/pin/{id}
-DELETE /api/v1/cache/pin/{id}
-POST   /api/v1/ingress
-```
-
-App API, guarded by approved app sessions:
-
-```text
-GET    /app/v1/session
-POST   /app/v1/publish
-GET    /app/v1/published
-POST   /app/v1/fetch
-POST   /app/v1/resolve
-POST   /app/v1/encrypted/publish
-POST   /app/v1/encrypted/decrypt
-POST   /app/v1/encrypted/open
-GET    /app/v1/ingress/pending
-POST   /app/v1/ingress/send
-POST   /app/v1/ingress/{id}/open
-POST   /app/v1/ingress/{id}/accept
-POST   /app/v1/ingress/{id}/reject
-```
-
-Admin/Console API:
-
-```text
-GET    /admin/v1/app-requests
-POST   /admin/v1/app-requests/{id}/approve
-POST   /admin/v1/app-requests/{id}/reject
-GET    /admin/v1/app-sessions
-POST   /admin/v1/app-sessions/{id}/revoke
-```
-
-## Testing
+| Crate | Purpose |
+|---|---|
+| `jolt-core` | Content IDs, `.jolt` addresses, reachability records, shared protocol types |
+| `jolt-identity` | Ed25519 identity key management, signing, verification |
+| `jolt-store` | Local content store, cache, pinning, eviction |
+| `jolt-network` | Daemon node, P2P networking, fetch/resolve/update-log flows |
+| `jolt-server` | HTTP daemon API and app API |
+| `jolt-node` | CLI binary and daemon commands |
+| `apps/jolt-console` | Tauri desktop Console |
 
 Normal local verification:
 
@@ -277,59 +246,13 @@ Normal local verification:
 ./scripts/test-local.sh
 ```
 
-That script runs the deterministic Rust workspace checks and the Pastey demo
-harness contract check.
-
-Focused checks used heavily during v0:
+Focused checks:
 
 ```bash
 cargo test --locked --workspace --exclude jolt-console
 npm test --prefix apps/jolt-console
 npm run build --prefix apps/jolt-console
 ```
-
-Spoke and Pastey have their own `npm test` and `npm run build` checks in their
-separate repositories.
-
-Manual network checks still matter. The strongest confidence test is a public
-bootstrap/relay node plus two client machines on different networks, including
-one behind CGNAT/mobile when possible.
-
-## v0 Freeze
-
-Jolt is now in a v0 freeze posture:
-
-- no new protocol features;
-- no new Console surfaces unless needed for setup or bug fixes;
-- no app store/catalog work;
-- no relay metrics/structured-logs push until product use is clearer;
-- bug fixes, packaging, docs, demos, and setup polish only.
-
-The next meaningful product step is distribution: ship a Jolt Console desktop
-app that bundles the daemon sidecar and gives users one obvious way to start,
-stop, configure, and approve apps.
-
-## Roadmap After v0
-
-Only continue if the v0 demos create real interest.
-
-High-value next work:
-
-- packaged Jolt Console + daemon + optional CLI;
-- better app/daemon state subscriptions or materialized views;
-- clearer identity/contact/invite UX;
-- offline recipient ingress/store-and-forward design;
-- relay abuse controls, quotas, pin authorization, and operator diagnostics;
-- richer Pastey/Spoke docs and install instructions.
-
-Deferred until there is clear demand:
-
-- app store/catalog inside Console;
-- global search;
-- protocol-level social/feed semantics;
-- OS service/tray/menu-bar lifecycle;
-- WASM app runtime;
-- streaming/media-specific transport work.
 
 ## Documentation
 
