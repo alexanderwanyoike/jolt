@@ -54,8 +54,8 @@ private sharing foundations, Console lifecycle, and minimum relay-operator
 diagnostics are also complete enough for now. The next step should be product
 selection, not more infrastructure polishing:
 
-1. [073](073-two-way-communication-design.md): design recipient-controlled
-   two-way communication without letting Alice write Bob's namespace.
+1. [074](074-reachability-and-rendezvous-clarification.md): clarify the
+   direct-first receiver discovery and optional relay-assisted delivery model.
 2. [075](075-recipient-ingress-v0.md): implement the smallest generic ingress
    primitive needed by Spoke.
 3. [078](078-spoke-social-poc.md): build the human-facing social PoC.
@@ -67,8 +67,8 @@ Supporting cards:
 
 - [072](072-jolt-v0-scope-and-freeze-criteria.md): v0 boundary, non-goals, and
   freeze criteria are locked.
-- [074](074-reachability-and-rendezvous-clarification.md): clarify whether
-  reachability/rendezvous needs more work for v0.
+- [073](073-two-way-communication-design.md): recipient-controlled ingress
+  design is locked.
 - [076](076-optional-and-authorized-relay-pinning.md): make pinning optional
   and relay-authorized.
 - [077](077-jolt-distribution-v0.md): make Jolt realistically installable as
@@ -212,7 +212,7 @@ into the protocol layer.
 | [070](070-relay-diagnose-identity-v0.md) | AFK | Implemented in PR | Diagnose update-log provider discovery for one identity through CLI and admin API. |
 | [071](071-product-use-case-selection.md) | HITL | Discussion next | Choose the next product/use-case proof before more infrastructure polishing. |
 | [072](072-jolt-v0-scope-and-freeze-criteria.md) | HITL | Decided in PR | Lock the v0 boundary, non-goals, freeze criteria, and success/failure signals. |
-| [073](073-two-way-communication-design.md) | HITL | Ready after 072 | Design recipient-controlled two-way communication without cross-identity namespace writes. |
+| [073](073-two-way-communication-design.md) | HITL | Designed in PR | Design recipient-controlled two-way communication without cross-identity namespace writes. |
 | [074](074-reachability-and-rendezvous-clarification.md) | HITL | Ready after 073 | Clarify reachability, rendezvous, ingress, and app protocol terms for v0. |
 | [075](075-recipient-ingress-v0.md) | AFK after design | Blocked by 073 and 074 | Implement generic recipient-controlled ingress for Spoke replies/mentions. |
 | [076](076-optional-and-authorized-relay-pinning.md) | AFK | Ready after 072 | Make pinning optional and relay-policy-authorized. |
