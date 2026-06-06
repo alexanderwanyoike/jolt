@@ -96,21 +96,43 @@ not done yet.
 
 ## What Jolt Is Not
 
-Jolt is not:
+Jolt is not a blockchain. It does not provide global consensus, tokens, mining,
+staking, smart contracts, or a shared economic ledger.
 
-- a finished social network;
-- a replacement for X, Instagram, or Facebook today;
-- a blockchain, token system, or storage marketplace;
-- a global search engine;
-- a moderation system;
-- an anonymity network;
-- a guarantee that content stays online forever;
-- a polished realtime messaging system;
-- production-reviewed security software.
+Jolt is not a cryptocurrency project. There is no native coin, token incentive
+system, or financial layer required for the protocol to work.
 
-Jolt provides lower-level distribution, identity, permissions, content, and
-ingress primitives. Apps decide what product experience to build from those
-primitives.
+Jolt is not IPFS. Although it uses content addressing and peer-to-peer retrieval
+ideas, it is not trying to be a universal distributed filesystem or permanent
+public storage network.
+
+Jolt is not BitTorrent. Content transfer is one capability, but Jolt is not
+primarily a swarm-based file-sharing protocol.
+
+Jolt is not a backend framework. It does not replace Rails, Django, NestJS,
+Laravel, or other application frameworks. Jolt provides lower-level network,
+identity, content, reachability, and permission primitives that applications can
+build on.
+
+Jolt is not just CRUD over the network. The goal is not to recreate REST APIs in
+a distributed shape, but to enable peer discovery, routing, relay-assisted
+communication, signed content distribution, and direct content exchange.
+
+Jolt is not Tor. Relays exist to improve reachability, handshakes, routing,
+content availability, and peer discovery. Anonymity routing is not the default
+goal.
+
+Jolt is not a mesh VPN. It does not route arbitrary IP traffic or create a
+private LAN between machines. It operates at the application transport and
+content-distribution layer.
+
+Jolt is not trying to replace the internet. It is designed to augment existing
+networks with peer-aware communication for applications that benefit from
+decentralized transport and platformless distribution.
+
+Jolt is not a hosted social app. It can support social applications, and Spoke
+is the current proof, but Jolt itself is the underlying network and local
+runtime for content syndication.
 
 ## Current Limitations
 
