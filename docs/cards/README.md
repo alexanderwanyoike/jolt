@@ -54,9 +54,8 @@ The relay mesh milestone is complete enough for now. The app boundary and
 private sharing foundations are also complete enough for Pastey v0. The next
 step should be chosen deliberately from the remaining product/protocol tracks:
 
-1. [058](058-bidirectional-communication-and-realtime-rendezvous-design.md):
-   decide how Jolt supports secure bidirectional and realtime communication
-   without protocol-level inbox semantics.
+1. [069](069-signed-reachability-endpoints-v0.md): add signed reachability metadata
+   before any messaging, stream, or ingress implementation.
 2. [062](062-console-native-presence-and-permission-focus-v0.md): add native
    Console presence and focus permission prompts after the simple lifecycle
    work.
@@ -104,10 +103,11 @@ The completed Console-native daemon UX sequence is:
 because tray/native presence and OS integration should wait until the simple
 cross-platform lifecycle shape settles.
 
-Before messaging/email/realtime application work,
-park and discuss [058](058-bidirectional-communication-and-realtime-rendezvous-design.md)
-first. Secure bidirectional communication is important, but it should not pull
-app concepts such as inboxes or contacts into the protocol layer.
+Before messaging/email/realtime application work, use the direction in
+[058](058-bidirectional-communication-and-signed-reachability-design.md):
+Jolt should provide signed reachability metadata and generic identity-authenticated
+transport primitives without pulling app concepts such as inboxes or contacts
+into the protocol layer.
 
 ## Cards
 
@@ -170,7 +170,7 @@ app concepts such as inboxes or contacts into the protocol layer.
 | [055](055-jolt-console-native-daemon-ux-debt.md) | HITL | Split into follow-up cards | Umbrella for Console realtime, daemon lifecycle, native presence, settings, debug dashboard retirement, and distribution. |
 | [056](056-app-capability-grant-hardening.md) | AFK | Implemented in PR | Tighten app capability grant validation before private app authority. |
 | [057](057-pastey-private-open-performance-and-self-private-ux.md) | AFK | Implemented in PR | Make private Pastey open fast and self-only private paste creation natural. |
-| [058](058-bidirectional-communication-and-realtime-rendezvous-design.md) | HITL | Parked after 057 | Decide how Jolt supports secure bidirectional and realtime communication without protocol-level inbox semantics. |
+| [058](058-bidirectional-communication-and-signed-reachability-design.md) | HITL | Designed in PR | Decide how Jolt supports secure bidirectional communication through signed reachability without protocol-level inbox semantics. |
 | [059](059-console-realtime-state-v0.md) | AFK | Implemented in PR | Make Console state update without manual refresh. |
 | [060](060-console-daemon-lifecycle-v0.md) | AFK | Implemented in PR | Define and implement honest Console-owned daemon startup/lifecycle behavior. |
 | [061](061-console-network-settings-v0.md) | AFK | Implemented in PR | Manage bootstrap and home relay configuration from Console Settings. |
@@ -181,6 +181,7 @@ app concepts such as inboxes or contacts into the protocol layer.
 | [066](066-relay-operator-diagnostics-v0.md) | HITL | Designed in PR | Define CLI/admin/logging diagnostics for headless server-facing relays. |
 | [067](067-relay-cli-admin-status-v0.md) | AFK | Implemented in PR | Add SSH-friendly relay status through CLI and admin API. |
 | [068](068-work-map-reset.md) | AFK | Implemented in PR | Refresh the card index after Console, private sharing, and relay-operator slices landed. |
+| [069](069-signed-reachability-endpoints-v0.md) | AFK | Ready after 058 | Add signed reachability endpoint metadata without messaging/inbox semantics. |
 
 ## Card Format
 
