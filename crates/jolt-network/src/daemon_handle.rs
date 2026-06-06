@@ -3,13 +3,14 @@ use std::path::PathBuf;
 use tokio::sync::{mpsc, oneshot};
 
 use jolt_core::{
-    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, PinRequest, UpdateLogEntry,
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
+    OfflineIngressEndpoint, PinRequest, UpdateLogEntry,
 };
 
 use crate::command::{
     CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
     EncryptedObjectResponse, FetchResult, NodeStatus, PeerConnectResponse, PeerInfo,
-    PublishResponse, PublishedContentInfo, ResolveResponse,
+    PublishReachabilityResponse, PublishResponse, PublishedContentInfo, ResolveResponse,
 };
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
@@ -118,6 +119,29 @@ impl DaemonHandle {
         self.cmd_tx
             .send(DaemonCommand::DecryptObject {
                 encrypted_object,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Publish the local identity's signed reachability endpoint metadata.
+    pub async fn publish_reachability(
+        &self,
+        sequence_hint: u64,
+        expires_at: u64,
+        live: Vec<LiveReachabilityEndpoint>,
+        offline_ingress: Vec<OfflineIngressEndpoint>,
+    ) -> Result<PublishReachabilityResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::PublishReachability {
+                sequence_hint,
+                expires_at,
+                live,
+                offline_ingress,
                 response_tx: tx,
             })
             .await

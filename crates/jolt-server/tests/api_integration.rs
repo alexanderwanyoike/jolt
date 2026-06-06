@@ -2,7 +2,7 @@ use jolt_core::{
     generate_identity_encryption_keypair, ContentId, EncryptedObjectEnvelope,
     EncryptedObjectRecipient, IdentityEncryptionKey, IdentityEncryptionKeyRecord, JoltAddress,
     PinRequest, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
-    IDENTITY_ENCRYPTION_KEYS_PATH,
+    IDENTITY_ENCRYPTION_KEYS_PATH, SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
 use jolt_network::{
@@ -3739,6 +3739,68 @@ async fn test_identity_encryption_keys_endpoint_returns_verified_record_keys() {
     assert_eq!(body["keys"].as_array().unwrap().len(), 1);
     assert_eq!(body["keys"][0]["key_id"], "enc_x25519_test");
     assert_eq!(body["keys"][0]["suite_family"], "x25519-hkdf-sha256");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_can_publish_and_api_can_verify_signed_reachability() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let status = handle.status().await.unwrap();
+    let identity_label = status
+        .identity_address
+        .trim_end_matches('/')
+        .strip_suffix(".jolt")
+        .unwrap()
+        .to_string();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let publish_resp = client
+        .post(format!("{}/admin/v1/reachability", base_url(port)))
+        .json(&serde_json::json!({
+            "sequence_hint": 12,
+            "expires_at": now + 3600,
+            "live": [{
+                "transport": "jolt-libp2p-stream",
+                "peer_id": "12D3KooWReachablePeer",
+                "addresses": ["/ip4/127.0.0.1/udp/4100/quic-v1"],
+                "relay_hints": [],
+                "protocols": ["opaque-app-stream-v1"],
+                "max_payload_bytes": 65536
+            }],
+            "offline_ingress": []
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    assert_eq!(published["identity"], identity_label);
+    assert_eq!(published["path"], SIGNED_REACHABILITY_PATH);
+    assert_eq!(published["record"]["sequence_hint"], 12);
+    assert_eq!(published["record"]["live"].as_array().unwrap().len(), 1);
+
+    let get_resp = client
+        .get(format!(
+            "{}/api/v1/identities/{identity_label}/reachability",
+            base_url(port)
+        ))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(get_resp.status(), 200);
+    let body: serde_json::Value = get_resp.json().await.unwrap();
+    assert_eq!(body["identity"], identity_label);
+    assert_eq!(body["sequence_hint"], 12);
+    assert_eq!(body["live"][0]["transport"], "jolt-libp2p-stream");
+    assert_eq!(body["live"][0]["protocols"][0], "opaque-app-stream-v1");
+    assert_eq!(body["offline_ingress"].as_array().unwrap().len(), 0);
 
     handle.shutdown().await.ok();
 }
