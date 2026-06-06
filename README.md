@@ -7,10 +7,12 @@ content under their own cryptographic identity, other nodes can discover and
 fetch that content, and apps can build experiences on top without owning the
 audience, the account, or the keys.
 
-Jolt is experimental v0 software. The protocol and app boundary work, and the
-[Spoke](https://github.com/alexanderwanyoike/spoke) social proof-of-concept can
-publish posts and send replies between users. The system is still eventually
-consistent, developer-oriented, and not yet packaged for normal users.
+Jolt is experimental v0 software. This repository contains the protocol,
+daemon, HTTP/app API, Console, and local network implementation. The current
+code proves signed identity state, content-addressed retrieval, scoped app
+authority, encrypted objects, reachability records, and recipient-controlled
+ingress. The system is still eventually consistent, developer-oriented, and not
+yet packaged for normal users.
 
 ## Why Jolt Exists
 
@@ -43,13 +45,17 @@ own.
 | Apps hold the user's authority | Apps request scoped permission from the local daemon |
 | Availability depends on the platform | Availability can come from peers, caches, and authorized relays |
 
-The core idea is syndication, not a single social network. A Jolt identity can
-publish signed updates. Different apps can read those updates and render them as
-a feed, profile, gallery, release channel, notebook, or community space.
+The core idea is syndication at the network layer. A Jolt identity publishes
+signed state that maps identity-owned protocol paths to content IDs. Nodes
+resolve that state, fetch content from peers, caches, or authorized relays, and
+verify that updates were signed by the identity owner. Applications can
+interpret the signed content however they choose; those application schemas are
+not part of the protocol.
 
 ## What Works Today
 
-Jolt v0 has working implementations of the core pieces:
+Jolt v0 has working implementations of the core protocol and local runtime
+pieces:
 
 - local daemon for identity, content, networking, and app permissions;
 - Jolt Console for approving and revoking app access;
@@ -62,33 +68,25 @@ Jolt v0 has working implementations of the core pieces:
 - signed reachability records;
 - recipient-controlled ingress for two-way app communication.
 
-The current human-facing proof is
-[Spoke](https://github.com/alexanderwanyoike/spoke), a small social app PoC.
-Spoke can:
-
-- create a local profile;
-- publish posts under a Jolt identity;
-- add known contacts by `.jolt` identity;
-- read contact feeds;
-- send encrypted replies through recipient ingress;
-- auto-accept replies from known contacts while leaving unknown senders for
-  manual review.
-
-This is enough to show that Jolt can support platformless social-style
-distribution. It is not yet enough to claim polished social-network UX.
+A separate application,
+[Spoke](https://github.com/alexanderwanyoike/spoke), has been used as a proof
+that external apps can use these primitives through scoped daemon access. Spoke
+is useful evidence for the protocol boundary, but it is not part of this repo
+and does not define Jolt's data model.
 
 ## Who Jolt Is For
 
 Jolt is currently for:
 
-- developers exploring local-first or peer-to-peer apps;
-- people interested in content distribution that is not tied to one platform;
-- creators or communities who want portable publishing and audience
-  relationships;
-- researchers, hackers, and protocol builders evaluating user-owned identity and
-  signed content systems;
+- protocol and application developers building on platformless distribution;
+- people operating or experimenting with peer, cache, relay, and availability
+  infrastructure;
+- creators or communities who want portable publishing under identities they
+  control;
+- researchers, hackers, and protocol builders evaluating user-owned identity,
+  signed state, encrypted content, and peer-aware transport;
 - future app developers who want to build interfaces without owning the user's
-  keys or account.
+  keys, account, or distribution channel.
 
 Jolt is not currently for non-technical users. The setup is still too manual,
 identity addresses are not friendly, and the first installable distribution is
@@ -130,16 +128,17 @@ Jolt is not trying to replace the internet. It is designed to augment existing
 networks with peer-aware communication for applications that benefit from
 decentralized transport and platformless distribution.
 
-Jolt is not a hosted social app. It can support social applications, and Spoke
-is the current proof, but Jolt itself is the underlying network and local
-runtime for content syndication.
+Jolt is not a hosted social app. It can carry social applications, but those
+applications are consumers of the network. Jolt itself is the underlying
+protocol, local runtime, and peer network for content syndication.
 
 ## Current Limitations
 
-The main v0 limitation is product feel. Spoke works, but it feels eventually
-consistent because it polls the daemon and rebuilds local app state through
-resolve/fetch/materialization. That is acceptable for proving the model, but not
-for a polished social product.
+The main v0 limitation is that the application-daemon boundary is not settled.
+The current app APIs proved scoped authority, publish/fetch flows, and recipient
+ingress, but the REST-style boundary may not be the right long-term interface
+for live application state, subscriptions, and efficient local materialized
+views.
 
 Other important limitations:
 
@@ -158,9 +157,10 @@ Other important limitations:
 Jolt is now in a v0 freeze posture.
 
 The experiment is mildly successful: Jolt can distribute signed content by
-identity, external apps can use scoped local authority, and Spoke proves
-two-way app communication. The next question is not "can this work?" The next
-question is what the right v0 shape should be.
+identity, external apps can use scoped local authority, and recipient ingress
+proves two-way application communication at the protocol boundary. The next
+question is not "can this work?" The next question is what the right v0 shape
+should be.
 
 Before adding more features, Jolt needs deeper review:
 
@@ -174,7 +174,7 @@ Before adding more features, Jolt needs deeper review:
   views.
 
 New protocol features, app-store work, global search, relay metrics, and richer
-social features should wait until that review is done.
+application use-cases should wait until that review is done.
 
 ## Architecture
 
@@ -193,7 +193,6 @@ Jolt daemon
 
 Apps
   untrusted clients with scoped permissions
-  example: Spoke
 
 Network
   peers
@@ -242,14 +241,15 @@ npm install
 npm run tauri dev
 ```
 
-Try the Spoke PoC:
+Try an external application proof:
 
 ```bash
 git clone https://github.com/alexanderwanyoike/spoke
 ```
 
-Spoke currently needs a local Jolt daemon and a dev server pointed at that
-daemon. The setup is still manual.
+Spoke is a separate application that exercises Jolt app sessions and recipient
+ingress. It is not part of this protocol repo and does not define the protocol
+model. The setup is still manual.
 
 ## Developer Notes
 
