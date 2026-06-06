@@ -63,7 +63,8 @@ to keep a tiny fixture here. Jolt protocol remains app-agnostic.
 
 ## Implementation Notes
 
-- Initial local PoC app lives at `/home/alexander/Code/Apps/jolt-apps/spoke`.
+- Initial PoC app lives at `/home/alexander/Code/Apps/jolt-apps/spoke` and
+  is tracked in <https://github.com/alexanderwanyoike/spoke>.
 - Spoke uses app-owned JSON schemas only:
   - `spoke.profile.v1` at `/spoke/profile`;
   - `spoke.post.v1` at `/spoke/posts/{id}`;
@@ -74,7 +75,8 @@ to keep a tiny fixture here. Jolt protocol remains app-agnostic.
   `/spoke/outgoing/{id}`, fetches the encrypted bytes by CID, and submits those
   bytes to the recipient daemon's public `/api/v1/ingress` endpoint.
 - Pinning remains optional in this slice; the UI does not require a relay.
-- The current app is not yet backed by a remote Spoke repository/PR.
+- Spoke implementation PR:
+  <https://github.com/alexanderwanyoike/spoke/pull/1>.
 
 ## Verification
 
