@@ -34,12 +34,12 @@ own.
 
 ## How Jolt Is Different
 
-| Platform social apps | Jolt |
+| Platform applications | Jolt |
 |---|---|
 | Identity is an account on the platform | Identity is a key owned by the user |
-| Posts are stored and distributed by the platform | Content is signed, content-addressed, and fetched peer-to-peer |
-| Followers live in the platform graph | Apps can build contact/follow models over Jolt identities |
-| The feed is the product | The feed is an app-level view over signed content |
+| Content is stored and distributed by the platform | Content is signed, content-addressed, and fetched peer-to-peer |
+| Audience and relationships live in the platform graph | Apps can build relationship models over Jolt identities |
+| The platform interface defines how content is experienced | Interfaces are replaceable app-level views over signed content |
 | Apps hold the user's authority | Apps request scoped permission from the local daemon |
 | Availability depends on the platform | Availability can come from peers, caches, and authorized relays |
 
