@@ -54,12 +54,31 @@ private sharing foundations, Console lifecycle, and minimum relay-operator
 diagnostics are also complete enough for now. The next step should be product
 selection, not more infrastructure polishing:
 
-1. [071](071-product-use-case-selection.md): choose the next product/use-case
-   proof that can make Jolt feel necessary rather than merely possible.
-2. [062](062-console-native-presence-and-permission-focus-v0.md): native
-   Console presence and focus permission prompts, still deferred until product
-   pressure justifies cross-platform OS integration.
-3. Relay structured logs and metrics from
+1. [072](072-jolt-v0-scope-and-freeze-criteria.md): lock the v0 boundary,
+   non-goals, and freeze criteria.
+2. [073](073-two-way-communication-design.md): design recipient-controlled
+   two-way communication without letting Alice write Bob's namespace.
+3. [075](075-recipient-ingress-v0.md): implement the smallest generic ingress
+   primitive needed by Spoke.
+4. [078](078-spoke-social-poc.md): build the human-facing social PoC.
+5. [080](080-v0-freeze-and-bugfix-window.md): hard stop, bug fixes only, then
+   [081](081-launch-and-postmortem.md): write it up and decide whether Jolt has
+   legs.
+
+Supporting cards:
+
+- [074](074-reachability-and-rendezvous-clarification.md): clarify whether
+  reachability/rendezvous needs more work for v0.
+- [076](076-optional-and-authorized-relay-pinning.md): make pinning optional
+  and relay-authorized.
+- [077](077-jolt-distribution-v0.md): make Jolt realistically installable as
+  Console + daemon + CLI.
+- [079](079-pastey-final-compatibility-pass.md): keep Pastey working as a
+  companion PoC.
+- [062](062-console-native-presence-and-permission-focus-v0.md): native Console
+  presence and focus permission prompts, still deferred until product pressure
+  justifies cross-platform OS integration.
+- Relay structured logs and metrics from
    [066](066-relay-operator-diagnostics-v0.md): useful for operators, but now
    last behind product/use-case work.
 
@@ -192,6 +211,16 @@ into the protocol layer.
 | [069](069-signed-reachability-endpoints-v0.md) | AFK | Implemented in PR | Add signed reachability endpoint metadata without messaging/inbox semantics. |
 | [070](070-relay-diagnose-identity-v0.md) | AFK | Implemented in PR | Diagnose update-log provider discovery for one identity through CLI and admin API. |
 | [071](071-product-use-case-selection.md) | HITL | Discussion next | Choose the next product/use-case proof before more infrastructure polishing. |
+| [072](072-jolt-v0-scope-and-freeze-criteria.md) | HITL | Ready for discussion | Lock the v0 boundary, non-goals, freeze criteria, and success/failure signals. |
+| [073](073-two-way-communication-design.md) | HITL | Ready after 072 | Design recipient-controlled two-way communication without cross-identity namespace writes. |
+| [074](074-reachability-and-rendezvous-clarification.md) | HITL | Ready after 073 | Clarify reachability, rendezvous, ingress, and app protocol terms for v0. |
+| [075](075-recipient-ingress-v0.md) | AFK after design | Blocked by 073 and 074 | Implement generic recipient-controlled ingress for Spoke replies/mentions. |
+| [076](076-optional-and-authorized-relay-pinning.md) | AFK | Ready after 072 | Make pinning optional and relay-policy-authorized. |
+| [077](077-jolt-distribution-v0.md) | AFK | Ready after 072 | Make Jolt realistically installable as Console, daemon, and CLI. |
+| [078](078-spoke-social-poc.md) | HITL then AFK | Ready after 073/075 | Build the small social PoC that tests Jolt's product bet. |
+| [079](079-pastey-final-compatibility-pass.md) | AFK | Ready near freeze | Verify Pastey still works against final v0 APIs and docs. |
+| [080](080-v0-freeze-and-bugfix-window.md) | HITL | Ready after 078/079 | Hard stop new features and run the v0 bugfix/docs/demo pass. |
+| [081](081-launch-and-postmortem.md) | HITL | Ready after 080 | Publish the project, gather feedback, and decide continue/pause/bin. |
 
 ## Card Format
 
