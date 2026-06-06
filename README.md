@@ -138,18 +138,21 @@ Jolt is now in a v0 freeze posture.
 The experiment is mildly successful: Jolt can distribute signed content by
 identity, external apps can use scoped local authority, and Spoke proves
 two-way app communication. The next question is not "can this work?" The next
-question is whether packaging and product polish make it worth using.
+question is what the right v0 shape should be.
 
-Near-term work should be limited to:
+Before adding more features, Jolt needs deeper review:
 
-- packaging Jolt Console with a daemon sidecar;
-- setup and demo documentation;
-- bug fixes found by running Spoke;
-- performance work where it directly improves the demo;
-- clearer explanation of the model.
+- project and protocol review;
+- protocol optimization and security review;
+- project documentation;
+- v0 RFC design;
+- a clearer application-daemon interface. The current REST-style boundary works
+  for proving the idea, but it may not be the right long-term interface for
+  local apps that need live state, subscriptions, and efficient materialized
+  views.
 
 New protocol features, app-store work, global search, relay metrics, and richer
-social features should wait.
+social features should wait until that review is done.
 
 ## Architecture
 
@@ -224,7 +227,7 @@ git clone https://github.com/alexanderwanyoike/spoke
 ```
 
 Spoke currently needs a local Jolt daemon and a dev server pointed at that
-daemon. The setup is still manual; packaging Jolt is the next product step.
+daemon. The setup is still manual.
 
 ## Developer Notes
 
