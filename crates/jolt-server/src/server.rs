@@ -72,6 +72,10 @@ pub fn build_router_with_stores(
             get(routes::ingress::list_pending_ingress),
         )
         .route(
+            "/app/v1/ingress/send",
+            post(routes::ingress::send_ingress_by_identity),
+        )
+        .route(
             "/app/v1/ingress/{ingress_id}/accept",
             post(routes::ingress::accept_ingress),
         )

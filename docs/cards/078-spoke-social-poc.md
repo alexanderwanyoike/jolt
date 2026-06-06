@@ -2,7 +2,7 @@
 
 **Type:** HITL then AFK  
 **Milestone:** v0 Endgame  
-**Status:** In Progress
+**Status:** In Progress / PRs Open
 **Blocked by:** 073, 075
 
 ## Why
@@ -37,13 +37,13 @@ Jolt should matter because:
 
 ## Acceptance Criteria
 
-- [ ] Spoke uses Jolt app sessions and scoped capabilities.
-- [ ] Spoke does not receive private keys.
-- [ ] A user can publish a public post.
-- [ ] A user can follow/read a known identity.
-- [ ] A user can send a reply/mention through recipient ingress.
-- [ ] A recipient can accept/reject incoming social objects.
-- [ ] A local feed can be built from known/followed identities.
+- [x] Spoke uses Jolt app sessions and scoped capabilities.
+- [x] Spoke does not receive private keys.
+- [x] A user can publish a public post.
+- [x] A user can follow/read a known identity.
+- [x] A user can send a reply/mention through recipient ingress.
+- [x] A recipient can accept/reject incoming social objects.
+- [x] A local feed can be built from known/followed identities.
 - [ ] Pinning is optional.
 - [ ] Human demo works with at least two local identities/nodes.
 
@@ -71,8 +71,8 @@ to keep a tiny fixture here. Jolt protocol remains app-agnostic.
   - `spoke.reply.v1` for encrypted recipient ingress replies.
 - The reply path uses existing daemon APIs without exposing private keys:
   Spoke encrypts and publishes an outgoing reply object under
-  `/spoke/outgoing/{id}`, fetches the encrypted bytes by CID, and submits those
-  bytes to the recipient daemon's public `/api/v1/ingress` endpoint.
+  `/spoke/outgoing/{id}`, fetches the encrypted bytes by CID, and asks Jolt to
+  submit those bytes through app-scoped `POST /app/v1/ingress/send`.
 - Pinning remains optional in this slice; the UI does not require a relay.
 - Spoke now lives in the remote repository
   <https://github.com/alexanderwanyoike/spoke>.
@@ -87,13 +87,21 @@ to keep a tiny fixture here. Jolt protocol remains app-agnostic.
   should use the existing encrypted `/spoke/outgoing/{id}` object as the
   durable sent copy, because the encrypted publish API includes the sender's
   local identity as a recipient.
-- Next product issue: Spoke should remove manual Receiver URL entry and send
-  ingress by identity using Jolt reachability/rendezvous metadata.
+- Manual Receiver URL entry has been removed. Contacts are identified by Jolt
+  identity, and Jolt resolves signed reachability for reply submission.
+- Spoke feed indexes now include immutable post CIDs. Readers resolve
+  `/spoke/feed` once and fetch post CIDs directly when available, avoiding the
+  previous recursive/N+1 `.jolt` resolution pattern for migrated entries.
+- Remaining product issue: Spoke still polls instead of subscribing to daemon
+  state/events. The app works, but the local app/daemon interface needs a
+  future evented/materialized-view shape before it will feel native.
 
 ## Verification
 
 - Green: `npm test` in `/home/alexander/Code/Apps/jolt-apps/spoke`.
 - Green: `npm run build` in `/home/alexander/Code/Apps/jolt-apps/spoke`.
+- Green: `npm test -- api.test.ts feed.test.ts` in
+  `/home/alexander/Code/Apps/jolt-apps/spoke`.
 - Green: `curl -sSf http://127.0.0.1:5178/` while the Spoke Vite dev server is
   running.
 - Green: three local daemons for Alice/Bob/Carol were connected with two peers
@@ -105,4 +113,7 @@ to keep a tiny fixture here. Jolt protocol remains app-agnostic.
 - Green: live Bob decrypt check opened Bob's own encrypted
   `/spoke/outgoing/reply_curl_e2e` through the app API, confirming sent replies
   can be shown without a public plaintext copy.
-- Pending: remove manual Receiver URL from Spoke contact setup.
+- Green: live read-only diagnosis showed remote `.jolt` feed/post resolution was
+  causing recursive/N+1 delay; Spoke now stores post `contentId` in feed entries
+  and Jolt returns cached verified resolve results immediately while refreshing
+  in the background.

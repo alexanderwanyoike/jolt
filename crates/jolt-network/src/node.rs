@@ -114,7 +114,7 @@ struct PendingDaemonResolve {
     address: JoltAddress,
     now: Option<u64>,
     provider: libp2p::PeerId,
-    response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
+    response_tx: Option<oneshot::Sender<Result<ResolveResponse, NetworkError>>>,
     deadline: Instant,
     fallback_response: Option<ResolveResponse>,
 }
@@ -1813,6 +1813,9 @@ impl NetworkNode {
             .ok_or_else(|| {
                 NetworkError::InvalidInput(format!("ingress envelope not found: {ingress_id}"))
             })?;
+        if record.status == status {
+            return Ok(record.clone());
+        }
         if record.status != IngressStatus::Pending {
             return Err(NetworkError::InvalidInput(format!(
                 "ingress envelope is not pending: {ingress_id}"
@@ -2353,6 +2356,31 @@ impl NetworkNode {
         response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
         fallback_response: Option<ResolveResponse>,
     ) {
+        self.request_daemon_update_log_from_provider(
+            address,
+            now,
+            provider,
+            Some(response_tx),
+            fallback_response,
+        );
+    }
+
+    fn request_daemon_refresh_from_provider(
+        &mut self,
+        address: JoltAddress,
+        provider: &libp2p::PeerId,
+    ) {
+        self.request_daemon_update_log_from_provider(address, None, provider, None, None);
+    }
+
+    fn request_daemon_update_log_from_provider(
+        &mut self,
+        address: JoltAddress,
+        now: Option<u64>,
+        provider: &libp2p::PeerId,
+        response_tx: Option<oneshot::Sender<Result<ResolveResponse, NetworkError>>>,
+        fallback_response: Option<ResolveResponse>,
+    ) {
         let request = UpdateLogRequest {
             identity: address.identity().clone(),
             since: self
@@ -2452,11 +2480,13 @@ impl NetworkNode {
 
         for request_id in timed_out {
             if let Some(pending) = self.pending_daemon_resolutions.remove(&request_id) {
-                let result = pending
-                    .fallback_response
-                    .map(Ok)
-                    .unwrap_or(Err(NetworkError::Timeout));
-                let _ = pending.response_tx.send(result);
+                if let Some(response_tx) = pending.response_tx {
+                    let result = pending
+                        .fallback_response
+                        .map(Ok)
+                        .unwrap_or(Err(NetworkError::Timeout));
+                    let _ = response_tx.send(result);
+                }
             }
         }
     }
@@ -2884,33 +2914,45 @@ impl NetworkNode {
                     };
                     let _ = tx.send(result);
                 } else if let Some(pending) = self.pending_daemon_resolutions.remove(&request_id) {
-                    let result = if response.entries.is_empty() {
-                        pending.fallback_response.map(Ok).unwrap_or_else(|| {
-                            Err(Self::identity_head_invalid_failure(
-                                pending.address.identity(),
-                                "provider returned no update log entries",
-                            ))
-                        })
+                    if response.entries.is_empty() {
+                        if let Some(response_tx) = pending.response_tx {
+                            let result = pending.fallback_response.map(Ok).unwrap_or_else(|| {
+                                Err(Self::identity_head_invalid_failure(
+                                    pending.address.identity(),
+                                    "provider returned no update log entries",
+                                ))
+                            });
+                            let _ = response_tx.send(result);
+                        }
                     } else {
-                        self.store_verified_update_log(
-                            pending.address.identity().clone(),
-                            response.entries,
-                        )
-                        .map_err(|e| {
-                            Self::identity_head_invalid_failure(
-                                pending.address.identity(),
-                                e.to_string(),
+                        let result = self
+                            .store_verified_update_log(
+                                pending.address.identity().clone(),
+                                response.entries,
                             )
-                        })
-                        .and_then(|_| {
-                            self.resolve_response_from_cache(
-                                &pending.address,
-                                pending.now,
-                                "network",
-                            )
-                        })
-                    };
-                    let _ = pending.response_tx.send(result);
+                            .map_err(|e| {
+                                Self::identity_head_invalid_failure(
+                                    pending.address.identity(),
+                                    e.to_string(),
+                                )
+                            });
+
+                        if let Some(response_tx) = pending.response_tx {
+                            let result = result.and_then(|_| {
+                                self.resolve_response_from_cache(
+                                    &pending.address,
+                                    pending.now,
+                                    "network",
+                                )
+                            });
+                            let _ = response_tx.send(result);
+                        } else if let Err(err) = result {
+                            warn!(
+                                "Background update-log refresh failed for {}: {err}",
+                                pending.address.identity()
+                            );
+                        }
+                    }
                 }
             }
 
@@ -2962,19 +3004,19 @@ impl NetworkNode {
                         pending.address.identity(),
                         Some(&pending.provider),
                     ) {
-                        self.request_daemon_resolve_from_provider(
+                        self.request_daemon_update_log_from_provider(
                             pending.address,
                             pending.now,
                             &next_provider,
                             pending.response_tx,
                             pending.fallback_response,
                         );
-                    } else {
+                    } else if let Some(response_tx) = pending.response_tx {
                         let result = pending
                             .fallback_response
                             .map(Ok)
                             .unwrap_or_else(|| Err(NetworkError::Protocol(error.to_string())));
-                        let _ = pending.response_tx.send(result);
+                        let _ = response_tx.send(result);
                     }
                 }
             }
@@ -3493,9 +3535,15 @@ impl NetworkNode {
                     .ok();
                 let identity = address.identity().clone();
 
-                if fallback_response.is_some() && !self.should_refresh_cached_resolution(&identity)
-                {
-                    let _ = response_tx.send(Ok(fallback_response.unwrap()));
+                if let Some(response) = fallback_response.clone() {
+                    let _ = response_tx.send(Ok(response));
+                    if self.should_refresh_cached_resolution(&identity) {
+                        self.find_update_log_providers(&identity);
+                        if let Some(provider) = self.take_discovered_update_log_provider(&identity)
+                        {
+                            self.request_daemon_refresh_from_provider(address, &provider);
+                        }
+                    }
                     return;
                 }
 
@@ -4292,7 +4340,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn daemon_resolution_refreshes_cached_address_when_provider_is_known() {
+    async fn daemon_resolution_returns_cached_address_before_provider_refresh() {
         let dir = tempdir().unwrap();
         let mut node = make_node(dir.path());
         let owner = NodeIdentity::generate();
@@ -4326,18 +4374,20 @@ mod tests {
             .unwrap();
         node.discovered_providers.insert(key, vec![provider]);
 
-        let (tx, mut rx) = oneshot::channel();
+        let (tx, rx) = oneshot::channel();
         node.handle_command(DaemonCommand::Resolve {
             address: address.to_string(),
             response_tx: tx,
         });
 
-        assert!(matches!(
-            rx.try_recv(),
-            Err(oneshot::error::TryRecvError::Empty)
-        ));
+        let resolved = rx.await.unwrap().unwrap();
+        assert_eq!(resolved.content_id, old_content_id.to_string());
+        assert_eq!(resolved.latest_sequence, 0);
+        assert_eq!(resolved.source, "cache");
         assert_eq!(node.pending_daemon_resolutions.len(), 1);
-        let request_id = *node.pending_daemon_resolutions.keys().next().unwrap();
+        let (request_id, pending) = node.pending_daemon_resolutions.iter().next().unwrap();
+        assert!(pending.response_tx.is_none());
+        let request_id = *request_id;
 
         node.handle_swarm_event(SwarmEvent::Behaviour(JoltBehaviourEvent::UpdateLogSync(
             request_response::Event::Message {
@@ -4352,10 +4402,11 @@ mod tests {
             },
         )));
 
-        let resolved = rx.await.unwrap().unwrap();
-        assert_eq!(resolved.content_id, new_content_id.to_string());
-        assert_eq!(resolved.latest_sequence, 1);
-        assert_eq!(resolved.source, "network");
+        let refreshed = node
+            .resolve_response_from_cache(&address, None, "cache")
+            .unwrap();
+        assert_eq!(refreshed.content_id, new_content_id.to_string());
+        assert_eq!(refreshed.latest_sequence, 1);
     }
 
     #[tokio::test]

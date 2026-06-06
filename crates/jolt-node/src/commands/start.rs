@@ -2,6 +2,7 @@ use anyhow::Result;
 use tokio::sync::mpsc;
 use tracing::info;
 
+use jolt_core::LiveReachabilityEndpoint;
 use jolt_identity::NodeIdentity;
 use jolt_network::{
     bootstrap::default_bootstrap_peers, DaemonHandle, Multiaddr, NetworkConfig, NetworkNode,
@@ -37,6 +38,7 @@ pub async fn run(
 
     let identity = NodeIdentity::load_or_generate(&config.identity_dir)?;
     info!("Peer ID: {}", identity.peer_id());
+    let identity_peer_id = identity.peer_id().to_string();
     let local_identity = identity.identity_id();
     let settings = config.load_settings()?;
     let builtin_bootstrap = default_bootstrap_peers();
@@ -119,6 +121,15 @@ pub async fn run(
         node.run_daemon_loop(cmd_rx).await;
     });
 
+    publish_direct_ingress_reachability(
+        &handle,
+        api_bind,
+        api_port,
+        identity_peer_id,
+        jolt_now() + 24 * 60 * 60,
+    )
+    .await;
+
     // Write PID and port files
     let pid = std::process::id();
     daemon::write_daemon_info(&config, pid, api_port)?;
@@ -157,6 +168,46 @@ pub async fn run(
     }
 
     Ok(())
+}
+
+async fn publish_direct_ingress_reachability(
+    handle: &DaemonHandle,
+    api_bind: &str,
+    api_port: u16,
+    peer_id: String,
+    expires_at: u64,
+) {
+    let endpoint = direct_ingress_reachability_endpoint(api_bind, api_port, peer_id);
+    match handle
+        .publish_reachability(0, expires_at, vec![endpoint], Vec::new())
+        .await
+    {
+        Ok(response) => info!(
+            "Published direct ingress reachability: {}",
+            response.address
+        ),
+        Err(err) => info!("Direct ingress reachability publish skipped: {err}"),
+    }
+}
+
+fn direct_ingress_reachability_endpoint(
+    api_bind: &str,
+    api_port: u16,
+    peer_id: String,
+) -> LiveReachabilityEndpoint {
+    let host = if api_bind == "0.0.0.0" {
+        "127.0.0.1"
+    } else {
+        api_bind
+    };
+    LiveReachabilityEndpoint {
+        transport: "jolt-http-ingress".to_string(),
+        peer_id,
+        addresses: vec![format!("http://{host}:{api_port}/api/v1/ingress")],
+        relay_hints: Vec::new(),
+        protocols: vec!["recipient-ingress-v1".to_string()],
+        max_payload_bytes: 1024 * 1024,
+    }
 }
 
 fn build_network_config(
@@ -319,5 +370,37 @@ mod tests {
         assert!(config.effective_bootstrap_relays.is_empty());
         assert!(config.bootstrap_peers.is_empty());
         assert_eq!(config.configured_bootstrap_relays, vec![CONFIGURED]);
+    }
+
+    #[test]
+    fn direct_ingress_reachability_endpoint_advertises_local_http_ingress() {
+        let endpoint = direct_ingress_reachability_endpoint(
+            "127.0.0.1",
+            9862,
+            "12D3KooWReachablePeer".to_string(),
+        );
+
+        assert_eq!(endpoint.transport, "jolt-http-ingress");
+        assert_eq!(endpoint.peer_id, "12D3KooWReachablePeer");
+        assert_eq!(
+            endpoint.addresses,
+            vec!["http://127.0.0.1:9862/api/v1/ingress"]
+        );
+        assert_eq!(endpoint.protocols, vec!["recipient-ingress-v1"]);
+        assert_eq!(endpoint.max_payload_bytes, 1024 * 1024);
+    }
+
+    #[test]
+    fn direct_ingress_reachability_endpoint_uses_loopback_for_wildcard_bind() {
+        let endpoint = direct_ingress_reachability_endpoint(
+            "0.0.0.0",
+            9862,
+            "12D3KooWReachablePeer".to_string(),
+        );
+
+        assert_eq!(
+            endpoint.addresses,
+            vec!["http://127.0.0.1:9862/api/v1/ingress"]
+        );
     }
 }
