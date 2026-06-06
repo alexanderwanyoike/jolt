@@ -94,43 +94,25 @@ not done yet.
 
 ## What Jolt Is Not
 
-Jolt is not a blockchain. It does not provide global consensus, tokens, mining,
-staking, smart contracts, or a shared economic ledger.
+Jolt does not provide global consensus, a shared ledger, tokens, mining,
+staking, or smart contracts. It is not an economic network.
 
-Jolt is not a cryptocurrency project. There is no native coin, token incentive
-system, or financial layer required for the protocol to work.
+Jolt is not a permanent public filesystem. It uses content addressing, but
+availability still depends on peers, local stores, caches, and authorized relays
+that choose to keep content reachable.
 
-Jolt is not IPFS. Although it uses content addressing and peer-to-peer retrieval
-ideas, it is not trying to be a universal distributed filesystem or permanent
-public storage network.
+Jolt is not a tunnel for arbitrary IP traffic. It does not create a private LAN
+or route all application traffic. It moves signed identity state and
+content-addressed objects through a peer-aware application transport.
 
-Jolt is not BitTorrent. Content transfer is one capability, but Jolt is not
-primarily a swarm-based file-sharing protocol.
+Jolt is not a hosted application. Social networks, publishing tools, galleries,
+release channels, notebooks, or other products can be built on top of it, but
+those products are application schemas and interfaces above the protocol.
 
-Jolt is not a backend framework. It does not replace Rails, Django, NestJS,
-Laravel, or other application frameworks. Jolt provides lower-level network,
-identity, content, reachability, and permission primitives that applications can
-build on.
-
-Jolt is not just CRUD over the network. The goal is not to recreate REST APIs in
-a distributed shape, but to enable peer discovery, routing, relay-assisted
-communication, signed content distribution, and direct content exchange.
-
-Jolt is not Tor. Relays exist to improve reachability, handshakes, routing,
-content availability, and peer discovery. Anonymity routing is not the default
-goal.
-
-Jolt is not a mesh VPN. It does not route arbitrary IP traffic or create a
-private LAN between machines. It operates at the application transport and
-content-distribution layer.
-
-Jolt is not trying to replace the internet. It is designed to augment existing
-networks with peer-aware communication for applications that benefit from
-decentralized transport and platformless distribution.
-
-Jolt is not a hosted social app. It can carry social applications, but those
-applications are consumers of the network. Jolt itself is the underlying
-protocol, local runtime, and peer network for content syndication.
+Jolt is not a replacement for application frameworks. Apps still own their UI,
+domain model, validation, moderation choices, and product experience. Jolt
+provides lower-level identity, reachability, content distribution, encryption,
+and permission primitives.
 
 ## Current Limitations
 
