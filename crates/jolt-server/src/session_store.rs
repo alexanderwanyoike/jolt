@@ -415,6 +415,8 @@ fn load_state(path: &Path) -> std::io::Result<AppSessionState> {
 enum AppCapability {
     ResolvePublic,
     FetchPublic,
+    IngressRead,
+    IngressDecide,
     Path {
         action: PathCapabilityAction,
         scope: PathScope,
@@ -442,15 +444,18 @@ impl AppCapability {
         match raw {
             "resolve:public" => Some(Self::ResolvePublic),
             "fetch:public" => Some(Self::FetchPublic),
+            "ingress:read" => Some(Self::IngressRead),
+            "ingress:decide" => Some(Self::IngressDecide),
             _ => parse_path_capability(raw),
         }
     }
 
     fn contains(&self, granted: &Self) -> bool {
         match (self, granted) {
-            (Self::ResolvePublic, Self::ResolvePublic) | (Self::FetchPublic, Self::FetchPublic) => {
-                true
-            }
+            (Self::ResolvePublic, Self::ResolvePublic)
+            | (Self::FetchPublic, Self::FetchPublic)
+            | (Self::IngressRead, Self::IngressRead)
+            | (Self::IngressDecide, Self::IngressDecide) => true,
             (
                 Self::Path {
                     action: requested_action,

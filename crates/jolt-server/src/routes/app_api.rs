@@ -463,7 +463,7 @@ pub async fn pin_home_relay(
         .map_err(AppApiError::from)
 }
 
-async fn authenticated_session(
+pub(crate) async fn authenticated_session(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<AppSessionView, AppApiError> {
@@ -471,7 +471,7 @@ async fn authenticated_session(
     Ok(state.sessions.session_for_token(&token).await?)
 }
 
-async fn require_local_identity(
+pub(crate) async fn require_local_identity(
     state: &AppState,
     session: &AppSessionView,
 ) -> Result<(), AppApiError> {
@@ -505,7 +505,10 @@ fn bearer_token(headers: &HeaderMap) -> Result<&str, AppSessionStoreError> {
     Ok(token)
 }
 
-fn require_capability(session: &AppSessionView, capability: &str) -> Result<(), AppApiError> {
+pub(crate) fn require_capability(
+    session: &AppSessionView,
+    capability: &str,
+) -> Result<(), AppApiError> {
     if session
         .granted_capabilities
         .iter()

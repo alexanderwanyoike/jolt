@@ -66,6 +66,22 @@ pub fn build_router_with_stores(
         )
         .route("/app/v1/published", get(routes::app_api::list_published))
         .route(
+            "/app/v1/ingress/pending",
+            get(routes::ingress::list_pending_ingress),
+        )
+        .route(
+            "/app/v1/ingress/{ingress_id}/accept",
+            post(routes::ingress::accept_ingress),
+        )
+        .route(
+            "/app/v1/ingress/{ingress_id}/open",
+            post(routes::ingress::open_ingress),
+        )
+        .route(
+            "/app/v1/ingress/{ingress_id}/reject",
+            post(routes::ingress::reject_ingress),
+        )
+        .route(
             "/app/v1/home-relay/pins",
             post(routes::app_api::pin_home_relay),
         )
@@ -137,6 +153,7 @@ pub fn build_router_with_stores(
             "/api/v1/identities/{identity}/reachability",
             get(routes::reachability::get_identity_reachability),
         )
+        .route("/api/v1/ingress", post(routes::ingress::submit_ingress))
         .route(
             "/api/v1/home-relay/availability",
             get(routes::home_relay::availability),
