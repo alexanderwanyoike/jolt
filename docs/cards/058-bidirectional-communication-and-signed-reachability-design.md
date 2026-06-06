@@ -1,8 +1,8 @@
-# 058: Bidirectional Communication and Realtime Rendezvous Design
+# 058: Bidirectional Communication and Signed Reachability Design
 
-**Type:** HITL  
-**Milestone:** Communication / App Platform Direction  
-**Status:** Parked after 057  
+**Type:** HITL
+**Milestone:** Communication / App Platform Direction
+**Status:** Designed in PR
 **Blocked by:** 053, 057
 
 ## Why
@@ -30,7 +30,7 @@ Questions:
 
 - Should Jolt only provide identity, signed state, encryption keys, relay hints,
   and peer discovery, while apps use another realtime transport?
-- Does Jolt need a generic signed reachability/rendezvous record for live
+- Does Jolt need a generic signed reachability endpoint record for live
   endpoints and supported protocols?
 - Is offline delivery a daemon/app-layer receive queue rather than a protocol
   concept?
@@ -61,7 +61,7 @@ identity X signed path P -> CID Y at sequence N
 Use Jolt for:
 
 - identity and key discovery;
-- signed reachability/rendezvous metadata;
+- signed reachability metadata;
 - encrypted signed object envelopes;
 - relay availability and provider discovery;
 - local daemon authority and app capability checks.
@@ -79,7 +79,7 @@ Let apps or higher layers define:
 One possible model:
 
 ```text
-Jolt resolves Bob's identity, public keys, and current rendezvous hints.
+Jolt resolves Bob's identity, public keys, and current reachability hints.
 The messaging app uses those hints to establish a realtime channel over a
 chosen transport, or submits encrypted signed objects to a bounded receive
 queue advertised by Bob.
@@ -88,17 +88,40 @@ Bob's daemon pulls/ingests objects and the messaging app renders inbox state.
 
 ## Acceptance Criteria
 
-- [ ] A design note or card update clearly separates Jolt protocol primitives
+- [x] A design note or card update clearly separates Jolt protocol primitives
       from messaging/email app semantics.
-- [ ] The design states whether Jolt should own realtime channels or only
-      advertise/authenticate rendezvous information for other transports.
-- [ ] Offline delivery is described without allowing senders to mutate a
+- [x] The design states whether Jolt should own realtime channels or only
+      advertise/authenticate reachability information for other transports.
+- [x] Offline delivery is described without allowing senders to mutate a
       recipient's signed namespace.
-- [ ] Abuse controls are considered: size limits, queue limits, rate limits,
+- [x] Abuse controls are considered: size limits, queue limits, rate limits,
       invite tokens, allowlists, unknown sender quarantine, and DDoS boundaries.
-- [ ] Relationship/contact state is kept above the protocol layer.
-- [ ] The output identifies one or more follow-up implementation cards, if any,
+- [x] Relationship/contact state is kept above the protocol layer.
+- [x] The output identifies one or more follow-up implementation cards, if any,
       and explicitly lists what should not be built yet.
+
+## Design
+
+See [Bidirectional Communication and Signed Reachability](../19-signed-reachability-endpoints.md).
+
+Key decisions:
+
+- Jolt owns identity-rooted signed reachability primitives, not messaging semantics.
+- A signed `/.well-known/jolt/reachability` record can advertise live endpoints
+  and optional bounded offline ingress endpoints.
+- Jolt may provide generic authenticated app streams, but app payloads remain
+  opaque and app-defined.
+- Offline delivery is recipient-controlled ingress, not a remote write to the
+  recipient's signed namespace.
+- Contacts, inboxes, threads, read state, spam handling, and message schemas
+  stay above the protocol layer.
+- Object ingress needs explicit abuse controls before implementation: expiry,
+  quotas, rate limits, invite tokens, allowlists, quarantine, and relay policy.
+
+## Verification Notes
+
+- Docs-only design. No code tests were run.
+- Verified by reading the updated design note and card index.
 
 ## Notes
 
