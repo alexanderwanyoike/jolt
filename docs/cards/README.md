@@ -31,9 +31,8 @@ Done:
   Basic headless relay status for operators.
 
 Next:
-  Pick one focused track instead of continuing to expand every surface at once:
-  identity portability, bidirectional/realtime communication design, native
-  Console polish, relay operator diagnostics, or the next product proof.
+  Stop expanding every technical surface at once. Pick the next product/use-case
+  proof that explains why someone should run Jolt.
 ```
 
 The first useful product/protocol bridge was:
@@ -50,17 +49,19 @@ The answer should shape the next proof. This is a product discussion, not an imp
 
 Do not start with WASM apps, storage markets, payments, Drops, or storage-market mechanics.
 
-The relay mesh milestone is complete enough for now. The app boundary and
-private sharing foundations are also complete enough for Pastey v0. The next
-step should be chosen deliberately from the remaining product/protocol tracks:
+The relay mesh milestone is complete enough for now. The app boundary,
+private sharing foundations, Console lifecycle, and minimum relay-operator
+diagnostics are also complete enough for now. The next step should be product
+selection, not more infrastructure polishing:
 
-1. [062](062-console-native-presence-and-permission-focus-v0.md): add native
-   Console presence and focus permission prompts after the simple lifecycle
-   work.
-2. Relay operator follow-ups from
-   [066](066-relay-operator-diagnostics-v0.md): structured logs and metrics.
-3. A new first-use-case/product proof card if Pastey has already answered the
-   app-boundary questions well enough.
+1. [071](071-product-use-case-selection.md): choose the next product/use-case
+   proof that can make Jolt feel necessary rather than merely possible.
+2. [062](062-console-native-presence-and-permission-focus-v0.md): native
+   Console presence and focus permission prompts, still deferred until product
+   pressure justifies cross-platform OS integration.
+3. Relay structured logs and metrics from
+   [066](066-relay-operator-diagnostics-v0.md): useful for operators, but now
+   last behind product/use-case work.
 
 ## Completed Sprint: App Boundary and Private Sharing Foundations
 
@@ -106,8 +107,9 @@ The relay-operator diagnostics sequence is:
 2. [070](070-relay-diagnose-identity-v0.md): diagnose update-log provider
    discovery for one identity.
 
-Structured logs and metrics remain as the next relay-operator follow-ups from
-[066](066-relay-operator-diagnostics-v0.md).
+Structured logs and metrics remain valid relay-operator follow-ups from
+[066](066-relay-operator-diagnostics-v0.md), but they are deliberately parked
+behind product/use-case work.
 
 Before messaging/email/realtime application work, use the direction in
 [058](058-bidirectional-communication-and-signed-reachability-design.md):
@@ -189,6 +191,7 @@ into the protocol layer.
 | [068](068-work-map-reset.md) | AFK | Implemented in PR | Refresh the card index after Console, private sharing, and relay-operator slices landed. |
 | [069](069-signed-reachability-endpoints-v0.md) | AFK | Implemented in PR | Add signed reachability endpoint metadata without messaging/inbox semantics. |
 | [070](070-relay-diagnose-identity-v0.md) | AFK | Implemented in PR | Diagnose update-log provider discovery for one identity through CLI and admin API. |
+| [071](071-product-use-case-selection.md) | HITL | Discussion next | Choose the next product/use-case proof before more infrastructure polishing. |
 
 ## Card Format
 

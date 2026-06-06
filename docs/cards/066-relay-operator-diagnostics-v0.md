@@ -70,8 +70,8 @@ Key decisions:
 
 1. Relay CLI/Admin Status v0. Implemented in [067](067-relay-cli-admin-status-v0.md).
 2. Relay Diagnose Identity v0. Implemented in [070](070-relay-diagnose-identity-v0.md).
-3. Relay Structured Logs v0.
-4. Relay Metrics v0.
+3. Relay Structured Logs v0. Parked behind product/use-case work.
+4. Relay Metrics v0. Parked behind product/use-case work.
 
 ## Verification
 
