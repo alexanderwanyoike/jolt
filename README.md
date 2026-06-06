@@ -1,291 +1,340 @@
-# jolt
+# Jolt
 
-A peer-to-peer community substrate built in Rust.
+Jolt is a local-first peer-to-peer runtime for user-owned apps.
 
-Jolt lets creators and users run digital communities without surrendering content, identity, or distribution to a central platform. Nodes discover each other, connect across NATs, and transfer signed content directly. Relays help with availability and discovery, but the user's or community's keys remain the authority.
+The short version: Jolt gives a user a cryptographic identity, a local daemon,
+scoped app permissions, signed `.jolt` state, encrypted content, optional relay
+availability, and recipient-controlled ingress for two-way app communication.
+Apps such as Pastey and Spoke run outside the daemon and ask the local user for
+permission before acting as that identity.
 
-> Your community, your content, your identity. Distributed by the network, owned by no platform.
+Jolt is not a finished product. v0 is a successful experiment: the core pieces
+work well enough to build with, but the experience is still eventually
+consistent, developer-oriented, and not yet packaged for normal users.
 
-## Thesis
+## Why
 
-Central platforms bundle identity, content hosting, distribution, and community coordination. That is why leaving a platform often means losing the audience, history, updates, files, and access relationships that made the community valuable.
+Most social, community, and collaboration tools bundle four things together:
 
-Jolt unbundles those pieces:
-
-| Platform Bundle | Jolt Primitive |
+| Platform bundle | Jolt primitive |
 |---|---|
-| Identity tied to an account | Identity owned by keys |
-| Hosted content | Content-addressed, signed, encrypted when needed |
-| Platform distribution | Relays, provider discovery, and peer caching |
-| Platform community tools | Spaces, invites, feeds, membership, and app-specific coordination |
-| Platform UI | Optional apps/interfaces over the same owned data |
+| Account identity | User-owned signing keys and `.jolt` identity addresses |
+| Hosted content | Content-addressed blobs, signed update logs, encrypted envelopes |
+| Platform distribution | Peer discovery, caching, optional relays, owner-directed pinning |
+| App authority | Scoped local app sessions approved in Jolt Console |
 
-Jolt is not trying to be "the web, but decentralized". The web is good at public pages and global search. Jolt is for private, public, and semi-private communities where authorship, access, distribution, and continuity matter more than platform reach.
+Jolt's bet is that apps should not own the user's identity or keys. The daemon
+is the local authority. Apps are untrusted clients that request specific
+capabilities, such as publishing under `/spoke/*`, decrypting private Pastey
+objects, or sending recipient ingress.
 
-HTML can still be a useful view of a Jolt space. The distinction is that signed space state is the authority, while HTML is a browseable rendering: tree structure, links, media, and layout for humans.
+That model is useful for apps where authorship, portability, private sharing,
+and continuity matter more than global platform reach.
 
-Example communities:
+## v0 Verdict
 
-- A creator community with signed updates, member content, and portable community history.
-- A game community distributing builds, mods, announcements, lobbies, and matchmaking without Steam or Discord owning the graph.
-- A research group sharing datasets, notebooks, provenance, usage rights, and member-only access.
-- A family or local group keeping a shared archive available without handing it to a cloud platform.
-- A project/community publishing releases and announcements through its own identity.
+The v0 experiment proved enough to stop feature-building and judge the idea:
 
-## Current Status
+- A local daemon can own identity, keys, storage, networking, and app sessions.
+- Jolt Console can approve/revoke app authority and start/manage the daemon.
+- External apps can use Jolt without receiving private keys.
+- Pastey proves public and private encrypted sharing.
+- Spoke proves a small social app with posts, contacts, replies, and two-way
+  recipient ingress.
+- Relay/discovery work is good enough for v0; deeper relay operations can wait.
 
-**Transport, content transfer, daemon/API, signed identity addresses, update-log primitives, home relay pinning, and relay mesh discovery are in place.** Jolt has validated content flow across three machines, two NATs, and a carrier-grade NAT over iroh P2P. It has also proved the higher-level relay mesh path: a fresh node can join through one relay, learn the relay mesh, resolve `.jolt` community/person addresses, and fetch pinned signed content while the publisher is offline.
+The main weakness is product feel. Spoke works, but it feels eventually
+consistent because app state is rebuilt through polling, resolve, fetch, and
+local materialization. That is acceptable for v0, but it is not yet the native,
+realtime feel people expect from social or messaging software.
 
-```
-                  Bootstrap Node
-                  (public server)
-                        |
-            iroh QUIC   |   iroh QUIC
-          (direct UDP)  |  (direct UDP)
-                        |
-       Node A --------- + --------- Node B
-     (home NAT)                   (mobile CGNAT)
-```
+## What Works
 
-### What Works
-- P2P content transfer across the internet (NAT, CGNAT, direct)
-- Kademlia DHT for content discovery
-- mDNS for zero-config LAN discovery
-- Content caching with automatic re-sharing (mesh propagation)
-- Daemon architecture with HTTP API
-- Canonical `{identity}.jolt` addresses
-- Signed update-log primitives for mutable identity/community state
-- Network request/response path for update-log sync in deterministic tests
-- Relay mesh discovery and `.jolt` resolution through one configured relay
-- Home relay pinning and availability checks
-- Deterministic Rust tests for protocol, storage, CLI, API, and TCP-backed multi-node flows
+Core protocol/runtime:
 
-### Protocol Direction
+- Content-addressed publish/fetch by CID.
+- Ed25519 identity keys and canonical `{identity}.jolt` addresses.
+- Signed update logs for mutable identity-owned paths.
+- `.jolt` resolve/fetch through local daemon APIs.
+- Local content store, cache, pinning, and re-sharing.
+- Kademlia/provider discovery and deterministic local TCP test transport.
+- iroh transport path for real P2P/NAT traversal experiments.
+- Relay mesh/discovery and owner-directed home relay pinning.
+- Signed reachability records for recipient ingress.
 
-Jolt separates ownership from availability. A user's or community's key is the authority over identity, content, membership, permissions, and signed state. Relays are replaceable nodes that help content stay reachable by providing discovery, NAT assistance, caching, and owner-directed pinning.
+App/security boundary:
 
-Replication should be owner-directed: the user's node chooses which relays intentionally pin content. Relays may cache what they fetch, but durable relay-to-relay mirroring is a future explicit authorization model, not a v0 default.
+- HTTP daemon API and capability-checked `/app/v1/*` API.
+- App session request, approval, revocation, and capability scoping.
+- Jolt Console as the privileged local trust surface.
+- Apps can publish/fetch/resolve only within approved scopes.
+- Apps can request encryption/decryption without receiving private keys.
+- Apps can send recipient ingress by identity without manually entering receiver
+  URLs.
 
-The emerging model is:
+Proof apps:
+
+- [Pastey](https://github.com/alexanderwanyoike/pastey): public and private
+  paste sharing over Jolt app sessions.
+- [Spoke](https://github.com/alexanderwanyoike/spoke): identity-owned social
+  notebook PoC with contacts, feeds, posts, encrypted replies, and known-contact
+  auto-accept.
+
+## What Needs Work
+
+These are not hidden. They are the current v0 limitations.
+
+- **Distribution:** Jolt still needs a packaged Console + daemon + optional CLI
+  artifact. Users should not build from source or manually start several
+  processes.
+- **Realtime/local materialization:** apps currently poll and rebuild state.
+  Jolt needs a better local app/daemon interface for subscriptions or
+  materialized app views.
+- **Performance:** recursive resolve/fetch paths have been reduced, but social
+  feed refreshes can still feel slow.
+- **Identity UX:** `.jolt` identity addresses are not human-friendly. Apps can
+  use local contact names, but global search/naming is intentionally not solved.
+- **Offline ingress:** direct recipient ingress works when the recipient is
+  reachable. Store-and-forward/offline inbox semantics need a separate design.
+- **Relay policy:** pinning must remain owner-directed and authorized. Public
+  pinning, quotas, abuse limits, and relay operator policy need hardening.
+- **Operational polish:** logs, metrics, diagnostics, app setup docs, and reset
+  flows need product-level cleanup.
+- **Security review:** crypto uses standard primitives, but the whole system
+  still needs review before anyone treats it as production security software.
+
+## Architecture
 
 ```text
-Identity
-  -> owns signed update logs
-  -> defines a space/community
-  -> grants access and membership
-  -> publishes content references
+Jolt Console
+  privileged local UI for daemon lifecycle, permissions, settings, diagnostics
 
-Content
-  -> immutable blobs addressed by CID
-  -> signed by authors or communities
-  -> encrypted when access-controlled
+External apps
+  Pastey, Spoke, future apps
+  untrusted clients using scoped app sessions
 
-Distribution
-  -> bootstrap relays for joining the mesh
-  -> DHT/provider discovery for content and update logs
-  -> relay pinning for offline availability
-  -> peer caching for resilience
+Jolt daemon
+  identity keys
+  content store
+  signed update logs
+  encryption/decryption APIs
+  app session authority
+  reachability and ingress
+  P2P networking and relay discovery
+
+Jolt network
+  peers
+  relays
+  provider discovery
+  cached and pinned content
 ```
 
-`.jolt` addresses are identity/content addresses, not first-contact network dial addresses. A fresh node still needs bootstrap relay multiaddrs to enter the mesh. Once connected, it can resolve signed `.jolt` state and fetch content from any authorized provider.
+The protocol layer stays app-agnostic. It knows about identities, content IDs,
+signed paths, update logs, reachability, encrypted objects, relays, pinning, and
+capabilities. It does not know about Spoke posts, Pastey pastes, feeds, inboxes,
+profiles, timelines, or contacts. Those are app-level schemas stored as signed
+content.
 
-## Quick Start
+## Crates
 
-### Prerequisites
+| Crate | Purpose |
+|---|---|
+| `jolt-core` | Content IDs, `.jolt` addresses, reachability records, shared protocol types |
+| `jolt-identity` | Ed25519 identity key management, signing, verification |
+| `jolt-store` | Local content store, cache, pinning, eviction |
+| `jolt-network` | Daemon node, P2P networking, fetch/resolve/update-log flows |
+| `jolt-server` | HTTP daemon API and app API |
+| `jolt-node` | CLI binary and daemon commands |
+| `apps/jolt-console` | Tauri desktop Console |
+
+## Quick Start For Developers
+
+Prerequisite:
 
 - Rust 1.89+
 
-### Build
+Build:
 
 ```bash
-cargo build --release
+cargo build --locked
 ```
 
-### Run a Node
+Run a local daemon:
 
 ```bash
-# Start as a bootstrap node (public server with fixed UDP port)
-./target/release/jolt start --no-bootstrap --p2p-port 4001 --api-bind 0.0.0.0
-
-# Start a client node (connects to bootstrap)
-./target/release/jolt start \
-  --bootstrap "/ip4/<BOOTSTRAP_IP>/udp/<PORT>/p2p/<BOOTSTRAP_PEER_ID>"
+cargo run -p jolt-node -- start
 ```
 
-### Publish Content
+Check status:
 
 ```bash
-curl -F "file=@myfile.txt" http://127.0.0.1:9862/api/v1/publish
-# {"content_id": "bafkr4i...", "size": 1234}
-jolt publish ./myfile.txt --path /notes/hello --pin-home-relay
+curl -fsS http://127.0.0.1:9862/api/v1/status | jq .
 ```
 
-### Configure A Home Relay
+Publish content:
 
 ```bash
-jolt home-relay set "/ip4/<RELAY_IP>/tcp/<PORT>/p2p/<RELAY_PEER_ID>" \
-  --capability pinning \
-  --api-url "http://<RELAY_API_HOST>:9862"
-jolt home-relay show
-jolt home-relay pin <CONTENT_ID>
-jolt status
+curl -fsS -F "file=@README.md" http://127.0.0.1:9862/api/v1/publish | jq .
 ```
 
-The home relay is Alice's delegated availability node. It is stored locally, loaded when the daemon starts, and reported by `jolt status` and `GET /api/v1/status`. The `api-url` is the v0 relay HTTP control endpoint used for owner-signed pin requests.
-
-### Fetch Content
+Fetch content:
 
 ```bash
-curl -X POST http://127.0.0.1:9862/api/v1/fetch \
-  -H 'Content-Type: application/json' \
-  -d '{"content_id": "bafkr4i..."}'
+curl -fsS -X POST http://127.0.0.1:9862/api/v1/fetch \
+  -H 'content-type: application/json' \
+  -d '{"content_id":"bafkr4i..."}' | jq .
 ```
 
-### Local Alice/Bob/Pastey Demo
-
-The default daemon transport is iroh for real P2P and NAT traversal. For a
-deterministic one-machine app demo, use the Pastey harness. It starts isolated
-Alice and Bob daemons over TCP, connects Bob to Alice, and starts two Pastey dev
-clients pointed at the two daemon APIs.
+Run Jolt Console in development:
 
 ```bash
-./scripts/pastey-two-node-demo.sh
+cd apps/jolt-console
+npm install
+npm run tauri dev
 ```
 
-The harness prints:
+## Demo Apps
 
-- Alice Pastey: http://127.0.0.1:5174
-- Bob Pastey: http://127.0.0.1:5175
-- Alice daemon API: http://127.0.0.1:9871
-- Bob daemon API: http://127.0.0.1:9872
+Pastey and Spoke live outside this repository.
 
-Use `Ctrl-C` in the harness terminal to stop all spawned daemons and Pastey
-clients. Use the automated app-API smoke when you want a non-interactive check:
+```bash
+git clone https://github.com/alexanderwanyoike/pastey
+git clone https://github.com/alexanderwanyoike/spoke
+```
+
+Current local demos use isolated Alice/Bob daemon data directories and Vite dev
+servers pointed at different daemon API ports. They are useful for proving the
+app boundary, permissions, private content, and recipient ingress, but they are
+not yet a normal-user install flow.
+
+Pastey has a harness in this repository for deterministic app-API smoke checks:
 
 ```bash
 ./scripts/pastey-two-node-demo.sh --smoke --no-pastey
 ```
 
-`--smoke` approves scoped app sessions, publishes Alice's
-`/pastes/two-node-demo`, and verifies Bob can fetch it through `/app/v1`.
+For the full human demo, run Jolt Console, run two daemons, start Pastey or
+Spoke against each daemon, approve app sessions in Console, then test:
 
-### API Endpoints
+- public publish/fetch;
+- private encrypted publish/open;
+- contact feed reading;
+- recipient ingress replies;
+- known-contact auto-accept in Spoke.
 
+## API Snapshot
+
+Public daemon API:
+
+```text
+GET    /api/v1/health
+GET    /api/v1/status
+GET    /api/v1/peers
+POST   /api/v1/peers/connect
+POST   /api/v1/publish
+POST   /api/v1/fetch
+POST   /api/v1/resolve
+GET    /api/v1/cache/stats
+GET    /api/v1/cache/entries
+POST   /api/v1/cache/pin/{id}
+DELETE /api/v1/cache/pin/{id}
+POST   /api/v1/ingress
 ```
-GET  /api/v1/health          Health check
-GET  /api/v1/status          Node status, peer count, uptime
-GET  /api/v1/peers           Connected peer list
-POST /api/v1/peers/connect   Dial a peer multiaddr
-POST /api/v1/publish         Publish a file (multipart form)
-POST /api/v1/fetch           Fetch content by ID
-GET  /api/v1/cache/stats     Cache statistics
-GET  /api/v1/cache/entries   List cached content
-POST /api/v1/cache/pin/{id}  Pin content (prevent eviction)
-DEL  /api/v1/cache/pin/{id}  Unpin content
+
+App API, guarded by approved app sessions:
+
+```text
+GET    /app/v1/session
+POST   /app/v1/publish
+GET    /app/v1/published
+POST   /app/v1/fetch
+POST   /app/v1/resolve
+POST   /app/v1/encrypted/publish
+POST   /app/v1/encrypted/decrypt
+POST   /app/v1/encrypted/open
+GET    /app/v1/ingress/pending
+POST   /app/v1/ingress/send
+POST   /app/v1/ingress/{id}/open
+POST   /app/v1/ingress/{id}/accept
+POST   /app/v1/ingress/{id}/reject
 ```
 
-### Run Tests
+Admin/Console API:
 
-Normal local development should use the deterministic suite:
+```text
+GET    /admin/v1/app-requests
+POST   /admin/v1/app-requests/{id}/approve
+POST   /admin/v1/app-requests/{id}/reject
+GET    /admin/v1/app-sessions
+POST   /admin/v1/app-sessions/{id}/revoke
+```
+
+## Testing
+
+Normal local verification:
 
 ```bash
 ./scripts/test-local.sh
 ```
 
-That script currently runs:
+That script runs the deterministic Rust workspace checks and the Pastey demo
+harness contract check.
+
+Focused checks used heavily during v0:
 
 ```bash
 cargo test --locked --workspace --exclude jolt-console
-./scripts/test-pastey-two-node-demo-harness.sh
+npm test --prefix apps/jolt-console
+npm run build --prefix apps/jolt-console
 ```
 
-The cargo portion is expected to be boring and repeatable on a normal developer machine. It includes pure protocol/storage/identity tests, server API tests, CLI tests, and TCP-backed local multi-node network tests. It excludes ignored manual tests for iroh transport smoke checks and patchbay network namespaces.
+Spoke and Pastey have their own `npm test` and `npm run build` checks in their
+separate repositories.
 
-Test matrix:
+Manual network checks still matter. The strongest confidence test is a public
+bootstrap/relay node plus two client machines on different networks, including
+one behind CGNAT/mobile when possible.
 
-| Layer | Command | Default? | Notes |
-|---|---|---:|---|
-| Deterministic local suite | `./scripts/test-local.sh` | Yes | Normal pre-PR check. |
-| Pastey demo harness dry-run | `./scripts/test-pastey-two-node-demo-harness.sh` | Yes | Fast contract check for the Alice/Bob/Pastey harness. |
-| Pure crates only | `cargo test -p jolt-core -p jolt-identity -p jolt-store` | Yes | Fast protocol, identity, and store feedback. |
-| Local TCP network tests | `cargo test -p jolt-network --lib --tests` | Yes | Uses TCP transport for local determinism. |
-| Daemon/API tests | `cargo test -p jolt-node -p jolt-server` | Yes | Covers CLI parsing, daemon config, and HTTP routes. |
-| iroh smoke test | `cargo test -p jolt-network new_iroh_creates_node_without_error -- --ignored` | No | Manual because it creates an iroh endpoint and may depend on local network or relay availability. |
-| Patchbay topologies | `cargo test -p jolt-network --test nat_traversal -- --ignored` | No | Linux/user-namespace tests for LAN, NAT, CGNAT, and DHT topology simulation. |
-| Real-world canary | Public relay/bootstrap plus two client machines on different networks | No | Final confidence check for NAT/CGNAT behavior. |
+## v0 Freeze
 
-Manual network checks:
+Jolt is now in a v0 freeze posture:
 
-```bash
-# Linux network namespace / patchbay topology tests
-cargo test -p jolt-network --test nat_traversal -- --ignored
+- no new protocol features;
+- no new Console surfaces unless needed for setup or bug fixes;
+- no app store/catalog work;
+- no relay metrics/structured-logs push until product use is clearer;
+- bug fixes, packaging, docs, demos, and setup polish only.
 
-# Manual iroh transport smoke test
-cargo test -p jolt-network new_iroh_creates_node_without_error -- --ignored
-```
+The next meaningful product step is distribution: ship a Jolt Console desktop
+app that bundles the daemon sidecar and gives users one obvious way to start,
+stop, configure, and approve apps.
 
-Real-world release canary remains the strongest confidence test: a public bootstrap/relay node plus two client machines on different networks, including a CGNAT/mobile network when possible.
+## Roadmap After v0
 
-## Architecture
+Only continue if the v0 demos create real interest.
 
-```
-jolt node
-  +-- HTTP API (axum, localhost:9862)
-  +-- Daemon Loop (tokio::select!)
-  |     +-- FetchManager (state machine)
-  |     +-- Command Channel (mpsc)
-  +-- Identity (Ed25519 keypair)
-  +-- Content Store (publish + LRU cache + pinning)
-  +-- P2P Network
-        +-- iroh transport (QUIC, DERP relay, hole punching)
-        +-- Kademlia DHT (content provider discovery)
-        +-- mDNS (LAN peer discovery)
-        +-- request-response (content fetch protocol)
-        +-- identify (peer protocol exchange)
-```
+High-value next work:
 
-### Crate Structure
+- packaged Jolt Console + daemon + optional CLI;
+- better app/daemon state subscriptions or materialized views;
+- clearer identity/contact/invite UX;
+- offline recipient ingress/store-and-forward design;
+- relay abuse controls, quotas, pin authorization, and operator diagnostics;
+- richer Pastey/Spoke docs and install instructions.
 
-| Crate | Purpose |
-|---|---|
-| `jolt-core` | Content addressing (SHA-256 + CIDv1), shared types |
-| `jolt-identity` | Ed25519 keypair management, signing, verification |
-| `jolt-store` | Content store with LRU cache, pinning, eviction |
-| `jolt-network` | NetworkNode, DaemonHandle, FetchManager, P2P behaviours |
-| `jolt-server` | axum HTTP API server |
-| `jolt-node` | CLI binary and daemon management |
+Deferred until there is clear demand:
 
-## Roadmap
+- app store/catalog inside Console;
+- global search;
+- protocol-level social/feed semantics;
+- OS service/tray/menu-bar lifecycle;
+- WASM app runtime;
+- streaming/media-specific transport work.
 
-| Milestone | Status | Description |
-|---|---|---|
-| M1: Two Nodes Talking | Done | mDNS discovery, content-addressed file exchange, signatures |
-| M2: Caching | Done | LRU cache, pinning, serve cached content, re-sharing |
-| M3: Daemon + API | Done | Persistent daemon, HTTP API, CLI thin client |
-| M4: Update Logs | Done | Append-only signed logs for mutable content |
-| M4.5: Identity Addresses | Done | Canonical `{identity}.jolt` addresses and signed resolver core |
-| M5: Internet-Wide P2P | Done | Kademlia DHT, iroh NAT traversal, real hardware validated |
-| M6: Bootstrap Relay Mesh | Next | Fresh nodes join global discovery through relay multiaddrs |
-| M7: User-Facing `.jolt` Resolution | Next | CLI/API/dashboard resolve and fetch by `.jolt` address |
-| M8: Home Relays | Planned | Owner-directed pinning, availability checks, offline publisher flow |
-| M9: Encryption | Planned | E2E encryption, group keys, access control |
-| M10: Built-In Space Lens | Planned | First application-shaped space demo without a WASM runtime |
-| M11: Space Apps / WASM | Planned | Portable executable interfaces over community spaces |
-| M12: Streaming | Planned | Chunked transfer, video/audio streaming |
-| M13: Redundancy | Planned | Groups of nodes keeping content available |
-| M14: Developer SDK | Planned | Rust + JS SDKs, templates, docs |
+## Documentation
 
-## Future Applications
-
-- **Creator spaces** -- signed updates, member content, and portable community history.
-- **Game communities** -- distribute builds/mods, coordinate lobbies, publish announcements, and match players without a central platform owning the graph.
-- **Research spaces** -- datasets, notebooks, provenance, usage rights, and member-only access.
-- **Project spaces** -- signed releases, docs, issue artifacts, and community announcements.
-- **Private groups** -- family/local/team archives with relay-backed availability and explicit access.
-
-## Design Docs
-
-Detailed technical documentation in [`docs/`](docs/).
+Design notes and implementation cards live in [`docs/`](docs/). Current planning
+cards are in [`docs/cards/`](docs/cards/).
 
 ## License
 

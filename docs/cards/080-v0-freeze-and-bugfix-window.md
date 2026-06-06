@@ -2,8 +2,9 @@
 
 **Type:** HITL  
 **Milestone:** v0 Endgame  
-**Status:** Ready after 078/079
-**Blocked by:** 078, 079
+**Status:** Active
+**Blocked by:** None for Jolt README/freeze docs; Pastey and Spoke setup docs
+still need their own final compatibility pass.
 
 ## Why
 
@@ -34,10 +35,11 @@ After this card starts:
 
 ## Acceptance Criteria
 
-- [ ] Jolt install/setup docs are current.
+- [x] Jolt README documents current setup, v0 status, known limitations, and
+      distribution as the next product step.
 - [ ] Pastey setup/demo docs are current.
 - [ ] Spoke setup/demo docs are current.
-- [ ] Known limitations are documented.
+- [x] Known limitations are documented.
 - [ ] No v0-blocking bugs remain.
 - [ ] Full local test suite passes.
 - [ ] Human demo has been run end to end.
