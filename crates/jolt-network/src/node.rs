@@ -21,7 +21,7 @@ use jolt_core::{
     VerifiedReachability, IDENTITY_ENCRYPTION_KEYS_PATH, SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
-use jolt_store::{ContentStore, HomeRelayPinRecord};
+use jolt_store::{ContentStore, HomeRelayPinRecord, LocalIdentityEncryptionKeypair};
 
 use crate::behaviour::{JoltBehaviour, JoltBehaviourEvent};
 use crate::command::{
@@ -340,6 +340,7 @@ impl NetworkNode {
         let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
 
         let bootstrap_peer_ids = Self::parse_bootstrap_peer_ids(&config.effective_bootstrap_relays);
+        let local_encryption_key = Self::load_persisted_local_encryption_key(&store, &identity)?;
 
         Ok(Self {
             swarm,
@@ -374,7 +375,7 @@ impl NetworkNode {
             last_bootstrap_error: None,
             bootstrap_relay: config.bootstrap_relay,
             home_relay: config.home_relay,
-            local_encryption_key: None,
+            local_encryption_key,
             local_encryption_key_published: false,
             pending_ingress: Vec::new(),
         })
@@ -463,6 +464,7 @@ impl NetworkNode {
         let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
 
         let bootstrap_peer_ids = Self::parse_bootstrap_peer_ids(&config.effective_bootstrap_relays);
+        let local_encryption_key = Self::load_persisted_local_encryption_key(&store, &identity)?;
 
         Ok(Self {
             swarm,
@@ -497,7 +499,7 @@ impl NetworkNode {
             last_bootstrap_error: None,
             bootstrap_relay: config.bootstrap_relay,
             home_relay: config.home_relay,
-            local_encryption_key: None,
+            local_encryption_key,
             local_encryption_key_published: false,
             pending_ingress: Vec::new(),
         })
@@ -1607,6 +1609,12 @@ impl NetworkNode {
                 "enc_x25519_local_v0".to_string(),
                 now,
             );
+            self.store
+                .save_local_identity_encryption_keypair(&LocalIdentityEncryptionKeypair {
+                    public_key: public_key.clone(),
+                    private_key: private_key.clone(),
+                })
+                .map_err(|e| NetworkError::Protocol(e.to_string()))?;
             self.local_encryption_key = Some((public_key, private_key));
         }
 
@@ -1633,6 +1641,31 @@ impl NetworkNode {
         }
 
         Ok(public_key)
+    }
+
+    fn load_persisted_local_encryption_key(
+        store: &ContentStore,
+        identity: &NodeIdentity,
+    ) -> Result<Option<(IdentityEncryptionKey, IdentityEncryptionPrivateKey)>, NetworkError> {
+        let Some(keypair) = store
+            .load_local_identity_encryption_keypair()
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?
+        else {
+            return Ok(None);
+        };
+
+        if keypair.public_key.key_id != keypair.private_key.key_id {
+            return Err(NetworkError::Protocol(
+                "local identity encryption keypair has mismatched key ids".to_string(),
+            ));
+        }
+        if keypair.private_key.identity != identity.identity_id() {
+            return Err(NetworkError::Protocol(
+                "local identity encryption private key belongs to a different identity".to_string(),
+            ));
+        }
+
+        Ok(Some((keypair.public_key, keypair.private_key)))
     }
 
     fn encrypt_object(
@@ -3884,6 +3917,11 @@ mod tests {
         NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap()
     }
 
+    fn make_node_with_identity(dir: &std::path::Path, identity: NodeIdentity) -> NetworkNode {
+        let store = make_store(dir);
+        NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap()
+    }
+
     fn make_node_with_config(dir: &std::path::Path, config: NetworkConfig) -> NetworkNode {
         let identity = NodeIdentity::generate();
         let store = make_store(dir);
@@ -3942,6 +3980,38 @@ mod tests {
             |bytes| identity.sign(bytes),
         )
         .expect("test identity-head hint should be valid")
+    }
+
+    #[tokio::test]
+    async fn local_identity_encryption_key_survives_node_restart() {
+        let dir = tempdir().unwrap();
+        let identity_dir = tempdir().unwrap();
+        let identity = NodeIdentity::generate();
+        identity.save(identity_dir.path()).unwrap();
+
+        let encrypted = {
+            let mut node = make_node_with_identity(
+                dir.path(),
+                NodeIdentity::load(identity_dir.path()).unwrap(),
+            );
+            let local_key = node.ensure_local_identity_encryption_key().unwrap();
+            node.encrypt_object(
+                b"restart decrypts this".to_vec(),
+                "text/plain".to_string(),
+                vec![EncryptedObjectRecipient {
+                    identity: node.identity.identity_id(),
+                    key: local_key,
+                }],
+            )
+            .unwrap()
+            .data
+        };
+
+        let restarted =
+            make_node_with_identity(dir.path(), NodeIdentity::load(identity_dir.path()).unwrap());
+        let decrypted = restarted.decrypt_object(&encrypted).unwrap();
+
+        assert_eq!(decrypted.plaintext, b"restart decrypts this");
     }
 
     #[test]

@@ -416,6 +416,22 @@ function capabilityInfo(capability: string): CapabilityInfo {
       broadPath: false
     };
   }
+  if (capability === "ingress:read") {
+    return {
+      label: "read pending incoming app objects",
+      kind: "read",
+      grantable: true,
+      broadPath: false
+    };
+  }
+  if (capability === "ingress:decide") {
+    return {
+      label: "accept or reject pending incoming app objects",
+      kind: "write",
+      grantable: true,
+      broadPath: false
+    };
+  }
   if (capability.startsWith("publish:encrypted:")) {
     const scope = capability.slice("publish:encrypted:".length);
     return {
@@ -483,6 +499,8 @@ function isGrantableCapability(capability: string) {
   return (
     capability === "resolve:public" ||
     capability === "fetch:public" ||
+    capability === "ingress:read" ||
+    capability === "ingress:decide" ||
     isGrantablePathCapability("publish:encrypted:", capability) ||
     isGrantablePathCapability("publish:", capability) ||
     isGrantablePathCapability("inventory:", capability) ||
