@@ -68,3 +68,8 @@ Each PR should keep existing public APIs stable and should run the relevant
   keeping the existing event match and `NetworkNode` actor ownership intact.
 - Green: `cargo test -p jolt-network --lib -- --nocapture`
 - Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
+- 2026-06-07: Fourth slice extracted identity-head hint bookkeeping into
+  `node::identity_heads::IdentityHeadHintBook`, keeping node-level gossip,
+  diagnosis, and provider candidate behavior intact.
+- Green: `cargo test -p jolt-network --lib -- --nocapture`
+- Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
