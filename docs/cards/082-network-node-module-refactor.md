@@ -78,3 +78,9 @@ Each PR should keep existing public APIs stable and should run the relevant
   `NetworkNode` and preserving existing admin/app ingress API behavior.
 - Green: `cargo test -p jolt-network --lib -- --nocapture`
 - Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
+- 2026-06-07: Sixth slice moved local identity encryption key persistence,
+  encrypted object creation, and encrypted object decryption helpers into
+  `node::encryption`, keeping the existing `NetworkNode` command surface and
+  publish/signing behavior intact.
+- Green: `cargo test -p jolt-network --lib -- --nocapture`
+- Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
