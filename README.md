@@ -160,28 +160,75 @@ application use-cases should wait until that review is done.
 
 ## Architecture
 
-```text
-Jolt Console
-  local control surface for daemon lifecycle, settings, and app permissions
+```mermaid
+flowchart LR
+    user[User]
+    app[External apps]
+    console[Jolt Console]
 
-Jolt daemon
-  identity keys
-  signed update logs
-  content store
-  encryption/decryption
-  app capability enforcement
-  peer and relay networking
-  recipient ingress
+    subgraph node[Local Jolt node]
+        app_api[Scoped app API]
+        control_api[Local control API]
+        caps[Capability checks]
+        protocol[Protocol engine]
+        identity[Identity keys]
+        updates[Signed update logs]
+        store[Content store and cache]
+        ingress[Recipient ingress]
+        transport[Peer and relay transport]
+    end
 
-Apps
-  untrusted clients with scoped permissions
+    subgraph network[Jolt network]
+        peers[Other Jolt nodes]
+        relays[Optional relays]
+        caches[Optional caches]
+        bootstrap[Bootstrap and discovery nodes]
+    end
 
-Network
-  peers
-  caches
-  optional relays
-  provider discovery
+    user --> app
+    user --> console
+    app -->|request scoped access| app_api
+    console -->|manage daemon, settings, sessions| control_api
+    app_api --> caps
+    control_api --> caps
+    caps --> protocol
+    protocol --> identity
+    protocol --> updates
+    protocol --> store
+    protocol --> ingress
+    protocol --> transport
+    transport <-->|resolve, fetch, publish reachability| peers
+    transport <-->|reachability, pinning, provider discovery| relays
+    transport <-->|content availability| caches
+    transport <-->|peer discovery| bootstrap
 ```
+
+The main components are:
+
+- **External apps:** untrusted clients that use app-level schemas and request
+  scoped access from the local daemon. Apps do not receive raw identity keys.
+- **Jolt Console:** the local control surface for daemon lifecycle, settings,
+  app sessions, permission requests, and revocation.
+- **Scoped app API:** the boundary between applications and the daemon. Every
+  app action is checked against an approved capability.
+- **Protocol engine:** the app-agnostic core that resolves identities, verifies
+  signatures, publishes signed paths, fetches content IDs, encrypts/decrypts
+  envelopes, and handles reachability.
+- **Identity keys:** local signing keys that produce `.jolt` identities and
+  authorize signed update-log entries.
+- **Signed update logs:** mutable identity-owned state. A valid protocol update
+  says identity `X` maps path `/some/path` to CID `Y` at sequence `N`.
+- **Content store and cache:** local storage for content-addressed objects,
+  encrypted envelopes, fetched data, and pinned content.
+- **Recipient ingress:** the recipient-controlled path for incoming app-level
+  messages or objects. The protocol carries the envelope; application policy
+  decides what to accept, reject, or surface to the user.
+- **Peer and relay transport:** networking for peer discovery, update-log
+  resolution, content fetch, reachability records, and optional relay-assisted
+  availability.
+- **Optional relays and caches:** infrastructure that can improve reachability
+  and availability, but only within configured policy. They are not a global
+  permanent storage layer.
 
 The protocol layer stays app-agnostic. It knows about identities, content IDs,
 signed paths, update logs, reachability, encrypted objects, relays, pinning, and
