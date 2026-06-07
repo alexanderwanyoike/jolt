@@ -221,6 +221,7 @@ into the protocol layer.
 | [079](079-pastey-final-compatibility-pass.md) | AFK | Ready near freeze | Verify Pastey still works against final v0 APIs and docs. |
 | [080](080-v0-freeze-and-bugfix-window.md) | HITL | Ready after 078/079 | Hard stop new features and run the v0 bugfix/docs/demo pass. |
 | [081](081-launch-and-postmortem.md) | HITL | Ready after 080 | Publish the project, gather feedback, and decide continue/pause/bin. |
+| [082](082-network-node-module-refactor.md) | AFK | In Progress | Refactor `NetworkNode` into focused internal modules while preserving behavior. |
 
 ## Card Format
 
