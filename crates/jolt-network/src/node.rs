@@ -5,9 +5,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use libp2p::futures::StreamExt;
 use libp2p::multiaddr::Protocol;
-use libp2p::request_response::{self, OutboundRequestId, ProtocolSupport};
+mod transport;
+
+use libp2p::request_response::{self, OutboundRequestId};
 use libp2p::swarm::SwarmEvent;
-use libp2p::{Multiaddr, StreamProtocol, Swarm, Transport};
+use libp2p::{Multiaddr, Swarm};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, warn};
 
@@ -35,6 +37,7 @@ use crate::command::{
 use crate::config::{HomeRelayConfig, NetworkConfig};
 use crate::error::{DiscoveryFailureCode, NetworkError};
 use crate::fetch_manager::FetchManager;
+use crate::node::transport::BuiltTransport;
 use crate::protocol::{
     ContentRequest, ContentResponse, IdentityProviderCandidate, RelayExchangeRequest,
     RelayExchangeResponse, UpdateLogRequest, UpdateLogResponse,
@@ -256,129 +259,8 @@ impl NetworkNode {
         store: ContentStore,
         config: NetworkConfig,
     ) -> Result<Self, NetworkError> {
-        let libp2p_keypair = identity.to_libp2p_keypair();
-        let peer_id = libp2p_keypair.public().to_peer_id();
-
-        // Create iroh transport (handles NAT traversal, DERP relay, hole punching)
-        let transport = if config.p2p_port > 0 {
-            info!(
-                "Binding iroh transport to fixed UDP port {}",
-                config.p2p_port
-            );
-            libp2p_iroh::Transport::new_with_port(Some(&libp2p_keypair), config.p2p_port)
-                .await
-                .map_err(|e| NetworkError::Swarm(format!("Failed to create iroh transport: {e}")))?
-        } else {
-            libp2p_iroh::Transport::new(Some(&libp2p_keypair))
-                .await
-                .map_err(|e| NetworkError::Swarm(format!("Failed to create iroh transport: {e}")))?
-        };
-
-        // Get the iroh endpoint for pre-populating peer addresses
-        let iroh_endpoint = transport.endpoint().ok();
-
-        // Build behaviours (only 4 -- iroh handles all NAT/relay)
-        let mdns = if config.enable_mdns {
-            Some(
-                libp2p::mdns::tokio::Behaviour::new(libp2p::mdns::Config::default(), peer_id)
-                    .map_err(|e| NetworkError::Swarm(e.to_string()))?,
-            )
-        } else {
-            None
-        }
-        .into();
-
-        let content_fetch = request_response::cbor::Behaviour::new(
-            [(
-                StreamProtocol::new("/jolt/content/1.0.0"),
-                ProtocolSupport::Full,
-            )],
-            request_response::Config::default(),
-        );
-        let update_log_sync = request_response::cbor::Behaviour::new(
-            [(
-                StreamProtocol::new("/jolt/update-log/1.0.0"),
-                ProtocolSupport::Full,
-            )],
-            request_response::Config::default(),
-        );
-        let relay_exchange = request_response::cbor::Behaviour::new(
-            [(
-                StreamProtocol::new("/jolt/relays/1.0.0"),
-                ProtocolSupport::Full,
-            )],
-            request_response::Config::default(),
-        );
-
-        let mut kad_config = libp2p::kad::Config::new(StreamProtocol::new("/jolt/kad/1.0.0"));
-        kad_config.set_query_timeout(Duration::from_secs(60));
-        let kad_store = libp2p::kad::store::MemoryStore::new(peer_id);
-        let kademlia = libp2p::kad::Behaviour::with_config(peer_id, kad_store, kad_config);
-
-        let identify = libp2p::identify::Behaviour::new(libp2p::identify::Config::new(
-            "/jolt/id/1.0.0".to_string(),
-            libp2p_keypair.public(),
-        ));
-
-        let behaviour = JoltBehaviour {
-            mdns,
-            content_fetch,
-            update_log_sync,
-            relay_exchange,
-            kademlia,
-            identify,
-        };
-
-        let swarm = Swarm::new(
-            transport.boxed(),
-            behaviour,
-            peer_id,
-            libp2p::swarm::Config::with_tokio_executor()
-                .with_idle_connection_timeout(Duration::from_secs(300)),
-        );
-
-        let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
-
-        let bootstrap_peer_ids = Self::parse_bootstrap_peer_ids(&config.effective_bootstrap_relays);
-        let local_encryption_key = Self::load_persisted_local_encryption_key(&store, &identity)?;
-
-        Ok(Self {
-            swarm,
-            identity,
-            store,
-            pending_fetches: HashMap::new(),
-            pending_update_log_requests: HashMap::new(),
-            pending_update_log_pins: HashMap::new(),
-            pending_identity_provider_forwards: HashMap::new(),
-            pending_identity_provider_forward_groups: HashMap::new(),
-            pending_identity_provider_diagnostics: HashMap::new(),
-            pending_identity_provider_diagnostic_requests: HashMap::new(),
-            seen_identity_provider_queries: HashMap::new(),
-            pending_jolt_resolutions: HashMap::new(),
-            pending_daemon_resolutions: HashMap::new(),
-            pending_resolves: HashMap::new(),
-            discovered_providers: HashMap::new(),
-            update_logs,
-            identity_head_hints: HashMap::new(),
-            identity_head_gossip_cursor: 0,
-            peer_connections: HashMap::new(),
-            started_at: Instant::now(),
-            fetch_manager: FetchManager::new(),
-            resolve_timeout: Duration::from_secs(10),
-            iroh_endpoint,
-            transport_name: "iroh",
-            configured_bootstrap_relays: config.configured_bootstrap_relays,
-            effective_bootstrap_relays: config.effective_bootstrap_relays,
-            bootstrap_peer_ids,
-            relay_mesh_peer_ids: HashSet::new(),
-            relay_mesh_exploration_cursor: 0,
-            last_bootstrap_error: None,
-            bootstrap_relay: config.bootstrap_relay,
-            home_relay: config.home_relay,
-            local_encryption_key,
-            local_encryption_key_published: false,
-            pending_ingress: Vec::new(),
-        })
+        let built = transport::build_iroh_swarm(&identity, &config).await?;
+        Self::from_built_transport(identity, store, config, built)
     }
 
     /// Create a new network node with TCP transport (for testing in isolated namespaces).
@@ -390,84 +272,22 @@ impl NetworkNode {
         store: ContentStore,
         config: NetworkConfig,
     ) -> Result<Self, NetworkError> {
-        let libp2p_keypair = identity.to_libp2p_keypair();
-        let peer_id = libp2p_keypair.public().to_peer_id();
+        let built = transport::build_tcp_swarm(&identity, &config)?;
+        Self::from_built_transport(identity, store, config, built)
+    }
 
-        let transport = libp2p::tcp::tokio::Transport::default()
-            .upgrade(libp2p::core::upgrade::Version::V1)
-            .authenticate(
-                libp2p::noise::Config::new(&libp2p_keypair)
-                    .map_err(|e| NetworkError::Swarm(e.to_string()))?,
-            )
-            .multiplex(libp2p::yamux::Config::default())
-            .boxed();
-
-        let mdns = if config.enable_mdns {
-            Some(
-                libp2p::mdns::tokio::Behaviour::new(libp2p::mdns::Config::default(), peer_id)
-                    .map_err(|e| NetworkError::Swarm(e.to_string()))?,
-            )
-        } else {
-            None
-        }
-        .into();
-
-        let content_fetch = request_response::cbor::Behaviour::new(
-            [(
-                StreamProtocol::new("/jolt/content/1.0.0"),
-                ProtocolSupport::Full,
-            )],
-            request_response::Config::default(),
-        );
-        let update_log_sync = request_response::cbor::Behaviour::new(
-            [(
-                StreamProtocol::new("/jolt/update-log/1.0.0"),
-                ProtocolSupport::Full,
-            )],
-            request_response::Config::default(),
-        );
-        let relay_exchange = request_response::cbor::Behaviour::new(
-            [(
-                StreamProtocol::new("/jolt/relays/1.0.0"),
-                ProtocolSupport::Full,
-            )],
-            request_response::Config::default(),
-        );
-
-        let mut kad_config = libp2p::kad::Config::new(StreamProtocol::new("/jolt/kad/1.0.0"));
-        kad_config.set_query_timeout(Duration::from_secs(60));
-        let kad_store = libp2p::kad::store::MemoryStore::new(peer_id);
-        let kademlia = libp2p::kad::Behaviour::with_config(peer_id, kad_store, kad_config);
-
-        let identify = libp2p::identify::Behaviour::new(libp2p::identify::Config::new(
-            "/jolt/id/1.0.0".to_string(),
-            libp2p_keypair.public(),
-        ));
-
-        let behaviour = JoltBehaviour {
-            mdns,
-            content_fetch,
-            update_log_sync,
-            relay_exchange,
-            kademlia,
-            identify,
-        };
-
-        let swarm = Swarm::new(
-            transport,
-            behaviour,
-            peer_id,
-            libp2p::swarm::Config::with_tokio_executor()
-                .with_idle_connection_timeout(Duration::from_secs(300)),
-        );
-
+    fn from_built_transport(
+        identity: NodeIdentity,
+        store: ContentStore,
+        config: NetworkConfig,
+        built: BuiltTransport,
+    ) -> Result<Self, NetworkError> {
         let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
-
         let bootstrap_peer_ids = Self::parse_bootstrap_peer_ids(&config.effective_bootstrap_relays);
         let local_encryption_key = Self::load_persisted_local_encryption_key(&store, &identity)?;
 
         Ok(Self {
-            swarm,
+            swarm: built.swarm,
             identity,
             store,
             pending_fetches: HashMap::new(),
@@ -489,8 +309,8 @@ impl NetworkNode {
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
             resolve_timeout: Duration::from_secs(10),
-            iroh_endpoint: None,
-            transport_name: "tcp",
+            iroh_endpoint: built.iroh_endpoint,
+            transport_name: built.transport_name,
             configured_bootstrap_relays: config.configured_bootstrap_relays,
             effective_bootstrap_relays: config.effective_bootstrap_relays,
             bootstrap_peer_ids,
