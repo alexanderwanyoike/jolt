@@ -6,6 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 mod commands;
 mod events;
 mod identity_heads;
+mod ingress;
 use libp2p::futures::StreamExt;
 use libp2p::multiaddr::Protocol;
 mod transport;
@@ -42,6 +43,7 @@ use crate::fetch_manager::FetchManager;
 #[cfg(test)]
 use crate::node::identity_heads::IDENTITY_HEAD_HINT_MAX_PER_IDENTITY;
 use crate::node::identity_heads::{IdentityHeadHintBook, IDENTITY_HEAD_HINT_EXCHANGE_MAX};
+use crate::node::ingress::IngressQueue;
 use crate::node::transport::BuiltTransport;
 use crate::protocol::{
     ContentRequest, ContentResponse, IdentityProviderCandidate, RelayExchangeRequest,
@@ -239,7 +241,7 @@ pub struct NetworkNode {
     /// Whether this daemon start has published the local encryption key record.
     local_encryption_key_published: bool,
     /// Recipient-controlled envelopes received by this daemon and awaiting a decision.
-    pending_ingress: Vec<IngressRecord>,
+    pending_ingress: IngressQueue,
 }
 
 const RELAY_RECORD_TTL_SECS: u64 = 60 * 60;
@@ -320,7 +322,7 @@ impl NetworkNode {
             home_relay: config.home_relay,
             local_encryption_key,
             local_encryption_key_published: false,
-            pending_ingress: Vec::new(),
+            pending_ingress: IngressQueue::default(),
         })
     }
 
@@ -1399,63 +1401,23 @@ impl NetworkNode {
     }
 
     fn list_pending_ingress(&self) -> Vec<IngressRecord> {
-        self.pending_ingress
-            .iter()
-            .filter(|record| record.status == IngressStatus::Pending)
-            .cloned()
-            .collect()
+        self.pending_ingress.list_pending()
     }
 
     fn accept_ingress(&mut self, ingress_id: &str) -> Result<IngressRecord, NetworkError> {
-        self.decide_ingress(ingress_id, IngressStatus::Accepted)
+        self.pending_ingress.accept(ingress_id, unix_now())
     }
 
     fn open_ingress(
         &self,
         ingress_id: &str,
     ) -> Result<crate::command::DecryptedObjectResponse, NetworkError> {
-        let record = self
-            .pending_ingress
-            .iter()
-            .find(|record| record.ingress_id == ingress_id)
-            .ok_or_else(|| {
-                NetworkError::InvalidInput(format!("ingress envelope not found: {ingress_id}"))
-            })?;
-        self.decrypt_object(&record.encrypted_object)
+        let encrypted_object = self.pending_ingress.encrypted_object(ingress_id)?;
+        self.decrypt_object(encrypted_object)
     }
 
     fn reject_ingress(&mut self, ingress_id: &str) -> Result<IngressRecord, NetworkError> {
-        self.decide_ingress(ingress_id, IngressStatus::Rejected)
-    }
-
-    fn decide_ingress(
-        &mut self,
-        ingress_id: &str,
-        status: IngressStatus,
-    ) -> Result<IngressRecord, NetworkError> {
-        let now = unix_now();
-        let record = self
-            .pending_ingress
-            .iter_mut()
-            .find(|record| record.ingress_id == ingress_id)
-            .ok_or_else(|| {
-                NetworkError::InvalidInput(format!("ingress envelope not found: {ingress_id}"))
-            })?;
-        if record.status == status {
-            return Ok(record.clone());
-        }
-        if record.status != IngressStatus::Pending {
-            return Err(NetworkError::InvalidInput(format!(
-                "ingress envelope is not pending: {ingress_id}"
-            )));
-        }
-        record.status = status;
-        match record.status {
-            IngressStatus::Accepted => record.accepted_at = Some(now),
-            IngressStatus::Rejected => record.rejected_at = Some(now),
-            IngressStatus::Pending => {}
-        }
-        Ok(record.clone())
+        self.pending_ingress.reject(ingress_id, unix_now())
     }
 
     fn publish_reachability(
