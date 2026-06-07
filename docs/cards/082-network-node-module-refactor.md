@@ -73,3 +73,8 @@ Each PR should keep existing public APIs stable and should run the relevant
   diagnosis, and provider candidate behavior intact.
 - Green: `cargo test -p jolt-network --lib -- --nocapture`
 - Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
+- 2026-06-07: Fifth slice extracted recipient ingress queue state into
+  `node::ingress::IngressQueue`, keeping envelope validation/decryption in
+  `NetworkNode` and preserving existing admin/app ingress API behavior.
+- Green: `cargo test -p jolt-network --lib -- --nocapture`
+- Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
