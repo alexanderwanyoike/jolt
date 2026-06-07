@@ -84,3 +84,9 @@ Each PR should keep existing public APIs stable and should run the relevant
   publish/signing behavior intact.
 - Green: `cargo test -p jolt-network --lib -- --nocapture`
 - Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
+- 2026-06-07: Seventh slice moved relay record exchange, relay address-book
+  helpers, relay mesh exploration, and relay-derived provider candidate helpers
+  into `node::relays`, keeping `NetworkNode` ownership and existing relay
+  exchange behavior intact.
+- Green: `cargo test -p jolt-network --lib -- --nocapture`
+- Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
