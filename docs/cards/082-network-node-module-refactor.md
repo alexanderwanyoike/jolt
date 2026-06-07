@@ -64,3 +64,7 @@ Each PR should keep existing public APIs stable and should run the relevant
   `NetworkNode` actor ownership intact.
 - Green: `cargo test -p jolt-network --lib -- --nocapture`
 - Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
+- 2026-06-07: Third slice moved swarm event routing into `node::events`,
+  keeping the existing event match and `NetworkNode` actor ownership intact.
+- Green: `cargo test -p jolt-network --lib -- --nocapture`
+- Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
