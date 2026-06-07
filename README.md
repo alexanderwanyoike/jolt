@@ -76,21 +76,25 @@ and does not define Jolt's data model.
 
 ## Who Jolt Is For
 
-Jolt is currently for:
+Jolt is for people and communities that want content distribution without
+depending on a single platform account, API, feed, or storage provider.
 
-- protocol and application developers building on platformless distribution;
-- people operating or experimenting with peer, cache, relay, and availability
-  infrastructure;
-- creators or communities who want portable publishing under identities they
+That includes:
+
+- creators and communities that want portable publishing under identities they
   control;
-- researchers, hackers, and protocol builders evaluating user-owned identity,
-  signed state, encrypted content, and peer-aware transport;
-- future app developers who want to build interfaces without owning the user's
-  keys, account, or distribution channel.
+- application developers who want to build interfaces without owning the user's
+  keys, account, or distribution channel;
+- protocol developers and researchers evaluating user-owned identity, signed
+  state, encrypted content, and peer-aware transport;
+- people operating peer, cache, relay, or availability infrastructure for a
+  network they can participate in rather than merely consume.
 
-Jolt is not currently for non-technical users. The setup is still too manual,
-identity addresses are not friendly, and the first installable distribution is
-not done yet.
+Jolt v0 is still early. The first users are likely to be developers and
+technical communities because setup, identity UX, packaging, and application
+polish still need work. The goal is not to keep Jolt technical forever; the
+goal is to make platformless distribution usable enough that normal users can
+benefit from it through applications built on the network.
 
 ## What Jolt Is Not
 
