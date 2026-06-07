@@ -59,3 +59,8 @@ Each PR should keep existing public APIs stable and should run the relevant
   `node::transport` and collapsed duplicated constructor initialization.
 - Green: `cargo test -p jolt-network --lib -- --nocapture`
 - Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
+- 2026-06-07: Second slice moved daemon command handling into
+  `node::commands`, keeping the existing command-pattern match and
+  `NetworkNode` actor ownership intact.
+- Green: `cargo test -p jolt-network --lib -- --nocapture`
+- Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
