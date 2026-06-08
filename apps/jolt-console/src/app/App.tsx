@@ -21,11 +21,13 @@ import {
   type ConsoleUpdateCheck,
   type ConsoleUpdateClient
 } from "../update/client";
+import { CONSOLE_VERSION } from "../version";
 
 type ConsoleAppProps = {
   client?: DaemonClient;
   lifecycleClient?: DaemonLifecycleClient;
   updateClient?: ConsoleUpdateClient;
+  consoleVersion?: string;
   refreshIntervalMs?: number;
 };
 
@@ -33,6 +35,7 @@ export function ConsoleApp({
   client = tauriDaemonClient,
   lifecycleClient = tauriDaemonLifecycleClient,
   updateClient = tauriConsoleUpdateClient,
+  consoleVersion = CONSOLE_VERSION,
   refreshIntervalMs = 5000
 }: ConsoleAppProps) {
   const snapshot = useDaemonSnapshot(client, refreshIntervalMs);
@@ -81,7 +84,11 @@ export function ConsoleApp({
 
   return (
     <HashRouter>
-      <ConsoleShell snapshot={snapshot} updateCheck={updateCheck}>
+      <ConsoleShell
+        snapshot={snapshot}
+        consoleVersion={consoleVersion}
+        updateCheck={updateCheck}
+      >
         <Routes>
           <Route index element={<OverviewPage snapshot={snapshot} />} />
           <Route path="/identity" element={<IdentityPage snapshot={snapshot} />} />

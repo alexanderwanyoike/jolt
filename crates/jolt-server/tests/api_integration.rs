@@ -1823,6 +1823,7 @@ async fn test_status_endpoint() {
 
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["daemon_version"], env!("CARGO_PKG_VERSION"));
     assert!(body["peer_id"].is_string());
     assert!(!body["peer_id"].as_str().unwrap().is_empty());
     assert!(body["identity_address"].is_string());

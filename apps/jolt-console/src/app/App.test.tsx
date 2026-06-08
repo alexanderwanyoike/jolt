@@ -219,6 +219,20 @@ describe("ConsoleApp", () => {
     expect(await screen.findByRole("link", { name: "Update 0.2.0" })).toBeInTheDocument();
     expect(updateClient.check).toHaveBeenCalledOnce();
   });
+
+  it("shows console and daemon versions in the shell", async () => {
+    render(
+      <ConsoleApp
+        client={healthyDaemonClient({ daemon_version: "8.7.6" })}
+        lifecycleClient={healthyLifecycleClient()}
+        consoleVersion="9.8.7"
+        refreshIntervalMs={0}
+      />
+    );
+
+    expect(await screen.findByText("Console v9.8.7")).toBeInTheDocument();
+    expect(await screen.findByText("Daemon v8.7.6")).toBeInTheDocument();
+  });
 });
 
 function healthyLifecycleClient(): DaemonLifecycleClient {
@@ -235,7 +249,7 @@ function healthyLifecycleClient(): DaemonLifecycleClient {
   };
 }
 
-function healthyDaemonClient(): DaemonClient {
+function healthyDaemonClient(statusOverrides: Record<string, unknown> = {}): DaemonClient {
   return {
     daemonUrl: "http://127.0.0.1:9862",
     get: vi.fn(async (path: string) => {
@@ -244,7 +258,8 @@ function healthyDaemonClient(): DaemonClient {
           identity_address: "alice.jolt",
           peer_id: "12D3KooAlice",
           connected_peers: 3,
-          bootstrap_state: "connected"
+          bootstrap_state: "connected",
+          ...statusOverrides
         };
       }
       if (path === "/api/v1/cache/stats") return {};
