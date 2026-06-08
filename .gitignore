@@ -1,4 +1,9 @@
 /target
+.notes/
+apps/jolt-console/node_modules/
+apps/jolt-console/dist/
+apps/jolt-console/src-tauri/gen/
+apps/jolt-console/src-tauri/binaries/
 *.swp
 *.swo
 .DS_Store

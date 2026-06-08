@@ -177,9 +177,10 @@ sequenceDiagram
     Req->>Req: Append to local copy
 ```
 
-### `/jolt/appsync/1.0.0` -- App Data Sync
+### Deferred App Protocols
 
-Sync app-specific data between peers running the same app. This is the protocol apps use to exchange data (messages, posts, state).
+Earlier app-platform sketches used names such as `/jolt/appsync/1.0.0` and
+`/jolt/message/1.0.0` for app data sync and direct messaging:
 
 ```
 Request:  { app_id: ContentId, sync_type: SyncType, payload: Vec<u8> }
@@ -191,14 +192,16 @@ SyncType:
   - Custom: app-defined protocol
 ```
 
-### `/jolt/message/1.0.0` -- Direct Messaging
-
-Send encrypted messages between peers.
-
 ```
 Request:  { to: PeerId, encrypted_payload: Vec<u8> }
 Response: { status: Ack | Queued | Error }
 ```
+
+Those are not current core protocol commitments. The current direction is in
+[Bidirectional Communication and Signed Reachability](19-signed-reachability-endpoints.md):
+Jolt should first provide signed reachability metadata and, if needed, generic
+app-authorized opaque streams or bounded object ingress. App sync, inboxes,
+messages, contacts, and conversation semantics stay above the protocol layer.
 
 ## Bandwidth Management
 

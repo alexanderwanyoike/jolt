@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
-use jolt_core::{IdentityId, PinRequest, RelayHint};
+use jolt_core::{
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
+    OfflineIngressEndpoint, PinRequest, RelayHint, RelayRecord, VerifiedReachability,
+};
 
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
@@ -22,6 +25,51 @@ pub enum DaemonCommand {
     Resolve {
         address: String,
         response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
+    },
+    DiagnoseIdentity {
+        identity: IdentityId,
+        response_tx: oneshot::Sender<Result<RelayDiagnoseIdentityResponse, NetworkError>>,
+    },
+    EnsureLocalIdentityEncryptionKey {
+        response_tx: oneshot::Sender<Result<IdentityEncryptionKey, NetworkError>>,
+    },
+    EncryptObject {
+        plaintext: Vec<u8>,
+        content_type: String,
+        recipients: Vec<EncryptedObjectRecipient>,
+        response_tx: oneshot::Sender<Result<EncryptedObjectResponse, NetworkError>>,
+    },
+    DecryptObject {
+        encrypted_object: Vec<u8>,
+        response_tx: oneshot::Sender<Result<DecryptedObjectResponse, NetworkError>>,
+    },
+    PublishReachability {
+        sequence_hint: u64,
+        expires_at: u64,
+        live: Vec<LiveReachabilityEndpoint>,
+        offline_ingress: Vec<OfflineIngressEndpoint>,
+        response_tx: oneshot::Sender<Result<PublishReachabilityResponse, NetworkError>>,
+    },
+    SubmitIngress {
+        receiver_id: String,
+        encrypted_object: Vec<u8>,
+        expires_at: Option<u64>,
+        response_tx: oneshot::Sender<Result<IngressRecord, NetworkError>>,
+    },
+    ListPendingIngress {
+        response_tx: oneshot::Sender<Result<Vec<IngressRecord>, NetworkError>>,
+    },
+    OpenIngress {
+        ingress_id: String,
+        response_tx: oneshot::Sender<Result<DecryptedObjectResponse, NetworkError>>,
+    },
+    AcceptIngress {
+        ingress_id: String,
+        response_tx: oneshot::Sender<Result<IngressRecord, NetworkError>>,
+    },
+    RejectIngress {
+        ingress_id: String,
+        response_tx: oneshot::Sender<Result<IngressRecord, NetworkError>>,
     },
     ConnectPeer {
         multiaddr: String,
@@ -55,6 +103,12 @@ pub enum DaemonCommand {
         path: Option<String>,
         relay: HomeRelayConfig,
         latest_sequence: u64,
+        response_tx: oneshot::Sender<Result<(), NetworkError>>,
+    },
+    UpdateNetworkSettings {
+        configured_bootstrap_relays: Vec<String>,
+        effective_bootstrap_relays: Vec<String>,
+        home_relay: Option<HomeRelayConfig>,
         response_tx: oneshot::Sender<Result<(), NetworkError>>,
     },
     PinUpdateLog {
@@ -106,6 +160,118 @@ pub struct ResolveResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseIdentityResponse {
+    pub identity: String,
+    pub provider_key: String,
+    pub local_update_log_cache: RelayDiagnoseCacheObservation,
+    pub identity_head_hint: RelayDiagnoseIdentityHeadObservation,
+    pub local_provider_candidates: Vec<RelayDiagnoseProviderCandidate>,
+    pub provider_candidates: Vec<RelayDiagnoseProviderCandidate>,
+    pub relay_forwarding: RelayDiagnoseForwarding,
+    pub outcome: RelayDiagnoseOutcome,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseCacheObservation {
+    pub state: String,
+    pub entry_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_sequence: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseIdentityHeadObservation {
+    pub state: String,
+    pub fresh_count: usize,
+    pub expired_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_peer_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RelayDiagnoseProviderCandidate {
+    pub peer_id: String,
+    pub addrs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseForwarding {
+    pub attempted: bool,
+    pub target_count: usize,
+    pub attempts: Vec<RelayDiagnoseForwardingAttempt>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseForwardingAttempt {
+    pub peer_id: String,
+    pub status: String,
+    pub candidate_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayDiagnoseOutcome {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptedObjectResponse {
+    pub data: Vec<u8>,
+    pub size: u64,
+    pub recipient_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecryptedObjectResponse {
+    pub plaintext: Vec<u8>,
+    pub size: u64,
+    pub content_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublishReachabilityResponse {
+    pub identity: String,
+    pub path: String,
+    pub address: String,
+    pub latest_sequence: u64,
+    pub content_id: String,
+    pub record: VerifiedReachability,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IngressStatus {
+    Pending,
+    Accepted,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngressRecord {
+    pub ingress_id: String,
+    pub receiver_id: String,
+    pub sender_identity: String,
+    pub recipient_identity: String,
+    pub schema_hint: Option<String>,
+    pub status: IngressStatus,
+    pub received_at: u64,
+    pub expires_at: Option<u64>,
+    pub size: u64,
+    #[serde(skip)]
+    pub encrypted_object: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accepted_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rejected_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeerConnectResponse {
     pub peer_id: Option<String>,
     pub multiaddr: String,
@@ -130,9 +296,12 @@ pub struct NodeStatus {
     pub configured_bootstrap_relay_count: usize,
     pub effective_bootstrap_relays: Vec<String>,
     pub effective_bootstrap_relay_count: usize,
+    pub known_relay_count: usize,
     pub connected_bootstrap_peers: usize,
     pub last_bootstrap_error: Option<String>,
     pub home_relay: Option<HomeRelayConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relay_record: Option<RelayRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

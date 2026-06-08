@@ -1,5 +1,5 @@
 use axum::response::Html;
 
-pub async fn dashboard() -> Html<&'static str> {
-    Html(include_str!("../dashboard.html"))
+pub async fn console_entry() -> Html<&'static str> {
+    Html(include_str!("../console-entry.html"))
 }

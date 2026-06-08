@@ -9,6 +9,15 @@
 - If a change is docs-only, tooling-only, or cannot reasonably be tested first, state that explicitly in the PR notes.
 - Run the relevant focused tests before the full local suite. Before opening or updating a PR, run `./scripts/test-local.sh` unless the change is clearly docs-only.
 
+## PR Closeout and Context Handoff
+
+- Treat the repository as the durable project memory; do not rely on chat history surviving context resets.
+- At the end of each PR, update the relevant `docs/cards/*.md` status and verification notes.
+- Keep PR descriptions descriptive: explain what changed, why it matters, how it was tested, and any known follow-up debt.
+- Maintain `.notes/current-context.md` as gitignored working memory for the next session. Include the active branch/PR, recent verification commands, local process state, blockers, and the next intended task.
+- When a context reset is expected, make sure project changes are committed and pushed, then refresh `.notes/current-context.md` before stopping.
+- On a fresh session, read `AGENTS.md`, the active/relevant cards under `docs/cards`, and `.notes/current-context.md` before continuing work.
+
 ## Protocol Boundary
 
 - Keep the protocol layer application-agnostic.

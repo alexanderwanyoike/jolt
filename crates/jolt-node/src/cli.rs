@@ -29,6 +29,10 @@ pub enum Commands {
         #[arg(long)]
         no_bootstrap: bool,
 
+        /// Disable mDNS LAN peer discovery. Useful for deterministic relay-path demos/tests.
+        #[arg(long)]
+        no_mdns: bool,
+
         /// Fixed P2P port (default: 0 = random). UDP for iroh, TCP for --transport tcp.
         #[arg(long, default_value = "0")]
         p2p_port: u16,
@@ -90,6 +94,12 @@ pub enum Commands {
     HomeRelay {
         #[command(subcommand)]
         command: HomeRelayCommands,
+    },
+
+    /// Inspect and diagnose this node as a relay operator
+    Relay {
+        #[command(subcommand)]
+        command: RelayCommands,
     },
 }
 
@@ -172,6 +182,35 @@ pub enum HomeRelayCommands {
 
     /// Remove the configured home relay
     Clear,
+}
+
+#[derive(Subcommand)]
+pub enum RelayCommands {
+    /// Show relay operator status
+    Status {
+        /// Emit the admin relay status JSON payload
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Diagnose relay reachability for a Jolt identity
+    Diagnose {
+        #[command(subcommand)]
+        command: RelayDiagnoseCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum RelayDiagnoseCommands {
+    /// Trace update-log provider discovery for an identity
+    Identity {
+        /// The identity address without the .jolt suffix
+        identity: String,
+
+        /// Emit the admin relay diagnosis JSON payload
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(test)]
@@ -264,6 +303,15 @@ mod tests {
     }
 
     #[test]
+    fn parse_start_with_no_mdns() {
+        let cli = Cli::parse_from(["jolt", "start", "--no-mdns"]);
+        match cli.command {
+            Commands::Start { no_mdns, .. } => assert!(no_mdns),
+            _ => panic!("expected Start command"),
+        }
+    }
+
+    #[test]
     fn parse_stop_command() {
         let cli = Cli::parse_from(["jolt", "stop"]);
         assert!(matches!(cli.command, Commands::Stop));
@@ -273,6 +321,43 @@ mod tests {
     fn parse_status_command() {
         let cli = Cli::parse_from(["jolt", "status"]);
         assert!(matches!(cli.command, Commands::Status));
+    }
+
+    #[test]
+    fn parse_relay_status_commands() {
+        let cli = Cli::parse_from(["jolt", "relay", "status"]);
+        match cli.command {
+            Commands::Relay {
+                command: RelayCommands::Status { json },
+            } => assert!(!json),
+            _ => panic!("expected Relay Status command"),
+        }
+
+        let cli = Cli::parse_from(["jolt", "relay", "status", "--json"]);
+        match cli.command {
+            Commands::Relay {
+                command: RelayCommands::Status { json },
+            } => assert!(json),
+            _ => panic!("expected Relay Status command"),
+        }
+    }
+
+    #[test]
+    fn parse_relay_diagnose_identity_command() {
+        let cli = Cli::parse_from(["jolt", "relay", "diagnose", "identity", "abc123", "--json"]);
+
+        match cli.command {
+            Commands::Relay {
+                command:
+                    RelayCommands::Diagnose {
+                        command: RelayDiagnoseCommands::Identity { identity, json },
+                    },
+            } => {
+                assert_eq!(identity, "abc123");
+                assert!(json);
+            }
+            _ => panic!("expected Relay Diagnose Identity command"),
+        }
     }
 
     #[test]

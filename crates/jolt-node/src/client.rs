@@ -37,6 +37,50 @@ impl DaemonClient {
         Ok(body)
     }
 
+    pub async fn relay_status(&self) -> Result<serde_json::Value> {
+        let resp = self
+            .client
+            .get(format!("{}/admin/v1/relay/status", self.base_url))
+            .send()
+            .await
+            .context("Failed to connect to daemon")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Relay status failed ({status}): {}",
+                format_error_body(&body)
+            );
+        }
+
+        Ok(resp.json().await?)
+    }
+
+    pub async fn relay_diagnose_identity(&self, identity: &str) -> Result<serde_json::Value> {
+        let resp = self
+            .client
+            .post(format!(
+                "{}/admin/v1/relay/diagnose/identity",
+                self.base_url
+            ))
+            .json(&serde_json::json!({ "identity": identity }))
+            .send()
+            .await
+            .context("Failed to connect to daemon")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Relay identity diagnosis failed ({status}): {}",
+                format_error_body(&body)
+            );
+        }
+
+        Ok(resp.json().await?)
+    }
+
     pub async fn publish(&self, file_path: &Path, path: Option<&str>) -> Result<serde_json::Value> {
         let data = std::fs::read(file_path)
             .with_context(|| format!("Failed to read file: {}", file_path.display()))?;
@@ -63,7 +107,7 @@ impl DaemonClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Publish failed ({status}): {body}");
+            anyhow::bail!("Publish failed ({status}): {}", format_error_body(&body));
         }
 
         let body = resp.json().await?;
@@ -82,7 +126,7 @@ impl DaemonClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Fetch failed ({status}): {body}");
+            anyhow::bail!("Fetch failed ({status}): {}", format_error_body(&body));
         }
 
         let body = resp.json().await?;
@@ -101,7 +145,7 @@ impl DaemonClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Resolve failed ({status}): {body}");
+            anyhow::bail!("Resolve failed ({status}): {}", format_error_body(&body));
         }
 
         let body = resp.json().await?;
@@ -140,7 +184,7 @@ impl DaemonClient {
 
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Pin failed: {body}");
+            anyhow::bail!("Pin failed: {}", format_error_body(&body));
         }
         Ok(())
     }
@@ -166,7 +210,10 @@ impl DaemonClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Home relay pin failed ({status}): {body}");
+            anyhow::bail!(
+                "Home relay pin failed ({status}): {}",
+                format_error_body(&body)
+            );
         }
 
         Ok(resp.json().await?)
@@ -182,7 +229,7 @@ impl DaemonClient {
 
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Unpin failed: {body}");
+            anyhow::bail!("Unpin failed: {}", format_error_body(&body));
         }
         Ok(())
     }
@@ -192,5 +239,33 @@ impl DaemonClient {
         // For now, we don't have a shutdown endpoint exposed.
         // The CLI `stop` command will use the PID to send SIGTERM.
         Ok(())
+    }
+}
+
+fn format_error_body(body: &str) -> String {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(body) else {
+        return body.to_string();
+    };
+    let code = json.get("code").and_then(|value| value.as_str());
+    let error = json.get("error").and_then(|value| value.as_str());
+    match (code, error) {
+        (Some(code), Some(error)) => format!("{code}: {error}"),
+        (None, Some(error)) => error.to_string(),
+        _ => body.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_error_body;
+
+    #[test]
+    fn formats_structured_api_errors() {
+        let body = r#"{"code":"no_bootstrap_relays","error":"No relays configured"}"#;
+
+        assert_eq!(
+            format_error_body(body),
+            "no_bootstrap_relays: No relays configured"
+        );
     }
 }

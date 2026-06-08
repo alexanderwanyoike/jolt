@@ -2,11 +2,16 @@ use std::path::PathBuf;
 
 use tokio::sync::{mpsc, oneshot};
 
-use jolt_core::{IdentityId, PinRequest, UpdateLogEntry};
+use jolt_core::{
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
+    OfflineIngressEndpoint, PinRequest, UpdateLogEntry,
+};
 
 use crate::command::{
-    CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
-    PeerConnectResponse, PeerInfo, PublishResponse, PublishedContentInfo, ResolveResponse,
+    CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
+    EncryptedObjectResponse, FetchResult, IngressRecord, NodeStatus, PeerConnectResponse, PeerInfo,
+    PublishReachabilityResponse, PublishResponse, PublishedContentInfo,
+    RelayDiagnoseIdentityResponse, ResolveResponse,
 };
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
@@ -64,6 +69,174 @@ impl DaemonHandle {
         self.cmd_tx
             .send(DaemonCommand::Resolve {
                 address,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Diagnose update-log provider discovery for a Jolt identity.
+    pub async fn diagnose_identity(
+        &self,
+        identity: IdentityId,
+    ) -> Result<RelayDiagnoseIdentityResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::DiagnoseIdentity {
+                identity,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Ensure the daemon has a local encryption key for its identity.
+    pub async fn ensure_local_identity_encryption_key(
+        &self,
+    ) -> Result<IdentityEncryptionKey, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::EnsureLocalIdentityEncryptionKey { response_tx: tx })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Encrypt plaintext into a signed Jolt encrypted object envelope.
+    pub async fn encrypt_object(
+        &self,
+        plaintext: Vec<u8>,
+        content_type: String,
+        recipients: Vec<EncryptedObjectRecipient>,
+    ) -> Result<EncryptedObjectResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::EncryptObject {
+                plaintext,
+                content_type,
+                recipients,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Decrypt a signed Jolt encrypted object envelope for the local identity.
+    pub async fn decrypt_object(
+        &self,
+        encrypted_object: Vec<u8>,
+    ) -> Result<DecryptedObjectResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::DecryptObject {
+                encrypted_object,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Publish the local identity's signed reachability endpoint metadata.
+    pub async fn publish_reachability(
+        &self,
+        sequence_hint: u64,
+        expires_at: u64,
+        live: Vec<LiveReachabilityEndpoint>,
+        offline_ingress: Vec<OfflineIngressEndpoint>,
+    ) -> Result<PublishReachabilityResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::PublishReachability {
+                sequence_hint,
+                expires_at,
+                live,
+                offline_ingress,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Submit a recipient-controlled ingress envelope to the local daemon.
+    pub async fn submit_ingress(
+        &self,
+        receiver_id: String,
+        encrypted_object: Vec<u8>,
+        expires_at: Option<u64>,
+    ) -> Result<IngressRecord, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::SubmitIngress {
+                receiver_id,
+                encrypted_object,
+                expires_at,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// List locally pending ingress envelopes.
+    pub async fn list_pending_ingress(&self) -> Result<Vec<IngressRecord>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::ListPendingIngress { response_tx: tx })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Decrypt a pending ingress envelope for local app review.
+    pub async fn open_ingress(
+        &self,
+        ingress_id: String,
+    ) -> Result<DecryptedObjectResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::OpenIngress {
+                ingress_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Accept a pending ingress envelope.
+    pub async fn accept_ingress(&self, ingress_id: String) -> Result<IngressRecord, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::AcceptIngress {
+                ingress_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Reject a pending ingress envelope.
+    pub async fn reject_ingress(&self, ingress_id: String) -> Result<IngressRecord, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::RejectIngress {
+                ingress_id,
                 response_tx: tx,
             })
             .await
@@ -187,6 +360,27 @@ impl DaemonHandle {
                 path,
                 relay,
                 latest_sequence,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        rx.await
+            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+    }
+
+    /// Update runtime network settings after admin configuration changes.
+    pub async fn update_network_settings(
+        &self,
+        configured_bootstrap_relays: Vec<String>,
+        effective_bootstrap_relays: Vec<String>,
+        home_relay: Option<HomeRelayConfig>,
+    ) -> Result<(), NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::UpdateNetworkSettings {
+                configured_bootstrap_relays,
+                effective_bootstrap_relays,
+                home_relay,
                 response_tx: tx,
             })
             .await

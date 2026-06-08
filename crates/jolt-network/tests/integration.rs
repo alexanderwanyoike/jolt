@@ -1,10 +1,23 @@
-use std::time::Duration;
+use std::{
+    sync::OnceLock,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use jolt_core::{ContentId, JoltAddress, UpdateAction, UpdateLogEntry};
+use jolt_core::{
+    ContentId, IdentityHeadHint, JoltAddress, RelayRecord, RelayRecordCapability, UpdateAction,
+    UpdateLogEntry,
+};
 use jolt_identity::{verify_signature, NodeIdentity};
 use jolt_network::{NetworkConfig, NetworkNode};
 use jolt_store::{CacheConfig, ContentStore};
+use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use tempfile::tempdir;
+
+static INTEGRATION_TEST_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+fn integration_test_lock() -> &'static tokio::sync::Mutex<()> {
+    INTEGRATION_TEST_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
 
 fn make_store(dir: &std::path::Path) -> ContentStore {
     ContentStore::open(dir, CacheConfig::default()).unwrap()
@@ -22,9 +35,91 @@ fn signed_profile_log(identity: &NodeIdentity, label: &[u8]) -> Vec<UpdateLogEnt
     .unwrap()]
 }
 
+fn no_mdns_config() -> NetworkConfig {
+    NetworkConfig {
+        enable_mdns: false,
+        ..NetworkConfig::test_config()
+    }
+}
+
+fn relay_config() -> NetworkConfig {
+    NetworkConfig {
+        bootstrap_relay: true,
+        enable_mdns: false,
+        ..NetworkConfig::test_config()
+    }
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after Unix epoch")
+        .as_secs()
+}
+
+fn relay_record(identity: &NodeIdentity, port: u16) -> RelayRecord {
+    RelayRecord::new(
+        identity.public_key_bytes(),
+        identity.peer_id().to_string(),
+        vec![format!("/ip4/127.0.0.1/tcp/{port}")],
+        vec![
+            RelayRecordCapability::Bootstrap,
+            RelayRecordCapability::Discovery,
+        ],
+        100,
+        4_102_444_800,
+        |bytes| identity.sign(bytes),
+    )
+    .unwrap()
+}
+
+async fn wait_for_listener(mut node: NetworkNode) -> NetworkNode {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = node.next_event().await;
+            node.handle_swarm_event(event);
+            if !node.listeners().is_empty() {
+                return node;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for listener")
+}
+
+fn listener_with_peer(addr: &Multiaddr, peer: &PeerId) -> Multiaddr {
+    addr.clone().with(Protocol::P2p(*peer))
+}
+
+fn signed_identity_head_hint(
+    identity: &NodeIdentity,
+    provider_peer: &PeerId,
+    provider_addrs: Vec<String>,
+    entries: &[UpdateLogEntry],
+    now: u64,
+) -> IdentityHeadHint {
+    let latest = entries
+        .last()
+        .expect("identity head hint requires at least one update-log entry");
+    IdentityHeadHint::new(
+        identity.public_key_bytes(),
+        identity.identity_id(),
+        provider_peer.to_string(),
+        provider_addrs,
+        None,
+        latest.body.sequence,
+        latest.entry_hash(),
+        now,
+        now + 60,
+        |bytes| identity.sign(bytes),
+    )
+    .unwrap()
+}
+
 #[tokio::test]
 async fn two_nodes_publish_and_fetch() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
 
     let dir_a = tempdir().unwrap();
     let dir_b = tempdir().unwrap();
@@ -159,6 +254,7 @@ async fn two_nodes_publish_and_fetch() {
 #[tokio::test]
 async fn two_nodes_request_and_cache_verified_update_log() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
 
     let dir_a = tempdir().unwrap();
     let dir_b = tempdir().unwrap();
@@ -273,6 +369,7 @@ async fn two_nodes_request_and_cache_verified_update_log() {
 #[tokio::test]
 async fn connected_peer_address_is_cached_for_later_bootstrap() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
 
     let dir_a = tempdir().unwrap();
     let dir_b = tempdir().unwrap();
@@ -333,4 +430,536 @@ async fn connected_peer_address_is_cached_for_later_bootstrap() {
 
     assert_eq!(hints.len(), 1);
     assert!(hints[0].multiaddr.ends_with(&format!("/p2p/{peer_a}")));
+}
+
+#[tokio::test]
+async fn connected_relay_exchange_persists_learned_relays() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
+
+    let dir_r1 = tempdir().unwrap();
+    let dir_tim = tempdir().unwrap();
+
+    let identity_r1 = NodeIdentity::generate();
+    let identity_r2 = NodeIdentity::generate();
+    let identity_r3 = NodeIdentity::generate();
+    let identity_tim = NodeIdentity::generate();
+
+    let store_r1 = make_store(dir_r1.path());
+    store_r1
+        .record_relay_record(relay_record(&identity_r2, 4002), 120)
+        .unwrap();
+    store_r1
+        .record_relay_record(relay_record(&identity_r3, 4003), 130)
+        .unwrap();
+
+    let mut node_r1 = NetworkNode::new_tcp(identity_r1, store_r1, relay_config()).unwrap();
+    node_r1.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r1 = wait_for_listener(node_r1).await;
+    let r1_addr = listener_with_peer(&node_r1.listeners()[0], node_r1.local_peer_id());
+
+    let r1_handle = tokio::spawn(async move {
+        node_r1.run_event_loop().await;
+    });
+
+    let mut tim_config = no_mdns_config();
+    tim_config.effective_bootstrap_relays = vec![r1_addr.to_string()];
+    let store_tim = make_store(dir_tim.path());
+    let mut node_tim = NetworkNode::new_tcp(identity_tim, store_tim, tim_config).unwrap();
+    node_tim.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    node_tim
+        .connect_peer_multiaddr(&r1_addr.to_string())
+        .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let event = node_tim.next_event().await;
+            node_tim.handle_swarm_event(event);
+            if node_tim.store().known_relay_count(200).unwrap() >= 2 {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for relay exchange");
+
+    let records = node_tim.store().load_relay_records(200).unwrap();
+    let relay_ids: Vec<_> = records
+        .iter()
+        .map(|record| record.relay_record.body.relay_id.clone())
+        .collect();
+
+    assert!(relay_ids.contains(&identity_r2.identity_id()));
+    assert!(relay_ids.contains(&identity_r3.identity_id()));
+
+    r1_handle.abort();
+}
+
+#[tokio::test]
+async fn relay_mesh_exploration_learns_relays_through_a_known_relay() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
+
+    let dir_r1 = tempdir().unwrap();
+    let dir_r2 = tempdir().unwrap();
+    let dir_r3 = tempdir().unwrap();
+
+    let identity_r1 = NodeIdentity::generate();
+    let identity_r2 = NodeIdentity::generate();
+    let identity_r3 = NodeIdentity::generate();
+    let r1_id = identity_r1.identity_id();
+    let r3_id = identity_r3.identity_id();
+
+    let store_r3 = make_store(dir_r3.path());
+    let mut node_r3 = NetworkNode::new_tcp(identity_r3, store_r3, relay_config()).unwrap();
+    node_r3.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r3 = wait_for_listener(node_r3).await;
+    let record_seen_at = unix_now();
+    let r3_record = node_r3
+        .local_relay_record(record_seen_at)
+        .unwrap()
+        .expect("relay-mode node should expose a local relay record");
+
+    let store_r2 = make_store(dir_r2.path());
+    store_r2
+        .record_relay_record(r3_record, record_seen_at)
+        .unwrap();
+    let mut node_r2 = NetworkNode::new_tcp(identity_r2, store_r2, relay_config()).unwrap();
+    node_r2.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r2 = wait_for_listener(node_r2).await;
+    let r2_addr = listener_with_peer(&node_r2.listeners()[0], node_r2.local_peer_id());
+
+    let mut r1_config = relay_config();
+    r1_config.effective_bootstrap_relays = vec![r2_addr.to_string()];
+    let store_r1 = make_store(dir_r1.path());
+    let mut node_r1 = NetworkNode::new_tcp(identity_r1, store_r1, r1_config).unwrap();
+    node_r1.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r1 = wait_for_listener(node_r1).await;
+    node_r1
+        .connect_peer_multiaddr(&r2_addr.to_string())
+        .unwrap();
+
+    let r1_handle = tokio::spawn(async move {
+        node_r1.run_event_loop().await;
+    });
+    let r2_handle = tokio::spawn(async move {
+        node_r2.run_event_loop().await;
+    });
+    let r3_handle = tokio::spawn(async move {
+        node_r3.run_event_loop().await;
+    });
+
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let now = unix_now();
+            let r1_store = make_store(dir_r1.path());
+            let r3_store = make_store(dir_r3.path());
+            let r1_records = r1_store.load_relay_records(now).unwrap();
+            let r3_records = r3_store.load_relay_records(now).unwrap();
+            let r1_learned_r3 = r1_records
+                .iter()
+                .any(|record| record.relay_record.body.relay_id == r3_id);
+            let r3_learned_r1 = r3_records
+                .iter()
+                .any(|record| record.relay_record.body.relay_id == r1_id);
+
+            if r1_learned_r3 && r3_learned_r1 {
+                return;
+            }
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("timed out waiting for relay mesh exploration");
+
+    r1_handle.abort();
+    r2_handle.abort();
+    r3_handle.abort();
+}
+
+#[tokio::test]
+async fn identity_provider_query_forwarding_finds_home_relay_provider() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
+
+    let dir_r1 = tempdir().unwrap();
+    let dir_r2 = tempdir().unwrap();
+    let dir_tim = tempdir().unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_id = alice_identity.identity_id();
+    let alice_update_log = signed_profile_log(&alice_identity, b"profile through forwarded query");
+
+    let identity_r1 = NodeIdentity::generate();
+    let identity_r2 = NodeIdentity::generate();
+    let identity_tim = NodeIdentity::generate();
+
+    let store_r1 = make_store(dir_r1.path());
+    let mut node_r1 = NetworkNode::new_tcp(identity_r1, store_r1, relay_config()).unwrap();
+    node_r1
+        .store_verified_update_log(alice_id.clone(), alice_update_log.clone())
+        .unwrap();
+    node_r1.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r1 = wait_for_listener(node_r1).await;
+    let r1_peer = *node_r1.local_peer_id();
+    let record_seen_at = unix_now();
+    let r1_record = node_r1
+        .local_relay_record(record_seen_at)
+        .unwrap()
+        .expect("relay-mode node should expose a local relay record");
+
+    let store_r2 = make_store(dir_r2.path());
+    store_r2
+        .record_relay_record(r1_record, record_seen_at)
+        .unwrap();
+    let mut node_r2 = NetworkNode::new_tcp(identity_r2, store_r2, relay_config()).unwrap();
+    node_r2.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r2 = wait_for_listener(node_r2).await;
+    let r2_addr = listener_with_peer(&node_r2.listeners()[0], node_r2.local_peer_id());
+
+    let mut tim_config = no_mdns_config();
+    tim_config.effective_bootstrap_relays = vec![r2_addr.to_string()];
+    let store_tim = make_store(dir_tim.path());
+    let mut tim = NetworkNode::new_tcp(identity_tim, store_tim, tim_config).unwrap();
+    tim.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut tim = wait_for_listener(tim).await;
+    tim.connect_peer_multiaddr(&r2_addr.to_string()).unwrap();
+
+    let r1_handle = tokio::spawn(async move {
+        node_r1.run_event_loop().await;
+    });
+    let r2_handle = tokio::spawn(async move {
+        node_r2.run_event_loop().await;
+    });
+
+    let expected_log = alice_update_log.clone();
+    let provider = tokio::time::timeout(Duration::from_secs(30), async {
+        let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        while tokio::time::Instant::now() < settle_deadline {
+            if let Ok(event) =
+                tokio::time::timeout(Duration::from_millis(100), tim.next_event()).await
+            {
+                tim.handle_swarm_event(event);
+            }
+        }
+
+        let mut query_interval = tokio::time::interval(Duration::from_secs(2));
+        query_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        loop {
+            tokio::select! {
+                _ = query_interval.tick() => {
+                    tim.find_update_log_providers(&alice_id);
+                }
+                event = tim.next_event() => {
+                    tim.handle_swarm_event(event);
+                    if let Some(provider) = tim.take_discovered_update_log_provider(&alice_id) {
+                        return provider;
+                    }
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for forwarded identity provider query");
+
+    assert_eq!(provider, r1_peer);
+
+    let mut rx = tim
+        .request_update_log_from(&alice_id, None, &provider)
+        .expect("Tim should request Alice's update log from the forwarded provider");
+    let response = loop {
+        tokio::select! {
+            result = &mut rx => {
+                break result
+                    .expect("update-log response channel should remain open")
+                    .expect("update-log request should succeed");
+            }
+            event = tim.next_event() => {
+                tim.handle_swarm_event(event);
+            }
+        }
+    };
+
+    assert_eq!(response.entries, expected_log);
+    assert_eq!(
+        tim.update_log_entries(&alice_id),
+        Some(expected_log.as_slice())
+    );
+
+    r1_handle.abort();
+    r2_handle.abort();
+}
+
+#[tokio::test]
+async fn identity_provider_query_forwarding_crosses_multiple_relay_hops() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
+
+    let dir_r1 = tempdir().unwrap();
+    let dir_r2 = tempdir().unwrap();
+    let dir_r3 = tempdir().unwrap();
+    let dir_r4 = tempdir().unwrap();
+    let dir_tim = tempdir().unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_id = alice_identity.identity_id();
+    let alice_update_log = signed_profile_log(&alice_identity, b"profile through recursive query");
+
+    let identity_r1 = NodeIdentity::generate();
+    let identity_r2 = NodeIdentity::generate();
+    let identity_r3 = NodeIdentity::generate();
+    let identity_r4 = NodeIdentity::generate();
+    let identity_tim = NodeIdentity::generate();
+
+    let store_r4 = make_store(dir_r4.path());
+    let mut node_r4 = NetworkNode::new_tcp(identity_r4, store_r4, relay_config()).unwrap();
+    node_r4
+        .store_verified_update_log(alice_id.clone(), alice_update_log.clone())
+        .unwrap();
+    node_r4.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r4 = wait_for_listener(node_r4).await;
+    let r4_peer = *node_r4.local_peer_id();
+    let record_seen_at = unix_now();
+    let r4_record = node_r4
+        .local_relay_record(record_seen_at)
+        .unwrap()
+        .expect("relay-mode node should expose a local relay record");
+
+    let store_r3 = make_store(dir_r3.path());
+    store_r3
+        .record_relay_record(r4_record, record_seen_at)
+        .unwrap();
+    let mut node_r3 = NetworkNode::new_tcp(identity_r3, store_r3, relay_config()).unwrap();
+    node_r3.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r3 = wait_for_listener(node_r3).await;
+    let r3_record = node_r3
+        .local_relay_record(record_seen_at)
+        .unwrap()
+        .expect("relay-mode node should expose a local relay record");
+
+    let store_r2 = make_store(dir_r2.path());
+    store_r2
+        .record_relay_record(r3_record, record_seen_at)
+        .unwrap();
+    let mut node_r2 = NetworkNode::new_tcp(identity_r2, store_r2, relay_config()).unwrap();
+    node_r2.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r2 = wait_for_listener(node_r2).await;
+    let r2_record = node_r2
+        .local_relay_record(record_seen_at)
+        .unwrap()
+        .expect("relay-mode node should expose a local relay record");
+
+    let store_r1 = make_store(dir_r1.path());
+    store_r1
+        .record_relay_record(r2_record, record_seen_at)
+        .unwrap();
+    let mut node_r1 = NetworkNode::new_tcp(identity_r1, store_r1, relay_config()).unwrap();
+    node_r1.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r1 = wait_for_listener(node_r1).await;
+    let r1_addr = listener_with_peer(&node_r1.listeners()[0], node_r1.local_peer_id());
+
+    let mut tim_config = no_mdns_config();
+    tim_config.effective_bootstrap_relays = vec![r1_addr.to_string()];
+    let store_tim = make_store(dir_tim.path());
+    let mut tim = NetworkNode::new_tcp(identity_tim, store_tim, tim_config).unwrap();
+    tim.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut tim = wait_for_listener(tim).await;
+    tim.connect_peer_multiaddr(&r1_addr.to_string()).unwrap();
+
+    let r1_handle = tokio::spawn(async move {
+        node_r1.run_event_loop().await;
+    });
+    let r2_handle = tokio::spawn(async move {
+        node_r2.run_event_loop().await;
+    });
+    let r3_handle = tokio::spawn(async move {
+        node_r3.run_event_loop().await;
+    });
+    let r4_handle = tokio::spawn(async move {
+        node_r4.run_event_loop().await;
+    });
+
+    let expected_log = alice_update_log.clone();
+    let provider = tokio::time::timeout(Duration::from_secs(45), async {
+        let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+        while tokio::time::Instant::now() < settle_deadline {
+            if let Ok(event) =
+                tokio::time::timeout(Duration::from_millis(100), tim.next_event()).await
+            {
+                tim.handle_swarm_event(event);
+            }
+        }
+
+        let mut query_interval = tokio::time::interval(Duration::from_secs(2));
+        query_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        loop {
+            tokio::select! {
+                _ = query_interval.tick() => {
+                    tim.find_update_log_providers(&alice_id);
+                }
+                event = tim.next_event() => {
+                    tim.handle_swarm_event(event);
+                    if let Some(provider) = tim.take_discovered_update_log_provider(&alice_id) {
+                        return provider;
+                    }
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for recursive identity provider query");
+
+    assert_eq!(provider, r4_peer);
+
+    let mut rx = tim
+        .request_update_log_from(&alice_id, None, &provider)
+        .expect("Tim should request Alice's update log from the forwarded provider");
+    let response = loop {
+        tokio::select! {
+            result = &mut rx => {
+                break result
+                    .expect("update-log response channel should remain open")
+                    .expect("update-log request should succeed");
+            }
+            event = tim.next_event() => {
+                tim.handle_swarm_event(event);
+            }
+        }
+    };
+
+    assert_eq!(response.entries, expected_log);
+    assert_eq!(
+        tim.update_log_entries(&alice_id),
+        Some(expected_log.as_slice())
+    );
+
+    r1_handle.abort();
+    r2_handle.abort();
+    r3_handle.abort();
+    r4_handle.abort();
+}
+
+#[tokio::test]
+async fn identity_head_gossip_resolves_common_lookup_without_forwarding() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
+
+    let dir_r1 = tempdir().unwrap();
+    let dir_r2 = tempdir().unwrap();
+    let dir_tim = tempdir().unwrap();
+
+    let alice_identity = NodeIdentity::generate();
+    let alice_id = alice_identity.identity_id();
+    let alice_update_log = signed_profile_log(&alice_identity, b"profile through gossiped hint");
+
+    let identity_r1 = NodeIdentity::generate();
+    let identity_r2 = NodeIdentity::generate();
+    let identity_tim = NodeIdentity::generate();
+
+    let store_r1 = make_store(dir_r1.path());
+    let mut node_r1 = NetworkNode::new_tcp(identity_r1, store_r1, relay_config()).unwrap();
+    node_r1
+        .store_verified_update_log(alice_id.clone(), alice_update_log.clone())
+        .unwrap();
+    node_r1.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r1 = wait_for_listener(node_r1).await;
+    let r1_peer = *node_r1.local_peer_id();
+    let r1_addr = listener_with_peer(&node_r1.listeners()[0], &r1_peer);
+
+    let now = unix_now();
+    let hint = signed_identity_head_hint(
+        &alice_identity,
+        &r1_peer,
+        vec![r1_addr.to_string()],
+        &alice_update_log,
+        now,
+    );
+    node_r1.record_identity_head_hint(hint).unwrap();
+
+    let r1_record = node_r1
+        .local_relay_record(now)
+        .unwrap()
+        .expect("relay-mode node should expose a local relay record");
+
+    let store_r2 = make_store(dir_r2.path());
+    store_r2.record_relay_record(r1_record, now).unwrap();
+    let mut node_r2 = NetworkNode::new_tcp(identity_r2, store_r2, relay_config()).unwrap();
+    node_r2.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut node_r2 = wait_for_listener(node_r2).await;
+    let r2_addr = listener_with_peer(&node_r2.listeners()[0], node_r2.local_peer_id());
+
+    let mut tim_config = no_mdns_config();
+    tim_config.effective_bootstrap_relays = vec![r2_addr.to_string()];
+    let store_tim = make_store(dir_tim.path());
+    let mut tim = NetworkNode::new_tcp(identity_tim, store_tim, tim_config).unwrap();
+    tim.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let mut tim = wait_for_listener(tim).await;
+    tim.connect_peer_multiaddr(&r2_addr.to_string()).unwrap();
+
+    let r1_handle = tokio::spawn(async move {
+        node_r1.run_event_loop().await;
+    });
+    let r2_handle = tokio::spawn(async move {
+        node_r2.run_event_loop().await;
+    });
+
+    let provider = tokio::time::timeout(Duration::from_secs(30), async {
+        let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(4);
+        while tokio::time::Instant::now() < settle_deadline {
+            if let Ok(event) =
+                tokio::time::timeout(Duration::from_millis(100), tim.next_event()).await
+            {
+                tim.handle_swarm_event(event);
+            }
+        }
+
+        let mut query_interval = tokio::time::interval(Duration::from_secs(2));
+        query_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        loop {
+            tokio::select! {
+                _ = query_interval.tick() => {
+                    tim.find_update_log_providers(&alice_id);
+                }
+                event = tim.next_event() => {
+                    tim.handle_swarm_event(event);
+                    if let Some(provider) = tim.take_discovered_update_log_provider(&alice_id) {
+                        return provider;
+                    }
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for gossiped identity-head hint");
+
+    assert_eq!(provider, r1_peer);
+
+    let mut rx = tim
+        .request_update_log_from(&alice_id, None, &provider)
+        .expect("Tim should request Alice's update log from the hinted provider");
+    let response = loop {
+        tokio::select! {
+            result = &mut rx => {
+                break result
+                    .expect("update-log response channel should remain open")
+                    .expect("update-log request should succeed");
+            }
+            event = tim.next_event() => {
+                tim.handle_swarm_event(event);
+            }
+        }
+    };
+
+    assert_eq!(response.entries, alice_update_log);
+    assert_eq!(
+        tim.update_log_entries(&alice_id),
+        Some(alice_update_log.as_slice())
+    );
+
+    r1_handle.abort();
+    r2_handle.abort();
 }

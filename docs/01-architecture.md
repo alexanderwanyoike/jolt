@@ -134,7 +134,7 @@ Manages the user's cryptographic identity.
 - Generate and store Ed25519 keypairs
 - Sign data (update logs, manifests, messages)
 - Verify signatures from other peers
-- Derive X25519 keys for encryption from Ed25519 identity
+- Publish and verify signed identity encryption key records
 - Identity export/import for backup
 
 ### jolt-crypto

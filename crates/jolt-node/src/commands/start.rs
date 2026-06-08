@@ -2,6 +2,7 @@ use anyhow::Result;
 use tokio::sync::mpsc;
 use tracing::info;
 
+use jolt_core::LiveReachabilityEndpoint;
 use jolt_identity::NodeIdentity;
 use jolt_network::{
     bootstrap::default_bootstrap_peers, DaemonHandle, Multiaddr, NetworkConfig, NetworkNode,
@@ -17,6 +18,7 @@ pub async fn run(
     api_bind: &str,
     bootstrap: Vec<String>,
     no_bootstrap: bool,
+    no_mdns: bool,
     p2p_port: u16,
     transport: TransportMode,
 ) -> Result<()> {
@@ -36,6 +38,7 @@ pub async fn run(
 
     let identity = NodeIdentity::load_or_generate(&config.identity_dir)?;
     info!("Peer ID: {}", identity.peer_id());
+    let identity_peer_id = identity.peer_id().to_string();
     let local_identity = identity.identity_id();
     let settings = config.load_settings()?;
     let builtin_bootstrap = default_bootstrap_peers();
@@ -48,12 +51,22 @@ pub async fn run(
             Vec::new()
         }
     };
+    let learned_relay_bootstrap: Vec<String> = match store.load_relay_bootstrap_addrs(jolt_now()) {
+        Ok(addrs) => addrs,
+        Err(e) => {
+            info!("Ignoring relay address book: {e}");
+            Vec::new()
+        }
+    };
     let (net_config, effective_bootstrap) = build_network_config(
         &settings,
         &bootstrap,
         &builtin_bootstrap,
+        &learned_relay_bootstrap,
         &cached_bootstrap,
         p2p_port,
+        no_mdns,
+        no_bootstrap,
     );
     let published_ids: Vec<String> = store.published_ids();
 
@@ -108,11 +121,24 @@ pub async fn run(
         node.run_daemon_loop(cmd_rx).await;
     });
 
+    publish_direct_ingress_reachability(
+        &handle,
+        api_bind,
+        api_port,
+        identity_peer_id,
+        jolt_now() + 24 * 60 * 60,
+    )
+    .await;
+
     // Write PID and port files
     let pid = std::process::id();
     daemon::write_daemon_info(&config, pid, api_port)?;
 
-    info!("mDNS discovery active on LAN");
+    if no_mdns {
+        info!("mDNS discovery disabled");
+    } else {
+        info!("mDNS discovery active on LAN");
+    }
     info!("Published content: {} items", published_ids.len());
     info!(
         "Configured bootstrap relays: {}",
@@ -144,21 +170,74 @@ pub async fn run(
     Ok(())
 }
 
+async fn publish_direct_ingress_reachability(
+    handle: &DaemonHandle,
+    api_bind: &str,
+    api_port: u16,
+    peer_id: String,
+    expires_at: u64,
+) {
+    let endpoint = direct_ingress_reachability_endpoint(api_bind, api_port, peer_id);
+    match handle
+        .publish_reachability(0, expires_at, vec![endpoint], Vec::new())
+        .await
+    {
+        Ok(response) => info!(
+            "Published direct ingress reachability: {}",
+            response.address
+        ),
+        Err(err) => info!("Direct ingress reachability publish skipped: {err}"),
+    }
+}
+
+fn direct_ingress_reachability_endpoint(
+    api_bind: &str,
+    api_port: u16,
+    peer_id: String,
+) -> LiveReachabilityEndpoint {
+    let host = if api_bind == "0.0.0.0" {
+        "127.0.0.1"
+    } else {
+        api_bind
+    };
+    LiveReachabilityEndpoint {
+        transport: "jolt-http-ingress".to_string(),
+        peer_id,
+        addresses: vec![format!("http://{host}:{api_port}/api/v1/ingress")],
+        relay_hints: Vec::new(),
+        protocols: vec!["recipient-ingress-v1".to_string()],
+        max_payload_bytes: 1024 * 1024,
+    }
+}
+
 fn build_network_config(
     settings: &NodeSettings,
     cli_bootstrap: &[String],
     builtin_bootstrap: &[String],
+    learned_relay_bootstrap: &[String],
     cached_bootstrap: &[String],
     p2p_port: u16,
+    no_mdns: bool,
+    no_bootstrap: bool,
 ) -> (NetworkConfig, Vec<String>) {
-    let mut effective_bootstrap =
-        settings.effective_bootstrap_relays(cli_bootstrap, builtin_bootstrap);
-    for relay in cached_bootstrap {
-        if !effective_bootstrap.contains(relay) {
-            effective_bootstrap.push(relay.clone());
+    let effective_bootstrap = if no_bootstrap {
+        Vec::new()
+    } else {
+        let mut relays = settings.effective_bootstrap_relays(cli_bootstrap, builtin_bootstrap);
+        for relay in learned_relay_bootstrap {
+            if !relays.contains(relay) {
+                relays.push(relay.clone());
+            }
         }
-    }
+        for relay in cached_bootstrap {
+            if !relays.contains(relay) {
+                relays.push(relay.clone());
+            }
+        }
+        relays
+    };
     let mut net_config = NetworkConfig::default();
+    net_config.enable_mdns = !no_mdns;
     net_config.p2p_port = p2p_port;
     net_config.configured_bootstrap_relays = settings.bootstrap_relays.clone();
     net_config.effective_bootstrap_relays = effective_bootstrap.clone();
@@ -170,6 +249,13 @@ fn build_network_config(
         .collect();
 
     (net_config, effective_bootstrap)
+}
+
+fn jolt_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 #[cfg(test)]
@@ -199,7 +285,8 @@ mod tests {
         let cli = vec![CLI.to_string()];
         let builtins = vec![BUILTIN.to_string()];
 
-        let (config, effective) = build_network_config(&settings, &cli, &builtins, &[], 4001);
+        let (config, effective) =
+            build_network_config(&settings, &cli, &builtins, &[], &[], 4001, false, false);
 
         assert_eq!(effective, vec![CONFIGURED.to_string(), CLI.to_string()]);
         assert_eq!(config.bootstrap_peers.len(), 2);
@@ -214,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn build_network_config_adds_cached_peer_hints_after_configured_relays() {
+    fn build_network_config_adds_learned_relays_before_cached_peer_hints() {
         let settings = NodeSettings {
             bootstrap_relays: vec![CONFIGURED.to_string()],
             use_builtin_bootstrap_relays: false,
@@ -222,15 +309,20 @@ mod tests {
             home_relay: None,
         };
         let cached = vec![CLI.to_string(), CONFIGURED.to_string()];
+        let learned = vec![BUILTIN.to_string(), CONFIGURED.to_string()];
 
-        let (config, effective) = build_network_config(&settings, &[], &[], &cached, 4001);
+        let (config, effective) =
+            build_network_config(&settings, &[], &[], &learned, &cached, 4001, false, false);
 
-        assert_eq!(effective, vec![CONFIGURED.to_string(), CLI.to_string()]);
+        assert_eq!(
+            effective,
+            vec![CONFIGURED.to_string(), BUILTIN.to_string(), CLI.to_string()]
+        );
         assert_eq!(
             config.effective_bootstrap_relays,
-            vec![CONFIGURED.to_string(), CLI.to_string()]
+            vec![CONFIGURED.to_string(), BUILTIN.to_string(), CLI.to_string()]
         );
-        assert_eq!(config.bootstrap_peers.len(), 2);
+        assert_eq!(config.bootstrap_peers.len(), 3);
     }
 
     #[test]
@@ -238,10 +330,77 @@ mod tests {
         let settings = NodeSettings::default();
         let builtins = vec![BUILTIN.to_string()];
 
-        let (config, effective) = build_network_config(&settings, &[], &builtins, &[], 0);
+        let (config, effective) =
+            build_network_config(&settings, &[], &builtins, &[], &[], 0, false, false);
 
         assert_eq!(effective, vec![BUILTIN.to_string()]);
         assert_eq!(config.bootstrap_peers.len(), 1);
         assert_eq!(config.effective_bootstrap_relays, vec![BUILTIN]);
+    }
+
+    #[test]
+    fn build_network_config_can_disable_mdns() {
+        let settings = NodeSettings {
+            bootstrap_relays: vec![CONFIGURED.to_string()],
+            use_builtin_bootstrap_relays: false,
+            bootstrap_relay: false,
+            home_relay: None,
+        };
+
+        let (config, _) = build_network_config(&settings, &[], &[], &[], &[], 4001, true, false);
+
+        assert!(!config.enable_mdns);
+    }
+
+    #[test]
+    fn build_network_config_can_disable_bootstrap_relays() {
+        let settings = NodeSettings {
+            bootstrap_relays: vec![CONFIGURED.to_string()],
+            use_builtin_bootstrap_relays: true,
+            bootstrap_relay: false,
+            home_relay: None,
+        };
+        let builtins = vec![BUILTIN.to_string()];
+        let learned = vec![CLI.to_string()];
+
+        let (config, effective) =
+            build_network_config(&settings, &[], &builtins, &learned, &[], 4001, false, true);
+
+        assert!(effective.is_empty());
+        assert!(config.effective_bootstrap_relays.is_empty());
+        assert!(config.bootstrap_peers.is_empty());
+        assert_eq!(config.configured_bootstrap_relays, vec![CONFIGURED]);
+    }
+
+    #[test]
+    fn direct_ingress_reachability_endpoint_advertises_local_http_ingress() {
+        let endpoint = direct_ingress_reachability_endpoint(
+            "127.0.0.1",
+            9862,
+            "12D3KooWReachablePeer".to_string(),
+        );
+
+        assert_eq!(endpoint.transport, "jolt-http-ingress");
+        assert_eq!(endpoint.peer_id, "12D3KooWReachablePeer");
+        assert_eq!(
+            endpoint.addresses,
+            vec!["http://127.0.0.1:9862/api/v1/ingress"]
+        );
+        assert_eq!(endpoint.protocols, vec!["recipient-ingress-v1"]);
+        assert_eq!(endpoint.max_payload_bytes, 1024 * 1024);
+    }
+
+    #[test]
+    fn direct_ingress_reachability_endpoint_uses_loopback_for_wildcard_bind() {
+        let endpoint = direct_ingress_reachability_endpoint(
+            "0.0.0.0",
+            9862,
+            "12D3KooWReachablePeer".to_string(),
+        );
+
+        assert_eq!(
+            endpoint.addresses,
+            vec!["http://127.0.0.1:9862/api/v1/ingress"]
+        );
     }
 }
