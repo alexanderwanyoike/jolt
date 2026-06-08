@@ -6,13 +6,20 @@ import type { ConsoleUpdateCheck } from "../update/client";
 type ConsoleShellProps = {
   children: React.ReactNode;
   snapshot: DaemonSnapshot;
+  consoleVersion: string;
   updateCheck?: ConsoleUpdateCheck | null;
 };
 
-export function ConsoleShell({ children, snapshot, updateCheck = null }: ConsoleShellProps) {
+export function ConsoleShell({
+  children,
+  snapshot,
+  consoleVersion,
+  updateCheck = null
+}: ConsoleShellProps) {
   const location = useLocation();
   const currentRoute =
     consoleRoutes.find((route) => route.path === location.pathname) ?? consoleRoutes[0];
+  const daemonVersion = snapshot.status?.daemon_version ?? "unknown";
 
   return (
     <div className="console-shell">
@@ -37,6 +44,10 @@ export function ConsoleShell({ children, snapshot, updateCheck = null }: Console
           <span className="eyebrow">Daemon</span>
           <strong>{snapshot.connected ? "Connected" : "Disconnected"}</strong>
           <span className="mono">{snapshot.daemonUrl}</span>
+          <div className="version-list" aria-label="Runtime versions">
+            <span>Console v{consoleVersion}</span>
+            <span>Daemon v{daemonVersion}</span>
+          </div>
         </div>
       </aside>
 

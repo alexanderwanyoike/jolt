@@ -28,6 +28,7 @@ impl NetworkNode {
         });
 
         NodeStatus {
+            daemon_version: env!("CARGO_PKG_VERSION").to_string(),
             peer_id: self.swarm.local_peer_id().to_string(),
             identity_address: self.identity.jolt_address().to_string(),
             uptime_secs: self.started_at.elapsed().as_secs(),
@@ -132,6 +133,7 @@ mod tests {
         });
 
         let status = handle.status().await.unwrap();
+        assert_eq!(status.daemon_version, env!("CARGO_PKG_VERSION"));
         assert!(!status.peer_id.is_empty());
         assert_eq!(status.connected_peers, 0);
 

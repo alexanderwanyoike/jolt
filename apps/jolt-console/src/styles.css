@@ -136,6 +136,14 @@ button {
   padding: 14px;
 }
 
+.version-list {
+  display: grid;
+  gap: 4px;
+  padding-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .workspace {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
