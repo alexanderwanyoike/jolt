@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONSOLE_DIR="$ROOT_DIR/apps/jolt-console"
 SIDECAR_DIR="$CONSOLE_DIR/src-tauri/binaries"
 TARGET_TRIPLE="${JOLT_TARGET_TRIPLE:-}"
+TAURI_CACHE_DIR="${TAURI_CACHE_DIR:-$HOME/.cache/tauri}"
 PREPARE_ONLY=0
 DRY_RUN=0
 
@@ -22,6 +23,43 @@ run_with_retries() {
     sleep "$((attempt * 5))"
     attempt="$((attempt + 1))"
   done
+}
+
+download_tauri_helper() {
+  local filename="$1"
+  local url="$2"
+  local target="$TAURI_CACHE_DIR/$filename"
+
+  if [[ -s "$target" ]]; then
+    echo "    cached: $filename"
+    return 0
+  fi
+
+  echo "    downloading: $filename"
+  local tmp="$target.tmp"
+  rm -f "$tmp"
+  run_with_retries 5 curl -fL "$url" -o "$tmp"
+  mv "$tmp" "$target"
+}
+
+prefetch_tauri_appimage_helpers() {
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    return 0
+  fi
+
+  echo "==> Prefetching Tauri AppImage helper binaries"
+  mkdir -p "$TAURI_CACHE_DIR"
+
+  download_tauri_helper \
+    "AppRun-x86_64" \
+    "https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64"
+  download_tauri_helper \
+    "linuxdeploy-x86_64.AppImage" \
+    "https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage"
+
+  chmod 0755 \
+    "$TAURI_CACHE_DIR/AppRun-x86_64" \
+    "$TAURI_CACHE_DIR/linuxdeploy-x86_64.AppImage"
 }
 
 usage() {
@@ -120,6 +158,8 @@ if [[ "$PREPARE_ONLY" -eq 1 ]]; then
   echo "==> Prepared sidecar and web assets; skipping Tauri bundle"
   exit 0
 fi
+
+prefetch_tauri_appimage_helpers
 
 echo "==> Building Linux AppImage bundle"
 (cd "$CONSOLE_DIR" && run_with_retries 3 npm run tauri build -- --bundles appimage)
