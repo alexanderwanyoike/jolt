@@ -8,6 +8,22 @@ TARGET_TRIPLE="${JOLT_TARGET_TRIPLE:-}"
 PREPARE_ONLY=0
 DRY_RUN=0
 
+run_with_retries() {
+  local attempts="$1"
+  shift
+
+  local attempt=1
+  until "$@"; do
+    if [[ "$attempt" -ge "$attempts" ]]; then
+      return 1
+    fi
+
+    echo "Command failed; retrying ($attempt/$attempts): $*" >&2
+    sleep "$((attempt * 5))"
+    attempt="$((attempt + 1))"
+  done
+}
+
 usage() {
   cat <<'USAGE'
 Build the v0 Jolt Console Linux package with a bundled daemon sidecar.
@@ -106,7 +122,7 @@ if [[ "$PREPARE_ONLY" -eq 1 ]]; then
 fi
 
 echo "==> Building Linux AppImage bundle"
-(cd "$CONSOLE_DIR" && npm run tauri build -- --bundles appimage)
+(cd "$CONSOLE_DIR" && run_with_retries 3 npm run tauri build -- --bundles appimage)
 
 echo "==> Bundle artifacts"
 find "$ROOT_DIR/target/release/bundle/appimage" -maxdepth 1 -type f -name '*.AppImage' -print
