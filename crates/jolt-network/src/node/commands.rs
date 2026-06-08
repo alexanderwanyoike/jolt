@@ -12,7 +12,8 @@ use crate::command::{
 use crate::error::NetworkError;
 use crate::protocol::{ContentRequest, UpdateLogRequest};
 
-use super::{NetworkNode, PendingResolve, PendingUpdateLogPin};
+use super::resolution::PendingResolve;
+use super::{NetworkNode, PendingUpdateLogPin};
 
 impl NetworkNode {
     /// Handle a single daemon command.

@@ -110,3 +110,9 @@ Each PR should keep existing public APIs stable and should run the relevant
   small `NetworkNode::build_status` helper.
 - Green: `cargo test -p jolt-network --lib -- --nocapture`
 - Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
+- 2026-06-08: Eleventh slice moved daemon `.jolt` resolution cache helpers,
+  provider-backed daemon resolve request tracking, pending resolve release,
+  resolve timeout handling, and the related pending state types into
+  `node::resolution`. The daemon resolution tests now live with that module.
+- Green: `cargo test -p jolt-network --lib -- --nocapture`
+- Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`

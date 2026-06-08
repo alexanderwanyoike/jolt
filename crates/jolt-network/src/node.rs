@@ -10,6 +10,7 @@ mod inventory;
 mod providers;
 mod publishing;
 mod relays;
+mod resolution;
 mod status;
 use libp2p::futures::StreamExt;
 use libp2p::multiaddr::Protocol;
@@ -22,9 +23,8 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::{info, warn};
 
 use jolt_core::{
-    resolve_jolt_address, verify_update_log_for_identity, ContentId, EncryptedObjectEnvelope,
-    IdentityEncryptionKey, IdentityEncryptionPrivateKey, IdentityId, JoltAddress,
-    ResolvedJoltTarget, UpdateLogEntry,
+    verify_update_log_for_identity, ContentId, EncryptedObjectEnvelope, IdentityEncryptionKey,
+    IdentityEncryptionPrivateKey, IdentityId, JoltAddress, ResolvedJoltTarget, UpdateLogEntry,
 };
 #[cfg(test)]
 use jolt_core::{EncryptedObjectRecipient, IdentityHeadHint, RelayRecord, RelayRecordCapability};
@@ -35,7 +35,7 @@ use crate::behaviour::{JoltBehaviour, JoltBehaviourEvent};
 use crate::command::{
     DaemonCommand, IngressRecord, IngressStatus, RelayDiagnoseCacheObservation,
     RelayDiagnoseForwardingAttempt, RelayDiagnoseIdentityHeadObservation,
-    RelayDiagnoseIdentityResponse, RelayDiagnoseProviderCandidate, ResolveResponse,
+    RelayDiagnoseIdentityResponse, RelayDiagnoseProviderCandidate,
 };
 use crate::config::{HomeRelayConfig, NetworkConfig};
 use crate::error::{DiscoveryFailureCode, NetworkError};
@@ -51,13 +51,6 @@ use crate::protocol::{
     ContentRequest, ContentResponse, IdentityProviderCandidate, RelayExchangeResponse,
     UpdateLogRequest, UpdateLogResponse,
 };
-
-struct PendingResolve {
-    address: JoltAddress,
-    response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
-    deadline: Instant,
-    fallback_response: Option<ResolveResponse>,
-}
 
 struct PendingUpdateLogPin {
     identity: IdentityId,
@@ -84,15 +77,6 @@ struct PendingIdentityProviderDiagnosis {
     attempts: HashMap<OutboundRequestId, RelayDiagnoseForwardingAttempt>,
     providers: Vec<IdentityProviderCandidate>,
     limit: usize,
-}
-
-struct PendingDaemonResolve {
-    address: JoltAddress,
-    now: Option<u64>,
-    provider: libp2p::PeerId,
-    response_tx: Option<oneshot::Sender<Result<ResolveResponse, NetworkError>>>,
-    deadline: Instant,
-    fallback_response: Option<ResolveResponse>,
 }
 
 /// Tracks connection quality for a connected peer.
@@ -166,8 +150,8 @@ pub struct NetworkNode {
             oneshot::Sender<Result<ResolvedJoltTarget, NetworkError>>,
         ),
     >,
-    pending_daemon_resolutions: HashMap<OutboundRequestId, PendingDaemonResolve>,
-    pending_resolves: HashMap<IdentityId, Vec<PendingResolve>>,
+    pending_daemon_resolutions: HashMap<OutboundRequestId, resolution::PendingDaemonResolve>,
+    pending_resolves: HashMap<IdentityId, Vec<resolution::PendingResolve>>,
     /// Providers discovered via DHT: content_id string -> provider PeerIds
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
     /// Verified update logs by owner identity.
@@ -494,50 +478,6 @@ impl NetworkNode {
         &mut self.store
     }
 
-    /// Resolve a Jolt address from this node's verified update-log cache.
-    pub fn resolve_cached_jolt_address(
-        &self,
-        address: &JoltAddress,
-        now: Option<u64>,
-    ) -> Result<ResolvedJoltTarget, NetworkError> {
-        let entries = self.update_logs.get(address.identity()).ok_or_else(|| {
-            NetworkError::Protocol(format!(
-                "No verified update log cached for {}",
-                address.identity()
-            ))
-        })?;
-        resolve_jolt_address(address, entries, now)
-            .map_err(|e| NetworkError::Protocol(e.to_string()))
-    }
-
-    fn resolve_response_from_cache(
-        &self,
-        address: &JoltAddress,
-        now: Option<u64>,
-        source: impl Into<String>,
-    ) -> Result<ResolveResponse, NetworkError> {
-        let entries = self.update_logs.get(address.identity()).ok_or_else(|| {
-            NetworkError::Protocol(format!(
-                "No verified update log cached for {}",
-                address.identity()
-            ))
-        })?;
-        let latest_sequence = verify_update_log_for_identity(address.identity(), entries)
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
-        let target = resolve_jolt_address(address, entries, now)
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
-
-        Ok(ResolveResponse {
-            address: address.to_string(),
-            identity: target.identity.to_string(),
-            path: target.path,
-            latest_sequence,
-            content_id: target.content_id.to_string(),
-            reachability_hints: target.reachability,
-            source: source.into(),
-        })
-    }
-
     fn peer_hint_multiaddr(remote_addr: &str, peer_id: libp2p::PeerId) -> String {
         if remote_addr.contains("/p2p/") {
             return remote_addr.to_string();
@@ -546,149 +486,6 @@ impl NetworkNode {
         match remote_addr.parse::<Multiaddr>() {
             Ok(addr) => addr.with(Protocol::P2p(peer_id)).to_string(),
             Err(_) => remote_addr.to_string(),
-        }
-    }
-
-    fn request_daemon_resolve_from_provider(
-        &mut self,
-        address: JoltAddress,
-        now: Option<u64>,
-        provider: &libp2p::PeerId,
-        response_tx: oneshot::Sender<Result<ResolveResponse, NetworkError>>,
-        fallback_response: Option<ResolveResponse>,
-    ) {
-        self.request_daemon_update_log_from_provider(
-            address,
-            now,
-            provider,
-            Some(response_tx),
-            fallback_response,
-        );
-    }
-
-    fn request_daemon_refresh_from_provider(
-        &mut self,
-        address: JoltAddress,
-        provider: &libp2p::PeerId,
-    ) {
-        self.request_daemon_update_log_from_provider(address, None, provider, None, None);
-    }
-
-    fn request_daemon_update_log_from_provider(
-        &mut self,
-        address: JoltAddress,
-        now: Option<u64>,
-        provider: &libp2p::PeerId,
-        response_tx: Option<oneshot::Sender<Result<ResolveResponse, NetworkError>>>,
-        fallback_response: Option<ResolveResponse>,
-    ) {
-        let request = UpdateLogRequest {
-            identity: address.identity().clone(),
-            since: self
-                .update_logs
-                .get(address.identity())
-                .and_then(|entries| {
-                    verify_update_log_for_identity(address.identity(), entries).ok()
-                }),
-        };
-
-        let request_id = self
-            .swarm
-            .behaviour_mut()
-            .update_log_sync
-            .send_request(provider, request);
-        self.pending_daemon_resolutions.insert(
-            request_id,
-            PendingDaemonResolve {
-                address,
-                now,
-                provider: *provider,
-                response_tx,
-                deadline: Instant::now() + self.resolve_timeout,
-                fallback_response,
-            },
-        );
-    }
-
-    fn should_refresh_cached_resolution(&self, identity: &IdentityId) -> bool {
-        let key = Self::update_log_provider_key(identity);
-        self.discovered_providers
-            .get(&key)
-            .is_some_and(|providers| !providers.is_empty())
-            || self.swarm.connected_peers().next().is_some()
-            || !self.effective_bootstrap_relays.is_empty()
-    }
-
-    fn request_pending_resolves_from_provider(
-        &mut self,
-        identity: &IdentityId,
-        provider: &libp2p::PeerId,
-    ) {
-        let Some(pending) = self.pending_resolves.remove(identity) else {
-            return;
-        };
-
-        for pending in pending {
-            self.request_daemon_resolve_from_provider(
-                pending.address,
-                None,
-                provider,
-                pending.response_tx,
-                pending.fallback_response,
-            );
-        }
-    }
-
-    fn check_resolve_timeouts(&mut self) {
-        let now = Instant::now();
-        let mut empty = Vec::new();
-        let no_bootstrap_relays = self.effective_bootstrap_relays.is_empty()
-            && self.swarm.connected_peers().next().is_none();
-        let relay_unreachable = !self.effective_bootstrap_relays.is_empty()
-            && self.connected_bootstrap_peer_count() == 0;
-
-        for (identity, pending) in &mut self.pending_resolves {
-            let mut still_waiting = Vec::new();
-            for pending in pending.drain(..) {
-                if pending.deadline <= now {
-                    let result = pending.fallback_response.map(Ok).unwrap_or_else(|| {
-                        Err(Self::identity_provider_failure(
-                            identity,
-                            no_bootstrap_relays,
-                            relay_unreachable,
-                        ))
-                    });
-                    let _ = pending.response_tx.send(result);
-                } else {
-                    still_waiting.push(pending);
-                }
-            }
-            *pending = still_waiting;
-            if pending.is_empty() {
-                empty.push(identity.clone());
-            }
-        }
-
-        for identity in empty {
-            self.pending_resolves.remove(&identity);
-        }
-
-        let timed_out: Vec<_> = self
-            .pending_daemon_resolutions
-            .iter()
-            .filter_map(|(request_id, pending)| (pending.deadline <= now).then_some(*request_id))
-            .collect();
-
-        for request_id in timed_out {
-            if let Some(pending) = self.pending_daemon_resolutions.remove(&request_id) {
-                if let Some(response_tx) = pending.response_tx {
-                    let result = pending
-                        .fallback_response
-                        .map(Ok)
-                        .unwrap_or(Err(NetworkError::Timeout));
-                    let _ = response_tx.send(result);
-                }
-            }
         }
     }
 
@@ -985,11 +782,6 @@ impl NetworkNode {
     /// Set the fetch timeout for the daemon's fetch manager.
     pub fn set_fetch_timeout(&mut self, timeout: Duration) {
         self.fetch_manager = FetchManager::with_timeout(timeout);
-    }
-
-    /// Set the timeout for daemon `.jolt` provider discovery.
-    pub fn set_resolve_timeout(&mut self, timeout: Duration) {
-        self.resolve_timeout = timeout;
     }
 }
 
@@ -1345,135 +1137,6 @@ mod tests {
         assert_eq!(first.len(), 2);
         assert_eq!(second.len(), 2);
         assert!(first_identities.is_disjoint(&second_identities));
-    }
-
-    #[tokio::test]
-    async fn daemon_resolution_retries_next_update_log_provider_after_dial_failure() {
-        let dir = tempdir().unwrap();
-        let mut node = make_node(dir.path());
-        let owner = NodeIdentity::generate();
-        let address = JoltAddress::new(owner.identity_id(), "/profile").unwrap();
-        let failed_provider = libp2p::PeerId::random();
-        let fallback_provider = libp2p::PeerId::random();
-        let key = NetworkNode::update_log_provider_key(address.identity());
-        node.discovered_providers
-            .insert(key, vec![failed_provider, fallback_provider]);
-
-        let (tx, mut rx) = oneshot::channel();
-        node.request_daemon_resolve_from_provider(
-            address.clone(),
-            None,
-            &failed_provider,
-            tx,
-            None,
-        );
-        let failed_request_id = *node.pending_daemon_resolutions.keys().next().unwrap();
-
-        node.handle_swarm_event(SwarmEvent::Behaviour(JoltBehaviourEvent::UpdateLogSync(
-            request_response::Event::OutboundFailure {
-                peer: failed_provider,
-                connection_id: libp2p::swarm::ConnectionId::new_unchecked(1),
-                request_id: failed_request_id,
-                error: request_response::OutboundFailure::DialFailure,
-            },
-        )));
-
-        assert!(matches!(
-            rx.try_recv(),
-            Err(oneshot::error::TryRecvError::Empty)
-        ));
-        assert_eq!(node.pending_daemon_resolutions.len(), 1);
-        let pending = node.pending_daemon_resolutions.values().next().unwrap();
-        assert_eq!(pending.provider, fallback_provider);
-    }
-
-    #[tokio::test]
-    async fn daemon_resolution_returns_cached_address_before_provider_refresh() {
-        let dir = tempdir().unwrap();
-        let mut node = make_node(dir.path());
-        let owner = NodeIdentity::generate();
-        let identity = owner.identity_id();
-        let path = "/hello/1234";
-        let old_content_id = ContentId::from_bytes(b"old content");
-        let new_content_id = ContentId::from_bytes(b"new content");
-        let genesis = UpdateLogEntry::genesis(
-            owner.public_key_bytes(),
-            UpdateAction::SetPath {
-                path: path.to_string(),
-                content_id: old_content_id.clone(),
-            },
-            |bytes| owner.sign(bytes),
-        )
-        .unwrap();
-        let newer = genesis
-            .append(
-                UpdateAction::SetPath {
-                    path: path.to_string(),
-                    content_id: new_content_id.clone(),
-                },
-                |bytes| owner.sign(bytes),
-            )
-            .unwrap();
-        let provider = libp2p::PeerId::random();
-        let key = NetworkNode::update_log_provider_key(&identity);
-        let address = JoltAddress::new(identity.clone(), path).unwrap();
-
-        node.store_verified_update_log(identity.clone(), vec![genesis.clone()])
-            .unwrap();
-        node.discovered_providers.insert(key, vec![provider]);
-
-        let (tx, rx) = oneshot::channel();
-        node.handle_command(DaemonCommand::Resolve {
-            address: address.to_string(),
-            response_tx: tx,
-        });
-
-        let resolved = rx.await.unwrap().unwrap();
-        assert_eq!(resolved.content_id, old_content_id.to_string());
-        assert_eq!(resolved.latest_sequence, 0);
-        assert_eq!(resolved.source, "cache");
-        assert_eq!(node.pending_daemon_resolutions.len(), 1);
-        let (request_id, pending) = node.pending_daemon_resolutions.iter().next().unwrap();
-        assert!(pending.response_tx.is_none());
-        let request_id = *request_id;
-
-        node.handle_swarm_event(SwarmEvent::Behaviour(JoltBehaviourEvent::UpdateLogSync(
-            request_response::Event::Message {
-                peer: provider,
-                connection_id: libp2p::swarm::ConnectionId::new_unchecked(1),
-                message: request_response::Message::Response {
-                    request_id,
-                    response: UpdateLogResponse {
-                        entries: vec![genesis, newer],
-                    },
-                },
-            },
-        )));
-
-        let refreshed = node
-            .resolve_response_from_cache(&address, None, "cache")
-            .unwrap();
-        assert_eq!(refreshed.content_id, new_content_id.to_string());
-        assert_eq!(refreshed.latest_sequence, 1);
-    }
-
-    #[tokio::test]
-    async fn daemon_resolution_times_out_when_update_log_provider_stalls() {
-        let dir = tempdir().unwrap();
-        let mut node = make_node(dir.path());
-        node.set_resolve_timeout(Duration::from_millis(0));
-        let owner = NodeIdentity::generate();
-        let address = JoltAddress::new(owner.identity_id(), "/profile").unwrap();
-        let provider = libp2p::PeerId::random();
-
-        let (tx, rx) = oneshot::channel();
-        node.request_daemon_resolve_from_provider(address, None, &provider, tx, None);
-
-        assert_eq!(node.pending_daemon_resolutions.len(), 1);
-        node.check_resolve_timeouts();
-
-        assert_eq!(node.pending_daemon_resolutions.len(), 0);
-        assert!(matches!(rx.await.unwrap(), Err(NetworkError::Timeout)));
     }
 
     #[tokio::test]
