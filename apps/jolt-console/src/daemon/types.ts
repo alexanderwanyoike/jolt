@@ -1,4 +1,5 @@
 export type DaemonStatus = {
+  daemon_version?: string;
   peer_id?: string;
   identity_address?: string;
   uptime_secs?: number;

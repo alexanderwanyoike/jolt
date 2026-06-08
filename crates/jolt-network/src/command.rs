@@ -279,6 +279,7 @@ pub struct PeerConnectResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeStatus {
+    pub daemon_version: String,
     pub peer_id: String,
     pub identity_address: String,
     pub uptime_secs: u64,
