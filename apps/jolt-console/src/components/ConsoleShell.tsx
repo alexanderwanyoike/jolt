@@ -1,13 +1,15 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { consoleRoutes } from "../app/navigation";
 import type { DaemonSnapshot } from "../daemon/useDaemonSnapshot";
+import type { ConsoleUpdateCheck } from "../update/client";
 
 type ConsoleShellProps = {
   children: React.ReactNode;
   snapshot: DaemonSnapshot;
+  updateCheck?: ConsoleUpdateCheck | null;
 };
 
-export function ConsoleShell({ children, snapshot }: ConsoleShellProps) {
+export function ConsoleShell({ children, snapshot, updateCheck = null }: ConsoleShellProps) {
   const location = useLocation();
   const currentRoute =
     consoleRoutes.find((route) => route.path === location.pathname) ?? consoleRoutes[0];
@@ -45,6 +47,11 @@ export function ConsoleShell({ children, snapshot }: ConsoleShellProps) {
             <h1>{currentRoute.label}</h1>
           </div>
           <div className="topbar-actions">
+            {updateCheck?.available ? (
+              <NavLink className="status-pill pending" to="/settings">
+                Update {updateCheck.version}
+              </NavLink>
+            ) : null}
             <span className={`status-pill ${snapshot.connected ? "ok" : "pending"}`}>
               {snapshot.connected ? "connected" : "offline"}
             </span>

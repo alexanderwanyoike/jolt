@@ -1,6 +1,6 @@
 [package]
 name = "jolt-console"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 build = "build.rs"
@@ -18,6 +18,8 @@ serde_json = { workspace = true }
 tauri = { version = "2.9.1", features = ["tray-icon"] }
 tauri-plugin-opener = "2.5.0"
 reqwest = { workspace = true }
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [dev-dependencies]
 tempfile = { workspace = true }

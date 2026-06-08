@@ -656,6 +656,131 @@ describe("Console section pages", () => {
     expect(screen.getByText(/invalid home relay API URL/)).toBeInTheDocument();
   });
 
+  it("installs a Console update after stopping a Console-owned daemon", async () => {
+    const lifecycleClient: DaemonLifecycleClient = {
+      status: vi.fn(async () => ({
+        daemon_url: "http://127.0.0.1:9862",
+        reachability: "healthy",
+        ownership: "console",
+        message: "Console owns this daemon"
+      })),
+      start: vi.fn(),
+      stop: vi.fn(async () => ({
+        daemon_url: "http://127.0.0.1:9862",
+        reachability: "unavailable",
+        ownership: "none",
+        message: "Daemon stopped"
+      })),
+      restart: vi.fn()
+    };
+    const daemonClient: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/network-settings") {
+          return {
+            configured_bootstrap_relays: [],
+            built_in_bootstrap_relays: [],
+            effective_bootstrap_relays: [],
+            configured_bootstrap_relay_count: 0,
+            built_in_bootstrap_relay_count: 0,
+            effective_bootstrap_relay_count: 0,
+            use_builtin_bootstrap_relays: true,
+            bootstrap_relay: false,
+            home_relay: null
+          };
+        }
+        if (path === "/api/v1/status") return {};
+        throw new Error(path);
+      }),
+      post: vi.fn()
+    };
+    const updateClient = {
+      check: vi.fn(async () => ({
+        available: true as const,
+        version: "0.2.0",
+        currentVersion: "0.1.0",
+        notes: "Signed update artifacts are available."
+      })),
+      installAndRelaunch: vi.fn(async () => undefined)
+    };
+
+    render(
+      <SettingsPage
+        lifecycleClient={lifecycleClient}
+        daemonClient={daemonClient}
+        updateClient={updateClient}
+      />
+    );
+
+    expect(await screen.findByText("Update available")).toBeInTheDocument();
+    expect(screen.getByText(/0.1.0 -> 0.2.0/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Install and restart" }));
+
+    expect(lifecycleClient.stop).toHaveBeenCalledOnce();
+    expect(updateClient.installAndRelaunch).toHaveBeenCalledOnce();
+    expect(
+      vi.mocked(lifecycleClient.stop).mock.invocationCallOrder[0]
+    ).toBeLessThan(vi.mocked(updateClient.installAndRelaunch).mock.invocationCallOrder[0]);
+  });
+
+  it("installs a Console update without stopping an externally-owned daemon", async () => {
+    const lifecycleClient: DaemonLifecycleClient = {
+      status: vi.fn(async () => ({
+        daemon_url: "http://127.0.0.1:9862",
+        reachability: "healthy",
+        ownership: "external",
+        message: "Connected to an externally started daemon"
+      })),
+      start: vi.fn(),
+      stop: vi.fn(),
+      restart: vi.fn()
+    };
+    const daemonClient: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/network-settings") {
+          return {
+            configured_bootstrap_relays: [],
+            built_in_bootstrap_relays: [],
+            effective_bootstrap_relays: [],
+            configured_bootstrap_relay_count: 0,
+            built_in_bootstrap_relay_count: 0,
+            effective_bootstrap_relay_count: 0,
+            use_builtin_bootstrap_relays: true,
+            bootstrap_relay: false,
+            home_relay: null
+          };
+        }
+        if (path === "/api/v1/status") return {};
+        throw new Error(path);
+      }),
+      post: vi.fn()
+    };
+    const updateClient = {
+      check: vi.fn(async () => ({
+        available: true as const,
+        version: "0.2.0",
+        currentVersion: "0.1.0"
+      })),
+      installAndRelaunch: vi.fn(async () => undefined)
+    };
+
+    render(
+      <SettingsPage
+        lifecycleClient={lifecycleClient}
+        daemonClient={daemonClient}
+        updateClient={updateClient}
+      />
+    );
+
+    expect(await screen.findByText("Update available")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Install and restart" }));
+
+    expect(lifecycleClient.stop).not.toHaveBeenCalled();
+    expect(updateClient.installAndRelaunch).toHaveBeenCalledOnce();
+  });
+
   it("refreshes network settings after starting the daemon from Settings", async () => {
     let started = false;
     const relay =

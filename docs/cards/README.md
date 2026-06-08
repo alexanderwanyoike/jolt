@@ -73,6 +73,8 @@ Supporting cards:
   and relay-authorized.
 - [077](077-jolt-distribution-v0.md): make Jolt realistically installable as
   Console + daemon + CLI.
+- [083](083-console-auto-update-v0.md): close the packaged Console update loop
+  with signed, user-approved updates.
 - [079](079-pastey-final-compatibility-pass.md): keep Pastey working as a
   companion PoC.
 - [062](062-console-native-presence-and-permission-focus-v0.md): native Console
@@ -222,6 +224,7 @@ into the protocol layer.
 | [080](080-v0-freeze-and-bugfix-window.md) | HITL | Ready after 078/079 | Hard stop new features and run the v0 bugfix/docs/demo pass. |
 | [081](081-launch-and-postmortem.md) | HITL | Ready after 080 | Publish the project, gather feedback, and decide continue/pause/bin. |
 | [082](082-network-node-module-refactor.md) | AFK | In Progress | Refactor `NetworkNode` into focused internal modules while preserving behavior. |
+| [083](083-console-auto-update-v0.md) | AFK after design | Ready after 077 | Add signed, user-approved packaged Console updates with installer fallback. |
 
 ## Card Format
 

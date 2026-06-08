@@ -15,15 +15,22 @@ import {
   type DaemonLifecycleState
 } from "../daemon/lifecycle";
 import type { DaemonStatus, NetworkSettingsPayload } from "../daemon/types";
+import {
+  tauriConsoleUpdateClient,
+  type ConsoleUpdateCheck,
+  type ConsoleUpdateClient
+} from "../update/client";
 
 type SettingsPageProps = {
   lifecycleClient?: DaemonLifecycleClient;
   daemonClient?: DaemonClient;
+  updateClient?: ConsoleUpdateClient;
 };
 
 export function SettingsPage({
   lifecycleClient = tauriDaemonLifecycleClient,
-  daemonClient = tauriDaemonClient
+  daemonClient = tauriDaemonClient,
+  updateClient = tauriConsoleUpdateClient
 }: SettingsPageProps) {
   const [state, setState] = useState<DaemonLifecycleState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,6 +45,9 @@ export function SettingsPage({
   const [homeRelayMultiaddr, setHomeRelayMultiaddr] = useState("");
   const [homeRelayApiUrl, setHomeRelayApiUrl] = useState("");
   const [homeRelayCapability, setHomeRelayCapability] = useState("pinning");
+  const [updateCheck, setUpdateCheck] = useState<ConsoleUpdateCheck | null>(null);
+  const [updateAction, setUpdateAction] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   async function refreshLifecycle() {
     setError(null);
@@ -125,6 +135,35 @@ export function SettingsPage({
     }
   }
 
+  async function checkForConsoleUpdate() {
+    setUpdateAction("check");
+    setUpdateError(null);
+    try {
+      setUpdateCheck(await updateClient.check());
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUpdateAction(null);
+    }
+  }
+
+  async function installConsoleUpdate() {
+    setUpdateAction("install");
+    setUpdateError(null);
+    try {
+      const lifecycle = await lifecycleClient.status();
+      if (lifecycle.ownership === "console") {
+        await lifecycleClient.stop();
+      }
+
+      await updateClient.installAndRelaunch();
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUpdateAction(null);
+    }
+  }
+
   useEffect(() => {
     void refreshLifecycle();
   }, [lifecycleClient]);
@@ -132,6 +171,10 @@ export function SettingsPage({
   useEffect(() => {
     void refreshNetworkSettings();
   }, [daemonClient]);
+
+  useEffect(() => {
+    void checkForConsoleUpdate();
+  }, [updateClient]);
 
   const canStart = state?.reachability === "unavailable";
   const canControl = state?.ownership === "console";
@@ -210,6 +253,57 @@ export function SettingsPage({
           {state?.log_tail?.length ? (
             <pre className="lifecycle-log">{state.log_tail.join("\n")}</pre>
           ) : null}
+        </div>
+
+        <div className="lifecycle-panel">
+          <div className="lifecycle-header">
+            <div>
+              <span className="eyebrow">Console updates</span>
+              <h2>{updateTitle(updateCheck, updateAction)}</h2>
+            </div>
+            <span className={`status-pill ${updateCheck?.available ? "pending" : "ok"}`}>
+              {updateAction ?? (updateCheck?.available ? "available" : "stable")}
+            </span>
+          </div>
+
+          <p className="settings-help">{updateSummary(updateCheck)}</p>
+          {updateCheck?.available ? (
+            <div className="lifecycle-details">
+              <div className="detail-row">
+                <span>Version</span>
+                <strong className="mono">
+                  {updateCheck.currentVersion} -&gt; {updateCheck.version}
+                </strong>
+              </div>
+              {updateCheck.date ? (
+                <div className="detail-row">
+                  <span>Published</span>
+                  <strong className="mono">{updateCheck.date}</strong>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {updateCheck?.available && updateCheck.notes ? (
+            <p className="lifecycle-message">{updateCheck.notes}</p>
+          ) : null}
+          {updateError ? <div className="permission-error">Console update error: {updateError}</div> : null}
+
+          <div className="lifecycle-actions">
+            <button
+              type="button"
+              onClick={() => void checkForConsoleUpdate()}
+              disabled={updateAction !== null}
+            >
+              Check for updates
+            </button>
+            <button
+              type="button"
+              onClick={() => void installConsoleUpdate()}
+              disabled={updateAction !== null || updateCheck?.available !== true}
+            >
+              Install and restart
+            </button>
+          </div>
         </div>
 
         <div className="lifecycle-panel">
@@ -442,6 +536,22 @@ function ownershipLabel(ownership: DaemonLifecycleState["ownership"]) {
   if (ownership === "console") return "Console-owned";
   if (ownership === "external") return "External";
   return "None";
+}
+
+function updateTitle(updateCheck: ConsoleUpdateCheck | null, action: string | null) {
+  if (action === "check") return "Checking for updates";
+  if (action === "install") return "Installing update";
+  if (updateCheck?.available) return "Update available";
+  if (updateCheck) return "Console is up to date";
+  return "Update status unknown";
+}
+
+function updateSummary(updateCheck: ConsoleUpdateCheck | null) {
+  if (!updateCheck) return "Console checks for signed updates when Settings opens.";
+  if (updateCheck.available) {
+    return "A signed Console update is available. Installing will relaunch Console after the update is applied.";
+  }
+  return "No newer signed Console release is available.";
 }
 
 function delay(ms: number) {

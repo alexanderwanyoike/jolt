@@ -8,11 +8,15 @@ const files = {
   packageScript: readFileSync(join(root, "../../scripts/package-jolt-console.sh"), "utf8"),
   main: readFileSync(join(root, "src/main.tsx"), "utf8"),
   app: readFileSync(join(root, "src/app/App.tsx"), "utf8"),
+  shell: readFileSync(join(root, "src/components/ConsoleShell.tsx"), "utf8"),
   navigation: readFileSync(join(root, "src/app/navigation.ts"), "utf8"),
   daemonClient: readFileSync(join(root, "src/daemon/client.ts"), "utf8"),
   appsPage: readFileSync(join(root, "src/sections/AppsPage.tsx"), "utf8"),
+  settingsPage: readFileSync(join(root, "src/sections/SettingsPage.tsx"), "utf8"),
+  updateClient: readFileSync(join(root, "src/update/client.ts"), "utf8"),
   styles: readFileSync(join(root, "src/styles.css"), "utf8"),
   tauriConfig: readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"),
+  tauriCapabilities: readFileSync(join(root, "src-tauri/capabilities/default.json"), "utf8"),
   tauriLib: readFileSync(join(root, "src-tauri/src/lib.rs"), "utf8"),
   distributionVerifier: readFileSync(join(root, "../../scripts/verify-distribution.mjs"), "utf8")
 };
@@ -72,13 +76,45 @@ if (!Array.isArray(tauriConfig.bundle?.externalBin) || !tauriConfig.bundle.exter
   throw new Error("Tauri bundle must declare the jolt daemon sidecar");
 }
 
+if (!tauriConfig.plugins?.updater?.pubkey || !tauriConfig.plugins?.updater?.endpoints?.length) {
+  throw new Error("Tauri updater must be configured with a public key and endpoint");
+}
+
+for (const marker of ["tauri_plugin_updater", "tauri_plugin_process"]) {
+  if (!files.tauriLib.includes(marker)) {
+    throw new Error(`Missing native updater plugin marker: ${marker}`);
+  }
+}
+
+for (const marker of ["updater:default", "process:default"]) {
+  if (!files.tauriCapabilities.includes(marker)) {
+    throw new Error(`Missing updater capability permission: ${marker}`);
+  }
+}
+
+for (const marker of ["@tauri-apps/plugin-updater", "@tauri-apps/plugin-process"]) {
+  if (!files.packageJson.includes(marker)) {
+    throw new Error(`Missing updater package dependency: ${marker}`);
+  }
+}
+
+for (const marker of ["check()", "downloadAndInstall", "relaunch"]) {
+  if (!files.updateClient.includes(marker)) {
+    throw new Error(`Missing updater client marker: ${marker}`);
+  }
+}
+
+if (!files.settingsPage.includes("Install and restart") || !files.shell.includes("Update ")) {
+  throw new Error("Console must expose update availability and install controls");
+}
+
 if (!files.packageJson.includes("@jolt/console")) {
   throw new Error("Missing Console package metadata");
 }
 
 if (
   !files.packageJson.includes("package:linux") ||
-  !files.packageScript.includes("tauri build") ||
+  !files.packageScript.includes("TAURI_BUILD_ARGS") ||
   !files.distributionVerifier.includes("jolt-console-x86_64.AppImage")
 ) {
   throw new Error("Console package metadata must expose the Linux packaging script");

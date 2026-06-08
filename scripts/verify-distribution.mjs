@@ -4,6 +4,7 @@ const files = {
   workflow: readFileSync(".github/workflows/package-jolt-console.yml", "utf8"),
   installer: readFileSync("scripts/install-jolt-console.sh", "utf8"),
   packageScript: readFileSync("scripts/package-jolt-console.sh", "utf8"),
+  updateManifest: readFileSync("scripts/write-jolt-console-update-manifest.mjs", "utf8"),
   readme: readFileSync("README.md", "utf8"),
   card: readFileSync("docs/cards/077-jolt-distribution-v0.md", "utf8")
 };
@@ -15,7 +16,10 @@ const requiredMarkers = {
     "jolt-console-x86_64.AppImage",
     "actions/upload-artifact",
     "softprops/action-gh-release",
-    "refs/tags/"
+    "refs/tags/",
+    "jolt-console-x86_64.AppImage.sig",
+    "latest.json",
+    "write-jolt-console-update-manifest.mjs"
   ],
   installer: [
     "JOLT_VERSION",
@@ -30,9 +34,17 @@ const requiredMarkers = {
   ],
   packageScript: [
     "target/release/bundle/appimage",
-    "tauri build",
+    "TAURI_BUILD_ARGS",
     "Prefetching Tauri AppImage helper binaries",
-    "linuxdeploy-x86_64.AppImage"
+    "linuxdeploy-x86_64.AppImage",
+    "JOLT_CREATE_UPDATER_ARTIFACTS",
+    "createUpdaterArtifacts"
+  ],
+  updateManifest: [
+    "latest.json",
+    "linux-x86_64",
+    "signature",
+    "jolt-console-x86_64.AppImage"
   ],
   readme: [
     "curl -fsSL",

@@ -283,6 +283,12 @@ The installer downloads the latest `jolt-console-x86_64.AppImage` release asset
 to `~/.local/bin/jolt-console`. Run the same command again to update when a new
 tagged release is available.
 
+Packaged Console builds also check GitHub Releases for signed in-app updates.
+When a newer signed release is available, Console shows an update action in the
+top bar and in Settings. Installing from Console verifies the updater signature,
+stops only a Console-owned daemon if needed, applies the update, and relaunches.
+The curl installer remains the manual fallback if an in-app update fails.
+
 Check whether an update exists:
 
 ```bash

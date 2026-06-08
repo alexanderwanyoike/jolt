@@ -59,6 +59,10 @@ jobs:
             patchelf
 
       - name: Build AppImage
+        env:
+          JOLT_CREATE_UPDATER_ARTIFACTS: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '0' }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: scripts/package-jolt-console.sh
 
       - name: Normalize artifact names
@@ -66,6 +70,16 @@ jobs:
           mkdir -p dist/jolt-console-linux
           cp target/release/bundle/appimage/*.AppImage dist/jolt-console-linux/jolt-console-x86_64.AppImage
           (cd dist/jolt-console-linux && sha256sum jolt-console-x86_64.AppImage > jolt-console-x86_64.AppImage.sha256)
+          if compgen -G "target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
+            cp target/release/bundle/appimage/*.AppImage.sig dist/jolt-console-linux/jolt-console-x86_64.AppImage.sig
+          fi
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            test -f dist/jolt-console-linux/jolt-console-x86_64.AppImage.sig
+            node scripts/write-jolt-console-update-manifest.mjs \
+              "${GITHUB_REF_NAME}" \
+              dist/jolt-console-linux/jolt-console-x86_64.AppImage.sig \
+              dist/jolt-console-linux/latest.json
+          fi
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
