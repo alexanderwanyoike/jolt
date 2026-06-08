@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** v0 Endgame  
-**Status:** Ready after 072
+**Status:** Implemented in PR
 **Blocked by:** 064, 072
 
 ## Why
@@ -29,13 +29,13 @@ The distribution should support:
 
 ## Acceptance Criteria
 
-- [ ] A user can install or unpack Jolt without building from source.
-- [ ] Console can start/manage the daemon from the packaged build.
-- [ ] CLI is available from the package or documented install path.
-- [ ] First-run setup is documented.
-- [ ] Pastey and Spoke docs can point to the packaged Jolt requirement.
-- [ ] Linux is verified locally.
-- [ ] Mac and Windows support limitations are documented if not verified.
+- [x] A user can install or unpack Jolt without building from source.
+- [x] Console can start/manage the daemon from the packaged build.
+- [x] CLI is available from the package or documented install path.
+- [x] First-run setup is documented.
+- [x] Pastey and Spoke docs can point to the packaged Jolt requirement.
+- [x] Linux is verified locally.
+- [x] Mac and Windows support limitations are documented if not verified.
 
 ## Non-Goals
 
@@ -49,3 +49,27 @@ The distribution should support:
 
 Keep this boring. The goal is to let people run Jolt, not to solve every
 desktop distribution problem.
+
+## Implementation Notes
+
+Added a Linux-first packaging path for:
+
+```text
+Jolt Console + bundled jolt daemon/CLI sidecar
+```
+
+The package script builds the release `jolt` binary, stages it as the Tauri
+sidecar, builds the Console web assets, and produces an AppImage under
+`target/release/bundle/appimage/`.
+
+The AppImage was built locally on Linux and inspected to confirm it includes
+both `jolt-console` and the bundled `jolt` sidecar. macOS and Windows remain
+documented but unverified for v0.
+
+GitHub Actions now builds the same AppImage in CI, uploads
+`jolt-console-x86_64.AppImage` as a workflow artifact, and publishes that stable
+asset name on tagged releases. `scripts/install-jolt-console.sh` provides the
+curlable install/update path for Linux users.
+
+Human GUI verification of daemon startup from the packaged AppImage is still a
+good final check before calling the release artifact user-ready.

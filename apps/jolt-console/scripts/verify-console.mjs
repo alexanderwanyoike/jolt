@@ -5,6 +5,7 @@ const root = new URL("..", import.meta.url).pathname;
 
 const files = {
   packageJson: readFileSync(join(root, "package.json"), "utf8"),
+  packageScript: readFileSync(join(root, "../../scripts/package-jolt-console.sh"), "utf8"),
   main: readFileSync(join(root, "src/main.tsx"), "utf8"),
   app: readFileSync(join(root, "src/app/App.tsx"), "utf8"),
   navigation: readFileSync(join(root, "src/app/navigation.ts"), "utf8"),
@@ -12,7 +13,8 @@ const files = {
   appsPage: readFileSync(join(root, "src/sections/AppsPage.tsx"), "utf8"),
   styles: readFileSync(join(root, "src/styles.css"), "utf8"),
   tauriConfig: readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"),
-  tauriLib: readFileSync(join(root, "src-tauri/src/lib.rs"), "utf8")
+  tauriLib: readFileSync(join(root, "src-tauri/src/lib.rs"), "utf8"),
+  distributionVerifier: readFileSync(join(root, "../../scripts/verify-distribution.mjs"), "utf8")
 };
 
 const requiredSections = [
@@ -57,8 +59,29 @@ for (const marker of ["Jolt Console"]) {
   }
 }
 
+const tauriConfig = JSON.parse(files.tauriConfig);
+if (tauriConfig.bundle?.active !== true) {
+  throw new Error("Tauri bundle must be enabled for v0 distribution");
+}
+
+if (!Array.isArray(tauriConfig.bundle?.targets) || !tauriConfig.bundle.targets.includes("appimage")) {
+  throw new Error("Tauri bundle must include a Linux AppImage target");
+}
+
+if (!Array.isArray(tauriConfig.bundle?.externalBin) || !tauriConfig.bundle.externalBin.includes("binaries/jolt")) {
+  throw new Error("Tauri bundle must declare the jolt daemon sidecar");
+}
+
 if (!files.packageJson.includes("@jolt/console")) {
   throw new Error("Missing Console package metadata");
+}
+
+if (
+  !files.packageJson.includes("package:linux") ||
+  !files.packageScript.includes("tauri build") ||
+  !files.distributionVerifier.includes("jolt-console-x86_64.AppImage")
+) {
+  throw new Error("Console package metadata must expose the Linux packaging script");
 }
 
 for (const marker of ["console-shell", "sidebar", "section-panel"]) {

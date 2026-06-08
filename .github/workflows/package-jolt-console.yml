@@ -1,0 +1,81 @@
+name: Package Jolt Console
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/package-jolt-console.yml"
+      - "apps/jolt-console/**"
+      - "crates/**"
+      - "scripts/package-jolt-console.sh"
+      - "scripts/install-jolt-console.sh"
+      - "scripts/verify-distribution.mjs"
+      - "Cargo.lock"
+      - "Cargo.toml"
+  push:
+    branches:
+      - dev
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    name: Linux AppImage
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/jolt-console/package-lock.json
+
+      - name: Verify distribution contract
+        run: node scripts/verify-distribution.mjs
+
+      - name: Install Linux desktop packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Build AppImage
+        run: scripts/package-jolt-console.sh
+
+      - name: Normalize artifact names
+        run: |
+          mkdir -p dist/jolt-console-linux
+          cp target/release/bundle/appimage/*.AppImage dist/jolt-console-linux/jolt-console-x86_64.AppImage
+          (cd dist/jolt-console-linux && sha256sum jolt-console-x86_64.AppImage > jolt-console-x86_64.AppImage.sha256)
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jolt-console-linux-x86_64
+          path: dist/jolt-console-linux/*
+          if-no-files-found: error
+
+      - name: Publish release assets for tags
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/jolt-console-linux/*

@@ -39,10 +39,74 @@ JOLT_DAEMON_URL=http://127.0.0.1:9864 npm run tauri dev
 If a daemon is already running outside Console, Console treats it as externally
 owned and will not stop or restart it.
 
+## Package
+
+Build the first v0 Linux package from the repository root:
+
+```bash
+scripts/package-jolt-console.sh
+```
+
+The script:
+
+- builds the `jolt` daemon/CLI binary in release mode;
+- stages it for Tauri as `src-tauri/binaries/jolt-<target-triple>`;
+- builds Console web assets;
+- runs `tauri build -- --bundles appimage`.
+
+The AppImage is written under:
+
+```text
+target/release/bundle/appimage/
+```
+
+CI normalizes the release artifact to:
+
+```text
+jolt-console-x86_64.AppImage
+```
+
+Tagged releases can be installed or updated with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | bash
+```
+
+Check for a newer tagged release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | bash -s -- --check
+```
+
+To verify only the staging and web build without invoking the native bundler:
+
+```bash
+scripts/package-jolt-console.sh --prepare-only
+```
+
+After the sidecar has been staged, the native shell can be checked directly:
+
+```bash
+cargo check -p jolt-console
+```
+
+macOS and Windows use the same Console plus sidecar model, but v0 packaging is
+only verified on Linux. OS services, tray/menu-bar daemon control, autostart,
+and app installation/catalog features are intentionally out of scope.
+
+## Reset
+
+Jolt stores daemon state in the platform-standard per-user Jolt config/data
+locations used by the CLI. For a local development reset, stop the daemon and
+remove the relevant Jolt config/data directories for the test account. Packaged
+v0 does not install a system service or machine-wide daemon.
+
 ## Verify
 
 ```bash
 npm test
 npm run build
-cargo check -p jolt-console
+../../scripts/package-jolt-console.sh --dry-run
+../../scripts/package-jolt-console.sh --prepare-only
+node ../../scripts/verify-distribution.mjs
 ```

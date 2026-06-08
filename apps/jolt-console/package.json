@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
     "build": "tsc && vite build",
+    "package:linux": "../../scripts/package-jolt-console.sh",
     "preview": "vite preview --host 127.0.0.1 --port 1421",
     "tauri": "tauri",
     "test": "vitest run && node scripts/verify-console.mjs",
