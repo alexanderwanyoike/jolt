@@ -128,7 +128,9 @@ views.
 
 Other important limitations:
 
-- **No packaged install yet:** users still need developer tooling.
+- **No release-distributed installer yet:** Linux AppImage packaging now exists,
+  but it is still built locally and has not been release-signed or verified
+  across platforms.
 - **Identity UX is rough:** `.jolt` addresses are long and not human-friendly.
 - **No global discovery/search:** users need to know identities or receive them
   out of band.
@@ -241,12 +243,63 @@ or contacts. Those are app-level schemas.
 
 ## Try It
 
-Jolt does not yet have a normal packaged install. For now this is a developer
-workflow.
+Jolt v0 can be run from source or packaged locally as a Linux AppImage.
+
+The first packaged shape is:
+
+```text
+Jolt Console + bundled jolt daemon/CLI sidecar
+```
+
+Linux packaging is the first verified target. macOS and Windows use the same
+Console/sidecar model, but installer support has not been verified yet.
 
 Prerequisite:
 
 - Rust 1.89+
+- Node.js and npm for Jolt Console
+
+Build a Linux Console package:
+
+```bash
+scripts/package-jolt-console.sh
+```
+
+The script builds the `jolt` daemon/CLI binary, stages it as the Tauri sidecar,
+builds Console web assets, and produces an AppImage under:
+
+```text
+target/release/bundle/appimage/
+```
+
+Once tagged releases publish AppImage assets, install or update Jolt Console
+with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | bash
+```
+
+The installer downloads the latest `jolt-console-x86_64.AppImage` release asset
+to `~/.local/bin/jolt-console`. Run the same command again to update when a new
+tagged release is available.
+
+Check whether an update exists:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | bash -s -- --check
+```
+
+Install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | JOLT_VERSION=v0.1.0 bash
+```
+
+Check the installed AppImage:
+
+```bash
+jolt-console --appimage-help
+```
 
 Build Jolt:
 
@@ -274,6 +327,12 @@ npm install
 npm run tauri dev
 ```
 
+For a dev Console sidecar run, point Console at a built `jolt` binary:
+
+```bash
+JOLT_DAEMON_BINARY=../../target/debug/jolt npm run tauri dev
+```
+
 Try an external application proof:
 
 ```bash
@@ -283,6 +342,12 @@ git clone https://github.com/alexanderwanyoike/spoke
 Spoke is a separate application that exercises Jolt app sessions and recipient
 ingress. It is not part of this protocol repo and does not define the protocol
 model. The setup is still manual.
+
+External apps discover Jolt through the configured/default local daemon URL:
+
+```text
+http://127.0.0.1:9862
+```
 
 ## Developer Notes
 

@@ -24,8 +24,9 @@
     }
   },
   "bundle": {
-    "active": false,
-    "targets": "all",
-    "icon": []
+    "active": true,
+    "targets": ["appimage"],
+    "externalBin": ["binaries/jolt"],
+    "icon": ["icons/icon.png"]
   }
 }
