@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod commands;
+mod construction;
 mod encryption;
 mod events;
 mod identity_heads;
@@ -37,7 +38,7 @@ use crate::command::{
     RelayDiagnoseForwardingAttempt, RelayDiagnoseIdentityHeadObservation,
     RelayDiagnoseIdentityResponse, RelayDiagnoseProviderCandidate,
 };
-use crate::config::{HomeRelayConfig, NetworkConfig};
+use crate::config::HomeRelayConfig;
 use crate::error::{DiscoveryFailureCode, NetworkError};
 use crate::fetch_manager::FetchManager;
 use crate::node::identity_heads::IdentityHeadHintBook;
@@ -46,7 +47,6 @@ use crate::node::identity_heads::{
     IDENTITY_HEAD_HINT_EXCHANGE_MAX, IDENTITY_HEAD_HINT_MAX_PER_IDENTITY,
 };
 use crate::node::ingress::IngressQueue;
-use crate::node::transport::BuiltTransport;
 use crate::protocol::{
     ContentRequest, ContentResponse, IdentityProviderCandidate, RelayExchangeResponse,
     UpdateLogRequest, UpdateLogResponse,
@@ -205,85 +205,6 @@ const IDENTITY_PROVIDER_QUERY_TIMEOUT: Duration = Duration::from_secs(8);
 const SEEN_IDENTITY_PROVIDER_QUERY_TTL: Duration = Duration::from_secs(30);
 
 impl NetworkNode {
-    /// Create a new network node with iroh transport.
-    pub async fn new(
-        identity: NodeIdentity,
-        store: ContentStore,
-        config: NetworkConfig,
-    ) -> Result<Self, NetworkError> {
-        let built = transport::build_iroh_swarm(&identity, &config).await?;
-        Self::from_built_transport(identity, store, config, built)
-    }
-
-    /// Create a new network node with TCP transport (for testing in isolated namespaces).
-    ///
-    /// Uses noise + yamux over TCP instead of iroh, so it works in environments
-    /// without internet access (e.g. patchbay network namespaces).
-    pub fn new_tcp(
-        identity: NodeIdentity,
-        store: ContentStore,
-        config: NetworkConfig,
-    ) -> Result<Self, NetworkError> {
-        let built = transport::build_tcp_swarm(&identity, &config)?;
-        Self::from_built_transport(identity, store, config, built)
-    }
-
-    fn from_built_transport(
-        identity: NodeIdentity,
-        store: ContentStore,
-        config: NetworkConfig,
-        built: BuiltTransport,
-    ) -> Result<Self, NetworkError> {
-        let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
-        let bootstrap_peer_ids = Self::parse_bootstrap_peer_ids(&config.effective_bootstrap_relays);
-        let local_encryption_key = Self::load_persisted_local_encryption_key(&store, &identity)?;
-
-        Ok(Self {
-            swarm: built.swarm,
-            identity,
-            store,
-            pending_fetches: HashMap::new(),
-            pending_update_log_requests: HashMap::new(),
-            pending_update_log_pins: HashMap::new(),
-            pending_identity_provider_forwards: HashMap::new(),
-            pending_identity_provider_forward_groups: HashMap::new(),
-            pending_identity_provider_diagnostics: HashMap::new(),
-            pending_identity_provider_diagnostic_requests: HashMap::new(),
-            seen_identity_provider_queries: HashMap::new(),
-            pending_jolt_resolutions: HashMap::new(),
-            pending_daemon_resolutions: HashMap::new(),
-            pending_resolves: HashMap::new(),
-            discovered_providers: HashMap::new(),
-            update_logs,
-            identity_head_hints: IdentityHeadHintBook::default(),
-            peer_connections: HashMap::new(),
-            started_at: Instant::now(),
-            fetch_manager: FetchManager::new(),
-            resolve_timeout: Duration::from_secs(10),
-            iroh_endpoint: built.iroh_endpoint,
-            transport_name: built.transport_name,
-            configured_bootstrap_relays: config.configured_bootstrap_relays,
-            effective_bootstrap_relays: config.effective_bootstrap_relays,
-            bootstrap_peer_ids,
-            relay_mesh_peer_ids: HashSet::new(),
-            relay_mesh_exploration_cursor: 0,
-            last_bootstrap_error: None,
-            bootstrap_relay: config.bootstrap_relay,
-            home_relay: config.home_relay,
-            local_encryption_key,
-            local_encryption_key_published: false,
-            pending_ingress: IngressQueue::default(),
-        })
-    }
-
-    fn parse_bootstrap_peer_ids(relays: &[String]) -> HashSet<libp2p::PeerId> {
-        relays
-            .iter()
-            .filter_map(|addr| crate::bootstrap::parse_bootstrap_addr(addr).ok())
-            .map(|(peer_id, _)| peer_id)
-            .collect()
-    }
-
     /// Start listening on a multiaddr.
     pub fn listen_on(&mut self, addr: &str) -> Result<Multiaddr, NetworkError> {
         let multiaddr: Multiaddr = addr
@@ -802,6 +723,7 @@ fn unix_now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::NetworkConfig;
     use jolt_core::{UpdateAction, UpdateLogEntry};
     use jolt_store::CacheConfig;
     use tempfile::tempdir;
@@ -935,15 +857,6 @@ mod tests {
             .identity_head_hints
             .get(&identity_id)
             .is_none_or(Vec::is_empty));
-    }
-
-    #[tokio::test]
-    async fn new_tcp_creates_node_without_error() {
-        let dir = tempdir().unwrap();
-        let identity = NodeIdentity::generate();
-        let store = make_store(dir.path());
-        let node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config());
-        assert!(node.is_ok());
     }
 
     #[tokio::test]
@@ -1140,30 +1053,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn new_tcp_rejects_invalid_persisted_local_update_log() {
-        let dir = tempdir().unwrap();
-        let owner = NodeIdentity::generate();
-        let attacker = NodeIdentity::generate();
-        let owner_identity = owner.identity_id();
-        let store = make_store(dir.path());
-        store
-            .save_update_log(
-                &owner_identity,
-                &signed_profile_log(&attacker, b"wrong owner"),
-            )
-            .unwrap();
-
-        let result = NetworkNode::new_tcp(owner, store, NetworkConfig::test_config());
-
-        assert!(matches!(
-            result,
-            Err(NetworkError::Protocol(message))
-                if message.contains("invalid persisted update log")
-                    && message.contains(&owner_identity.to_string())
-        ));
-    }
-
-    #[tokio::test]
     async fn update_log_provider_key_is_derived_from_identity() {
         let dir = tempdir().unwrap();
         let mut node = make_node(dir.path());
@@ -1181,21 +1070,6 @@ mod tests {
         assert!(node
             .take_discovered_update_log_provider(&identity)
             .is_none());
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "creates an iroh endpoint and may depend on local network/relay availability"]
-    async fn new_iroh_creates_node_without_error() {
-        let dir = tempdir().unwrap();
-        let identity = NodeIdentity::generate();
-        let store = make_store(dir.path());
-        let node = tokio::time::timeout(
-            Duration::from_secs(10),
-            NetworkNode::new(identity, store, NetworkConfig::test_config()),
-        )
-        .await;
-        assert!(node.is_ok(), "iroh transport creation timed out");
-        assert!(node.unwrap().is_ok());
     }
 
     #[tokio::test]
