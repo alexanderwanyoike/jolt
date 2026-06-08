@@ -6,9 +6,11 @@ mod encryption;
 mod events;
 mod identity_heads;
 mod ingress;
+mod inventory;
 mod providers;
 mod publishing;
 mod relays;
+mod status;
 use libp2p::futures::StreamExt;
 use libp2p::multiaddr::Protocol;
 mod transport;
@@ -22,19 +24,18 @@ use tracing::{info, warn};
 use jolt_core::{
     resolve_jolt_address, verify_update_log_for_identity, ContentId, EncryptedObjectEnvelope,
     IdentityEncryptionKey, IdentityEncryptionPrivateKey, IdentityId, JoltAddress,
-    ResolvedJoltTarget, UpdateAction, UpdateLogEntry,
+    ResolvedJoltTarget, UpdateLogEntry,
 };
 #[cfg(test)]
 use jolt_core::{EncryptedObjectRecipient, IdentityHeadHint, RelayRecord, RelayRecordCapability};
 use jolt_identity::NodeIdentity;
-use jolt_store::{ContentStore, HomeRelayPinRecord};
+use jolt_store::ContentStore;
 
 use crate::behaviour::{JoltBehaviour, JoltBehaviourEvent};
 use crate::command::{
-    DaemonCommand, IngressRecord, IngressStatus, PublishedContentInfo, PublishedRelayInfo,
-    RelayDiagnoseCacheObservation, RelayDiagnoseForwardingAttempt,
-    RelayDiagnoseIdentityHeadObservation, RelayDiagnoseIdentityResponse,
-    RelayDiagnoseProviderCandidate, ResolveResponse,
+    DaemonCommand, IngressRecord, IngressStatus, RelayDiagnoseCacheObservation,
+    RelayDiagnoseForwardingAttempt, RelayDiagnoseIdentityHeadObservation,
+    RelayDiagnoseIdentityResponse, RelayDiagnoseProviderCandidate, ResolveResponse,
 };
 use crate::config::{HomeRelayConfig, NetworkConfig};
 use crate::error::{DiscoveryFailureCode, NetworkError};
@@ -537,89 +538,6 @@ impl NetworkNode {
         })
     }
 
-    fn published_content_inventory(&self) -> Vec<PublishedContentInfo> {
-        let identity = self.identity.identity_id();
-        let current_paths = self.current_local_paths();
-
-        let mut content_paths: HashMap<String, (String, u64)> = HashMap::new();
-        for (path, (content_id, sequence)) in &current_paths {
-            content_paths.insert(content_id.to_string(), (path.clone(), *sequence));
-        }
-
-        let pin_records = self.store.load_home_relay_pin_records().unwrap_or_default();
-
-        self.store
-            .list_published_content()
-            .into_iter()
-            .filter(|entry| entry.content_type != "application/jolt-update-log+json")
-            .map(|entry| {
-                let path = content_paths.get(&entry.content_id).cloned();
-                let (path, local_sequence) = match path {
-                    Some((path, sequence)) => (Some(path), Some(sequence)),
-                    None => (None, None),
-                };
-                let address = path
-                    .as_deref()
-                    .and_then(|path| JoltAddress::new(identity.clone(), path).ok())
-                    .map(|address| address.to_string());
-                let pin_record =
-                    Self::matching_pin_record(&pin_records, path.as_deref(), &entry.content_id);
-                let pin_state = match (&pin_record, local_sequence) {
-                    (Some(record), Some(sequence))
-                        if record.content_id == entry.content_id
-                            && record.latest_sequence >= sequence =>
-                    {
-                        "relay_backed"
-                    }
-                    (Some(_), Some(_)) => "needs_repin",
-                    (Some(record), None) if record.content_id == entry.content_id => "relay_backed",
-                    _ => "local_only",
-                }
-                .to_string();
-
-                PublishedContentInfo {
-                    content_id: entry.content_id,
-                    size: entry.size,
-                    path,
-                    address,
-                    local_sequence,
-                    pin_state,
-                    relay: pin_record.map(|record| PublishedRelayInfo {
-                        peer_id: record.relay_peer_id.clone(),
-                        multiaddr: record.relay_multiaddr.clone(),
-                        api_url: record.relay_api_url.clone(),
-                    }),
-                    pinned_content_id: pin_record.map(|record| record.content_id.clone()),
-                    pinned_sequence: pin_record.map(|record| record.latest_sequence),
-                }
-            })
-            .collect()
-    }
-
-    fn connected_bootstrap_peer_count(&self) -> usize {
-        self.swarm
-            .connected_peers()
-            .filter(|peer| self.bootstrap_peer_ids.contains(peer))
-            .count()
-    }
-
-    fn bootstrap_state(&self, connected_bootstrap_peers: usize) -> String {
-        if self.effective_bootstrap_relays.is_empty() {
-            if self.swarm.connected_peers().next().is_some() {
-                "connected"
-            } else {
-                "disconnected"
-            }
-        } else if connected_bootstrap_peers > 0 {
-            "connected"
-        } else if self.last_bootstrap_error.is_some() {
-            "degraded"
-        } else {
-            "bootstrapping"
-        }
-        .to_string()
-    }
-
     fn peer_hint_multiaddr(remote_addr: &str, peer_id: libp2p::PeerId) -> String {
         if remote_addr.contains("/p2p/") {
             return remote_addr.to_string();
@@ -629,106 +547,6 @@ impl NetworkNode {
             Ok(addr) => addr.with(Protocol::P2p(peer_id)).to_string(),
             Err(_) => remote_addr.to_string(),
         }
-    }
-
-    fn current_local_paths(&self) -> HashMap<String, (ContentId, u64)> {
-        let identity = self.identity.identity_id();
-        let mut current_paths: HashMap<String, (ContentId, u64)> = HashMap::new();
-        if let Some(entries) = self.update_logs.get(&identity) {
-            for entry in entries {
-                match &entry.body.action {
-                    UpdateAction::SetPath { path, content_id } => {
-                        current_paths
-                            .insert(path.clone(), (content_id.clone(), entry.body.sequence));
-                    }
-                    UpdateAction::RemovePath { path } => {
-                        current_paths.remove(path);
-                    }
-                    _ => {}
-                }
-            }
-        }
-        current_paths
-    }
-
-    fn matching_pin_record<'a>(
-        records: &'a [HomeRelayPinRecord],
-        path: Option<&str>,
-        content_id: &str,
-    ) -> Option<&'a HomeRelayPinRecord> {
-        records
-            .into_iter()
-            .filter(|record| match (path, record.path.as_deref()) {
-                (Some(path), Some(record_path)) => path == record_path,
-                (None, _) => record.content_id == content_id,
-                _ => false,
-            })
-            .max_by_key(|record| (record.latest_sequence, record.pinned_at))
-    }
-
-    fn record_home_relay_pin(
-        &self,
-        content_id: &str,
-        requested_path: Option<String>,
-        relay: HomeRelayConfig,
-        latest_sequence: u64,
-    ) -> Result<(), NetworkError> {
-        let identity = self.identity.identity_id();
-        let current_paths = self.current_local_paths();
-        let paths = if let Some(path) = requested_path {
-            match current_paths.get(&path) {
-                Some((path_content_id, _)) if path_content_id.to_string() == content_id => {
-                    vec![Some(path)]
-                }
-                Some(_) => {
-                    return Err(NetworkError::InvalidInput(format!(
-                        "path {path} does not point at content {content_id}"
-                    )));
-                }
-                None => {
-                    return Err(NetworkError::InvalidInput(format!(
-                        "path {path} is not locally published"
-                    )));
-                }
-            }
-        } else {
-            let mut paths = current_paths
-                .iter()
-                .filter_map(|(path, (path_content_id, _))| {
-                    if path_content_id.to_string() == content_id {
-                        Some(Some(path.clone()))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            if paths.is_empty() {
-                paths.push(None);
-            }
-            paths
-        };
-
-        for path in paths {
-            let address = path
-                .as_deref()
-                .and_then(|path| JoltAddress::new(identity.clone(), path).ok())
-                .map(|address| address.to_string());
-            let record = HomeRelayPinRecord {
-                content_id: content_id.to_string(),
-                path,
-                address,
-                relay_peer_id: relay.peer_id.clone(),
-                relay_multiaddr: relay.multiaddr.clone(),
-                relay_api_url: relay.api_url.clone(),
-                latest_sequence,
-                pinned_at: unix_now(),
-            };
-            self.store
-                .save_home_relay_pin_record(record)
-                .map_err(|e| NetworkError::Protocol(e.to_string()))?;
-        }
-
-        Ok(())
     }
 
     fn request_daemon_resolve_from_provider(
@@ -1194,7 +1012,6 @@ mod tests {
     use super::*;
     use jolt_core::{UpdateAction, UpdateLogEntry};
     use jolt_store::CacheConfig;
-    use std::str::FromStr;
     use tempfile::tempdir;
 
     fn make_store(dir: &std::path::Path) -> ContentStore {
@@ -1210,16 +1027,6 @@ mod tests {
     fn make_node_with_identity(dir: &std::path::Path, identity: NodeIdentity) -> NetworkNode {
         let store = make_store(dir);
         NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap()
-    }
-
-    fn make_node_with_config(dir: &std::path::Path, config: NetworkConfig) -> NetworkNode {
-        let identity = NodeIdentity::generate();
-        let store = make_store(dir);
-        NetworkNode::new_tcp(identity, store, config).unwrap()
-    }
-
-    fn node_identity_id_from_status(address: &str) -> IdentityId {
-        JoltAddress::from_str(address).unwrap().identity().clone()
     }
 
     fn signed_profile_log(identity: &NodeIdentity, label: &[u8]) -> Vec<UpdateLogEntry> {
@@ -1743,120 +1550,6 @@ mod tests {
     // --- Daemon command channel tests ---
 
     #[tokio::test]
-    async fn test_daemon_command_status() {
-        let dir = tempdir().unwrap();
-        let mut node = make_node(dir.path());
-
-        let (cmd_tx, cmd_rx) = mpsc::channel(16);
-        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx.clone());
-
-        let daemon = tokio::spawn(async move {
-            node.run_daemon_loop(cmd_rx).await;
-        });
-
-        let status = handle.status().await.unwrap();
-        assert!(!status.peer_id.is_empty());
-        assert_eq!(status.connected_peers, 0);
-
-        handle.shutdown().await.unwrap();
-        daemon.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_daemon_status_reports_bootstrap_config_and_relay_mode() {
-        let dir = tempdir().unwrap();
-        let mut config = NetworkConfig::test_config();
-        config.configured_bootstrap_relays =
-            vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string()];
-        config.effective_bootstrap_relays = vec![
-            "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string(),
-            "/ip4/127.0.0.1/tcp/4002/p2p/12D3Cli".to_string(),
-        ];
-        config.bootstrap_relay = true;
-        config.home_relay = Some(crate::config::HomeRelayConfig {
-            peer_id: "12D3Configured".to_string(),
-            multiaddr: "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string(),
-            capability: crate::config::HomeRelayCapability::Pinning,
-            api_url: Some("http://127.0.0.1:9862".to_string()),
-        });
-        let mut node = make_node_with_config(dir.path(), config);
-
-        let (cmd_tx, cmd_rx) = mpsc::channel(16);
-        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx.clone());
-
-        let daemon = tokio::spawn(async move {
-            node.run_daemon_loop(cmd_rx).await;
-        });
-
-        let status = handle.status().await.unwrap();
-        assert!(status.bootstrap_relay);
-        assert_eq!(status.bootstrap_state, "bootstrapping");
-        assert_eq!(status.configured_bootstrap_relay_count, 1);
-        assert_eq!(status.effective_bootstrap_relay_count, 2);
-        assert_eq!(status.connected_bootstrap_peers, 0);
-        assert_eq!(status.last_bootstrap_error, None);
-        assert_eq!(
-            status.configured_bootstrap_relays,
-            vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured"]
-        );
-        assert_eq!(
-            status.effective_bootstrap_relays,
-            vec![
-                "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured",
-                "/ip4/127.0.0.1/tcp/4002/p2p/12D3Cli",
-            ]
-        );
-        assert_eq!(
-            status.home_relay.unwrap().multiaddr,
-            "/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured"
-        );
-        let relay_record = status
-            .relay_record
-            .expect("relay mode exposes relay record");
-        assert_eq!(relay_record.body.peer_id, status.peer_id);
-        assert_eq!(
-            relay_record.body.relay_id,
-            node_identity_id_from_status(&status.identity_address)
-        );
-        assert!(relay_record
-            .body
-            .capabilities
-            .contains(&jolt_core::RelayRecordCapability::Bootstrap));
-        assert_eq!(relay_record.verify_at(unix_now()), Ok(()));
-
-        handle.shutdown().await.unwrap();
-        daemon.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_daemon_status_reports_degraded_bootstrap_after_error() {
-        let dir = tempdir().unwrap();
-        let mut config = NetworkConfig::test_config();
-        config.effective_bootstrap_relays =
-            vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string()];
-        let mut node = make_node_with_config(dir.path(), config);
-        node.last_bootstrap_error = Some("DHT bootstrap failed".to_string());
-
-        let (cmd_tx, cmd_rx) = mpsc::channel(16);
-        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx.clone());
-
-        let daemon = tokio::spawn(async move {
-            node.run_daemon_loop(cmd_rx).await;
-        });
-
-        let status = handle.status().await.unwrap();
-        assert_eq!(status.bootstrap_state, "degraded");
-        assert_eq!(status.connected_bootstrap_peers, 0);
-        assert_eq!(
-            status.last_bootstrap_error,
-            Some("DHT bootstrap failed".to_string())
-        );
-
-        handle.shutdown().await.unwrap();
-        daemon.await.unwrap();
-    }
-
-    #[tokio::test]
     async fn test_daemon_handle_publish_fetch_roundtrip() {
         let dir = tempdir().unwrap();
         let mut node = make_node(dir.path());
@@ -1894,15 +1587,5 @@ mod tests {
         handle.shutdown().await.unwrap();
         let result = tokio::time::timeout(Duration::from_secs(5), daemon).await;
         assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_daemon_handle_disconnected() {
-        let (cmd_tx, cmd_rx) = mpsc::channel::<DaemonCommand>(16);
-        let handle = crate::daemon_handle::DaemonHandle::new(cmd_tx);
-        drop(cmd_rx);
-
-        let status_err = handle.status().await;
-        assert!(status_err.is_err());
     }
 }
