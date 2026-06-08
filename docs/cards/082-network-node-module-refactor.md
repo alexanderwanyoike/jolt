@@ -90,3 +90,9 @@ Each PR should keep existing public APIs stable and should run the relevant
   exchange behavior intact.
 - Green: `cargo test -p jolt-network --lib -- --nocapture`
 - Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
+- 2026-06-08: Eighth slice moved identity-provider relay queries, relay
+  forwarding responses, provider candidate recording, and identity diagnosis
+  helpers into `node::providers`, keeping pending provider state on
+  `NetworkNode` and preserving existing provider discovery behavior.
+- Green: `cargo test -p jolt-network --lib -- --nocapture`
+- Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
