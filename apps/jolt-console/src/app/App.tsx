@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ConsoleShell } from "../components/ConsoleShell";
 import { tauriDaemonClient, type DaemonClient } from "../daemon/client";
@@ -16,19 +16,27 @@ import { OverviewPage } from "../sections/OverviewPage";
 import { PublishedPage } from "../sections/PublishedPage";
 import { RelaysPage } from "../sections/RelaysPage";
 import { SettingsPage } from "../sections/SettingsPage";
+import {
+  tauriConsoleUpdateClient,
+  type ConsoleUpdateCheck,
+  type ConsoleUpdateClient
+} from "../update/client";
 
 type ConsoleAppProps = {
   client?: DaemonClient;
   lifecycleClient?: DaemonLifecycleClient;
+  updateClient?: ConsoleUpdateClient;
   refreshIntervalMs?: number;
 };
 
 export function ConsoleApp({
   client = tauriDaemonClient,
   lifecycleClient = tauriDaemonLifecycleClient,
+  updateClient = tauriConsoleUpdateClient,
   refreshIntervalMs = 5000
 }: ConsoleAppProps) {
   const snapshot = useDaemonSnapshot(client, refreshIntervalMs);
+  const [updateCheck, setUpdateCheck] = useState<ConsoleUpdateCheck | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,9 +62,26 @@ export function ConsoleApp({
     };
   }, [lifecycleClient, snapshot.refresh]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const nextUpdateCheck = await updateClient.check();
+        if (!cancelled) setUpdateCheck(nextUpdateCheck);
+      } catch {
+        // Settings exposes manual update checks and any updater errors.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [updateClient]);
+
   return (
     <HashRouter>
-      <ConsoleShell snapshot={snapshot}>
+      <ConsoleShell snapshot={snapshot} updateCheck={updateCheck}>
         <Routes>
           <Route index element={<OverviewPage snapshot={snapshot} />} />
           <Route path="/identity" element={<IdentityPage snapshot={snapshot} />} />
@@ -70,7 +95,13 @@ export function ConsoleApp({
           <Route path="/cache" element={<CachePage snapshot={snapshot} />} />
           <Route
             path="/settings"
-            element={<SettingsPage lifecycleClient={lifecycleClient} daemonClient={client} />}
+            element={
+              <SettingsPage
+                lifecycleClient={lifecycleClient}
+                daemonClient={client}
+                updateClient={updateClient}
+              />
+            }
           />
           <Route path="/diagnostics" element={<DiagnosticsPage snapshot={snapshot} />} />
           <Route path="*" element={<Navigate to="/" replace />} />

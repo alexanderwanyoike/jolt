@@ -2,7 +2,7 @@
 
 **Type:** AFK after design  
 **Milestone:** Post-v0 Distribution  
-**Status:** Ready after 077  
+**Status:** Implemented in PR
 **Blocked by:** 077
 
 ## Why
@@ -52,17 +52,17 @@ The update flow should be user-approved, not silent:
 
 ## Acceptance Criteria
 
-- [ ] CI creates signed updater artifacts for tagged Console releases.
-- [ ] Release assets include the updater signature and update manifest required
+- [x] CI creates signed updater artifacts for tagged Console releases.
+- [x] Release assets include the updater signature and update manifest required
       by the packaged Console.
-- [ ] Console can check for an update from a packaged build.
-- [ ] Console can install a newer signed update and relaunch.
-- [ ] Console does not stop an externally managed daemon during update.
-- [ ] Console stops a Console-owned daemon before relaunch if required.
-- [ ] If update check/install fails, the error is visible and the existing
+- [x] Console can check for an update from a packaged build.
+- [x] Console can install a newer signed update and relaunch.
+- [x] Console does not stop an externally managed daemon during update.
+- [x] Console stops a Console-owned daemon before relaunch if required.
+- [x] If update check/install fails, the error is visible and the existing
       Console remains usable.
-- [ ] `scripts/install-jolt-console.sh` remains documented as a fallback.
-- [ ] The update path is tested against a local or fake manifest before relying
+- [x] `scripts/install-jolt-console.sh` remains documented as a fallback.
+- [x] The update path is tested against a local or fake manifest before relying
       on GitHub releases.
 
 ## Non-Goals
@@ -92,3 +92,23 @@ lifecycle behavior. The native updater itself should be verified with an
 end-to-end packaged update test using a local/static manifest before the GitHub
 release path is trusted.
 
+## Implementation Notes
+
+Jolt Console now uses Tauri's updater and process plugins. The UI checks for
+updates on startup, shows a top-bar update link when a signed update exists,
+and exposes manual check/install controls in Settings.
+
+Tagged release builds opt into Tauri updater artifact generation with
+`JOLT_CREATE_UPDATER_ARTIFACTS=1`. The release workflow publishes:
+
+```text
+jolt-console-x86_64.AppImage
+jolt-console-x86_64.AppImage.sha256
+jolt-console-x86_64.AppImage.sig
+latest.json
+```
+
+The updater private key is not committed. Release automation expects
+`TAURI_SIGNING_PRIVATE_KEY` in GitHub Actions secrets, with
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` only if the key was generated with a
+password.

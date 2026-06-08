@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default desktop permissions for the Jolt Console window.",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default"]
+  "permissions": ["core:default", "opener:default", "process:default", "updater:default"]
 }

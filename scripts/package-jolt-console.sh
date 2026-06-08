@@ -6,6 +6,7 @@ CONSOLE_DIR="$ROOT_DIR/apps/jolt-console"
 SIDECAR_DIR="$CONSOLE_DIR/src-tauri/binaries"
 TARGET_TRIPLE="${JOLT_TARGET_TRIPLE:-}"
 TAURI_CACHE_DIR="${TAURI_CACHE_DIR:-$HOME/.cache/tauri}"
+CREATE_UPDATER_ARTIFACTS="${JOLT_CREATE_UPDATER_ARTIFACTS:-0}"
 PREPARE_ONLY=0
 DRY_RUN=0
 
@@ -76,7 +77,8 @@ Options:
   --help          Show this help.
 
 Environment:
-  JOLT_TARGET_TRIPLE  Override the Rust target triple used in the sidecar name.
+  JOLT_TARGET_TRIPLE             Override the Rust target triple used in the sidecar name.
+  JOLT_CREATE_UPDATER_ARTIFACTS  Set to 1 for signed Tauri updater artifacts.
 
 Outputs:
   apps/jolt-console/src-tauri/binaries/jolt-<target-triple>
@@ -127,6 +129,7 @@ Jolt Console v0 packaging plan
   daemon binary: $HOST_BIN
   sidecar:       $SIDECAR_BIN
   prepare only:  $PREPARE_ONLY
+  updater files: $CREATE_UPDATER_ARTIFACTS
 PLAN
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -161,8 +164,21 @@ fi
 
 prefetch_tauri_appimage_helpers
 
+if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" ]]; then
+  if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" && -z "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]]; then
+    echo "JOLT_CREATE_UPDATER_ARTIFACTS=1 requires TAURI_SIGNING_PRIVATE_KEY or TAURI_SIGNING_PRIVATE_KEY_PATH" >&2
+    exit 1
+  fi
+  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+fi
+
 echo "==> Building Linux AppImage bundle"
-(cd "$CONSOLE_DIR" && run_with_retries 3 npm run tauri build -- --bundles appimage)
+TAURI_BUILD_ARGS=(build -- --bundles appimage)
+if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" ]]; then
+  TAURI_BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+fi
+(cd "$CONSOLE_DIR" && run_with_retries 3 npm run tauri "${TAURI_BUILD_ARGS[@]}")
 
 echo "==> Bundle artifacts"
 find "$ROOT_DIR/target/release/bundle/appimage" -maxdepth 1 -type f -name '*.AppImage' -print
+find "$ROOT_DIR/target/release/bundle/appimage" -maxdepth 1 -type f -name '*.AppImage.sig' -print
