@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde::Serialize;
+use tauri::Manager;
 
 const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:9862";
 const DEFAULT_API_BIND: &str = "127.0.0.1";
@@ -246,6 +247,19 @@ fn stop_owned_daemon(lifecycle: &Mutex<DaemonLifecycleManager>) -> Result<(), St
     Ok(())
 }
 
+fn cleanup_owned_daemon_on_exit(lifecycle: &Mutex<DaemonLifecycleManager>) {
+    let Some(mut child) = lifecycle
+        .lock()
+        .ok()
+        .and_then(|mut manager| manager.child.take())
+    else {
+        return;
+    };
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 fn daemon_base_url() -> String {
     std::env::var("JOLT_DAEMON_URL").unwrap_or_else(|_| DEFAULT_DAEMON_URL.to_string())
 }
@@ -403,13 +417,21 @@ pub fn run() {
             daemon_lifecycle_stop,
             daemon_lifecycle_restart
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run Jolt Console");
+        .build(tauri::generate_context!())
+        .expect("failed to build Jolt Console")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                cleanup_owned_daemon_on_exit(&app_handle.state::<Mutex<DaemonLifecycleManager>>());
+            }
+        });
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{
+        path::PathBuf,
+        process::{Command, Stdio},
+    };
 
     use super::*;
 
@@ -438,11 +460,68 @@ mod tests {
     }
 
     #[test]
+    fn exit_cleanup_without_console_owned_child_is_a_noop() {
+        let lifecycle = Mutex::new(DaemonLifecycleManager::default());
+
+        cleanup_owned_daemon_on_exit(&lifecycle);
+
+        assert!(lifecycle.lock().unwrap().child.is_none());
+    }
+
+    #[test]
+    fn exit_cleanup_stops_console_owned_child() {
+        let child = long_running_child();
+        let pid = child.id();
+        let lifecycle = Mutex::new(DaemonLifecycleManager {
+            child: Some(child),
+            last_error: None,
+            log_path: None,
+        });
+
+        cleanup_owned_daemon_on_exit(&lifecycle);
+
+        assert!(lifecycle.lock().unwrap().child.is_none());
+        assert!(!process_is_running(pid));
+    }
+
+    #[test]
     fn tail_lines_returns_the_recent_log_lines() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("daemon.log");
         std::fs::write(&path, "one\ntwo\nthree\n").unwrap();
 
         assert_eq!(tail_lines(&path, 2), vec!["two", "three"]);
+    }
+
+    #[cfg(unix)]
+    fn long_running_child() -> std::process::Child {
+        Command::new("sleep").arg("30").spawn().unwrap()
+    }
+
+    #[cfg(windows)]
+    fn long_running_child() -> std::process::Child {
+        Command::new("cmd")
+            .args(["/C", "timeout /T 30 /NOBREAK >NUL"])
+            .spawn()
+            .unwrap()
+    }
+
+    #[cfg(unix)]
+    fn process_is_running(pid: u32) -> bool {
+        Command::new("kill")
+            .arg("-0")
+            .arg(pid.to_string())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+
+    #[cfg(windows)]
+    fn process_is_running(pid: u32) -> bool {
+        Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}")])
+            .output()
+            .is_ok_and(|output| String::from_utf8_lossy(&output.stdout).contains(&pid.to_string()))
     }
 }
