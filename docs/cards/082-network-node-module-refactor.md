@@ -116,3 +116,9 @@ Each PR should keep existing public APIs stable and should run the relevant
   `node::resolution`. The daemon resolution tests now live with that module.
 - Green: `cargo test -p jolt-network --lib -- --nocapture`
 - Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
+- 2026-06-08: Twelfth slice moved `NetworkNode` construction from built
+  transports, TCP/iroh constructors, startup bootstrap peer parsing, and the
+  constructor-specific tests into `node::construction`, preserving the existing
+  `NetworkNode::new` and `NetworkNode::new_tcp` API.
+- Green: `cargo test -p jolt-network --lib -- --nocapture`
+- Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
