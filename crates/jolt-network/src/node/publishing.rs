@@ -1,0 +1,292 @@
+use std::collections::HashMap;
+use std::path::Path;
+
+use libp2p::multiaddr::Protocol;
+use tracing::debug;
+
+use jolt_core::{
+    verify_update_log_for_identity, ContentId, ContentManifest, IdentityHeadHint, IdentityId,
+    JoltAddress, LiveReachabilityEndpoint, OfflineIngressEndpoint, ReachabilityRecord,
+    UpdateAction, UpdateLogEntry, VerifiedReachability, SIGNED_REACHABILITY_PATH,
+};
+use jolt_identity::NodeIdentity;
+use jolt_store::ContentStore;
+
+use crate::command::PublishReachabilityResponse;
+use crate::error::NetworkError;
+
+use super::{unix_now, NetworkNode, RELAY_RECORD_TTL_SECS};
+
+impl NetworkNode {
+    /// Publish a file to the content store. Returns the ContentId.
+    pub fn publish_file(&mut self, file_path: &Path) -> Result<ContentId, NetworkError> {
+        let data = std::fs::read(file_path).map_err(NetworkError::Io)?;
+        self.publish_bytes(&data)
+    }
+
+    pub(super) fn publish_bytes(&mut self, data: &[u8]) -> Result<ContentId, NetworkError> {
+        let content_id = ContentId::from_bytes(&data);
+
+        let signature = self.identity.sign(&data);
+
+        let manifest = ContentManifest {
+            content_id: content_id.clone(),
+            size: data.len() as u64,
+            content_type: "application/octet-stream".to_string(),
+            publisher_key: self.identity.public_key_bytes().to_vec(),
+            signature,
+        };
+
+        self.store
+            .publish(&data, &manifest)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+
+        // Announce as DHT provider.
+        if let Err(e) = self.announce_provider(&content_id) {
+            debug!("DHT announcement skipped: {e}");
+        }
+
+        Ok(content_id)
+    }
+
+    /// Publish a file and bind the resulting CID to an opaque path in this
+    /// node's signed identity namespace.
+    pub fn publish_file_at_path(
+        &mut self,
+        file_path: &Path,
+        path: &str,
+    ) -> Result<(ContentId, JoltAddress, u64), NetworkError> {
+        let data = std::fs::read(file_path).map_err(NetworkError::Io)?;
+        self.publish_bytes_at_path(&data, path)
+    }
+
+    pub(super) fn publish_bytes_at_path(
+        &mut self,
+        data: &[u8],
+        path: &str,
+    ) -> Result<(ContentId, JoltAddress, u64), NetworkError> {
+        let identity = self.identity.identity_id();
+        let address = JoltAddress::new(identity.clone(), path)
+            .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        let content_id = self.publish_bytes(data)?;
+        let action = UpdateAction::SetPath {
+            path: address.path().to_string(),
+            content_id: content_id.clone(),
+        };
+
+        let entry = match self
+            .update_logs
+            .get(&identity)
+            .and_then(|entries| entries.last())
+        {
+            Some(previous) => previous
+                .append(action, |bytes| self.identity.sign(bytes))
+                .map_err(|e| NetworkError::Protocol(e.to_string()))?,
+            None => UpdateLogEntry::genesis(self.identity.public_key_bytes(), action, |bytes| {
+                self.identity.sign(bytes)
+            })
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?,
+        };
+        let latest_sequence = entry.body.sequence;
+        let entries_to_save = {
+            let entries = self.update_logs.entry(identity.clone()).or_default();
+            entries.push(entry);
+            entries.clone()
+        };
+        self.store
+            .save_update_log(&identity, &entries_to_save)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+
+        if let Err(e) = self.announce_update_log_provider(&identity) {
+            debug!("Update-log DHT announcement skipped: {e}");
+        }
+        if let Err(e) = self.refresh_local_identity_head_hint(&identity) {
+            debug!("Identity-head hint refresh skipped: {e}");
+        }
+
+        Ok((content_id, address, latest_sequence))
+    }
+
+    pub(super) fn publish_reachability(
+        &mut self,
+        sequence_hint: u64,
+        expires_at: u64,
+        live: Vec<LiveReachabilityEndpoint>,
+        offline_ingress: Vec<OfflineIngressEndpoint>,
+    ) -> Result<PublishReachabilityResponse, NetworkError> {
+        let now = unix_now();
+        let identity = self.identity.identity_id();
+        let record = ReachabilityRecord::new(
+            self.identity.public_key_bytes(),
+            identity.clone(),
+            sequence_hint,
+            now,
+            expires_at,
+            live,
+            offline_ingress,
+            |bytes| self.identity.sign(bytes),
+        )
+        .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        let record_bytes =
+            serde_json::to_vec(&record).map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let (content_id, address, latest_sequence) =
+            self.publish_bytes_at_path(&record_bytes, SIGNED_REACHABILITY_PATH)?;
+        let record = VerifiedReachability {
+            identity: identity.clone(),
+            sequence_hint,
+            expires_at,
+            live: record.body.live,
+            offline_ingress: record.body.offline_ingress,
+        };
+
+        Ok(PublishReachabilityResponse {
+            identity: identity.to_string(),
+            path: SIGNED_REACHABILITY_PATH.to_string(),
+            address: address.to_string(),
+            latest_sequence,
+            content_id: content_id.to_string(),
+            record,
+        })
+    }
+
+    pub(super) fn publish_update_log_snapshot(
+        &mut self,
+        identity: &IdentityId,
+    ) -> Result<Option<ContentId>, NetworkError> {
+        let Some(entries) = self.update_logs.get(identity).cloned() else {
+            return Ok(None);
+        };
+        verify_update_log_for_identity(identity, &entries)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+
+        let data =
+            serde_json::to_vec(&entries).map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let content_id = ContentId::from_bytes(&data);
+        let signature = self.identity.sign(&data);
+        let manifest = ContentManifest {
+            content_id: content_id.clone(),
+            size: data.len() as u64,
+            content_type: "application/jolt-update-log+json".to_string(),
+            publisher_key: self.identity.public_key_bytes().to_vec(),
+            signature,
+        };
+
+        self.store
+            .publish(&data, &manifest)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+
+        if let Err(e) = self.announce_provider(&content_id) {
+            debug!("Update-log snapshot DHT announcement skipped: {e}");
+        }
+
+        Ok(Some(content_id))
+    }
+
+    fn refresh_local_identity_head_hint(
+        &mut self,
+        identity: &IdentityId,
+    ) -> Result<(), NetworkError> {
+        if identity != &self.identity.identity_id() {
+            return Ok(());
+        }
+
+        let Some(entries) = self.update_logs.get(identity) else {
+            return Ok(());
+        };
+        let Some(latest) = entries.last() else {
+            return Ok(());
+        };
+
+        let now = unix_now();
+        let provider_addrs = self
+            .swarm
+            .listeners()
+            .map(|addr| {
+                if addr
+                    .iter()
+                    .any(|protocol| matches!(protocol, Protocol::P2p(_)))
+                {
+                    addr.to_string()
+                } else {
+                    addr.clone()
+                        .with(Protocol::P2p(*self.swarm.local_peer_id()))
+                        .to_string()
+                }
+            })
+            .collect::<Vec<_>>();
+        if provider_addrs.is_empty() {
+            return Ok(());
+        }
+
+        let hint = IdentityHeadHint::new(
+            self.identity.public_key_bytes(),
+            identity.clone(),
+            self.swarm.local_peer_id().to_string(),
+            provider_addrs,
+            None,
+            latest.body.sequence,
+            latest.entry_hash(),
+            now,
+            now + RELAY_RECORD_TTL_SECS,
+            |bytes| self.identity.sign(bytes),
+        )
+        .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        self.record_identity_head_hint(hint)
+    }
+
+    pub(super) fn load_persisted_local_update_log(
+        store: &ContentStore,
+        identity: &NodeIdentity,
+    ) -> Result<HashMap<IdentityId, Vec<UpdateLogEntry>>, NetworkError> {
+        let identity_id = identity.identity_id();
+        let Some(entries) = store.load_update_log(&identity_id).map_err(|e| {
+            NetworkError::Protocol(format!(
+                "failed to load persisted update log for {identity_id}: {e}"
+            ))
+        })?
+        else {
+            return Ok(HashMap::new());
+        };
+
+        verify_update_log_for_identity(&identity_id, &entries).map_err(|e| {
+            NetworkError::Protocol(format!(
+                "invalid persisted update log for {identity_id}: {e}"
+            ))
+        })?;
+
+        let mut update_logs = HashMap::new();
+        update_logs.insert(identity_id, entries);
+        Ok(update_logs)
+    }
+
+    /// Store a verified update log for an identity, ignoring stale valid logs.
+    pub fn store_verified_update_log(
+        &mut self,
+        identity: IdentityId,
+        entries: Vec<UpdateLogEntry>,
+    ) -> Result<(), NetworkError> {
+        let candidate_sequence = verify_update_log_for_identity(&identity, &entries)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let current_sequence = self
+            .update_logs
+            .get(&identity)
+            .and_then(|current| verify_update_log_for_identity(&identity, current).ok());
+
+        if current_sequence
+            .map(|current| candidate_sequence > current)
+            .unwrap_or(true)
+        {
+            self.update_logs.insert(identity.clone(), entries);
+            if let Err(e) = self.refresh_local_identity_head_hint(&identity) {
+                debug!("Identity-head hint refresh skipped: {e}");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Return the verified update log entries this node knows for an identity.
+    pub fn update_log_entries(&self, identity: &IdentityId) -> Option<&[UpdateLogEntry]> {
+        self.update_logs.get(identity).map(Vec::as_slice)
+    }
+}
