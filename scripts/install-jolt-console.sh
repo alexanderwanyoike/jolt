@@ -37,6 +37,22 @@ Example:
 USAGE
 }
 
+run_with_retries() {
+  local attempts="$1"
+  shift
+
+  local attempt=1
+  until "$@"; do
+    if [[ "$attempt" -ge "$attempts" ]]; then
+      return 1
+    fi
+
+    echo "Command failed; retrying ($attempt/$attempts): $*" >&2
+    sleep "$((attempt * 5))"
+    attempt="$((attempt + 1))"
+  done
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check)
@@ -138,7 +154,7 @@ TMP_FILE="$(mktemp)"
 trap 'rm -f "$TMP_FILE"' EXIT
 
 echo "==> Downloading Jolt Console $RESOLVED_VERSION"
-curl -fL "$DOWNLOAD_URL" -o "$TMP_FILE"
+run_with_retries 5 curl -fL "$DOWNLOAD_URL" -o "$TMP_FILE"
 chmod 0755 "$TMP_FILE"
 mv "$TMP_FILE" "$TARGET_BIN"
 printf '%s\n' "$RESOLVED_VERSION" > "$STATE_DIR/version"

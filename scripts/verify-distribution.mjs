@@ -25,6 +25,7 @@ const requiredMarkers = {
     "releases/download",
     "--check",
     "--update",
+    "run_with_retries",
     ".local/bin"
   ],
   packageScript: ["target/release/bundle/appimage", "tauri build"],
