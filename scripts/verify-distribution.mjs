@@ -28,7 +28,12 @@ const requiredMarkers = {
     "run_with_retries",
     ".local/bin"
   ],
-  packageScript: ["target/release/bundle/appimage", "tauri build"],
+  packageScript: [
+    "target/release/bundle/appimage",
+    "tauri build",
+    "Prefetching Tauri AppImage helper binaries",
+    "linuxdeploy-x86_64.AppImage"
+  ],
   readme: [
     "curl -fsSL",
     "scripts/install-jolt-console.sh",
