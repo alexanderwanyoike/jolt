@@ -1,7 +1,7 @@
 # 082 - Network Node Module Refactor
 
 Type: AFK
-Status: In Progress
+Status: Done
 
 ## Why
 
@@ -120,5 +120,12 @@ Each PR should keep existing public APIs stable and should run the relevant
   transports, TCP/iroh constructors, startup bootstrap peer parsing, and the
   constructor-specific tests into `node::construction`, preserving the existing
   `NetworkNode::new` and `NetworkNode::new_tcp` API.
+- Green: `cargo test -p jolt-network --lib -- --nocapture`
+- Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
+- 2026-06-08: Thirteenth and final slice moved low-level listen/dial,
+  bootstrap DHT setup, peer connection by multiaddr, DHT provider
+  announce/find/take helpers, provider key generation, and the provider-key
+  test into `node::connectivity`. Card 082 is complete: `NetworkNode` remains
+  the public actor/facade, with protocol/API/store behavior unchanged.
 - Green: `cargo test -p jolt-network --lib -- --nocapture`
 - Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
