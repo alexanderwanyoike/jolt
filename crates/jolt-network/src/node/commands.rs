@@ -1,18 +1,18 @@
 use std::str::FromStr;
 use std::time::Instant;
 
-use tracing::{info, warn};
+use tracing::info;
 
 use jolt_core::{verify_update_log_for_identity, ContentId, JoltAddress, PinRequest};
 
 use crate::command::{
-    CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, NodeStatus,
-    PeerConnectResponse, PeerInfo, PublishResponse,
+    CacheEntryInfo, CacheStatsResponse, DaemonCommand, FetchResult, PeerConnectResponse, PeerInfo,
+    PublishResponse,
 };
 use crate::error::NetworkError;
 use crate::protocol::{ContentRequest, UpdateLogRequest};
 
-use super::{unix_now, NetworkNode, PendingResolve, PendingUpdateLogPin};
+use super::{NetworkNode, PendingResolve, PendingUpdateLogPin};
 
 impl NetworkNode {
     /// Handle a single daemon command.
@@ -221,51 +221,7 @@ impl NetworkNode {
                 let _ = response_tx.send(result);
             }
             DaemonCommand::GetStatus { response_tx } => {
-                let direct = self
-                    .peer_connections
-                    .values()
-                    .filter(|c| !c.is_relayed)
-                    .count();
-                let relayed = self
-                    .peer_connections
-                    .values()
-                    .filter(|c| c.is_relayed)
-                    .count();
-                let connected_bootstrap_peers = self.connected_bootstrap_peer_count();
-                let now = unix_now();
-                let known_relay_count = self.store.known_relay_count(now).unwrap_or_else(|e| {
-                    warn!("Failed to load known relay count: {e}");
-                    0
-                });
-                let relay_record = self.local_relay_record(now).unwrap_or_else(|e| {
-                    warn!("Failed to build local relay record: {e}");
-                    None
-                });
-                let status = NodeStatus {
-                    peer_id: self.swarm.local_peer_id().to_string(),
-                    identity_address: self.identity.jolt_address().to_string(),
-                    uptime_secs: self.started_at.elapsed().as_secs(),
-                    connected_peers: self.swarm.connected_peers().count(),
-                    direct_peers: direct,
-                    relayed_peers: relayed,
-                    nat_type: self.transport_name.to_string(),
-                    active_relays: 0,
-                    published_count: self.store.published_ids().len(),
-                    cached_count: self.store.list_entries().len(),
-                    listen_addresses: self.swarm.listeners().map(|a| a.to_string()).collect(),
-                    bootstrap_relay: self.bootstrap_relay,
-                    bootstrap_state: self.bootstrap_state(connected_bootstrap_peers),
-                    configured_bootstrap_relays: self.configured_bootstrap_relays.clone(),
-                    configured_bootstrap_relay_count: self.configured_bootstrap_relays.len(),
-                    effective_bootstrap_relays: self.effective_bootstrap_relays.clone(),
-                    effective_bootstrap_relay_count: self.effective_bootstrap_relays.len(),
-                    known_relay_count,
-                    connected_bootstrap_peers,
-                    last_bootstrap_error: self.last_bootstrap_error.clone(),
-                    home_relay: self.home_relay.clone(),
-                    relay_record,
-                };
-                let _ = response_tx.send(status);
+                let _ = response_tx.send(self.build_status());
             }
             DaemonCommand::GetPeers { response_tx } => {
                 let peers = self

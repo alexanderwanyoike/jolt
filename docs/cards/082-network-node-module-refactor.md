@@ -103,3 +103,10 @@ Each PR should keep existing public APIs stable and should run the relevant
   publish/update-log behavior.
 - Green: `cargo test -p jolt-network --lib -- --nocapture`
 - Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
+- 2026-06-08: Tenth slice moved daemon status snapshot construction into
+  `node::status` and published-content/home-relay pin inventory helpers into
+  `node::inventory`. The status-specific daemon tests now live with
+  `node::status`, while `commands.rs` delegates status construction through a
+  small `NetworkNode::build_status` helper.
+- Green: `cargo test -p jolt-network --lib -- --nocapture`
+- Green: `cargo fmt --check && git diff --check && ./scripts/test-local.sh`
