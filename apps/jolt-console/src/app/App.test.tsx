@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonClient } from "../daemon/client";
 import type { DaemonLifecycleClient } from "../daemon/lifecycle";
+import type { ConsoleUpdateClient } from "../update/client";
 import { ConsoleApp } from "./App";
 
 afterEach(() => {
@@ -195,6 +196,29 @@ describe("ConsoleApp", () => {
     expect(await screen.findAllByText("connected")).not.toHaveLength(0);
     expect(lifecycleClient.start).toHaveBeenCalledOnce();
   });
+
+  it("checks for Console updates when the app opens", async () => {
+    const updateClient: ConsoleUpdateClient = {
+      check: vi.fn(async () => ({
+        available: true,
+        version: "0.2.0",
+        currentVersion: "0.1.0"
+      })),
+      installAndRelaunch: vi.fn()
+    };
+
+    render(
+      <ConsoleApp
+        client={healthyDaemonClient()}
+        lifecycleClient={healthyLifecycleClient()}
+        updateClient={updateClient}
+        refreshIntervalMs={0}
+      />
+    );
+
+    expect(await screen.findByRole("link", { name: "Update 0.2.0" })).toBeInTheDocument();
+    expect(updateClient.check).toHaveBeenCalledOnce();
+  });
 });
 
 function healthyLifecycleClient(): DaemonLifecycleClient {
@@ -208,6 +232,28 @@ function healthyLifecycleClient(): DaemonLifecycleClient {
     start: vi.fn(),
     stop: vi.fn(),
     restart: vi.fn()
+  };
+}
+
+function healthyDaemonClient(): DaemonClient {
+  return {
+    daemonUrl: "http://127.0.0.1:9862",
+    get: vi.fn(async (path: string) => {
+      if (path === "/api/v1/status") {
+        return {
+          identity_address: "alice.jolt",
+          peer_id: "12D3KooAlice",
+          connected_peers: 3,
+          bootstrap_state: "connected"
+        };
+      }
+      if (path === "/api/v1/cache/stats") return {};
+      const inventory = defaultInventoryEndpoint(path);
+      if (inventory !== undefined) return inventory;
+      if (path === "/api/v1/published") return [];
+      throw new Error(`unexpected path ${path}`);
+    }),
+    post: vi.fn()
   };
 }
 
