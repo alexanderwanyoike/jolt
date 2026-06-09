@@ -36,10 +36,10 @@ The update flow should be user-approved, not silent:
 
 - Add Tauri updater support to `apps/jolt-console`.
 - Add the Tauri process plugin if needed for relaunch.
-- Generate and document the updater signing key process.
+- Generate and document the updater public-key verification model.
 - Store the updater public key in the Tauri config.
-- Require the private signing key through GitHub Actions secrets for tagged
-  release builds.
+- Require private signing key material through repository automation settings
+  for tagged release builds without documenting private values publicly.
 - Generate updater artifacts and signatures during packaging.
 - Publish a release update manifest such as `latest.json`.
 - Add Console UI for:
@@ -82,8 +82,8 @@ The update path must verify signed update artifacts. HTTPS and GitHub release
 ownership are useful transport properties, but they are not enough for an
 in-app updater that replaces the local runtime.
 
-The updater private key must never be committed. It should live in release
-automation secrets. The public key can be committed in the Tauri configuration.
+The updater private key must never be committed or documented publicly. The
+public key can be committed in the Tauri configuration.
 
 ## Testing Notes
 
@@ -108,7 +108,5 @@ jolt-console-x86_64.AppImage.sig
 latest.json
 ```
 
-The updater private key is not committed. Release automation expects
-`TAURI_SIGNING_PRIVATE_KEY` in GitHub Actions secrets, with
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` only if the key was generated with a
-password.
+The updater private key is not committed. Release signing is configured through
+private repository automation settings.
