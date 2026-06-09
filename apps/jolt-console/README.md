@@ -78,10 +78,7 @@ signature with the public key committed in `tauri.conf.json`, and relaunches
 after installation. Console stops the daemon only when the daemon is owned by
 Console; externally managed daemons are left running.
 
-Release signing requires `TAURI_SIGNING_PRIVATE_KEY` in GitHub Actions secrets.
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is optional and only needed if the updater
-key was generated with a password. The curl installer remains the fallback
-repair/update path.
+The curl installer remains the fallback repair/update path.
 
 Check for a newer tagged release:
 
