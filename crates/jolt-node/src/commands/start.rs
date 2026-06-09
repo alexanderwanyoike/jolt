@@ -39,6 +39,7 @@ pub async fn run(
     let identity = NodeIdentity::load_or_generate(&config.identity_dir)?;
     info!("Peer ID: {}", identity.peer_id());
     let identity_peer_id = identity.peer_id().to_string();
+    let local_identity_address = identity.jolt_address().to_string();
     let local_identity = identity.identity_id();
     let settings = config.load_settings()?;
     let builtin_bootstrap = default_bootstrap_peers();
@@ -114,7 +115,7 @@ pub async fn run(
 
     // Create command channel and daemon handle
     let (cmd_tx, cmd_rx) = mpsc::channel(256);
-    let handle = DaemonHandle::new(cmd_tx);
+    let handle = DaemonHandle::new_with_local_identity(cmd_tx, local_identity_address);
 
     // Spawn daemon event loop
     tokio::spawn(async move {

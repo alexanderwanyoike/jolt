@@ -31,13 +31,14 @@ async fn start_test_server_with_session_path(
 ) -> (u16, DaemonHandle, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let identity = NodeIdentity::generate();
+    let local_identity_address = identity.jolt_address().to_string();
     let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
     let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
     node.set_fetch_timeout(std::time::Duration::from_secs(2));
     node.set_resolve_timeout(std::time::Duration::from_secs(2));
 
     let (cmd_tx, cmd_rx) = mpsc::channel(64);
-    let handle = DaemonHandle::new(cmd_tx);
+    let handle = DaemonHandle::new_with_local_identity(cmd_tx, local_identity_address);
     tokio::spawn(async move {
         node.run_daemon_loop(cmd_rx).await;
     });
@@ -56,13 +57,14 @@ async fn start_test_server_with_network_settings_path(
 ) -> (u16, DaemonHandle, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let identity = NodeIdentity::generate();
+    let local_identity_address = identity.jolt_address().to_string();
     let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
     let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
     node.set_fetch_timeout(std::time::Duration::from_secs(2));
     node.set_resolve_timeout(std::time::Duration::from_secs(2));
 
     let (cmd_tx, cmd_rx) = mpsc::channel(64);
-    let handle = DaemonHandle::new(cmd_tx);
+    let handle = DaemonHandle::new_with_local_identity(cmd_tx, local_identity_address);
     tokio::spawn(async move {
         node.run_daemon_loop(cmd_rx).await;
     });
@@ -455,6 +457,71 @@ async fn test_admin_can_approve_app_session_request() {
     assert_eq!(sessions[0]["identity"], "alice-public.jolt");
     assert!(sessions[0].get("session_token").is_none());
     assert!(sessions[0].get("token_hash").is_none());
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_can_approve_app_session_request_for_local_identity() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
+    let client = reqwest::Client::new();
+    let local_identity = handle.local_identity_address().unwrap().to_string();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": null,
+            "requested_capabilities": [
+                "resolve:public",
+                "fetch:public",
+                "publish:/pastes/*"
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let pending_resp = client
+        .get(format!("{}/admin/v1/app-requests", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pending_resp.status(), 200);
+    let pending: serde_json::Value = pending_resp.json().await.unwrap();
+    assert_eq!(
+        pending.as_array().unwrap()[0]["requested_identity"],
+        serde_json::Value::Null
+    );
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": null,
+            "capabilities": [
+                "resolve:public",
+                "fetch:public",
+                "publish:/pastes/*"
+            ],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(approve_resp.status(), 200);
+    let approved: serde_json::Value = approve_resp.json().await.unwrap();
+    assert_eq!(approved["status"], "active");
+    assert_eq!(approved["identity"], local_identity);
 
     handle.shutdown().await.ok();
 }
