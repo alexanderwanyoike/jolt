@@ -23,8 +23,7 @@ In the Spoke repository:
 - add a curlable install/update script;
 - add Tauri updater plugin/config and a minimal in-app update check/install
   surface;
-- document that release signing is configured privately without exposing
-  signing key material or private automation details;
+- document that packaged Spoke updates are signed and verified;
 - document the simple demo path with Jolt Console approval.
 
 ## Acceptance Criteria

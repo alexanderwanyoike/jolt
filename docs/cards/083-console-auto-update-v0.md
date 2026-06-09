@@ -38,8 +38,7 @@ The update flow should be user-approved, not silent:
 - Add the Tauri process plugin if needed for relaunch.
 - Generate and document the updater public-key verification model.
 - Store the updater public key in the Tauri config.
-- Require private signing key material through repository automation settings
-  for tagged release builds without documenting private values publicly.
+- Ensure tagged release builds produce signed updater artifacts.
 - Generate updater artifacts and signatures during packaging.
 - Publish a release update manifest such as `latest.json`.
 - Add Console UI for:
@@ -108,5 +107,4 @@ jolt-console-x86_64.AppImage.sig
 latest.json
 ```
 
-The updater private key is not committed. Release signing is configured through
-private repository automation settings.
+Tagged release builds produce signed updater artifacts.

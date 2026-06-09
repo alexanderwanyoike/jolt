@@ -78,9 +78,7 @@ signature with the public key committed in `tauri.conf.json`, and relaunches
 after installation. Console stops the daemon only when the daemon is owned by
 Console; externally managed daemons are left running.
 
-Release signing is configured through private repository automation settings.
-Do not commit or document private signing key material. The curl installer
-remains the fallback repair/update path.
+The curl installer remains the fallback repair/update path.
 
 Check for a newer tagged release:
 
