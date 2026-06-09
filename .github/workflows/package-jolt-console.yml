@@ -69,7 +69,10 @@ jobs:
         run: |
           mkdir -p dist/jolt-console-linux
           cp target/release/bundle/appimage/*.AppImage dist/jolt-console-linux/jolt-console-x86_64.AppImage
+          cp target/release/jolt dist/jolt-console-linux/jolt-linux-x86_64
+          chmod 0755 dist/jolt-console-linux/jolt-linux-x86_64
           (cd dist/jolt-console-linux && sha256sum jolt-console-x86_64.AppImage > jolt-console-x86_64.AppImage.sha256)
+          (cd dist/jolt-console-linux && sha256sum jolt-linux-x86_64 > jolt-linux-x86_64.sha256)
           if compgen -G "target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
             cp target/release/bundle/appimage/*.AppImage.sig dist/jolt-console-linux/jolt-console-x86_64.AppImage.sig
           fi

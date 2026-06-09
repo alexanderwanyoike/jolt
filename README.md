@@ -243,12 +243,13 @@ or contacts. Those are app-level schemas.
 
 ## Try It
 
-Jolt v0 can be run from source or packaged locally as a Linux AppImage.
+Jolt v0 can be run from source or installed from tagged Linux release assets.
 
 The first packaged shape is:
 
 ```text
 Jolt Console + bundled jolt daemon/CLI sidecar
+user-callable jolt CLI
 ```
 
 Linux packaging is the first verified target. macOS and Windows use the same
@@ -272,16 +273,22 @@ builds Console web assets, and produces an AppImage under:
 target/release/bundle/appimage/
 ```
 
-Once tagged releases publish AppImage assets, install or update Jolt Console
-with:
+Install or update Jolt Console and the user-callable `jolt` CLI with:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | bash
 ```
 
-The installer downloads the latest `jolt-console-x86_64.AppImage` release asset
-to `~/.local/bin/jolt-console`. Run the same command again to update when a new
-tagged release is available.
+The installer downloads the latest `jolt-console-x86_64.AppImage` and
+`jolt-linux-x86_64` release assets to:
+
+```text
+~/.local/bin/jolt-console
+~/.local/bin/jolt
+```
+
+Run the same command again to update both commands when a new tagged release is
+available.
 
 Packaged Console builds also check GitHub Releases for signed in-app updates.
 When a newer signed release is available, Console shows an update action in the
@@ -295,6 +302,12 @@ Check whether an update exists:
 curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | bash -s -- --check
 ```
 
+Install only the headless `jolt` CLI for a relay or server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | bash -s -- --cli-only
+```
+
 Install a specific version:
 
 ```bash
@@ -305,6 +318,12 @@ Check the installed AppImage:
 
 ```bash
 jolt-console --appimage-help
+```
+
+Check the installed CLI:
+
+```bash
+jolt --version
 ```
 
 Build Jolt:

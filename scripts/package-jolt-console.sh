@@ -84,6 +84,7 @@ Outputs:
   apps/jolt-console/src-tauri/binaries/jolt-<target-triple>
   target/release/bundle/appimage/*.AppImage
   CI normalizes release assets to jolt-console-x86_64.AppImage
+  CI normalizes the standalone CLI asset to jolt-linux-x86_64
 USAGE
 }
 
