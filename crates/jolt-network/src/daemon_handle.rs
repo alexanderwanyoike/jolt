@@ -22,12 +22,33 @@ use crate::error::NetworkError;
 #[derive(Clone)]
 pub struct DaemonHandle {
     cmd_tx: mpsc::Sender<DaemonCommand>,
+    local_identity_address: Option<String>,
 }
 
 impl DaemonHandle {
     /// Create a new DaemonHandle from a command sender.
     pub fn new(cmd_tx: mpsc::Sender<DaemonCommand>) -> Self {
-        Self { cmd_tx }
+        Self {
+            cmd_tx,
+            local_identity_address: None,
+        }
+    }
+
+    /// Create a new DaemonHandle with the local identity address available for
+    /// cheap server-side authorization decisions.
+    pub fn new_with_local_identity(
+        cmd_tx: mpsc::Sender<DaemonCommand>,
+        local_identity_address: String,
+    ) -> Self {
+        Self {
+            cmd_tx,
+            local_identity_address: Some(local_identity_address),
+        }
+    }
+
+    /// Return the local identity address when it was captured at daemon startup.
+    pub fn local_identity_address(&self) -> Option<&str> {
+        self.local_identity_address.as_deref()
     }
 
     /// Publish a file. Returns the content ID and size.

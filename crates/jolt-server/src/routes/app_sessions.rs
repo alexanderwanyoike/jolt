@@ -42,8 +42,11 @@ pub async fn list_requests(
 pub async fn approve_request(
     State(state): State<AppState>,
     Path(request_id): Path<String>,
-    Json(request): Json<ApproveAppSessionRequest>,
+    Json(mut request): Json<ApproveAppSessionRequest>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
+    if request.identity.is_none() {
+        request.identity = state.daemon.local_identity_address().map(ToOwned::to_owned);
+    }
     let response = state.sessions.approve_request(&request_id, request).await?;
     if grants_private_content_authority(&response.capabilities) {
         state.daemon.ensure_local_identity_encryption_key().await?;
