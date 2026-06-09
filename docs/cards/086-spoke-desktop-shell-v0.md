@@ -30,8 +30,8 @@ In the Spoke repository:
 
 - [x] `npm run desktop:dev` starts Spoke in a Tauri window.
 - [x] `npm run desktop:build` produces a Linux AppImage locally.
-- [ ] Packaged Spoke can request app access from Jolt Console.
-- [ ] Packaged Spoke can publish a profile/post.
+- [x] Packaged Spoke can request app access from Jolt Console.
+- [x] Packaged Spoke can publish a profile/post.
 - [ ] Packaged Spoke can read known-contact posts.
 - [ ] Packaged Spoke can send and accept a reply using existing Jolt APIs.
 - [x] README documents desktop dev/build usage.
@@ -72,5 +72,9 @@ Spoke PR #5 verification:
   `127.0.0.1:5178` and launched the Tauri binary; the timeout then
   terminated the dev process.
 
-Manual smoke note: packaged Spoke still needs a human-controlled Jolt Console
-approval/post/feed/reply smoke test.
+Manual smoke:
+
+- Green: human-controlled packaged Spoke smoke passed for Jolt Console access
+  request/approval and profile/post publishing.
+- Not covered in this smoke: known-contact feed reading and reply send/accept
+  require a second identity.
