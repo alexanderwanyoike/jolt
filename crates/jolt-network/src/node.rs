@@ -424,17 +424,18 @@ impl NetworkNode {
         let mut relay_mesh_interval = tokio::time::interval(RELAY_MESH_EXPLORATION_INTERVAL);
 
         loop {
-            tokio::select! {
-                event = self.swarm.select_next_some() => {
-                    self.handle_swarm_event(event);
+            while let Ok(command) = cmd_rx.try_recv() {
+                if self.handle_daemon_loop_command(command) {
+                    return;
                 }
+            }
+
+            tokio::select! {
+                biased;
                 cmd = cmd_rx.recv() => {
                     match cmd {
                         Some(command) => {
-                            let should_shutdown = matches!(command, DaemonCommand::Shutdown { .. });
-                            self.handle_command(command);
-                            if should_shutdown {
-                                info!("Daemon shutting down");
+                            if self.handle_daemon_loop_command(command) {
                                 return;
                             }
                         }
@@ -443,6 +444,9 @@ impl NetworkNode {
                             return;
                         }
                     }
+                }
+                event = self.swarm.select_next_some() => {
+                    self.handle_swarm_event(event);
                 }
                 _ = timeout_interval.tick() => {
                     self.fetch_manager.check_timeouts();
@@ -472,6 +476,15 @@ impl NetworkNode {
                 }
             }
         }
+    }
+
+    fn handle_daemon_loop_command(&mut self, command: DaemonCommand) -> bool {
+        let should_shutdown = matches!(command, DaemonCommand::Shutdown { .. });
+        self.handle_command(command);
+        if should_shutdown {
+            info!("Daemon shutting down");
+        }
+        should_shutdown
     }
 
     /// Run the event loop, processing swarm events until cancelled.

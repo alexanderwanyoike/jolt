@@ -244,4 +244,12 @@ mod tests {
         let status_err = handle.status().await;
         assert!(status_err.is_err());
     }
+
+    #[test]
+    fn daemon_handle_can_expose_startup_local_identity_address() {
+        let (cmd_tx, _cmd_rx) = mpsc::channel::<DaemonCommand>(16);
+        let handle = DaemonHandle::new_with_local_identity(cmd_tx, "alice-public.jolt".to_string());
+
+        assert_eq!(handle.local_identity_address(), Some("alice-public.jolt"));
+    }
 }
