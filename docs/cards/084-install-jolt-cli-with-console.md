@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** v0 Endgame  
-**Status:** Ready
+**Status:** In PR
 **Blocked by:** 077, 083
 
 ## Why
@@ -36,16 +36,30 @@ CLI, daemon, and relay operator binary.
 - Document that relay/server users can install only the `jolt` binary if they
   do not need the desktop Console.
 
+Concrete v0 release assets:
+
+```text
+jolt-console-x86_64.AppImage
+jolt-linux-x86_64
+```
+
+The default install path creates both `jolt-console` and `jolt`. Headless
+relay/server installs can use:
+
+```bash
+scripts/install-jolt-console.sh --cli-only
+```
+
 ## Acceptance Criteria
 
-- [ ] Tagged releases publish `jolt-console-x86_64.AppImage`.
-- [ ] Tagged releases publish a standalone Linux `jolt` binary or tarball.
-- [ ] Curl install creates executable `jolt-console` and `jolt` commands.
-- [ ] `jolt --version` or equivalent reports the tagged version.
-- [ ] Existing Console auto-update behavior still works.
-- [ ] Installer can check whether either installed asset is stale.
-- [ ] README install docs show both desktop and headless/server paths.
-- [ ] CI verifies release asset names and installer markers.
+- [x] Tagged releases publish `jolt-console-x86_64.AppImage`.
+- [x] Tagged releases publish a standalone Linux `jolt` binary or tarball.
+- [x] Curl install creates executable `jolt-console` and `jolt` commands.
+- [x] `jolt --version` or equivalent reports the tagged version.
+- [x] Existing Console auto-update behavior still works.
+- [x] Installer can check whether either installed asset is stale.
+- [x] README install docs show both desktop and headless/server paths.
+- [x] CI verifies release asset names and installer markers.
 
 ## Non-Goals
 
@@ -58,3 +72,20 @@ CLI, daemon, and relay operator binary.
 
 This card repairs the last gap in card 077: the package includes `jolt`, but the
 installer does not expose it as a user-callable CLI yet.
+
+## Verification
+
+- Red: `node scripts/verify-distribution.mjs` failed on missing
+  `jolt-linux-x86_64` workflow marker before implementation.
+- Green: `node scripts/verify-distribution.mjs`
+- Green: `bash -n scripts/install-jolt-console.sh`
+- Green: `JOLT_VERSION=v0.3.2 JOLT_INSTALL_DIR=/tmp/jolt-install-check/bin JOLT_STATE_DIR=/tmp/jolt-install-check/state bash scripts/install-jolt-console.sh --dry-run`
+- Green: `JOLT_VERSION=v0.3.2 JOLT_INSTALL_DIR=/tmp/jolt-install-check/bin JOLT_STATE_DIR=/tmp/jolt-install-check/state bash scripts/install-jolt-console.sh --cli-only --dry-run`
+- Green: fake-current-state `--check` reports both Jolt Console and Jolt CLI
+  up to date when both version files and executables exist.
+- Green: `cargo run --locked -p jolt-node -- --version`
+- Green: `./scripts/test-local.sh`
+
+Release-time note: the new standalone CLI asset is produced by the tag workflow;
+the current `v0.3.2` release predates this card and does not contain
+`jolt-linux-x86_64`.

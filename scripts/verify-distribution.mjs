@@ -6,7 +6,8 @@ const files = {
   packageScript: readFileSync("scripts/package-jolt-console.sh", "utf8"),
   updateManifest: readFileSync("scripts/write-jolt-console-update-manifest.mjs", "utf8"),
   readme: readFileSync("README.md", "utf8"),
-  card: readFileSync("docs/cards/077-jolt-distribution-v0.md", "utf8")
+  distributionCard: readFileSync("docs/cards/077-jolt-distribution-v0.md", "utf8"),
+  installCliCard: readFileSync("docs/cards/084-install-jolt-cli-with-console.md", "utf8")
 };
 
 const requiredMarkers = {
@@ -19,12 +20,20 @@ const requiredMarkers = {
     "refs/tags/",
     "jolt-console-x86_64.AppImage.sig",
     "latest.json",
-    "write-jolt-console-update-manifest.mjs"
+    "write-jolt-console-update-manifest.mjs",
+    "jolt-linux-x86_64",
+    "jolt-linux-x86_64.sha256",
+    "target/release/jolt"
   ],
   installer: [
     "JOLT_VERSION",
     "JOLT_INSTALL_DIR",
     "jolt-console-x86_64.AppImage",
+    "jolt-linux-x86_64",
+    "JOLT_CLI_ASSET_NAME",
+    "JOLT_CLI_BIN_NAME",
+    "--cli-only",
+    "--console-only",
     "releases/latest",
     "releases/download",
     "--check",
@@ -50,9 +59,12 @@ const requiredMarkers = {
     "curl -fsSL",
     "scripts/install-jolt-console.sh",
     "JOLT_VERSION=",
-    "jolt-console --appimage-help"
+    "jolt-console --appimage-help",
+    "jolt --version",
+    "--cli-only"
   ],
-  card: ["GitHub Actions", "jolt-console-x86_64.AppImage", "install-jolt-console.sh"]
+  distributionCard: ["GitHub Actions", "jolt-console-x86_64.AppImage", "install-jolt-console.sh"],
+  installCliCard: ["jolt-linux-x86_64", "jolt-console", "jolt", "--cli-only"]
 };
 
 for (const [fileName, markers] of Object.entries(requiredMarkers)) {
