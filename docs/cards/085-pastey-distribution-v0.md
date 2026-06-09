@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** v0 Endgame  
-**Status:** Release verified; manual smoke pending
+**Status:** Done
 **Blocked by:** 079
 
 ## Why
@@ -38,7 +38,7 @@ In the Pastey repository:
 - [x] Pastey can install and relaunch after a signed update.
 - [x] CI uploads workflow artifacts for PRs and release assets for tags.
 - [x] README explains install, update, and Jolt dependency.
-- [ ] Manual smoke: installed Pastey requests access through Console and
+- [x] Manual smoke: installed Pastey requests access through Console and
       publishes a public paste.
 
 ## Non-Goals
@@ -99,5 +99,7 @@ Pastey `v0.1.0` release verification:
 - Green: exact curl install path from Pastey `main` installs `v0.1.0` into a
   temp directory; installed AppImage responds to `--appimage-help`.
 
-Manual smoke note: installed Pastey still needs a human-controlled Jolt Console
-approval/publish smoke test.
+Manual smoke:
+
+- Green: human-controlled installed Pastey smoke passed with Jolt Console
+  approval and public paste publishing.
