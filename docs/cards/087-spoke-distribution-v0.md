@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** v0 Endgame  
-**Status:** In PR
+**Status:** Needs Manual Smoke
 **Blocked by:** 086
 
 ## Why
@@ -28,8 +28,8 @@ In the Spoke repository:
 
 ## Acceptance Criteria
 
-- [ ] Tagged Spoke releases publish a Linux AppImage.
-- [ ] `curl -fsSL .../install-spoke.sh | bash` installs Spoke.
+- [x] Tagged Spoke releases publish a Linux AppImage.
+- [x] `curl -fsSL .../install-spoke.sh | bash` installs Spoke.
 - [x] Installer supports `--check`, `--update`, `--force`, and `--dry-run`.
 - [x] Spoke can check for a signed update.
 - [x] Spoke can install and relaunch after a signed update.
@@ -76,6 +76,20 @@ Spoke PR #6 verification:
   signed-update entry.
 - Green: generated AppImage responds to `--appimage-help`.
 
-Release/manual-smoke note: the tag workflow, curl install from `main`, and
-installed-app smoke remain to be verified after the Spoke PR merges and a Spoke
-release is tagged.
+Spoke `v0.1.0` release verification:
+
+- Green: created initial Spoke `main` branch from `dev`.
+- Green: tagged Spoke `v0.1.0` from `main`.
+- Green: GitHub `Package Spoke` tag workflow published release assets:
+  - `spoke-x86_64.AppImage`;
+  - `spoke-x86_64.AppImage.sha256`;
+  - `spoke-x86_64.AppImage.sig`;
+  - `latest.json`.
+- Green: temp curl install from `main` installed `v0.1.0` into
+  `/tmp/spoke-v010-install-check/bin/spoke`.
+- Green: installed AppImage responds to `--appimage-help`.
+
+Remaining manual smoke:
+
+- Run installed Spoke with Jolt Console, approve the app session, and publish a
+  post through the installed AppImage.
