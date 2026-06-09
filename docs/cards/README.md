@@ -31,8 +31,10 @@ Done:
   Basic headless relay status for operators.
 
 Next:
-  Stop expanding every technical surface at once. Pick the next product/use-case
-  proof that explains why someone should run Jolt.
+  Freeze the product proof into something people can actually install:
+  Jolt Console should install the user-callable `jolt` CLI, Pastey and Spoke
+  should be desktop apps with release artifacts, and a simple bootstrap relay
+  should be deployable on a cheap Linux VPS.
 ```
 
 The first useful product/protocol bridge was:
@@ -47,17 +49,34 @@ The answer should shape the next proof. This is a product discussion, not an imp
 
 ## Current Decision Point
 
-Do not start with WASM apps, storage markets, payments, Drops, or storage-market mechanics.
+Do not start with WASM apps, storage markets, payments, Drops, or storage-market
+mechanics.
 
-The relay mesh milestone is complete enough for now. The app boundary,
-private sharing foundations, Console lifecycle, and minimum relay-operator
-diagnostics are also complete enough for now. The next step should be product
-selection, not more infrastructure polishing:
+The v0 product/use-case direction is now:
 
-1. [078](078-spoke-social-poc.md): build the human-facing social PoC.
-2. [080](080-v0-freeze-and-bugfix-window.md): hard stop, bug fixes only, then
-   [081](081-launch-and-postmortem.md): write it up and decide whether Jolt has
-   legs.
+1. Jolt is one core product: Console plus the same `jolt` runtime/CLI binary.
+2. Pastey and Spoke are separate Jolt apps, not bundled into Console.
+3. Spoke is the primary human demo; Pastey remains a companion technical proof.
+4. A public-ish bootstrap relay should be easy to deploy on a cheap Linux VPS.
+5. Discovery can be open for v0; relay pinning should be allowlisted.
+6. After this demo path works, write it up and decide whether to continue,
+   pause, or bin the project.
+
+The immediate sequence is:
+
+1. [084](084-install-jolt-cli-with-console.md): make the Jolt install expose
+   both `jolt-console` and `jolt`.
+2. [085](085-pastey-distribution-v0.md): make Pastey installable/updateable.
+3. [086](086-spoke-desktop-shell-v0.md): give Spoke a Tauri desktop shell.
+4. [087](087-spoke-distribution-v0.md): make Spoke installable/updateable.
+5. [088](088-bootstrap-relay-deployment-v0.md): make a bootstrap relay easy to
+   deploy from the released `jolt` binary.
+6. [089](089-relay-pinning-whitelist-v0.md): implement simple relay pinning
+   allowlists.
+7. [080](080-v0-freeze-and-bugfix-window.md): hard stop new features and run
+   the final demo/docs bugfix pass.
+8. [090](090-v0-demo-and-launch-writeup.md): prepare the Medium/HN write-up and
+   decide whether Jolt has legs.
 
 Supporting cards:
 
@@ -77,6 +96,20 @@ Supporting cards:
   with signed, user-approved updates.
 - [079](079-pastey-final-compatibility-pass.md): keep Pastey working as a
   companion PoC.
+- [084](084-install-jolt-cli-with-console.md): expose the user-callable `jolt`
+  CLI alongside the installed Console.
+- [085](085-pastey-distribution-v0.md): ship Pastey as a signed AppImage with a
+  curl install/update path.
+- [086](086-spoke-desktop-shell-v0.md): turn Spoke from Vite-only into a Tauri
+  desktop app.
+- [087](087-spoke-distribution-v0.md): ship Spoke as a signed AppImage with a
+  curl install/update path.
+- [088](088-bootstrap-relay-deployment-v0.md): make a headless bootstrap relay
+  easy to install and operate from the released `jolt` binary.
+- [089](089-relay-pinning-whitelist-v0.md): keep discovery open but authorize
+  relay pinning with a simple identity allowlist.
+- [090](090-v0-demo-and-launch-writeup.md): write the demo/launch post and
+  record the continue/pause/bin decision.
 - [062](062-console-native-presence-and-permission-focus-v0.md): native Console
   presence and focus permission prompts, still deferred until product pressure
   justifies cross-platform OS integration.
@@ -225,6 +258,13 @@ into the protocol layer.
 | [081](081-launch-and-postmortem.md) | HITL | Ready after 080 | Publish the project, gather feedback, and decide continue/pause/bin. |
 | [082](082-network-node-module-refactor.md) | AFK | In Progress | Refactor `NetworkNode` into focused internal modules while preserving behavior. |
 | [083](083-console-auto-update-v0.md) | AFK after design | Ready after 077 | Add signed, user-approved packaged Console updates with installer fallback. |
+| [084](084-install-jolt-cli-with-console.md) | AFK | Ready | Install the user-callable `jolt` CLI alongside Jolt Console. |
+| [085](085-pastey-distribution-v0.md) | AFK | Ready | Add Pastey AppImage CI, curl install, and signed updates. |
+| [086](086-spoke-desktop-shell-v0.md) | AFK | Ready | Add a Tauri desktop shell for Spoke. |
+| [087](087-spoke-distribution-v0.md) | AFK | Ready after 086 | Add Spoke AppImage CI, curl install, and signed updates. |
+| [088](088-bootstrap-relay-deployment-v0.md) | AFK | Ready after 084 | Make a bootstrap relay easy to deploy from the released `jolt` binary. |
+| [089](089-relay-pinning-whitelist-v0.md) | AFK | Ready after 088 | Add a simple relay pinning allowlist while keeping discovery open. |
+| [090](090-v0-demo-and-launch-writeup.md) | HITL | Ready after 085/087/088/089 | Draft the demo/write-up and decide continue, pause, or bin. |
 
 ## Card Format
 
