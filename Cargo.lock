@@ -3408,7 +3408,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-console"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "reqwest 0.12.28",
  "serde",
@@ -3423,7 +3423,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-core"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "blake3",
  "chacha20poly1305",
@@ -3442,7 +3442,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-identity"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "ed25519-dalek 2.2.0",
  "jolt-core",
@@ -3456,7 +3456,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-network"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "ciborium",
@@ -3478,7 +3478,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-node"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -3501,7 +3501,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-server"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "axum",
  "axum-extra",
@@ -3525,7 +3525,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-store"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "jolt-core",
  "jolt-identity",
