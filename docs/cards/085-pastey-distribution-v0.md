@@ -27,7 +27,7 @@ In the Pastey repository:
 - add Tauri updater plugin/config and a minimal in-app update check/install
   surface;
 - document that Pastey requires a running Jolt daemon/Console;
-- document required repository secrets for signed updates.
+- document that packaged Pastey updates are signed and verified.
 
 ## Acceptance Criteria
 
@@ -75,8 +75,8 @@ Pastey PR #5 verification:
 - Green: `cargo check --manifest-path src-tauri/Cargo.toml --locked`
 - Green: unsigned `scripts/package-pastey.sh` builds
   `Pastey_0.1.0_amd64.AppImage`.
-- Green: signed `PASTEY_CREATE_UPDATER_ARTIFACTS=1 TAURI_SIGNING_PRIVATE_KEY_PATH=/home/alexander/.config/pastey/updater.key scripts/package-pastey.sh`
-  builds `Pastey_0.1.0_amd64.AppImage.sig`.
+- Green: signed local package build produced
+  `Pastey_0.1.0_amd64.AppImage.sig`.
 
 Release/manual-smoke note: the tag workflow and installed-app smoke remain to
 be verified after the Pastey PR merges and a Pastey release is tagged.
