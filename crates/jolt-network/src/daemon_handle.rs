@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use tokio::sync::{mpsc, oneshot};
 
@@ -16,18 +16,77 @@ use crate::command::{
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
 
+const DAEMON_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+
+async fn receive_result<T>(
+    rx: oneshot::Receiver<Result<T, NetworkError>>,
+) -> Result<T, NetworkError> {
+    receive_result_with_timeout(rx, DAEMON_COMMAND_TIMEOUT).await
+}
+
+async fn receive_result_with_timeout<T>(
+    rx: oneshot::Receiver<Result<T, NetworkError>>,
+    timeout: Duration,
+) -> Result<T, NetworkError> {
+    match tokio::time::timeout(timeout, rx).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err(NetworkError::Protocol(
+            "Daemon dropped response".to_string(),
+        )),
+        Err(_) => Err(NetworkError::Timeout),
+    }
+}
+
+async fn receive_plain<T>(rx: oneshot::Receiver<T>) -> Result<T, NetworkError> {
+    receive_plain_with_timeout(rx, DAEMON_COMMAND_TIMEOUT).await
+}
+
+async fn receive_plain_with_timeout<T>(
+    rx: oneshot::Receiver<T>,
+    timeout: Duration,
+) -> Result<T, NetworkError> {
+    match tokio::time::timeout(timeout, rx).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(_)) => Err(NetworkError::Protocol(
+            "Daemon dropped response".to_string(),
+        )),
+        Err(_) => Err(NetworkError::Timeout),
+    }
+}
+
 /// Client-side handle to communicate with the daemon event loop.
 ///
 /// This is `Send + Sync + Clone` and can be shared across HTTP handlers.
 #[derive(Clone)]
 pub struct DaemonHandle {
     cmd_tx: mpsc::Sender<DaemonCommand>,
+    local_identity_address: Option<String>,
 }
 
 impl DaemonHandle {
     /// Create a new DaemonHandle from a command sender.
     pub fn new(cmd_tx: mpsc::Sender<DaemonCommand>) -> Self {
-        Self { cmd_tx }
+        Self {
+            cmd_tx,
+            local_identity_address: None,
+        }
+    }
+
+    /// Create a new DaemonHandle with the local identity address available for
+    /// cheap server-side authorization decisions.
+    pub fn new_with_local_identity(
+        cmd_tx: mpsc::Sender<DaemonCommand>,
+        local_identity_address: String,
+    ) -> Self {
+        Self {
+            cmd_tx,
+            local_identity_address: Some(local_identity_address),
+        }
+    }
+
+    /// Return the local identity address when it was captured at daemon startup.
+    pub fn local_identity_address(&self) -> Option<&str> {
+        self.local_identity_address.as_deref()
     }
 
     /// Publish a file. Returns the content ID and size.
@@ -45,8 +104,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Fetch content by ID. Returns the data.
@@ -59,8 +117,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Resolve a `.jolt` address to its current content target.
@@ -73,8 +130,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Diagnose update-log provider discovery for a Jolt identity.
@@ -90,8 +146,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Ensure the daemon has a local encryption key for its identity.
@@ -103,8 +158,7 @@ impl DaemonHandle {
             .send(DaemonCommand::EnsureLocalIdentityEncryptionKey { response_tx: tx })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Encrypt plaintext into a signed Jolt encrypted object envelope.
@@ -124,8 +178,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Decrypt a signed Jolt encrypted object envelope for the local identity.
@@ -141,8 +194,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Publish the local identity's signed reachability endpoint metadata.
@@ -164,8 +216,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Submit a recipient-controlled ingress envelope to the local daemon.
@@ -185,8 +236,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// List locally pending ingress envelopes.
@@ -196,8 +246,7 @@ impl DaemonHandle {
             .send(DaemonCommand::ListPendingIngress { response_tx: tx })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Decrypt a pending ingress envelope for local app review.
@@ -213,8 +262,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Accept a pending ingress envelope.
@@ -227,8 +275,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Reject a pending ingress envelope.
@@ -241,8 +288,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Connect to a peer by multiaddr.
@@ -258,8 +304,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Get the daemon's status.
@@ -269,8 +314,7 @@ impl DaemonHandle {
             .send(DaemonCommand::GetStatus { response_tx: tx })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))
+        receive_plain(rx).await
     }
 
     /// Get the list of connected peers.
@@ -280,8 +324,7 @@ impl DaemonHandle {
             .send(DaemonCommand::GetPeers { response_tx: tx })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))
+        receive_plain(rx).await
     }
 
     /// Get cache statistics.
@@ -291,8 +334,7 @@ impl DaemonHandle {
             .send(DaemonCommand::GetCacheStats { response_tx: tx })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))
+        receive_plain(rx).await
     }
 
     /// List all cache entries.
@@ -302,8 +344,7 @@ impl DaemonHandle {
             .send(DaemonCommand::ListCacheEntries { response_tx: tx })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))
+        receive_plain(rx).await
     }
 
     /// List locally published content with path and relay pin state.
@@ -313,8 +354,7 @@ impl DaemonHandle {
             .send(DaemonCommand::ListPublishedContent { response_tx: tx })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))
+        receive_plain(rx).await
     }
 
     /// Pin content to prevent cache eviction.
@@ -327,8 +367,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Create an owner-signed request for a relay to pin locally published content.
@@ -341,8 +380,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Record that the configured home relay accepted a pin for local content.
@@ -364,8 +402,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Update runtime network settings after admin configuration changes.
@@ -385,8 +422,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Pin an owner's signed update log and announce this node as its provider.
@@ -399,8 +435,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Store a verified owner update-log snapshot and announce this node as its provider.
@@ -418,8 +453,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Unpin content to allow cache eviction.
@@ -432,8 +466,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))?
+        receive_result(rx).await
     }
 
     /// Request graceful shutdown.
@@ -443,7 +476,29 @@ impl DaemonHandle {
             .send(DaemonCommand::Shutdown { response_tx: tx })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        rx.await
-            .map_err(|_| NetworkError::Protocol("Daemon dropped response".to_string()))
+        receive_plain(rx).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn plain_daemon_response_times_out_when_loop_does_not_answer() {
+        let (_tx, rx) = oneshot::channel::<()>();
+
+        let result = receive_plain_with_timeout(rx, Duration::from_millis(1)).await;
+
+        assert!(matches!(result, Err(NetworkError::Timeout)));
+    }
+
+    #[tokio::test]
+    async fn result_daemon_response_times_out_when_loop_does_not_answer() {
+        let (_tx, rx) = oneshot::channel::<Result<(), NetworkError>>();
+
+        let result = receive_result_with_timeout(rx, Duration::from_millis(1)).await;
+
+        assert!(matches!(result, Err(NetworkError::Timeout)));
     }
 }
