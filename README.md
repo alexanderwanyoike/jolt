@@ -10,9 +10,10 @@ audience, the account, or the keys.
 Jolt is experimental v0 software. This repository contains the protocol,
 daemon, HTTP/app API, Console, and local network implementation. The current
 code proves signed identity state, content-addressed retrieval, scoped app
-authority, encrypted objects, reachability records, and recipient-controlled
-ingress. The system is still eventually consistent, developer-oriented, and not
-yet packaged for normal users.
+authority, encrypted objects, reachability records, recipient-controlled
+ingress, Linux packaging, and a first public bootstrap relay. The system is
+still eventually consistent, developer-oriented, and not yet ready for normal
+users.
 
 ## Why Jolt Exists
 
@@ -64,7 +65,7 @@ pieces:
 - content-addressed publish/fetch;
 - encrypted content envelopes;
 - app-scoped APIs with capability checks;
-- peer discovery, local caching, and relay/discovery experiments;
+- peer discovery, local caching, and a built-in bootstrap relay;
 - signed reachability records;
 - recipient-controlled ingress for two-way app communication.
 
@@ -128,15 +129,16 @@ views.
 
 Other important limitations:
 
-- **No release-distributed installer yet:** Linux AppImage packaging now exists,
-  but it is still built locally and has not been release-signed or verified
-  across platforms.
+- **Linux-first packaging:** release-distributed Linux AppImage and CLI assets
+  exist; macOS and Windows packaging still need verification.
 - **Identity UX is rough:** `.jolt` addresses are long and not human-friendly.
 - **No global discovery/search:** users need to know identities or receive them
   out of band.
 - **Offline ingress is not solved:** direct recipient ingress works when the
   recipient is reachable; store-and-forward needs more design.
-- **Relay policy needs hardening:** pinning must be authorized and abuse-limited.
+- **Relay policy needs hardening:** the built-in bootstrap relay is for
+  discovery/rendezvous. Pinning must be authorized and abuse-limited before
+  public relay storage is enabled.
 - **Security needs review:** standard crypto primitives are used, but v0 has not
   had a full security review.
 
@@ -289,6 +291,18 @@ The installer downloads the latest `jolt-console-x86_64.AppImage` and
 
 Run the same command again to update both commands when a new tagged release is
 available.
+
+Fresh installs include a built-in bootstrap relay so a new node can join the
+public demo network without manually configuring a first peer:
+
+```text
+/ip4/167.233.106.111/udp/4001/quic-v1/p2p/12D3KooWDmwLRmG4pZa7GcUM1P3CXM9TwMjtoM69QqTrwXD63tqi
+```
+
+The bootstrap relay is a rendezvous/discovery contact, not an authority. It
+does not own identities, sign updates, decrypt content, or provide public
+pinning. Users can add their own bootstrap relays, disable built-in defaults in
+network settings, or start with `--no-bootstrap` for isolated/local demos.
 
 Packaged Console builds also check GitHub Releases for signed in-app updates.
 When a newer signed release is available, Console shows an update action in the
