@@ -2,6 +2,9 @@ use libp2p::{Multiaddr, PeerId};
 
 use crate::error::NetworkError;
 
+pub const DEFAULT_BOOTSTRAP_RELAY: &str =
+    "/ip4/167.233.106.111/udp/4001/quic-v1/p2p/12D3KooWDmwLRmG4pZa7GcUM1P3CXM9TwMjtoM69QqTrwXD63tqi";
+
 /// Parse a bootstrap multiaddr that includes a /p2p/<peer_id> suffix.
 /// Returns the PeerId and the transport-only multiaddr (without /p2p/ suffix).
 pub fn parse_bootstrap_addr(addr: &str) -> Result<(PeerId, Multiaddr), NetworkError> {
@@ -79,11 +82,10 @@ pub fn parse_bootstrap_addr_with_quic(
 
 /// Optional built-in bootstrap peer addresses.
 ///
-/// Keep this empty until there are intentionally managed bootstrap nodes. Public
-/// production relays should not appear here by accident.
+/// These relays are rendezvous/bootstrap contacts only. They help fresh nodes
+/// enter the network but do not own identities, content, or pinning authority.
 pub fn default_bootstrap_peers() -> Vec<String> {
-    // Will be populated when bootstrap nodes are deployed
-    vec![]
+    vec![DEFAULT_BOOTSTRAP_RELAY.to_string()]
 }
 
 #[cfg(test)]
@@ -111,7 +113,14 @@ mod tests {
 
     #[test]
     fn default_bootstrap_list_exists() {
-        assert!(default_bootstrap_peers().is_empty());
+        assert_eq!(
+            default_bootstrap_peers(),
+            vec![DEFAULT_BOOTSTRAP_RELAY.to_string()]
+        );
+
+        for addr in default_bootstrap_peers() {
+            parse_bootstrap_addr(&addr).expect("default bootstrap peer must be valid");
+        }
     }
 
     #[test]
