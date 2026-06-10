@@ -2,8 +2,8 @@
 
 **Type:** AFK  
 **Milestone:** v0 Endgame  
-**Status:** Ready after 084
-**Blocked by:** 084
+**Status:** In Progress
+**Blocked by:** None
 
 ## Why
 
@@ -35,13 +35,13 @@ relay mode.
 
 ## Acceptance Criteria
 
-- [ ] A fresh Linux VPS can install `jolt` from a release without building.
+- [x] A fresh Linux VPS can install `jolt` from a release without building.
 - [ ] A documented command initializes relay config.
 - [ ] A documented command starts the relay.
 - [ ] `jolt relay status` reports useful operator state.
-- [ ] Docs show the bootstrap multiaddr users should add to Console/settings.
+- [x] Docs show the bootstrap multiaddr users should add to Console/settings.
 - [ ] Setup works without a GUI.
-- [ ] Manual smoke: local user daemon can add the VPS relay as bootstrap and
+- [x] Manual smoke: local user daemon can add the VPS relay as bootstrap and
       report it in status.
 
 ## Non-Goals
@@ -56,3 +56,18 @@ relay mode.
 
 Systemd is acceptable for the server relay path. The earlier "no OS service"
 constraint was for desktop Console v0, not for a headless relay host.
+
+## Progress Notes
+
+- 2026-06-10: Deployed a first cost-optimized Hetzner bootstrap relay using the
+  released `jolt-linux-x86_64` CLI asset. It runs as `jolt-bootstrap.service`
+  under a dedicated `jolt` user with state in `/var/lib/jolt-bootstrap`, local
+  API bind on `127.0.0.1:9862`, P2P on UDP `4001`, UFW allowing only SSH and
+  `4001/udp`, and journald capped at 200M/14 days.
+- 2026-06-10: Manual smoke verified a fresh local daemon can bootstrap over
+  direct QUIC to:
+  `/ip4/167.233.106.111/udp/4001/quic-v1/p2p/12D3KooWDmwLRmG4pZa7GcUM1P3CXM9TwMjtoM69QqTrwXD63tqi`.
+- 2026-06-10: Added the Hetzner relay as the built-in default bootstrap peer so
+  fresh installs can join the demo network without manual relay configuration.
+  It is discovery/rendezvous only; public pinning remains blocked on relay
+  policy/allowlisting.

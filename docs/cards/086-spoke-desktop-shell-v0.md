@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** v0 Endgame  
-**Status:** Ready
+**Status:** In PR
 **Blocked by:** 078
 
 ## Why
@@ -28,13 +28,13 @@ In the Spoke repository:
 
 ## Acceptance Criteria
 
-- [ ] `npm run desktop:dev` starts Spoke in a Tauri window.
-- [ ] `npm run desktop:build` produces a Linux AppImage locally.
-- [ ] Packaged Spoke can request app access from Jolt Console.
-- [ ] Packaged Spoke can publish a profile/post.
+- [x] `npm run desktop:dev` starts Spoke in a Tauri window.
+- [x] `npm run desktop:build` produces a Linux AppImage locally.
+- [x] Packaged Spoke can request app access from Jolt Console.
+- [x] Packaged Spoke can publish a profile/post.
 - [ ] Packaged Spoke can read known-contact posts.
 - [ ] Packaged Spoke can send and accept a reply using existing Jolt APIs.
-- [ ] README documents desktop dev/build usage.
+- [x] README documents desktop dev/build usage.
 
 ## Non-Goals
 
@@ -48,3 +48,33 @@ In the Spoke repository:
 Keep protocol boundaries clean. Spoke-specific concepts such as profiles,
 posts, feeds, contacts, and replies stay in the Spoke repo as signed app
 content, not in Jolt protocol code.
+
+## Implementation
+
+Spoke implementation PR:
+
+- https://github.com/alexanderwanyoike/spoke/pull/5
+
+## Verification
+
+Spoke PR #5 verification:
+
+- Red: `npm test -- src/api.test.ts` failed while desktop runtime still used
+  browser `fetch`.
+- Green: `npm test -- src/api.test.ts`
+- Green: `npm test`
+- Green: `npm run build`
+- Green: `cargo test --manifest-path src-tauri/Cargo.toml --locked`
+- Green: `npm run desktop:build` produced
+  `src-tauri/target/release/bundle/appimage/Spoke_0.1.0_amd64.AppImage`.
+- Green: generated AppImage responds to `--appimage-help`.
+- Smoke: `timeout 20s npm run desktop:dev` started Vite on
+  `127.0.0.1:5178` and launched the Tauri binary; the timeout then
+  terminated the dev process.
+
+Manual smoke:
+
+- Green: human-controlled packaged Spoke smoke passed for Jolt Console access
+  request/approval and profile/post publishing.
+- Not covered in this smoke: known-contact feed reading and reply send/accept
+  require a second identity.
