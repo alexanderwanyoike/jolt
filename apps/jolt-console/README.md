@@ -41,7 +41,7 @@ owned and will not stop or restart it.
 
 ## Package
 
-Build the first v0 Linux package from the repository root:
+Build the native package for the current host from the repository root:
 
 ```bash
 scripts/package-jolt-console.sh
@@ -52,19 +52,31 @@ The script:
 - builds the `jolt` daemon/CLI binary in release mode;
 - stages it for Tauri as `src-tauri/binaries/jolt-<target-triple>`;
 - builds Console web assets;
-- runs `tauri build -- --bundles appimage`.
+- runs `tauri build` with a host-appropriate bundle kind.
 
-The AppImage is written under:
+The default bundle kind is `appimage` on Linux, `dmg` on macOS, and `nsis` on
+Windows. It can be selected explicitly:
 
-```text
-target/release/bundle/appimage/
+```bash
+scripts/package-jolt-console.sh --bundle appimage
+scripts/package-jolt-console.sh --bundle dmg
+scripts/package-jolt-console.sh --bundle nsis
 ```
 
-CI normalizes the release artifact to:
+CI normalizes release artifacts to stable names:
 
 ```text
 jolt-console-x86_64.AppImage
+jolt-console-aarch64.dmg
+jolt-console-aarch64.app.tar.gz
+jolt-console-x86_64-setup.exe
+jolt-linux-x86_64
+jolt-macos-aarch64
+jolt-windows-x86_64.exe
 ```
+
+The macOS `.app.tar.gz` file is the signed updater payload. Users install from
+the `.dmg`.
 
 Tagged releases can be installed or updated with:
 
@@ -73,10 +85,10 @@ curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts
 ```
 
 Packaged Console builds check for signed updates through Tauri's updater plugin.
-The updater reads `latest.json` from GitHub Releases, verifies the AppImage
-signature with the public key committed in `tauri.conf.json`, and relaunches
-after installation. Console stops the daemon only when the daemon is owned by
-Console; externally managed daemons are left running.
+The updater reads `latest.json` from GitHub Releases, verifies the platform
+artifact signature with the public key committed in `tauri.conf.json`, and
+relaunches after installation. Console stops the daemon only when the daemon is
+owned by Console; externally managed daemons are left running.
 
 The curl installer remains the fallback repair/update path.
 
@@ -98,9 +110,11 @@ After the sidecar has been staged, the native shell can be checked directly:
 cargo check -p jolt-console
 ```
 
-macOS and Windows use the same Console plus sidecar model, but v0 packaging is
-only verified on Linux. OS services, tray/menu-bar daemon control, autostart,
-and app installation/catalog features are intentionally out of scope.
+macOS and Windows use the same Console plus sidecar model. CI builds native
+packages for those platforms, but human install/update smoke tests and
+production OS code-signing/notarization are still required before calling those
+packages user-ready. OS services, tray/menu-bar daemon control, autostart, and
+app installation/catalog features are intentionally out of scope.
 
 ## Reset
 

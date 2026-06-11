@@ -17,7 +17,7 @@ FORCE=0
 
 usage() {
   cat <<'USAGE'
-Install or update Jolt Console and the Jolt CLI from GitHub releases.
+Install or update Jolt Console and the Jolt CLI from Linux GitHub release assets.
 
 Usage:
   scripts/install-jolt-console.sh [--check] [--update] [--force] [--dry-run] [--cli-only] [--console-only]
@@ -37,8 +37,8 @@ Environment:
   JOLT_VERSION              Release tag to install, or latest. Default latest.
   JOLT_INSTALL_DIR          Install directory. Default $HOME/.local/bin.
   JOLT_STATE_DIR            State directory for recorded versions.
-  JOLT_CONSOLE_ASSET_NAME   Console release asset. Default jolt-console-x86_64.AppImage.
-  JOLT_CLI_ASSET_NAME       CLI release asset. Default jolt-linux-x86_64.
+  JOLT_CONSOLE_ASSET_NAME   Linux Console release asset. Default jolt-console-x86_64.AppImage.
+  JOLT_CLI_ASSET_NAME       Linux CLI release asset. Default jolt-linux-x86_64.
   JOLT_CONSOLE_BIN_NAME     Console command name. Default jolt-console.
   JOLT_CLI_BIN_NAME         CLI command name. Default jolt.
   JOLT_INSTALL_CONSOLE      Set to 0 to skip Console.

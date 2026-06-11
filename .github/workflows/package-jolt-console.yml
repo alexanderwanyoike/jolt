@@ -11,6 +11,7 @@ on:
       - "scripts/package-jolt-console.sh"
       - "scripts/install-jolt-console.sh"
       - "scripts/verify-distribution.mjs"
+      - "scripts/write-jolt-console-update-manifest.mjs"
       - "Cargo.lock"
       - "Cargo.toml"
   push:
@@ -24,9 +25,41 @@ permissions:
   contents: write
 
 jobs:
-  appimage:
-    name: Linux AppImage
-    runs-on: ubuntu-22.04
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux AppImage
+            runner: ubuntu-22.04
+            platform: linux-x86_64
+            bundle: appimage
+            artifact_name: jolt-console-linux-x86_64
+            console_asset: jolt-console-x86_64.AppImage
+            updater_asset: jolt-console-x86_64.AppImage
+            cli_asset: jolt-linux-x86_64
+            cli_source: target/release/jolt
+          - name: macOS DMG
+            runner: macos-latest
+            platform: darwin-aarch64
+            bundle: dmg
+            artifact_name: jolt-console-macos-aarch64
+            console_asset: jolt-console-aarch64.dmg
+            updater_asset: jolt-console-aarch64.app.tar.gz
+            cli_asset: jolt-macos-aarch64
+            cli_source: target/release/jolt
+          - name: Windows NSIS
+            runner: windows-latest
+            platform: windows-x86_64
+            bundle: nsis
+            artifact_name: jolt-console-windows-x86_64
+            console_asset: jolt-console-x86_64-setup.exe
+            updater_asset: jolt-console-x86_64-setup.exe
+            cli_asset: jolt-windows-x86_64.exe
+            cli_source: target/release/jolt.exe
 
     steps:
       - name: Checkout
@@ -49,6 +82,7 @@ jobs:
         run: node scripts/verify-distribution.mjs
 
       - name: Install Linux desktop packaging dependencies
+        if: matrix.bundle == 'appimage'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -58,41 +92,141 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: Build AppImage
+      - name: Build native package
+        shell: bash
         env:
+          JOLT_BUNDLE_KIND: ${{ matrix.bundle }}
           JOLT_CREATE_UPDATER_ARTIFACTS: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '0' }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: scripts/package-jolt-console.sh
+        run: scripts/package-jolt-console.sh --bundle "${{ matrix.bundle }}"
 
       - name: Normalize artifact names
+        shell: bash
+        env:
+          BUNDLE_KIND: ${{ matrix.bundle }}
+          DIST_DIR: dist/${{ matrix.artifact_name }}
+          CONSOLE_ASSET: ${{ matrix.console_asset }}
+          UPDATER_ASSET: ${{ matrix.updater_asset }}
+          CLI_ASSET: ${{ matrix.cli_asset }}
+          CLI_SOURCE: ${{ matrix.cli_source }}
         run: |
-          mkdir -p dist/jolt-console-linux
-          cp target/release/bundle/appimage/*.AppImage dist/jolt-console-linux/jolt-console-x86_64.AppImage
-          cp target/release/jolt dist/jolt-console-linux/jolt-linux-x86_64
-          chmod 0755 dist/jolt-console-linux/jolt-linux-x86_64
-          (cd dist/jolt-console-linux && sha256sum jolt-console-x86_64.AppImage > jolt-console-x86_64.AppImage.sha256)
-          (cd dist/jolt-console-linux && sha256sum jolt-linux-x86_64 > jolt-linux-x86_64.sha256)
-          if compgen -G "target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
-            cp target/release/bundle/appimage/*.AppImage.sig dist/jolt-console-linux/jolt-console-x86_64.AppImage.sig
-          fi
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            test -f dist/jolt-console-linux/jolt-console-x86_64.AppImage.sig
-            node scripts/write-jolt-console-update-manifest.mjs \
-              "${GITHUB_REF_NAME}" \
-              dist/jolt-console-linux/jolt-console-x86_64.AppImage.sig \
-              dist/jolt-console-linux/latest.json
+          set -euo pipefail
+
+          hash_file() {
+            local file="$1"
+            local dir
+            local base
+            dir="$(dirname "$file")"
+            base="$(basename "$file")"
+            if command -v sha256sum >/dev/null 2>&1; then
+              (cd "$dir" && sha256sum "$base" > "$base.sha256")
+            else
+              (cd "$dir" && shasum -a 256 "$base" > "$base.sha256")
+            fi
+          }
+
+          mkdir -p "$DIST_DIR"
+
+          case "$BUNDLE_KIND" in
+            appimage)
+              cp target/release/bundle/appimage/*.AppImage "$DIST_DIR/$CONSOLE_ASSET"
+              if compgen -G "target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
+                cp target/release/bundle/appimage/*.AppImage.sig "$DIST_DIR/$UPDATER_ASSET.sig"
+              fi
+              ;;
+            dmg)
+              cp target/release/bundle/dmg/*.dmg "$DIST_DIR/$CONSOLE_ASSET"
+              if compgen -G "target/release/bundle/macos/*.app.tar.gz" > /dev/null; then
+                cp target/release/bundle/macos/*.app.tar.gz "$DIST_DIR/$UPDATER_ASSET"
+              fi
+              if compgen -G "target/release/bundle/macos/*.app.tar.gz.sig" > /dev/null; then
+                cp target/release/bundle/macos/*.app.tar.gz.sig "$DIST_DIR/$UPDATER_ASSET.sig"
+              fi
+              ;;
+            nsis)
+              cp target/release/bundle/nsis/*-setup.exe "$DIST_DIR/$CONSOLE_ASSET"
+              if compgen -G "target/release/bundle/nsis/*-setup.exe.sig" > /dev/null; then
+                cp target/release/bundle/nsis/*-setup.exe.sig "$DIST_DIR/$UPDATER_ASSET.sig"
+              fi
+              ;;
+            *)
+              echo "Unsupported bundle kind: $BUNDLE_KIND" >&2
+              exit 2
+              ;;
+          esac
+
+          cp "$CLI_SOURCE" "$DIST_DIR/$CLI_ASSET"
+          chmod 0755 "$DIST_DIR/$CLI_ASSET"
+
+          hash_file "$DIST_DIR/$CONSOLE_ASSET"
+          hash_file "$DIST_DIR/$CLI_ASSET"
+          if [[ -f "$DIST_DIR/$UPDATER_ASSET" && "$UPDATER_ASSET" != "$CONSOLE_ASSET" ]]; then
+            hash_file "$DIST_DIR/$UPDATER_ASSET"
           fi
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: jolt-console-linux-x86_64
-          path: dist/jolt-console-linux/*
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release assets
+    runs-on: ubuntu-22.04
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Assemble release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find dist -maxdepth 2 -type f -exec cp {} release/ \;
+
+          test -f release/jolt-console-x86_64.AppImage.sig
+          test -f release/jolt-console-aarch64.app.tar.gz.sig
+          test -f release/jolt-console-x86_64-setup.exe.sig
+          test -f release/jolt-linux-x86_64.sha256
+          test -f release/jolt-macos-aarch64.sha256
+          test -f release/jolt-windows-x86_64.exe.sha256
+
+          node scripts/write-jolt-console-update-manifest.mjs \
+            "$GITHUB_REF_NAME" \
+            release/latest.json \
+            linux-x86_64 \
+            release/jolt-console-x86_64.AppImage.sig \
+            jolt-console-x86_64.AppImage \
+            darwin-aarch64 \
+            release/jolt-console-aarch64.app.tar.gz.sig \
+            jolt-console-aarch64.app.tar.gz \
+            windows-x86_64 \
+            release/jolt-console-x86_64-setup.exe.sig \
+            jolt-console-x86_64-setup.exe
+
+      - name: Upload combined release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jolt-console-release-assets
+          path: release/*
           if-no-files-found: error
 
       - name: Publish release assets for tags
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/jolt-console-linux/*
+          files: release/*
