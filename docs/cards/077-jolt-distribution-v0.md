@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** v0 Endgame  
-**Status:** Implemented in PR
+**Status:** Extended in PR
 **Blocked by:** 064, 072
 
 ## Why
@@ -36,6 +36,8 @@ The distribution should support:
 - [x] Pastey and Spoke docs can point to the packaged Jolt requirement.
 - [x] Linux is verified locally.
 - [x] Mac and Windows support limitations are documented if not verified.
+- [x] Cross-platform CI packaging publishes stable macOS and Windows artifact
+      names.
 
 ## Non-Goals
 
@@ -73,3 +75,26 @@ curlable install/update path for Linux users.
 
 Human GUI verification of daemon startup from the packaged AppImage is still a
 good final check before calling the release artifact user-ready.
+
+Cross-platform extension:
+
+- `scripts/package-jolt-console.sh` now accepts `--bundle appimage`, `--bundle
+  dmg`, or `--bundle nsis`, defaulting by host OS.
+- GitHub Actions builds native packages on Linux, macOS, and Windows runners.
+- Tagged releases normalize these stable assets:
+
+```text
+jolt-console-x86_64.AppImage
+jolt-console-aarch64.dmg
+jolt-console-aarch64.app.tar.gz
+jolt-console-x86_64-setup.exe
+jolt-linux-x86_64
+jolt-macos-aarch64
+jolt-windows-x86_64.exe
+latest.json
+```
+
+The macOS `.app.tar.gz` asset is the signed updater payload; users install from
+the `.dmg`. macOS and Windows packages still need human install/update smoke
+tests and production signing/notarization before they should be described as
+user-ready.

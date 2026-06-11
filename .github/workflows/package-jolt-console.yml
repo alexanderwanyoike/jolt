@@ -9,8 +9,11 @@ on:
       - "apps/jolt-console/**"
       - "crates/**"
       - "scripts/package-jolt-console.sh"
+      - "scripts/normalize-jolt-console-artifacts.sh"
+      - "scripts/assemble-jolt-console-release.sh"
       - "scripts/install-jolt-console.sh"
       - "scripts/verify-distribution.mjs"
+      - "scripts/write-jolt-console-update-manifest.mjs"
       - "Cargo.lock"
       - "Cargo.toml"
   push:
@@ -24,9 +27,41 @@ permissions:
   contents: write
 
 jobs:
-  appimage:
-    name: Linux AppImage
-    runs-on: ubuntu-22.04
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux AppImage
+            runner: ubuntu-22.04
+            platform: linux-x86_64
+            bundle: appimage
+            artifact_name: jolt-console-linux-x86_64
+            console_asset: jolt-console-x86_64.AppImage
+            updater_asset: jolt-console-x86_64.AppImage
+            cli_asset: jolt-linux-x86_64
+            cli_source: target/release/jolt
+          - name: macOS DMG
+            runner: macos-latest
+            platform: darwin-aarch64
+            bundle: dmg
+            artifact_name: jolt-console-macos-aarch64
+            console_asset: jolt-console-aarch64.dmg
+            updater_asset: jolt-console-aarch64.app.tar.gz
+            cli_asset: jolt-macos-aarch64
+            cli_source: target/release/jolt
+          - name: Windows NSIS
+            runner: windows-latest
+            platform: windows-x86_64
+            bundle: nsis
+            artifact_name: jolt-console-windows-x86_64
+            console_asset: jolt-console-x86_64-setup.exe
+            updater_asset: jolt-console-x86_64-setup.exe
+            cli_asset: jolt-windows-x86_64.exe
+            cli_source: target/release/jolt.exe
 
     steps:
       - name: Checkout
@@ -49,6 +84,7 @@ jobs:
         run: node scripts/verify-distribution.mjs
 
       - name: Install Linux desktop packaging dependencies
+        if: matrix.bundle == 'appimage'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -58,41 +94,64 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: Build AppImage
+      - name: Build native package
+        shell: bash
         env:
+          JOLT_BUNDLE_KIND: ${{ matrix.bundle }}
           JOLT_CREATE_UPDATER_ARTIFACTS: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '0' }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: scripts/package-jolt-console.sh
+        run: scripts/package-jolt-console.sh --bundle "${{ matrix.bundle }}"
 
       - name: Normalize artifact names
+        shell: bash
         run: |
-          mkdir -p dist/jolt-console-linux
-          cp target/release/bundle/appimage/*.AppImage dist/jolt-console-linux/jolt-console-x86_64.AppImage
-          cp target/release/jolt dist/jolt-console-linux/jolt-linux-x86_64
-          chmod 0755 dist/jolt-console-linux/jolt-linux-x86_64
-          (cd dist/jolt-console-linux && sha256sum jolt-console-x86_64.AppImage > jolt-console-x86_64.AppImage.sha256)
-          (cd dist/jolt-console-linux && sha256sum jolt-linux-x86_64 > jolt-linux-x86_64.sha256)
-          if compgen -G "target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
-            cp target/release/bundle/appimage/*.AppImage.sig dist/jolt-console-linux/jolt-console-x86_64.AppImage.sig
-          fi
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            test -f dist/jolt-console-linux/jolt-console-x86_64.AppImage.sig
-            node scripts/write-jolt-console-update-manifest.mjs \
-              "${GITHUB_REF_NAME}" \
-              dist/jolt-console-linux/jolt-console-x86_64.AppImage.sig \
-              dist/jolt-console-linux/latest.json
-          fi
+          scripts/normalize-jolt-console-artifacts.sh \
+            --bundle "${{ matrix.bundle }}" \
+            --dist-dir "dist/${{ matrix.artifact_name }}" \
+            --console-asset "${{ matrix.console_asset }}" \
+            --updater-asset "${{ matrix.updater_asset }}" \
+            --cli-asset "${{ matrix.cli_asset }}" \
+            --cli-source "${{ matrix.cli_source }}"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: jolt-console-linux-x86_64
-          path: dist/jolt-console-linux/*
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release assets
+    runs-on: ubuntu-22.04
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Assemble release assets
+        run: scripts/assemble-jolt-console-release.sh --tag "$GITHUB_REF_NAME"
+
+      - name: Upload combined release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jolt-console-release-assets
+          path: release/*
           if-no-files-found: error
 
       - name: Publish release assets for tags
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/jolt-console-linux/*
+          files: release/*

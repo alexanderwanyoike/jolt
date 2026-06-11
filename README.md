@@ -129,8 +129,9 @@ views.
 
 Other important limitations:
 
-- **Linux-first packaging:** release-distributed Linux AppImage and CLI assets
-  exist; macOS and Windows packaging still need verification.
+- **Cross-platform packaging is young:** Linux release assets are verified;
+  macOS and Windows CI packages exist, but still need human install/update
+  smoke tests and production code-signing hardening.
 - **Identity UX is rough:** `.jolt` addresses are long and not human-friendly.
 - **No global discovery/search:** users need to know identities or receive them
   out of band.
@@ -245,7 +246,7 @@ or contacts. Those are app-level schemas.
 
 ## Try It
 
-Jolt v0 can be run from source or installed from tagged Linux release assets.
+Jolt v0 can be run from source or installed from tagged release assets.
 
 The first packaged shape is:
 
@@ -254,25 +255,42 @@ Jolt Console + bundled jolt daemon/CLI sidecar
 user-callable jolt CLI
 ```
 
-Linux packaging is the first verified target. macOS and Windows use the same
-Console/sidecar model, but installer support has not been verified yet.
+Linux remains the verified installer path. Tagged release CI also builds macOS
+and Windows packages with the same Console/sidecar model:
+
+```text
+jolt-console-x86_64.AppImage
+jolt-console-aarch64.dmg
+jolt-console-aarch64.app.tar.gz
+jolt-console-x86_64-setup.exe
+jolt-linux-x86_64
+jolt-macos-aarch64
+jolt-windows-x86_64.exe
+latest.json
+```
+
+The macOS `.app.tar.gz` asset is the signed Tauri updater payload; the `.dmg`
+is the user-facing installer image.
 
 Prerequisite:
 
 - Rust 1.89+
 - Node.js and npm for Jolt Console
 
-Build a Linux Console package:
+Build a Console package for the current host:
 
 ```bash
 scripts/package-jolt-console.sh
 ```
 
 The script builds the `jolt` daemon/CLI binary, stages it as the Tauri sidecar,
-builds Console web assets, and produces an AppImage under:
+builds Console web assets, and produces the native bundle for the host OS. You
+can choose the bundle explicitly:
 
-```text
-target/release/bundle/appimage/
+```bash
+scripts/package-jolt-console.sh --bundle appimage
+scripts/package-jolt-console.sh --bundle dmg
+scripts/package-jolt-console.sh --bundle nsis
 ```
 
 Install or update Jolt Console and the user-callable `jolt` CLI with:
@@ -281,7 +299,7 @@ Install or update Jolt Console and the user-callable `jolt` CLI with:
 curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | bash
 ```
 
-The installer downloads the latest `jolt-console-x86_64.AppImage` and
+On Linux, the installer downloads the latest `jolt-console-x86_64.AppImage` and
 `jolt-linux-x86_64` release assets to:
 
 ```text
@@ -304,11 +322,14 @@ does not own identities, sign updates, decrypt content, or provide public
 pinning. Users can add their own bootstrap relays, disable built-in defaults in
 network settings, or start with `--no-bootstrap` for isolated/local demos.
 
-Packaged Console builds also check GitHub Releases for signed in-app updates.
-When a newer signed release is available, Console shows an update action in the
-top bar and in Settings. Installing from Console verifies the updater signature,
-stops only a Console-owned daemon if needed, applies the update, and relaunches.
-The curl installer remains the manual fallback if an in-app update fails.
+Packaged Console builds also check GitHub Releases for signed in-app updates
+using `latest.json`. The manifest contains `linux-x86_64`, `darwin-aarch64`,
+and `windows-x86_64` entries when a tagged release publishes all three signed
+updater artifacts. When a newer signed release is available, Console shows an
+update action in the top bar and in Settings. Installing from Console verifies
+the updater signature, stops only a Console-owned daemon if needed, applies the
+update, and relaunches. The curl installer remains the Linux manual fallback if
+an in-app update fails.
 
 Check whether an update exists:
 

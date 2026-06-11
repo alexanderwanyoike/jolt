@@ -27,7 +27,7 @@
     "active": true,
     "targets": ["appimage"],
     "externalBin": ["binaries/jolt"],
-    "icon": ["icons/icon.png"]
+    "icon": ["icons/icon.png", "icons/icon.ico"]
   },
   "plugins": {
     "updater": {
