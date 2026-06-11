@@ -98,13 +98,24 @@ updates on startup, shows a top-bar update link when a signed update exists,
 and exposes manual check/install controls in Settings.
 
 Tagged release builds opt into Tauri updater artifact generation with
-`JOLT_CREATE_UPDATER_ARTIFACTS=1`. The release workflow publishes:
+`JOLT_CREATE_UPDATER_ARTIFACTS=1`. macOS tagged builds request Tauri's
+`app,dmg` bundle targets because the `dmg` target alone does not produce the
+`.app.tar.gz` updater payload. The release workflow publishes:
 
 ```text
 jolt-console-x86_64.AppImage
 jolt-console-x86_64.AppImage.sha256
 jolt-console-x86_64.AppImage.sig
+jolt-console-aarch64.dmg
+jolt-console-aarch64.dmg.sha256
+jolt-console-aarch64.app.tar.gz
+jolt-console-aarch64.app.tar.gz.sha256
+jolt-console-aarch64.app.tar.gz.sig
+jolt-console-x86_64-setup.exe
+jolt-console-x86_64-setup.exe.sha256
+jolt-console-x86_64-setup.exe.sig
 latest.json
 ```
 
-Tagged release builds produce signed updater artifacts.
+Tagged release artifact normalization is configured to fail early if any signed
+updater payload is missing.

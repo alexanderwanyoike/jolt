@@ -98,3 +98,8 @@ The macOS `.app.tar.gz` asset is the signed updater payload; users install from
 the `.dmg`. macOS and Windows packages still need human install/update smoke
 tests and production signing/notarization before they should be described as
 user-ready.
+
+The first `v0.3.5` tag run proved the macOS updater contract: building only the
+Tauri `dmg` target emits no `.app.tar.gz` updater payload. Tagged macOS release
+builds now ask Tauri for `app,dmg`, and artifact normalization fails early if a
+tagged build is missing the updater payload or signature.
