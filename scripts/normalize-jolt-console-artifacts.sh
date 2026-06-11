@@ -18,6 +18,9 @@ Bundle kinds:
   appimage  Linux AppImage bundle
   dmg       macOS DMG bundle plus .app.tar.gz updater payload
   nsis      Windows NSIS setup bundle
+
+Environment:
+  JOLT_REQUIRE_UPDATER_ARTIFACTS  Set to 1 to fail if updater artifacts are missing.
 USAGE
 }
 
@@ -27,6 +30,7 @@ CONSOLE_ASSET=""
 UPDATER_ASSET=""
 CLI_ASSET=""
 CLI_SOURCE=""
+REQUIRE_UPDATER_ARTIFACTS="${JOLT_REQUIRE_UPDATER_ARTIFACTS:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -116,6 +120,17 @@ case "$BUNDLE_KIND" in
     exit 2
     ;;
 esac
+
+if [[ "$REQUIRE_UPDATER_ARTIFACTS" == "1" ]]; then
+  if [[ "$UPDATER_ASSET" != "$CONSOLE_ASSET" && ! -f "$DIST_DIR/$UPDATER_ASSET" ]]; then
+    echo "Missing updater payload: $DIST_DIR/$UPDATER_ASSET" >&2
+    exit 1
+  fi
+  if [[ ! -f "$DIST_DIR/$UPDATER_ASSET.sig" ]]; then
+    echo "Missing updater signature: $DIST_DIR/$UPDATER_ASSET.sig" >&2
+    exit 1
+  fi
+fi
 
 cp "$CLI_SOURCE" "$DIST_DIR/$CLI_ASSET"
 chmod 0755 "$DIST_DIR/$CLI_ASSET"

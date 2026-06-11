@@ -55,7 +55,9 @@ The script:
 - runs `tauri build` with a host-appropriate bundle kind.
 
 The default bundle kind is `appimage` on Linux, `dmg` on macOS, and `nsis` on
-Windows. It can be selected explicitly:
+Windows. Tagged macOS release builds request Tauri's `app,dmg` bundle targets so
+the release includes both the user-installable DMG and the signed `.app.tar.gz`
+updater payload. The public bundle kind can be selected explicitly:
 
 ```bash
 scripts/package-jolt-console.sh --bundle appimage
