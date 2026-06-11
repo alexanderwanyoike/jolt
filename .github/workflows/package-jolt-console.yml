@@ -105,6 +105,8 @@ jobs:
 
       - name: Normalize artifact names
         shell: bash
+        env:
+          JOLT_REQUIRE_UPDATER_ARTIFACTS: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '0' }}
         run: |
           scripts/normalize-jolt-console-artifacts.sh \
             --bundle "${{ matrix.bundle }}" \

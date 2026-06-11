@@ -64,6 +64,7 @@ const requiredMarkers = {
     "Prefetching Tauri AppImage helper binaries",
     "linuxdeploy-x86_64.AppImage",
     "JOLT_CREATE_UPDATER_ARTIFACTS",
+    "app,dmg",
     "createUpdaterArtifacts"
   ],
   normalizeArtifacts: [
@@ -76,6 +77,7 @@ const requiredMarkers = {
     "target/release/bundle/dmg",
     "target/release/bundle/macos",
     "target/release/bundle/nsis",
+    "JOLT_REQUIRE_UPDATER_ARTIFACTS",
     "sha256sum",
     "shasum -a 256"
   ],

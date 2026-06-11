@@ -167,6 +167,11 @@ case "$BUNDLE_KIND" in
     ;;
 esac
 
+TAURI_BUNDLE_KIND="$BUNDLE_KIND"
+if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" && "$BUNDLE_KIND" == "dmg" ]]; then
+  TAURI_BUNDLE_KIND="app,dmg"
+fi
+
 BIN_EXT=""
 if [[ "$TARGET_TRIPLE" == *windows* ]]; then
   BIN_EXT=".exe"
@@ -181,6 +186,7 @@ Jolt Console v0 packaging plan
   console:       $CONSOLE_DIR
   target triple: $TARGET_TRIPLE
   bundle kind:   $BUNDLE_KIND
+  tauri bundles: $TAURI_BUNDLE_KIND
   daemon binary: $HOST_BIN
   sidecar:       $SIDECAR_BIN
   prepare only:  $PREPARE_ONLY
@@ -229,8 +235,8 @@ if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" ]]; then
   export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
 fi
 
-echo "==> Building Tauri $BUNDLE_KIND bundle"
-TAURI_BUILD_ARGS=(build -- --bundles "$BUNDLE_KIND")
+echo "==> Building Tauri $TAURI_BUNDLE_KIND bundle"
+TAURI_BUILD_ARGS=(build -- --bundles "$TAURI_BUNDLE_KIND")
 if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" ]]; then
   TAURI_BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
 fi
