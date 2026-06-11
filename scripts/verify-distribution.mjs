@@ -23,6 +23,7 @@ const requiredMarkers = {
     "scripts/package-jolt-console.sh",
     "scripts/normalize-jolt-console-artifacts.sh",
     "scripts/assemble-jolt-console-release.sh",
+    "shell: bash",
     "jolt-console-x86_64.AppImage",
     "jolt-console-aarch64.dmg",
     "jolt-console-aarch64.app.tar.gz",

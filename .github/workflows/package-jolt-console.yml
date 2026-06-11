@@ -104,6 +104,7 @@ jobs:
         run: scripts/package-jolt-console.sh --bundle "${{ matrix.bundle }}"
 
       - name: Normalize artifact names
+        shell: bash
         run: |
           scripts/normalize-jolt-console-artifacts.sh \
             --bundle "${{ matrix.bundle }}" \
