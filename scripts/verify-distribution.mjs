@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 const files = {
   workflow: readFileSync(".github/workflows/package-jolt-console.yml", "utf8"),
+  tauriConfig: readFileSync("apps/jolt-console/src-tauri/tauri.conf.json", "utf8"),
   installer: readFileSync("scripts/install-jolt-console.sh", "utf8"),
   packageScript: readFileSync("scripts/package-jolt-console.sh", "utf8"),
   normalizeArtifacts: readFileSync("scripts/normalize-jolt-console-artifacts.sh", "utf8"),
@@ -50,6 +51,7 @@ const requiredMarkers = {
     "run_with_retries",
     ".local/bin"
   ],
+  tauriConfig: ["icons/icon.png", "icons/icon.ico"],
   packageScript: [
     "target/release/bundle/appimage",
     "target/release/bundle/dmg",
