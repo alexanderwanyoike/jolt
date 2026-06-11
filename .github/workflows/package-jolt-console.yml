@@ -9,6 +9,8 @@ on:
       - "apps/jolt-console/**"
       - "crates/**"
       - "scripts/package-jolt-console.sh"
+      - "scripts/normalize-jolt-console-artifacts.sh"
+      - "scripts/assemble-jolt-console-release.sh"
       - "scripts/install-jolt-console.sh"
       - "scripts/verify-distribution.mjs"
       - "scripts/write-jolt-console-update-manifest.mjs"
@@ -102,68 +104,14 @@ jobs:
         run: scripts/package-jolt-console.sh --bundle "${{ matrix.bundle }}"
 
       - name: Normalize artifact names
-        shell: bash
-        env:
-          BUNDLE_KIND: ${{ matrix.bundle }}
-          DIST_DIR: dist/${{ matrix.artifact_name }}
-          CONSOLE_ASSET: ${{ matrix.console_asset }}
-          UPDATER_ASSET: ${{ matrix.updater_asset }}
-          CLI_ASSET: ${{ matrix.cli_asset }}
-          CLI_SOURCE: ${{ matrix.cli_source }}
         run: |
-          set -euo pipefail
-
-          hash_file() {
-            local file="$1"
-            local dir
-            local base
-            dir="$(dirname "$file")"
-            base="$(basename "$file")"
-            if command -v sha256sum >/dev/null 2>&1; then
-              (cd "$dir" && sha256sum "$base" > "$base.sha256")
-            else
-              (cd "$dir" && shasum -a 256 "$base" > "$base.sha256")
-            fi
-          }
-
-          mkdir -p "$DIST_DIR"
-
-          case "$BUNDLE_KIND" in
-            appimage)
-              cp target/release/bundle/appimage/*.AppImage "$DIST_DIR/$CONSOLE_ASSET"
-              if compgen -G "target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
-                cp target/release/bundle/appimage/*.AppImage.sig "$DIST_DIR/$UPDATER_ASSET.sig"
-              fi
-              ;;
-            dmg)
-              cp target/release/bundle/dmg/*.dmg "$DIST_DIR/$CONSOLE_ASSET"
-              if compgen -G "target/release/bundle/macos/*.app.tar.gz" > /dev/null; then
-                cp target/release/bundle/macos/*.app.tar.gz "$DIST_DIR/$UPDATER_ASSET"
-              fi
-              if compgen -G "target/release/bundle/macos/*.app.tar.gz.sig" > /dev/null; then
-                cp target/release/bundle/macos/*.app.tar.gz.sig "$DIST_DIR/$UPDATER_ASSET.sig"
-              fi
-              ;;
-            nsis)
-              cp target/release/bundle/nsis/*-setup.exe "$DIST_DIR/$CONSOLE_ASSET"
-              if compgen -G "target/release/bundle/nsis/*-setup.exe.sig" > /dev/null; then
-                cp target/release/bundle/nsis/*-setup.exe.sig "$DIST_DIR/$UPDATER_ASSET.sig"
-              fi
-              ;;
-            *)
-              echo "Unsupported bundle kind: $BUNDLE_KIND" >&2
-              exit 2
-              ;;
-          esac
-
-          cp "$CLI_SOURCE" "$DIST_DIR/$CLI_ASSET"
-          chmod 0755 "$DIST_DIR/$CLI_ASSET"
-
-          hash_file "$DIST_DIR/$CONSOLE_ASSET"
-          hash_file "$DIST_DIR/$CLI_ASSET"
-          if [[ -f "$DIST_DIR/$UPDATER_ASSET" && "$UPDATER_ASSET" != "$CONSOLE_ASSET" ]]; then
-            hash_file "$DIST_DIR/$UPDATER_ASSET"
-          fi
+          scripts/normalize-jolt-console-artifacts.sh \
+            --bundle "${{ matrix.bundle }}" \
+            --dist-dir "dist/${{ matrix.artifact_name }}" \
+            --console-asset "${{ matrix.console_asset }}" \
+            --updater-asset "${{ matrix.updater_asset }}" \
+            --cli-asset "${{ matrix.cli_asset }}" \
+            --cli-source "${{ matrix.cli_source }}"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -193,31 +141,7 @@ jobs:
           path: dist
 
       - name: Assemble release assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release
-          find dist -maxdepth 2 -type f -exec cp {} release/ \;
-
-          test -f release/jolt-console-x86_64.AppImage.sig
-          test -f release/jolt-console-aarch64.app.tar.gz.sig
-          test -f release/jolt-console-x86_64-setup.exe.sig
-          test -f release/jolt-linux-x86_64.sha256
-          test -f release/jolt-macos-aarch64.sha256
-          test -f release/jolt-windows-x86_64.exe.sha256
-
-          node scripts/write-jolt-console-update-manifest.mjs \
-            "$GITHUB_REF_NAME" \
-            release/latest.json \
-            linux-x86_64 \
-            release/jolt-console-x86_64.AppImage.sig \
-            jolt-console-x86_64.AppImage \
-            darwin-aarch64 \
-            release/jolt-console-aarch64.app.tar.gz.sig \
-            jolt-console-aarch64.app.tar.gz \
-            windows-x86_64 \
-            release/jolt-console-x86_64-setup.exe.sig \
-            jolt-console-x86_64-setup.exe
+        run: scripts/assemble-jolt-console-release.sh --tag "$GITHUB_REF_NAME"
 
       - name: Upload combined release artifact
         uses: actions/upload-artifact@v4
