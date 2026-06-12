@@ -41,8 +41,14 @@ const requiredMarkers = {
     "JOLT_INSTALL_DIR",
     "jolt-console-x86_64.AppImage",
     "jolt-linux-x86_64",
+    "jolt-macos-aarch64",
+    "jolt-windows-x86_64.exe",
+    "JOLT_INSTALL_OS",
+    "JOLT_INSTALL_ARCH",
     "JOLT_CLI_ASSET_NAME",
     "JOLT_CLI_BIN_NAME",
+    "jolt.exe",
+    "Console direct install is only supported for the Linux AppImage.",
     "--cli-only",
     "--console-only",
     "releases/latest",
@@ -113,6 +119,8 @@ const requiredMarkers = {
     "jolt-console-aarch64.dmg",
     "jolt-console-aarch64.app.tar.gz",
     "jolt-console-x86_64-setup.exe",
+    "jolt-macos-aarch64",
+    "jolt-windows-x86_64.exe",
     "jolt --version",
     "--cli-only"
   ],
@@ -123,7 +131,7 @@ const requiredMarkers = {
     "jolt-console-x86_64-setup.exe",
     "install-jolt-console.sh"
   ],
-  installCliCard: ["jolt-linux-x86_64", "jolt-console", "jolt", "--cli-only"]
+  installCliCard: ["jolt-linux-x86_64", "jolt-macos-aarch64", "jolt-windows-x86_64.exe", "jolt-console", "jolt", "--cli-only"]
 };
 
 for (const [fileName, markers] of Object.entries(requiredMarkers)) {
