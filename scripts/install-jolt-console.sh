@@ -3,21 +3,86 @@ set -euo pipefail
 
 REPO="${JOLT_REPO:-alexanderwanyoike/jolt}"
 VERSION="${JOLT_VERSION:-latest}"
-CONSOLE_ASSET_NAME="${JOLT_CONSOLE_ASSET_NAME:-${JOLT_ASSET_NAME:-jolt-console-x86_64.AppImage}}"
-CLI_ASSET_NAME="${JOLT_CLI_ASSET_NAME:-jolt-linux-x86_64}"
-INSTALL_DIR="${JOLT_INSTALL_DIR:-$HOME/.local/bin}"
 STATE_DIR="${JOLT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/jolt-console}"
-CONSOLE_BIN_NAME="${JOLT_CONSOLE_BIN_NAME:-${JOLT_BIN_NAME:-jolt-console}}"
-CLI_BIN_NAME="${JOLT_CLI_BIN_NAME:-jolt}"
-INSTALL_CONSOLE="${JOLT_INSTALL_CONSOLE:-1}"
-INSTALL_CLI="${JOLT_INSTALL_CLI:-1}"
 CHECK_ONLY=0
 DRY_RUN=0
 FORCE=0
 
+detect_os() {
+  case "$(uname -s)" in
+    Linux*)
+      printf 'linux\n'
+      ;;
+    Darwin*)
+      printf 'darwin\n'
+      ;;
+    MINGW*|MSYS*|CYGWIN*|Windows_NT)
+      printf 'windows\n'
+      ;;
+    *)
+      echo "Unsupported install host OS: $(uname -s)" >&2
+      exit 2
+      ;;
+  esac
+}
+
+detect_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64|AMD64)
+      printf 'x86_64\n'
+      ;;
+    arm64|aarch64)
+      printf 'aarch64\n'
+      ;;
+    *)
+      echo "Unsupported install host architecture: $(uname -m)" >&2
+      exit 2
+      ;;
+  esac
+}
+
+INSTALL_OS="${JOLT_INSTALL_OS:-$(detect_os)}"
+INSTALL_ARCH="${JOLT_INSTALL_ARCH:-$(detect_arch)}"
+
+case "$INSTALL_OS-$INSTALL_ARCH" in
+  linux-x86_64)
+    DEFAULT_CONSOLE_ASSET_NAME="jolt-console-x86_64.AppImage"
+    DEFAULT_CLI_ASSET_NAME="jolt-linux-x86_64"
+    DEFAULT_CLI_BIN_NAME="jolt"
+    DEFAULT_INSTALL_CONSOLE=1
+    CONSOLE_DIRECT_INSTALL=1
+    ;;
+  darwin-aarch64)
+    DEFAULT_CONSOLE_ASSET_NAME="jolt-console-aarch64.dmg"
+    DEFAULT_CLI_ASSET_NAME="jolt-macos-aarch64"
+    DEFAULT_CLI_BIN_NAME="jolt"
+    DEFAULT_INSTALL_CONSOLE=0
+    CONSOLE_DIRECT_INSTALL=0
+    ;;
+  windows-x86_64)
+    DEFAULT_CONSOLE_ASSET_NAME="jolt-console-x86_64-setup.exe"
+    DEFAULT_CLI_ASSET_NAME="jolt-windows-x86_64.exe"
+    DEFAULT_CLI_BIN_NAME="jolt.exe"
+    DEFAULT_INSTALL_CONSOLE=0
+    CONSOLE_DIRECT_INSTALL=0
+    ;;
+  *)
+    echo "Unsupported Jolt install target: $INSTALL_OS-$INSTALL_ARCH" >&2
+    exit 2
+    ;;
+esac
+
+CONSOLE_ASSET_NAME="${JOLT_CONSOLE_ASSET_NAME:-${JOLT_ASSET_NAME:-$DEFAULT_CONSOLE_ASSET_NAME}}"
+CLI_ASSET_NAME="${JOLT_CLI_ASSET_NAME:-$DEFAULT_CLI_ASSET_NAME}"
+INSTALL_DIR="${JOLT_INSTALL_DIR:-$HOME/.local/bin}"
+CONSOLE_BIN_NAME="${JOLT_CONSOLE_BIN_NAME:-${JOLT_BIN_NAME:-jolt-console}}"
+CLI_BIN_NAME="${JOLT_CLI_BIN_NAME:-$DEFAULT_CLI_BIN_NAME}"
+INSTALL_CONSOLE="${JOLT_INSTALL_CONSOLE:-$DEFAULT_INSTALL_CONSOLE}"
+INSTALL_CLI="${JOLT_INSTALL_CLI:-1}"
+
 usage() {
   cat <<'USAGE'
-Install or update Jolt Console and the Jolt CLI from Linux GitHub release assets.
+Install or update Jolt Console and the Jolt CLI from GitHub release assets.
 
 Usage:
   scripts/install-jolt-console.sh [--check] [--update] [--force] [--dry-run] [--cli-only] [--console-only]
@@ -29,7 +94,8 @@ Options:
   --force         Reinstall even when the recorded version is already current.
   --dry-run       Print the resolved install plan without downloading.
   --cli-only      Install or check only the headless jolt CLI binary.
-  --console-only  Install or check only Jolt Console.
+  --console-only  Install or check only Jolt Console. Direct Console install is
+                  currently supported only for the Linux AppImage.
   --help          Show this help.
 
 Environment:
@@ -37,8 +103,10 @@ Environment:
   JOLT_VERSION              Release tag to install, or latest. Default latest.
   JOLT_INSTALL_DIR          Install directory. Default $HOME/.local/bin.
   JOLT_STATE_DIR            State directory for recorded versions.
-  JOLT_CONSOLE_ASSET_NAME   Linux Console release asset. Default jolt-console-x86_64.AppImage.
-  JOLT_CLI_ASSET_NAME       Linux CLI release asset. Default jolt-linux-x86_64.
+  JOLT_INSTALL_OS           Override host OS detection: linux, darwin, windows.
+  JOLT_INSTALL_ARCH         Override host architecture detection: x86_64, aarch64.
+  JOLT_CONSOLE_ASSET_NAME   Console release asset. Platform-specific default.
+  JOLT_CLI_ASSET_NAME       CLI release asset. Platform-specific default.
   JOLT_CONSOLE_BIN_NAME     Console command name. Default jolt-console.
   JOLT_CLI_BIN_NAME         CLI command name. Default jolt.
   JOLT_INSTALL_CONSOLE      Set to 0 to skip Console.
@@ -129,6 +197,14 @@ INSTALL_CLI="$(normalize_bool "$INSTALL_CLI" "JOLT_INSTALL_CLI")"
 
 if [[ "$INSTALL_CONSOLE" -eq 0 && "$INSTALL_CLI" -eq 0 ]]; then
   echo "Nothing selected to install; enable Console, CLI, or both." >&2
+  exit 2
+fi
+
+if [[ "$INSTALL_CONSOLE" -eq 1 && "$CONSOLE_DIRECT_INSTALL" -eq 0 ]]; then
+  cat >&2 <<ERROR
+Console direct install is only supported for the Linux AppImage.
+Use --cli-only to install the $INSTALL_OS-$INSTALL_ARCH CLI, and install $CONSOLE_ASSET_NAME manually.
+ERROR
   exit 2
 fi
 
@@ -260,6 +336,7 @@ cat <<PLAN
 Jolt install plan
   repo:              $REPO
   release:           $RESOLVED_VERSION
+  platform:          $INSTALL_OS-$INSTALL_ARCH
   install dir:       $INSTALL_DIR
   state dir:         $STATE_DIR
   check only:        $CHECK_ONLY

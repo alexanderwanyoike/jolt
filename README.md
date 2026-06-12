@@ -299,13 +299,29 @@ Install or update Jolt Console and the user-callable `jolt` CLI with:
 curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | bash
 ```
 
-On Linux, the installer downloads the latest `jolt-console-x86_64.AppImage` and
-`jolt-linux-x86_64` release assets to:
+The installer detects the host platform. On Linux, it downloads the latest
+`jolt-console-x86_64.AppImage` and `jolt-linux-x86_64` release assets to:
 
 ```text
 ~/.local/bin/jolt-console
 ~/.local/bin/jolt
 ```
+
+On macOS, the same installer downloads the `jolt-macos-aarch64` CLI to:
+
+```text
+~/.local/bin/jolt
+```
+
+On Windows, run the installer from Git Bash or another Bash-compatible shell. It
+downloads the `jolt-windows-x86_64.exe` CLI to:
+
+```text
+~/.local/bin/jolt.exe
+```
+
+The macOS DMG and Windows setup EXE remain user-facing Console installers; the
+Bash installer does not drop those installer packages into `~/.local/bin`.
 
 Run the same command again to update both commands when a new tagged release is
 available.
@@ -342,6 +358,9 @@ Install only the headless `jolt` CLI for a relay or server:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | bash -s -- --cli-only
 ```
+
+On macOS and Windows, the default Bash installer path is already CLI-only. Use
+the DMG or setup EXE from the release page for Console.
 
 Install a specific version:
 

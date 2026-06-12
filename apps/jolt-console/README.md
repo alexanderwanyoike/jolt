@@ -86,6 +86,11 @@ Tagged releases can be installed or updated with:
 curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/jolt/main/scripts/install-jolt-console.sh | bash
 ```
 
+The Bash installer installs Console plus CLI on Linux. On macOS it installs the
+standalone `jolt-macos-aarch64` CLI, and on Windows under Git Bash/MSYS it
+installs the standalone `jolt-windows-x86_64.exe` CLI. Use the DMG or setup EXE
+for the platform Console installer.
+
 Packaged Console builds check for signed updates through Tauri's updater plugin.
 The updater reads `latest.json` from GitHub Releases, verifies the platform
 artifact signature with the public key committed in `tauri.conf.json`, and
