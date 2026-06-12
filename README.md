@@ -272,6 +272,19 @@ latest.json
 The macOS `.app.tar.gz` asset is the signed Tauri updater payload; the `.dmg`
 is the user-facing installer image.
 
+Current macOS releases are not Apple Developer ID signed or notarized yet. If
+macOS says `Jolt Console.app` is damaged after dragging it from the DMG into
+`/Applications`, remove the download quarantine attribute and reopen it:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Jolt Console.app"
+open "/Applications/Jolt Console.app"
+```
+
+This is a v0 distribution workaround for the unsigned DMG, not the long-term
+install story. Production macOS releases should use Apple signing and
+notarization.
+
 Prerequisite:
 
 - Rust 1.89+
