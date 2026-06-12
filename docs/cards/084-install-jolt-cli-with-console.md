@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** v0 Endgame  
-**Status:** In PR
+**Status:** Extended in PR
 **Blocked by:** 077, 083
 
 ## Why
@@ -24,10 +24,15 @@ CLI, daemon, and relay operator binary.
 
 ## What to Build
 
-- Publish a standalone Linux `jolt` binary asset from the same tagged release
-  as Jolt Console.
+- Publish standalone Linux, macOS, and Windows `jolt` binary assets from the
+  same tagged release as Jolt Console.
 - Extend the install script so the normal curl install installs or updates both
   `jolt-console` and `jolt`.
+- Make CLI install asset selection platform-aware:
+  - Linux x86_64: `jolt-linux-x86_64` as `jolt`.
+  - macOS Apple Silicon: `jolt-macos-aarch64` as `jolt`.
+  - Windows x86_64 under Git Bash/MSYS: `jolt-windows-x86_64.exe` as
+    `jolt.exe`.
 - Keep the Console AppImage sidecar behavior unchanged; Console can still use
   its bundled sidecar.
 - Record installed versions for both assets.
@@ -41,10 +46,14 @@ Concrete v0 release assets:
 ```text
 jolt-console-x86_64.AppImage
 jolt-linux-x86_64
+jolt-macos-aarch64
+jolt-windows-x86_64.exe
 ```
 
-The default install path creates both `jolt-console` and `jolt`. Headless
-relay/server installs can use:
+The Linux default install path creates both `jolt-console` and `jolt`. macOS and
+Windows default to CLI-only because the DMG and setup EXE are user-facing
+Console installers, not direct shell commands. Headless relay/server installs
+can use:
 
 ```bash
 scripts/install-jolt-console.sh --cli-only
@@ -53,8 +62,13 @@ scripts/install-jolt-console.sh --cli-only
 ## Acceptance Criteria
 
 - [x] Tagged releases publish `jolt-console-x86_64.AppImage`.
-- [x] Tagged releases publish a standalone Linux `jolt` binary or tarball.
-- [x] Curl install creates executable `jolt-console` and `jolt` commands.
+- [x] Tagged releases publish standalone Linux, macOS, and Windows `jolt`
+      binaries.
+- [x] Curl install creates executable `jolt-console` and `jolt` commands on
+      Linux.
+- [x] Curl install creates executable `jolt` on macOS.
+- [x] Curl install creates executable `jolt.exe` on Windows under Git
+      Bash/MSYS.
 - [x] `jolt --version` or equivalent reports the tagged version.
 - [x] Existing Console auto-update behavior still works.
 - [x] Installer can check whether either installed asset is stale.
@@ -63,7 +77,7 @@ scripts/install-jolt-console.sh --cli-only
 
 ## Non-Goals
 
-- macOS/Windows packaging.
+- Native macOS/Windows Console installer automation from the Bash installer.
 - OS service installation.
 - Relay configuration UX.
 - Installing Pastey or Spoke.
@@ -81,6 +95,7 @@ installer does not expose it as a user-callable CLI yet.
 - Green: `bash -n scripts/install-jolt-console.sh`
 - Green: `JOLT_VERSION=v0.3.2 JOLT_INSTALL_DIR=/tmp/jolt-install-check/bin JOLT_STATE_DIR=/tmp/jolt-install-check/state bash scripts/install-jolt-console.sh --dry-run`
 - Green: `JOLT_VERSION=v0.3.2 JOLT_INSTALL_DIR=/tmp/jolt-install-check/bin JOLT_STATE_DIR=/tmp/jolt-install-check/state bash scripts/install-jolt-console.sh --cli-only --dry-run`
+- Green: `./scripts/test-install-jolt-console.sh`
 - Green: fake-current-state `--check` reports both Jolt Console and Jolt CLI
   up to date when both version files and executables exist.
 - Green: `cargo run --locked -p jolt-node -- --version`

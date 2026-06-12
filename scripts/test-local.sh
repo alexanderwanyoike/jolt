@@ -10,3 +10,4 @@ echo "==> This excludes the Tauri desktop shell, which has native Linux WebKit/G
 
 cargo test --locked --workspace --exclude jolt-console
 ./scripts/test-pastey-two-node-demo-harness.sh
+./scripts/test-install-jolt-console.sh
