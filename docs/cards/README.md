@@ -70,6 +70,8 @@ The next direction is:
 7. Private app data follows encryption grants and explicit rewrap, not
    automatic plaintext sync.
 8. Spoke and Pastey remain the proving apps. Do not build a Jolt browser yet.
+9. Jolt needs a public website and lightweight RFC process so the project
+   thesis and protocol decisions are durable outside chat and PR descriptions.
 
 The immediate sequence is:
 
@@ -87,6 +89,16 @@ The immediate sequence is:
    identity while content fetch/cache/pin stays explicit.
 7. [097](097-private-content-device-access-v0.md): make private content access
    work honestly across authorized devices.
+
+The project communication sequence is:
+
+1. [104](104-jolt-website-strategy.md): decide the website audience, message,
+   structure, and ownership.
+2. [105](105-jolt-website-v0.md): build the first public website.
+3. [106](106-rfc-process-v0.md): define a lightweight RFC lifecycle and
+   template.
+4. [107](107-seed-rfcs-v0.md): create the first RFCs for identity, device,
+   encryption, community, and app-session decisions.
 
 Supporting cards:
 
@@ -134,6 +146,11 @@ Supporting cards:
   user identity without automatic byte sync.
 - [097](097-private-content-device-access-v0.md): extend private content
   encryption to authorized devices and explicit historical rewrap.
+- [104](104-jolt-website-strategy.md): decide how Jolt explains itself publicly.
+- [105](105-jolt-website-v0.md): build the first static public website.
+- [106](106-rfc-process-v0.md): define the lightweight RFC process.
+- [107](107-seed-rfcs-v0.md): capture the first compatibility-shaping decisions
+  as RFCs.
 - [062](062-console-native-presence-and-permission-focus-v0.md): native Console
   presence and focus permission prompts, still deferred until product pressure
   justifies cross-platform OS integration.
@@ -296,6 +313,10 @@ into the protocol layer.
 | [095](095-identity-scoped-app-grants-v0.md) | AFK after design | Ready after 092 and 093 | Scope app grants to one app, one device, and one user identity. |
 | [096](096-app-data-follows-identity-v0.md) | AFK after design | Ready after 094 and 095 | Let app indexes follow the identity while content bytes remain fetch/cache/pin policy. |
 | [097](097-private-content-device-access-v0.md) | AFK after design | Ready after 093 and 096 | Extend private content access to authorized devices with explicit historical rewrap. |
+| [104](104-jolt-website-strategy.md) | HITL | Discussion next | Decide the website audience, message, structure, and ownership. |
+| [105](105-jolt-website-v0.md) | AFK after strategy | Ready after 104 | Build the first static public website for Jolt. |
+| [106](106-rfc-process-v0.md) | HITL | Discussion next | Define a lightweight RFC process and template. |
+| [107](107-seed-rfcs-v0.md) | AFK after process | Ready after 106 | Create seed RFCs for identity, device, encryption, community, and app-session decisions. |
 
 ## Card Format
 
