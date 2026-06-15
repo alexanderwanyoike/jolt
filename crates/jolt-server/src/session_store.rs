@@ -222,6 +222,24 @@ impl AppSessionStore {
             .collect()
     }
 
+    pub async fn requested_capabilities(
+        &self,
+        request_id: &str,
+    ) -> Result<Vec<String>, AppSessionStoreError> {
+        let state = self.state.lock().await;
+        let record = state
+            .records
+            .iter()
+            .find(|record| record.request_id == request_id)
+            .ok_or_else(|| AppSessionStoreError::RequestNotFound(request_id.to_string()))?;
+        if record.status != AppSessionStatus::Pending {
+            return Err(AppSessionStoreError::RequestNotPending(
+                request_id.to_string(),
+            ));
+        }
+        Ok(record.requested_capabilities.clone())
+    }
+
     pub async fn approve_request(
         &self,
         request_id: &str,

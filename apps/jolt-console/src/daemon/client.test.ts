@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addBootstrapRelay,
   clearHomeRelay,
+  createLocalIdentity,
   loadAppPermissions,
   loadDaemonPayload,
   loadNetworkSettings,
   removeBootstrapRelay,
+  selectLocalIdentity,
   setHomeRelay,
   tauriDaemonClient,
   type DaemonClient
@@ -98,7 +100,18 @@ describe("loadDaemonPayload", () => {
             }
           ];
         }
-        if (path === "/api/v1/published") return [{ content_id: "cid", size: 1 }];
+        if (path === "/api/v1/published") {
+          return [
+            { content_id: "cid", size: 1, address: "alice.jolt/demo" },
+            { content_id: "other", size: 1, address: "work.jolt/demo" }
+          ];
+        }
+        if (path === "/admin/v1/identities") {
+          return {
+            active_identity: "alice.jolt",
+            identities: [{ address: "alice.jolt", label: "Default", active: true }]
+          };
+        }
         throw new Error(path);
       }),
       post: vi.fn()
@@ -124,7 +137,43 @@ describe("loadDaemonPayload", () => {
           pinned: true
         }
       ],
-      published: [{ content_id: "cid", size: 1 }]
+      published: [{ content_id: "cid", size: 1, address: "alice.jolt/demo" }],
+      localIdentities: {
+        active_identity: "alice.jolt",
+        identities: [{ address: "alice.jolt", label: "Default", active: true }]
+      }
+    });
+  });
+});
+
+describe("local identity helpers", () => {
+  it("routes local identity creation and selection through admin endpoints", async () => {
+    const identities = {
+      active_identity: "work.jolt",
+      identities: [
+        { address: "alice.jolt", label: "Default", active: false },
+        { address: "work.jolt", label: "Work", active: true }
+      ]
+    };
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(),
+      post: vi
+        .fn()
+        .mockResolvedValueOnce({ address: "work.jolt", label: "Work", active: false })
+        .mockResolvedValueOnce(identities)
+    };
+
+    await expect(createLocalIdentity(client, "Work")).resolves.toEqual({
+      address: "work.jolt",
+      label: "Work",
+      active: false
+    });
+    await expect(selectLocalIdentity(client, "work.jolt")).resolves.toEqual(identities);
+
+    expect(client.post).toHaveBeenNthCalledWith(1, "/admin/v1/identities", { label: "Work" });
+    expect(client.post).toHaveBeenNthCalledWith(2, "/admin/v1/identities/active", {
+      identity: "work.jolt"
     });
   });
 });
@@ -136,6 +185,12 @@ describe("loadAppPermissions", () => {
       get: vi.fn(async (path: string) => {
         if (path === "/admin/v1/app-requests") return [{ request_id: "req_1" }];
         if (path === "/admin/v1/app-sessions") return [{ session_id: "sess_1" }];
+        if (path === "/admin/v1/identities") {
+          return {
+            active_identity: "alice.jolt",
+            identities: [{ address: "alice.jolt", label: "Default", active: true }]
+          };
+        }
         throw new Error(path);
       }),
       post: vi.fn()
@@ -143,7 +198,11 @@ describe("loadAppPermissions", () => {
 
     await expect(loadAppPermissions(client)).resolves.toEqual({
       requests: [{ request_id: "req_1" }],
-      sessions: [{ session_id: "sess_1" }]
+      sessions: [{ session_id: "sess_1" }],
+      localIdentities: {
+        active_identity: "alice.jolt",
+        identities: [{ address: "alice.jolt", label: "Default", active: true }]
+      }
     });
   });
 });

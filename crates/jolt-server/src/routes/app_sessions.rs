@@ -45,7 +45,25 @@ pub async fn approve_request(
     Json(mut request): Json<ApproveAppSessionRequest>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
     if request.identity.is_none() {
-        request.identity = state.daemon.local_identity_address().map(ToOwned::to_owned);
+        request.identity = state.local_identities.active_identity().await;
+    }
+    let effective_capabilities = if request.capabilities.is_empty() {
+        state.sessions.requested_capabilities(&request_id).await?
+    } else {
+        request.capabilities.clone()
+    };
+    if capabilities_require_daemon_identity(&effective_capabilities) {
+        let identity = request
+            .identity
+            .as_deref()
+            .ok_or(AppSessionApiError::Store(
+                AppSessionStoreError::MissingIdentity,
+            ))?;
+        if !identity_can_receive_daemon_capabilities(&state, identity).await? {
+            return Err(AppSessionApiError::LocalIdentityCapability {
+                identity: identity.to_string(),
+            });
+        }
     }
     let response = state.sessions.approve_request(&request_id, request).await?;
     if grants_private_content_authority(&response.capabilities) {
@@ -79,6 +97,7 @@ pub async fn revoke_session(
 pub enum AppSessionApiError {
     Store(AppSessionStoreError),
     Network(NetworkError),
+    LocalIdentityCapability { identity: String },
 }
 
 impl IntoResponse for AppSessionApiError {
@@ -91,6 +110,16 @@ impl IntoResponse for AppSessionApiError {
                     Json(json!({
                         "code": "app_session_daemon_error",
                         "error": err.to_string()
+                    })),
+                )
+                    .into_response();
+            }
+            Self::LocalIdentityCapability { identity } => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "code": "app_session_identity_not_signable",
+                        "error": format!("identity {identity} cannot receive local publish, inventory, encryption, or decrypt capabilities yet")
                     })),
                 )
                     .into_response();
@@ -143,6 +172,29 @@ fn grants_private_content_authority(capabilities: &[String]) -> bool {
             || capability.starts_with("decrypt:")
             || capability.starts_with("publish:encrypted:")
     })
+}
+
+fn capabilities_require_daemon_identity(capabilities: &[String]) -> bool {
+    capabilities.iter().any(|capability| {
+        capability.starts_with("publish:")
+            || capability.starts_with("inventory:")
+            || capability.starts_with("pin:own:")
+            || capability.starts_with("encrypt:")
+            || capability.starts_with("decrypt:")
+    })
+}
+
+async fn identity_can_receive_daemon_capabilities(
+    state: &AppState,
+    identity: &str,
+) -> Result<bool, AppSessionApiError> {
+    if state.local_identities.is_daemon_identity(identity).await {
+        return Ok(true);
+    }
+    if !state.local_identities.contains(identity).await {
+        return Ok(true);
+    }
+    Ok(state.daemon.status().await?.identity_address == identity)
 }
 
 fn bearer_token(headers: &HeaderMap) -> Result<&str, AppSessionStoreError> {

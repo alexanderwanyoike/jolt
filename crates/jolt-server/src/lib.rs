@@ -1,4 +1,5 @@
 pub mod error;
+pub mod local_identities;
 pub mod network_settings;
 pub mod routes;
 pub mod server;

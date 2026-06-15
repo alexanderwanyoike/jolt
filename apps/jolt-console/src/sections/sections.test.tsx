@@ -75,10 +75,38 @@ function snapshot(overrides: Partial<DaemonSnapshot> = {}): DaemonSnapshot {
         pin_state: "pinned"
       }
     ],
+    localIdentities: {
+      active_identity: "alice.jolt",
+      identities: [
+        { address: "alice.jolt", label: "Default", active: true },
+        { address: "work.jolt", label: "Work", active: false }
+      ]
+    },
     lastError: null,
     lastRefresh: new Date("2026-06-03T21:00:00Z"),
     refresh: vi.fn(async () => undefined),
     ...overrides
+  };
+}
+
+function daemonClient(): DaemonClient {
+  return {
+    daemonUrl: "http://127.0.0.1:9862",
+    get: vi.fn(),
+    post: vi.fn(async () => ({
+      active_identity: "work.jolt",
+      identities: [
+        { address: "alice.jolt", label: "Default", active: false },
+        { address: "work.jolt", label: "Work", active: true }
+      ]
+    }))
+  };
+}
+
+function localIdentitiesPayload() {
+  return {
+    active_identity: "alice.jolt",
+    identities: [{ address: "alice.jolt", label: "Default", active: true }]
   };
 }
 
@@ -93,11 +121,26 @@ describe("Console section pages", () => {
   });
 
   it("renders the current identity page", () => {
-    render(<IdentityPage snapshot={snapshot()} />);
+    render(<IdentityPage client={daemonClient()} snapshot={snapshot()} />);
 
-    expect(screen.getByText("Jolt address")).toBeInTheDocument();
-    expect(screen.getByText("alice.jolt")).toBeInTheDocument();
+    expect(screen.getByText("Active local identity")).toBeInTheDocument();
+    expect(screen.getAllByText("alice.jolt")).not.toHaveLength(0);
     expect(screen.getByText("12D3KooAlice")).toBeInTheDocument();
+    expect(screen.getByText("work.jolt")).toBeInTheDocument();
+  });
+
+  it("selects local identities from the identity page", async () => {
+    const refresh = vi.fn(async () => true);
+    const client = daemonClient();
+
+    render(<IdentityPage client={client} snapshot={snapshot({ refresh })} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Select" }));
+
+    expect(client.post).toHaveBeenCalledWith("/admin/v1/identities/active", {
+      identity: "work.jolt"
+    });
+    expect(refresh).toHaveBeenCalledOnce();
   });
 
   it("renders app permission requests and can approve, reject, and revoke grants", async () => {
@@ -167,6 +210,7 @@ describe("Console section pages", () => {
             }
           ];
         }
+        if (path === "/admin/v1/identities") return localIdentitiesPayload();
         throw new Error(`unexpected path ${path}`);
       }),
       post: vi.fn(async () => ({ ok: true }))
@@ -230,6 +274,7 @@ describe("Console section pages", () => {
           ];
         }
         if (path === "/admin/v1/app-sessions") return [];
+        if (path === "/admin/v1/identities") return localIdentitiesPayload();
         throw new Error(`unexpected path ${path}`);
       }),
       post: vi.fn(async () => ({ ok: true }))
@@ -284,6 +329,7 @@ describe("Console section pages", () => {
           ];
         }
         if (path === "/admin/v1/app-sessions") return [];
+        if (path === "/admin/v1/identities") return localIdentitiesPayload();
         throw new Error(`unexpected path ${path}`);
       }),
       post: vi.fn(async () => ({ ok: true }))
@@ -305,12 +351,55 @@ describe("Console section pages", () => {
     });
   });
 
+  it("shows the active local identity for app requests without an explicit identity", async () => {
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/app-requests") {
+          return [
+            {
+              request_id: "req_selected_identity",
+              app_id: "scratch.local",
+              app_name: "Scratch",
+              requested_identity: null,
+              requested_capabilities: ["resolve:public"],
+              granted_capabilities: [],
+              status: "pending",
+              created_at: 1_780_000_700
+            }
+          ];
+        }
+        if (path === "/admin/v1/app-sessions") return [];
+        if (path === "/admin/v1/identities") {
+          return {
+            active_identity: "work.jolt",
+            identities: [
+              { address: "alice.jolt", label: "Default", active: false },
+              { address: "work.jolt", label: "Work", active: true }
+            ]
+          };
+        }
+        throw new Error(`unexpected path ${path}`);
+      }),
+      post: vi.fn(async () => ({ ok: true }))
+    };
+
+    render(<AppsPage client={client} />);
+
+    const request = await screen.findByRole("button", { name: /request details/i });
+    expect(request).toHaveTextContent("work.jolt");
+
+    await userEvent.click(request);
+    expect(screen.getAllByText("work.jolt")).not.toHaveLength(0);
+  });
+
   it("renders apps empty state when there are no requests or sessions", async () => {
     const client: DaemonClient = {
       daemonUrl: "http://127.0.0.1:9862",
       get: vi.fn(async (path: string) => {
         if (path === "/admin/v1/app-requests") return [];
         if (path === "/admin/v1/app-sessions") return [];
+        if (path === "/admin/v1/identities") return localIdentitiesPayload();
         throw new Error(path);
       }),
       post: vi.fn()
@@ -350,6 +439,7 @@ describe("Console section pages", () => {
               ];
         }
         if (path === "/admin/v1/app-sessions") return [];
+        if (path === "/admin/v1/identities") return localIdentitiesPayload();
         throw new Error(`unexpected path ${path}`);
       }),
       post: vi.fn()
@@ -378,6 +468,7 @@ describe("Console section pages", () => {
           throw new Error("daemon offline");
         }
         if (path === "/admin/v1/app-sessions") return [];
+        if (path === "/admin/v1/identities") return localIdentitiesPayload();
         throw new Error(`unexpected path ${path}`);
       }),
       post: vi.fn()
@@ -387,17 +478,17 @@ describe("Console section pages", () => {
 
     await act(async () => {});
     expect(screen.getByText(/daemon offline/)).toBeInTheDocument();
-    expect(client.get).toHaveBeenCalledTimes(2);
+    expect(client.get).toHaveBeenCalledTimes(3);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(client.get).toHaveBeenCalledTimes(2);
+    expect(client.get).toHaveBeenCalledTimes(3);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(client.get).toHaveBeenCalledTimes(4);
+    expect(client.get).toHaveBeenCalledTimes(6);
   });
 
   it("updates active and revoked app sessions without manual refresh", async () => {
@@ -427,6 +518,7 @@ describe("Console section pages", () => {
             }
           ];
         }
+        if (path === "/admin/v1/identities") return localIdentitiesPayload();
         throw new Error(`unexpected path ${path}`);
       }),
       post: vi.fn()

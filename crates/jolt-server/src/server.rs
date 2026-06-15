@@ -7,6 +7,7 @@ use tracing::info;
 
 use jolt_network::DaemonHandle;
 
+use crate::local_identities::LocalIdentityStore;
 use crate::network_settings::NetworkSettingsStore;
 use crate::routes;
 use crate::session_store::AppSessionStore;
@@ -31,10 +32,13 @@ pub fn build_router_with_stores(
     sessions: AppSessionStore,
     network_settings: NetworkSettingsStore,
 ) -> Router {
+    let local_identities =
+        LocalIdentityStore::new(daemon.local_identity_address().map(ToOwned::to_owned));
     let state = AppState {
         daemon,
         sessions,
         network_settings,
+        local_identities,
     };
 
     Router::new()
@@ -110,6 +114,14 @@ pub fn build_router_with_stores(
         .route(
             "/admin/v1/app-sessions/{session_id}/revoke",
             post(routes::app_sessions::revoke_session),
+        )
+        .route(
+            "/admin/v1/identities",
+            get(routes::local_identities::list).post(routes::local_identities::create),
+        )
+        .route(
+            "/admin/v1/identities/active",
+            post(routes::local_identities::select_active),
         )
         .route(
             "/admin/v1/network-settings",

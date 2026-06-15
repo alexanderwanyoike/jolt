@@ -2,7 +2,7 @@
 
 **Type:** AFK after design  
 **Milestone:** Identity and Device Sprint  
-**Status:** Ready after 091  
+**Status:** In review
 **Blocked by:** 091
 
 ## Why
@@ -27,13 +27,13 @@ Add a first-class local identity selection model:
 
 ## Acceptance Criteria
 
-- [ ] A local node can hold at least two user identities.
-- [ ] Console can switch between local identities without restarting the daemon.
-- [ ] App approval prompts show which identity the app is requesting access to.
-- [ ] Published paths and inventory views are scoped to the selected identity.
-- [ ] Network settings that are node-level remain node-level, not accidentally
+- [x] A local node can hold at least two user identities.
+- [x] Console can switch between local identities without restarting the daemon.
+- [x] App approval prompts show which identity the app is requesting access to.
+- [x] Published paths and inventory views are scoped to the selected identity.
+- [x] Network settings that are node-level remain node-level, not accidentally
       per-identity.
-- [ ] Tests cover identity selection for at least one admin/API path and one app
+- [x] Tests cover identity selection for at least one admin/API path and one app
       session path.
 
 ## Non-Goals
@@ -49,3 +49,22 @@ This card should avoid turning identity switching into app semantics. Profiles,
 feeds, posts, pastes, and similar concepts remain app-owned content above the
 protocol layer.
 
+## Implementation Notes
+
+- Added admin local identity APIs for listing, creating, and selecting local
+  identities.
+- Console now loads the local identity selector, switches identities from the
+  Identity page, and filters published inventory to the active identity.
+- App approval defaults missing approval identity to the selected local identity
+  and shows that active identity in approval prompts.
+- Publish, inventory, encryption, decrypt, and pin capabilities still require
+  the daemon-signing identity. Generated local identities can be selected for
+  non-signing grants now; full publish authority for multiple local identities
+  belongs with the daemon/device writer work.
+
+## Verification
+
+- `cargo test -p jolt-server identity --test api_integration -- --nocapture`
+- `npx vitest run src/daemon/client.test.ts src/sections/sections.test.tsx src/app/App.test.tsx`
+- `npm test` from `apps/jolt-console`
+- `./scripts/test-local.sh`
