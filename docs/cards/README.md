@@ -70,8 +70,11 @@ The next direction is:
 7. Private app data follows encryption grants and explicit rewrap, not
    automatic plaintext sync.
 8. Spoke and Pastey remain the proving apps. Do not build a Jolt browser yet.
-9. Jolt needs a public website and lightweight RFC process so the project
-   thesis and protocol decisions are durable outside chat and PR descriptions.
+9. After identity/device semantics, community identities become the discovery
+   layer: apps give purpose, communities give discovery, identities give
+   ownership.
+10. Jolt needs a public website and lightweight RFC process so the project
+    thesis and protocol decisions are durable outside chat and PR descriptions.
 
 The immediate sequence is:
 
@@ -89,6 +92,21 @@ The immediate sequence is:
    identity while content fetch/cache/pin stays explicit.
 7. [097](097-private-content-device-access-v0.md): make private content access
    work honestly across authorized devices.
+
+The follow-on community discovery sequence is:
+
+1. [098](098-community-identity-and-membership-model.md): design communities as
+   Jolt identities with watch/join policy.
+2. [099](099-community-membership-v0.md): implement generic community
+   membership, join requests, open joins, and revocation.
+3. [100](100-community-scoped-app-indexes-v0.md): let apps publish/search
+   community-scoped signed indexes without relay-owned search.
+4. [101](101-default-discoverable-communities-v0.md): ship default
+   discoverable communities without auto-joining users.
+5. [102](102-spoke-community-join-v0.md): make Spoke join/read/post through
+   communities.
+6. [103](103-spoke-community-recommended-users-v0.md): recommend users from
+   community membership and activity.
 
 The project communication sequence is:
 
@@ -142,6 +160,18 @@ Supporting cards:
   user identity without automatic byte sync.
 - [097](097-private-content-device-access-v0.md): extend private content
   encryption to authorized devices and explicit historical rewrap.
+- [098](098-community-identity-and-membership-model.md): define community
+  identities, watch/join policy, membership, and discovery boundaries.
+- [099](099-community-membership-v0.md): implement generic community membership
+  and revocation.
+- [100](100-community-scoped-app-indexes-v0.md): let apps use community-scoped
+  signed indexes for discovery and local search.
+- [101](101-default-discoverable-communities-v0.md): provide default
+  discoverable communities without automatic membership.
+- [102](102-spoke-community-join-v0.md): use communities as Spoke's first
+  discovery surface.
+- [103](103-spoke-community-recommended-users-v0.md): recommend users from
+  signed community membership and activity.
 - [104](104-jolt-website-strategy.md): decide how Jolt explains itself publicly.
 - [105](105-jolt-website-v0.md): build the first static public website.
 - [106](106-rfc-process-v0.md): define the lightweight RFC process.
@@ -306,6 +336,12 @@ into the protocol layer.
 | [095](095-identity-scoped-app-grants-v0.md) | AFK after design | Ready after 092 and 093 | Scope app grants to one app, one device, and one user identity. |
 | [096](096-app-data-follows-identity-v0.md) | AFK after design | Ready after 094 and 095 | Let app indexes follow the identity while content bytes remain fetch/cache/pin policy. |
 | [097](097-private-content-device-access-v0.md) | AFK after design | Ready after 093 and 096 | Extend private content access to authorized devices with explicit historical rewrap. |
+| [098](098-community-identity-and-membership-model.md) | HITL | Ready after 091 | Define communities as Jolt identities with watch/join policy and signed membership. |
+| [099](099-community-membership-v0.md) | AFK after design | Ready after 098 | Implement generic community join, open/request policies, grants, and revocation. |
+| [100](100-community-scoped-app-indexes-v0.md) | AFK after design | Ready after 099 | Let apps publish and search community-scoped signed indexes locally. |
+| [101](101-default-discoverable-communities-v0.md) | AFK after design | Ready after 099 | Ship default discoverable communities without auto-joining users. |
+| [102](102-spoke-community-join-v0.md) | AFK after design | Ready after 100 and 101 | Let Spoke join communities and read/post through community indexes. |
+| [103](103-spoke-community-recommended-users-v0.md) | AFK after design | Ready after 102 | Recommend users from signed community membership and activity. |
 | [104](104-jolt-website-strategy.md) | HITL | Discussion next | Decide the website audience, message, structure, and ownership. |
 | [105](105-jolt-website-v0.md) | AFK after strategy | Ready after 104 | Build the first static public website for Jolt. |
 | [106](106-rfc-process-v0.md) | HITL | Discussion next | Define a lightweight RFC process and template. |
