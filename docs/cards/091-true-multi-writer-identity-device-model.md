@@ -2,7 +2,7 @@
 
 **Type:** HITL  
 **Milestone:** Identity and Device Sprint  
-**Status:** Discussion next  
+**Status:** Designed in PR
 **Blocked by:** None
 
 ## Why
@@ -41,21 +41,21 @@ app session = scoped grant on one device for one user identity
 
 ## Acceptance Criteria
 
-- [ ] The model allows multiple devices to write for one user identity without
+- [x] The model allows multiple devices to write for one user identity without
       sharing one private writer key.
-- [ ] Device authorization and revocation are represented as signed,
+- [x] Device authorization and revocation are represented as signed,
       verifiable identity state.
-- [ ] The design preserves the protocol boundary: no protocol-level profiles,
+- [x] The design preserves the protocol boundary: no protocol-level profiles,
       posts, feeds, pastes, galleries, or browser concepts.
-- [ ] The design distinguishes control-plane sync from content fetch/cache/pin.
-- [ ] The design supports encrypted app data, including private app indexes and
+- [x] The design distinguishes control-plane sync from content fetch/cache/pin.
+- [x] The design supports encrypted app data, including private app indexes and
       encrypted content bodies.
-- [ ] The design states what happens when two devices update the same path.
-- [ ] The design states what happens when two devices publish append-style app
+- [x] The design states what happens when two devices update the same path.
+- [x] The design states what happens when two devices publish append-style app
       records concurrently.
-- [ ] The design states how a new device gains access to future and historical
+- [x] The design states how a new device gains access to future and historical
       private content.
-- [ ] The design names the minimum migration path from today's single-writer
+- [x] The design names the minimum migration path from today's single-writer
       identity.
 
 ## Non-Goals
@@ -75,3 +75,12 @@ app indexes follow automatically;
 content follows by fetch/cache/pin policy;
 private content follows by encryption grants.
 ```
+
+## Design
+
+Captured in
+[True Multi-Writer Identity and Devices](../20-true-multi-writer-identity-and-devices.md).
+
+## Verification
+
+- Docs-only design card; no behavioral tests required.

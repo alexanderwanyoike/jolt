@@ -118,6 +118,11 @@ Content is immutable at a given ContentId. Updating content means publishing new
 
 ## Update Log
 
+> Design update: the next identity model replaces the single global user update
+> log with per-device writer logs and deterministic merged identity state. See
+> [True Multi-Writer Identity and Devices](20-true-multi-writer-identity-and-devices.md).
+> The structure below describes the current v0 single-writer model.
+
 Each user maintains a signed append-only log that tracks changes to their published content. This is how mutable state works in a content-addressed system.
 
 ```rust

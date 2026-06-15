@@ -306,7 +306,7 @@ into the protocol layer.
 | [088](088-bootstrap-relay-deployment-v0.md) | AFK | Parked; bootstrap node working for now | Make a bootstrap relay easy to deploy from the released `jolt` binary. |
 | [089](089-relay-pinning-whitelist-v0.md) | AFK | Ready after 088 | Add a simple relay pinning allowlist while keeping discovery open. |
 | [090](090-v0-demo-and-launch-writeup.md) | HITL | Ready after 085/087/088/089 | Draft the demo/write-up and decide continue, pause, or bin. |
-| [091](091-true-multi-writer-identity-device-model.md) | HITL | Discussion next | Define user identity, device writers, revocation, and true multi-writer merge semantics. |
+| [091](091-true-multi-writer-identity-device-model.md) | HITL | Designed in PR | Define user identity, device writers, revocation, and true multi-writer merge semantics. |
 | [092](092-multiple-local-identities-v0.md) | AFK after design | Ready after 091 | Let one node manage and switch between multiple local user identities. |
 | [093](093-device-authorization-and-revocation-v0.md) | AFK after design | Ready after 091 | Add authorized and revocable device writers for a user identity. |
 | [094](094-per-device-writer-logs-and-merge-v0.md) | AFK after design | Ready after 091 and 093 | Resolve identity state from per-device signed writer logs. |

@@ -2,6 +2,12 @@
 
 ## Identity Model
 
+> Design update: Jolt is moving toward true multi-writer identities with
+> authorized, revocable device writers. See
+> [True Multi-Writer Identity and Devices](20-true-multi-writer-identity-and-devices.md).
+> The older single-key model below describes the current v0 implementation and
+> migration starting point.
+
 Every jolt user is identified by an Ed25519 keypair. There is no central identity registry. Your public key is your identity.
 
 ```mermaid
@@ -76,6 +82,14 @@ delegated-device direction.
 ### Multiple Identities
 
 A user can create multiple keypairs for different contexts (personal, professional, anonymous). The node supports switching between identities.
+
+### Devices
+
+The target model separates user identity from device authority. A user identity
+is the durable `.jolt` namespace. Devices are authorized writers for that
+namespace and can be revoked independently. Device keys should sign device
+writer logs, while the user identity's root authority signs device grants and
+revocations.
 
 ## Cryptography
 
