@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** v0 Endgame  
-**Status:** In Progress
+**Status:** Parked; bootstrap node working for now
 **Blocked by:** None
 
 ## Why
@@ -71,3 +71,6 @@ constraint was for desktop Console v0, not for a headless relay host.
   fresh installs can join the demo network without manual relay configuration.
   It is discovery/rendezvous only; public pinning remains blocked on relay
   policy/allowlisting.
+- 2026-06-15: Parked further bootstrap relay polish. The configured bootstrap
+  node appears to work well enough for the current demo path, and the next
+  sprint should focus on identity/device semantics.
