@@ -52,31 +52,59 @@ The answer should shape the next proof. This is a product discussion, not an imp
 Do not start with WASM apps, storage markets, payments, Drops, or storage-market
 mechanics.
 
-The v0 product/use-case direction is now:
+The v0 install/distribution path is far enough along that bootstrap relay
+polish is no longer the next product risk. The next sprint should fix identity
+semantics before more app surface area is added.
 
-1. Jolt is one core product: Console plus the same `jolt` runtime/CLI binary.
-2. Pastey and Spoke are separate Jolt apps, not bundled into Console.
-3. Spoke is the primary human demo; Pastey remains a companion technical proof.
-4. A public-ish bootstrap relay should be easy to deploy on a cheap Linux VPS.
-5. Discovery can be open for v0; relay pinning should be allowlisted.
-6. After this demo path works, write it up and decide whether to continue,
-   pause, or bin the project.
+The next direction is:
+
+1. Jolt identity becomes a durable user namespace, not just one local signing
+   key.
+2. Devices become authorized, revocable writers for a user identity.
+3. True multi-writer identity state is built from per-device signed logs and a
+   deterministic merge.
+4. App grants are scoped to one app, one local device, and one user identity.
+5. App indexes follow the identity; content bytes follow fetch/cache/pin policy.
+6. Private app indexes and private content bodies are encrypted for authorized
+   devices.
+7. Private app data follows encryption grants and explicit rewrap, not
+   automatic plaintext sync.
+8. Spoke and Pastey remain the proving apps. Do not build a Jolt browser yet.
+9. After identity/device semantics, community identities become the discovery
+   layer: apps give purpose, communities give discovery, identities give
+   ownership.
 
 The immediate sequence is:
 
-1. [084](084-install-jolt-cli-with-console.md): make the Jolt install expose
-   both `jolt-console` and `jolt`.
-2. [085](085-pastey-distribution-v0.md): make Pastey installable/updateable.
-3. [086](086-spoke-desktop-shell-v0.md): give Spoke a Tauri desktop shell.
-4. [087](087-spoke-distribution-v0.md): make Spoke installable/updateable.
-5. [088](088-bootstrap-relay-deployment-v0.md): make a bootstrap relay easy to
-   deploy from the released `jolt` binary.
-6. [089](089-relay-pinning-whitelist-v0.md): implement simple relay pinning
-   allowlists.
-7. [080](080-v0-freeze-and-bugfix-window.md): hard stop new features and run
-   the final demo/docs bugfix pass.
-8. [090](090-v0-demo-and-launch-writeup.md): prepare the Medium/HN write-up and
-   decide whether Jolt has legs.
+1. [091](091-true-multi-writer-identity-device-model.md): design the
+   user-identity/device/app-session model.
+2. [092](092-multiple-local-identities-v0.md): let one node manage multiple
+   local user identities.
+3. [093](093-device-authorization-and-revocation-v0.md): add authorized and
+   revocable device writers.
+4. [094](094-per-device-writer-logs-and-merge-v0.md): implement per-device
+   writer logs and deterministic merged identity state.
+5. [095](095-identity-scoped-app-grants-v0.md): make app grants explicitly
+   identity-scoped.
+6. [096](096-app-data-follows-identity-v0.md): make app indexes follow the
+   identity while content fetch/cache/pin stays explicit.
+7. [097](097-private-content-device-access-v0.md): make private content access
+   work honestly across authorized devices.
+
+The follow-on community discovery sequence is:
+
+1. [098](098-community-identity-and-membership-model.md): design communities as
+   Jolt identities with watch/join policy.
+2. [099](099-community-membership-v0.md): implement generic community
+   membership, join requests, open joins, and revocation.
+3. [100](100-community-scoped-app-indexes-v0.md): let apps publish/search
+   community-scoped signed indexes without relay-owned search.
+4. [101](101-default-discoverable-communities-v0.md): ship default
+   discoverable communities without auto-joining users.
+5. [102](102-spoke-community-join-v0.md): make Spoke join/read/post through
+   communities.
+6. [103](103-spoke-community-recommended-users-v0.md): recommend users from
+   community membership and activity.
 
 Supporting cards:
 
@@ -110,6 +138,32 @@ Supporting cards:
   relay pinning with a simple identity allowlist.
 - [090](090-v0-demo-and-launch-writeup.md): write the demo/launch post and
   record the continue/pause/bin decision.
+- [091](091-true-multi-writer-identity-device-model.md): define user identity,
+  device identity, app session, and true multi-writer merge semantics.
+- [092](092-multiple-local-identities-v0.md): support multiple local user
+  identities in daemon and Console.
+- [093](093-device-authorization-and-revocation-v0.md): authorize and revoke
+  device writers for a user identity.
+- [094](094-per-device-writer-logs-and-merge-v0.md): resolve identity state from
+  per-device writer logs.
+- [095](095-identity-scoped-app-grants-v0.md): scope app grants by identity and
+  device.
+- [096](096-app-data-follows-identity-v0.md): support app indexes that follow a
+  user identity without automatic byte sync.
+- [097](097-private-content-device-access-v0.md): extend private content
+  encryption to authorized devices and explicit historical rewrap.
+- [098](098-community-identity-and-membership-model.md): define community
+  identities, watch/join policy, membership, and discovery boundaries.
+- [099](099-community-membership-v0.md): implement generic community membership
+  and revocation.
+- [100](100-community-scoped-app-indexes-v0.md): let apps use community-scoped
+  signed indexes for discovery and local search.
+- [101](101-default-discoverable-communities-v0.md): provide default
+  discoverable communities without automatic membership.
+- [102](102-spoke-community-join-v0.md): use communities as Spoke's first
+  discovery surface.
+- [103](103-spoke-community-recommended-users-v0.md): recommend users from
+  signed community membership and activity.
 - [062](062-console-native-presence-and-permission-focus-v0.md): native Console
   presence and focus permission prompts, still deferred until product pressure
   justifies cross-platform OS integration.
@@ -262,9 +316,22 @@ into the protocol layer.
 | [085](085-pastey-distribution-v0.md) | AFK | Ready | Add Pastey AppImage CI, curl install, and signed updates. |
 | [086](086-spoke-desktop-shell-v0.md) | AFK | Ready | Add a Tauri desktop shell for Spoke. |
 | [087](087-spoke-distribution-v0.md) | AFK | Ready after 086 | Add Spoke AppImage CI, curl install, and signed updates. |
-| [088](088-bootstrap-relay-deployment-v0.md) | AFK | Ready after 084 | Make a bootstrap relay easy to deploy from the released `jolt` binary. |
+| [088](088-bootstrap-relay-deployment-v0.md) | AFK | Parked; bootstrap node working for now | Make a bootstrap relay easy to deploy from the released `jolt` binary. |
 | [089](089-relay-pinning-whitelist-v0.md) | AFK | Ready after 088 | Add a simple relay pinning allowlist while keeping discovery open. |
 | [090](090-v0-demo-and-launch-writeup.md) | HITL | Ready after 085/087/088/089 | Draft the demo/write-up and decide continue, pause, or bin. |
+| [091](091-true-multi-writer-identity-device-model.md) | HITL | Discussion next | Define user identity, device writers, revocation, and true multi-writer merge semantics. |
+| [092](092-multiple-local-identities-v0.md) | AFK after design | Ready after 091 | Let one node manage and switch between multiple local user identities. |
+| [093](093-device-authorization-and-revocation-v0.md) | AFK after design | Ready after 091 | Add authorized and revocable device writers for a user identity. |
+| [094](094-per-device-writer-logs-and-merge-v0.md) | AFK after design | Ready after 091 and 093 | Resolve identity state from per-device signed writer logs. |
+| [095](095-identity-scoped-app-grants-v0.md) | AFK after design | Ready after 092 and 093 | Scope app grants to one app, one device, and one user identity. |
+| [096](096-app-data-follows-identity-v0.md) | AFK after design | Ready after 094 and 095 | Let app indexes follow the identity while content bytes remain fetch/cache/pin policy. |
+| [097](097-private-content-device-access-v0.md) | AFK after design | Ready after 093 and 096 | Extend private content access to authorized devices with explicit historical rewrap. |
+| [098](098-community-identity-and-membership-model.md) | HITL | Ready after 091 | Define communities as Jolt identities with watch/join policy and signed membership. |
+| [099](099-community-membership-v0.md) | AFK after design | Ready after 098 | Implement generic community join, open/request policies, grants, and revocation. |
+| [100](100-community-scoped-app-indexes-v0.md) | AFK after design | Ready after 099 | Let apps publish and search community-scoped signed indexes locally. |
+| [101](101-default-discoverable-communities-v0.md) | AFK after design | Ready after 099 | Ship default discoverable communities without auto-joining users. |
+| [102](102-spoke-community-join-v0.md) | AFK after design | Ready after 100 and 101 | Let Spoke join communities and read/post through community indexes. |
+| [103](103-spoke-community-recommended-users-v0.md) | AFK after design | Ready after 102 | Recommend users from signed community membership and activity. |
 
 ## Card Format
 
