@@ -25,6 +25,11 @@ async fn daemon_post(
 }
 
 #[tauri::command]
+async fn daemon_delete(path: String) -> Result<serde_json::Value, String> {
+    daemon_request(reqwest::Method::DELETE, path, None).await
+}
+
+#[tauri::command]
 async fn daemon_lifecycle_status(
     lifecycle: tauri::State<'_, Mutex<DaemonLifecycleManager>>,
 ) -> Result<DaemonLifecycleReport, String> {
@@ -412,6 +417,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             daemon_get,
             daemon_post,
+            daemon_delete,
             daemon_lifecycle_status,
             daemon_lifecycle_start,
             daemon_lifecycle_stop,

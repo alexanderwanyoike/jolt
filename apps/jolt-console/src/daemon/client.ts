@@ -7,6 +7,8 @@ import type {
   DaemonPayload,
   DaemonStatus,
   HomeRelayConfig,
+  LocalIdentitiesPayload,
+  LocalIdentity,
   NetworkSettingsPayload,
   PeerInfo,
   PublishedContent
@@ -18,6 +20,7 @@ export type DaemonClient = {
   daemonUrl: string;
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body?: unknown): Promise<T>;
+  delete?<T>(path: string): Promise<T>;
 };
 
 export const tauriDaemonClient: DaemonClient = {
@@ -27,28 +30,75 @@ export const tauriDaemonClient: DaemonClient = {
   },
   post<T>(path: string, body?: unknown) {
     return invoke<T>("daemon_post", { path, body });
+  },
+  delete<T>(path: string) {
+    return invoke<T>("daemon_delete", { path });
   }
 };
 
 export async function loadDaemonPayload(client: DaemonClient): Promise<DaemonPayload> {
-  const [status, peers, cacheStats, cacheEntries, published] = await Promise.all([
+  const [status, peers, cacheStats, cacheEntries, published, localIdentities] = await Promise.all([
     client.get<DaemonStatus>("/api/v1/status"),
     client.get<PeerInfo[]>("/api/v1/peers"),
     client.get<CacheStats>("/api/v1/cache/stats"),
     client.get<CacheEntry[]>("/api/v1/cache/entries"),
-    client.get<PublishedContent[]>("/api/v1/published")
+    client.get<PublishedContent[]>("/api/v1/published"),
+    client.get<LocalIdentitiesPayload>("/admin/v1/identities")
   ]);
 
-  return { status, peers, cacheStats, cacheEntries, published };
+  return {
+    status,
+    peers,
+    cacheStats,
+    cacheEntries,
+    published: filterPublishedForActiveIdentity(published, localIdentities.active_identity),
+    localIdentities
+  };
+}
+
+export async function createLocalIdentity(
+  client: DaemonClient,
+  label?: string
+): Promise<LocalIdentity> {
+  return client.post<LocalIdentity>("/admin/v1/identities", { label: label || null });
+}
+
+export async function selectLocalIdentity(
+  client: DaemonClient,
+  identity: string
+): Promise<LocalIdentitiesPayload> {
+  return client.post<LocalIdentitiesPayload>("/admin/v1/identities/active", { identity });
+}
+
+export async function deleteLocalIdentity(
+  client: DaemonClient,
+  identity: string
+): Promise<LocalIdentitiesPayload> {
+  if (!client.delete) {
+    throw new Error("Daemon client does not support identity deletion");
+  }
+  return client.delete<LocalIdentitiesPayload>(
+    `/admin/v1/identities/${encodeURIComponent(identity)}`
+  );
 }
 
 export async function loadAppPermissions(client: DaemonClient): Promise<AppPermissionsPayload> {
-  const [requests, sessions] = await Promise.all([
+  const [requests, sessions, localIdentities] = await Promise.all([
     client.get<AppSessionGrant[]>("/admin/v1/app-requests"),
-    client.get<AppSessionGrant[]>("/admin/v1/app-sessions")
+    client.get<AppSessionGrant[]>("/admin/v1/app-sessions"),
+    client.get<LocalIdentitiesPayload>("/admin/v1/identities")
   ]);
 
-  return { requests, sessions };
+  return { requests, sessions, localIdentities };
+}
+
+function filterPublishedForActiveIdentity(
+  published: PublishedContent[],
+  activeIdentity?: string | null
+): PublishedContent[] {
+  if (!activeIdentity) return published;
+  const addressPrefix = `${activeIdentity}/`;
+  return published.filter((item) => item.address?.startsWith(addressPrefix));
 }
 
 export async function loadNetworkSettings(

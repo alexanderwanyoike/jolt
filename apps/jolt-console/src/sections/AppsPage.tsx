@@ -21,7 +21,11 @@ type CapabilityInfo = {
 
 const EMPTY_PERMISSIONS: AppPermissionsPayload = {
   requests: [],
-  sessions: []
+  sessions: [],
+  localIdentities: {
+    active_identity: null,
+    identities: []
+  }
 };
 
 export function AppsPage({ client = tauriDaemonClient, refreshIntervalMs = 5000 }: AppsPageProps) {
@@ -143,6 +147,7 @@ export function AppsPage({ client = tauriDaemonClient, refreshIntervalMs = 5000 
             <PermissionRequestCard
               key={request.request_id}
               request={request}
+              activeIdentity={permissions.localIdentities.active_identity ?? null}
               busy={action !== null}
               expanded={expandedRows.has(rowKey("request", request))}
               onToggle={() => toggleRow(rowKey("request", request))}
@@ -195,6 +200,7 @@ function PermissionColumn({ title, children }: { title: string; children: ReactN
 
 function PermissionRequestCard({
   request,
+  activeIdentity,
   busy,
   expanded,
   onToggle,
@@ -202,6 +208,7 @@ function PermissionRequestCard({
   onReject
 }: {
   request: AppSessionGrant;
+  activeIdentity: string | null;
   busy: boolean;
   expanded: boolean;
   onToggle: () => void;
@@ -213,7 +220,7 @@ function PermissionRequestCard({
     [request.requested_capabilities]
   );
   const blocked = capabilities.some((capability) => !capability.grantable);
-  const identity = request.requested_identity ?? "a selected identity";
+  const identity = request.requested_identity ?? activeIdentity ?? "a selected identity";
 
   return (
     <article className={`permission-row pending ${expanded ? "expanded" : ""}`}>
