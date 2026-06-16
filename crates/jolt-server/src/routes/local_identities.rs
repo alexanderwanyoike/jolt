@@ -1,4 +1,4 @@
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -30,6 +30,13 @@ pub async fn select_active(
     Ok(Json(state.local_identities.select(request).await?))
 }
 
+pub async fn delete_identity(
+    State(state): State<AppState>,
+    Path(identity): Path<String>,
+) -> Result<Json<LocalIdentitiesResponse>, LocalIdentityApiError> {
+    Ok(Json(state.local_identities.delete(identity).await?))
+}
+
 pub struct LocalIdentityApiError(LocalIdentityError);
 
 impl IntoResponse for LocalIdentityApiError {
@@ -40,6 +47,9 @@ impl IntoResponse for LocalIdentityApiError {
             }
             LocalIdentityError::UnknownIdentity(_) => {
                 (StatusCode::NOT_FOUND, "local_identity_not_found")
+            }
+            LocalIdentityError::ProtectedIdentity(_) => {
+                (StatusCode::BAD_REQUEST, "local_identity_protected")
             }
         };
         (

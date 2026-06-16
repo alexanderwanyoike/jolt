@@ -120,6 +120,10 @@ pub fn build_router_with_stores(
             get(routes::local_identities::list).post(routes::local_identities::create),
         )
         .route(
+            "/admin/v1/identities/{identity}",
+            delete(routes::local_identities::delete_identity),
+        )
+        .route(
             "/admin/v1/identities/active",
             post(routes::local_identities::select_active),
         )

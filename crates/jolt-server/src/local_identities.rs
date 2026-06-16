@@ -55,6 +55,8 @@ pub enum LocalIdentityError {
     UnknownIdentity(String),
     #[error("local identity is required")]
     MissingIdentity,
+    #[error("cannot delete daemon signing identity: {0}")]
+    ProtectedIdentity(String),
 }
 
 impl LocalIdentityStore {
@@ -134,6 +136,34 @@ impl LocalIdentityStore {
         state.active_identity = Some(request.identity);
         Ok(response_from_state(&state))
     }
+
+    pub async fn delete(
+        &self,
+        identity: String,
+    ) -> Result<LocalIdentitiesResponse, LocalIdentityError> {
+        let identity = identity.trim();
+        if identity.is_empty() {
+            return Err(LocalIdentityError::MissingIdentity);
+        }
+
+        let mut state = self.state.lock().await;
+        let index = state
+            .records
+            .iter()
+            .position(|record| record.address() == identity)
+            .ok_or_else(|| LocalIdentityError::UnknownIdentity(identity.to_string()))?;
+
+        if matches!(state.records[index], LocalIdentityRecord::Daemon { .. }) {
+            return Err(LocalIdentityError::ProtectedIdentity(identity.to_string()));
+        }
+
+        let was_active = state.active_identity.as_deref() == Some(identity);
+        state.records.remove(index);
+        if was_active {
+            state.active_identity = fallback_active_identity(&state);
+        }
+        Ok(response_from_state(&state))
+    }
 }
 
 impl LocalIdentityRecord {
@@ -167,6 +197,15 @@ fn response_from_state(state: &LocalIdentityState) -> LocalIdentitiesResponse {
             })
             .collect(),
     }
+}
+
+fn fallback_active_identity(state: &LocalIdentityState) -> Option<String> {
+    state
+        .records
+        .iter()
+        .find(|record| matches!(record, LocalIdentityRecord::Daemon { .. }))
+        .or_else(|| state.records.first())
+        .map(LocalIdentityRecord::address)
 }
 
 fn view_for_address(state: &LocalIdentityState, address: &str) -> Option<LocalIdentityView> {

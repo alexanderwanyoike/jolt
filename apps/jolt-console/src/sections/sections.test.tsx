@@ -99,6 +99,10 @@ function daemonClient(): DaemonClient {
         { address: "alice.jolt", label: "Default", active: false },
         { address: "work.jolt", label: "Work", active: true }
       ]
+    })),
+    delete: vi.fn(async () => ({
+      active_identity: "alice.jolt",
+      identities: [{ address: "alice.jolt", label: "Default", active: true }]
     }))
   };
 }
@@ -124,9 +128,11 @@ describe("Console section pages", () => {
     render(<IdentityPage client={daemonClient()} snapshot={snapshot()} />);
 
     expect(screen.getByText("Active local identity")).toBeInTheDocument();
-    expect(screen.getAllByText("alice.jolt")).not.toHaveLength(0);
+    expect(screen.getByRole("columnheader", { name: "Name" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Identity" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Default" })).toBeInTheDocument();
     expect(screen.getByText("12D3KooAlice")).toBeInTheDocument();
-    expect(screen.getByText("work.jolt")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Work" })).toBeInTheDocument();
   });
 
   it("selects local identities from the identity page", async () => {
@@ -135,11 +141,38 @@ describe("Console section pages", () => {
 
     render(<IdentityPage client={client} snapshot={snapshot({ refresh })} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Select" }));
+    await userEvent.click(screen.getByRole("button", { name: "Assume Work" }));
 
     expect(client.post).toHaveBeenCalledWith("/admin/v1/identities/active", {
       identity: "work.jolt"
     });
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("creates named identities from the identity page", async () => {
+    const refresh = vi.fn(async () => true);
+    const client = daemonClient();
+
+    render(<IdentityPage client={client} snapshot={snapshot({ refresh })} />);
+
+    await userEvent.type(screen.getByLabelText("Identity name"), "Side project");
+    await userEvent.click(screen.getByRole("button", { name: "Create identity" }));
+
+    expect(client.post).toHaveBeenCalledWith("/admin/v1/identities", {
+      label: "Side project"
+    });
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("deletes generated identities from the identity page", async () => {
+    const refresh = vi.fn(async () => true);
+    const client = daemonClient();
+
+    render(<IdentityPage client={client} snapshot={snapshot({ refresh })} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete Work" }));
+
+    expect(client.delete).toHaveBeenCalledWith("/admin/v1/identities/work.jolt");
     expect(refresh).toHaveBeenCalledOnce();
   });
 

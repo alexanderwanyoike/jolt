@@ -20,7 +20,10 @@ Add a first-class local identity selection model:
 
 - list local identities;
 - create an additional local identity;
+- name additional local identities during creation;
 - select the active identity for Console views;
+- delete generated local identities without allowing the daemon signing identity
+  to be removed;
 - expose the selected identity in app approval flows;
 - make identity-scoped state obvious in Console;
 - keep daemon/admin APIs explicit about which identity they operate on.
@@ -29,6 +32,10 @@ Add a first-class local identity selection model:
 
 - [x] A local node can hold at least two user identities.
 - [x] Console can switch between local identities without restarting the daemon.
+- [x] Console shows local identities by user-facing name before the raw Jolt
+      address.
+- [x] Console can delete generated local identities while preserving the daemon
+      signing identity.
 - [x] App approval prompts show which identity the app is requesting access to.
 - [x] Published paths and inventory views are scoped to the selected identity.
 - [x] Network settings that are node-level remain node-level, not accidentally
@@ -53,8 +60,13 @@ protocol layer.
 
 - Added admin local identity APIs for listing, creating, and selecting local
   identities.
-- Console now loads the local identity selector, switches identities from the
-  Identity page, and filters published inventory to the active identity.
+- Added `DELETE /admin/v1/identities/{identity}` for generated identities. The
+  daemon signing identity is protected and deletion of the active generated
+  identity falls back to the daemon/default identity.
+- Console now presents local identities as a table with name, address, type,
+  status, and actions. Identity creation requires a name, and generated
+  identities can be assumed or deleted from the table.
+- Console filters published inventory to the active identity.
 - App approval defaults missing approval identity to the selected local identity
   and shows that active identity in approval prompts.
 - Publish, inventory, encryption, decrypt, and pin capabilities still require
@@ -65,6 +77,8 @@ protocol layer.
 ## Verification
 
 - `cargo test -p jolt-server identity --test api_integration -- --nocapture`
+- `npx tsc --noEmit` from `apps/jolt-console`
 - `npx vitest run src/daemon/client.test.ts src/sections/sections.test.tsx src/app/App.test.tsx`
 - `npm test` from `apps/jolt-console`
+- `CARGO_TARGET_DIR=/tmp/jolt-tauri-target cargo check -p jolt-console`
 - `./scripts/test-local.sh`

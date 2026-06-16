@@ -4,6 +4,7 @@ import {
   addBootstrapRelay,
   clearHomeRelay,
   createLocalIdentity,
+  deleteLocalIdentity,
   loadAppPermissions,
   loadDaemonPayload,
   loadNetworkSettings,
@@ -44,6 +45,17 @@ describe("tauriDaemonClient", () => {
         identity: "alice.jolt",
         capabilities: ["resolve:public"]
       }
+    });
+  });
+
+  it("routes daemon deletes through the Tauri daemon_delete command", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({ ok: true });
+
+    await expect(tauriDaemonClient.delete!("/admin/v1/identities/work.jolt")).resolves.toEqual({
+      ok: true
+    });
+    expect(invoke).toHaveBeenCalledWith("daemon_delete", {
+      path: "/admin/v1/identities/work.jolt"
     });
   });
 });
@@ -147,7 +159,7 @@ describe("loadDaemonPayload", () => {
 });
 
 describe("local identity helpers", () => {
-  it("routes local identity creation and selection through admin endpoints", async () => {
+  it("routes local identity creation, selection, and deletion through admin endpoints", async () => {
     const identities = {
       active_identity: "work.jolt",
       identities: [
@@ -161,7 +173,8 @@ describe("local identity helpers", () => {
       post: vi
         .fn()
         .mockResolvedValueOnce({ address: "work.jolt", label: "Work", active: false })
-        .mockResolvedValueOnce(identities)
+        .mockResolvedValueOnce(identities),
+      delete: vi.fn().mockResolvedValueOnce({ active_identity: "alice.jolt", identities: [] })
     };
 
     await expect(createLocalIdentity(client, "Work")).resolves.toEqual({
@@ -170,11 +183,16 @@ describe("local identity helpers", () => {
       active: false
     });
     await expect(selectLocalIdentity(client, "work.jolt")).resolves.toEqual(identities);
+    await expect(deleteLocalIdentity(client, "work.jolt")).resolves.toEqual({
+      active_identity: "alice.jolt",
+      identities: []
+    });
 
     expect(client.post).toHaveBeenNthCalledWith(1, "/admin/v1/identities", { label: "Work" });
     expect(client.post).toHaveBeenNthCalledWith(2, "/admin/v1/identities/active", {
       identity: "work.jolt"
     });
+    expect(client.delete).toHaveBeenCalledWith("/admin/v1/identities/work.jolt");
   });
 });
 

@@ -20,6 +20,7 @@ export type DaemonClient = {
   daemonUrl: string;
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body?: unknown): Promise<T>;
+  delete?<T>(path: string): Promise<T>;
 };
 
 export const tauriDaemonClient: DaemonClient = {
@@ -29,6 +30,9 @@ export const tauriDaemonClient: DaemonClient = {
   },
   post<T>(path: string, body?: unknown) {
     return invoke<T>("daemon_post", { path, body });
+  },
+  delete<T>(path: string) {
+    return invoke<T>("daemon_delete", { path });
   }
 };
 
@@ -64,6 +68,18 @@ export async function selectLocalIdentity(
   identity: string
 ): Promise<LocalIdentitiesPayload> {
   return client.post<LocalIdentitiesPayload>("/admin/v1/identities/active", { identity });
+}
+
+export async function deleteLocalIdentity(
+  client: DaemonClient,
+  identity: string
+): Promise<LocalIdentitiesPayload> {
+  if (!client.delete) {
+    throw new Error("Daemon client does not support identity deletion");
+  }
+  return client.delete<LocalIdentitiesPayload>(
+    `/admin/v1/identities/${encodeURIComponent(identity)}`
+  );
 }
 
 export async function loadAppPermissions(client: DaemonClient): Promise<AppPermissionsPayload> {
