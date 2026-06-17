@@ -2,12 +2,23 @@
 
 ## Engineering Workflow
 
-- Prefer test-driven development for this project.
+- Test-driven development is required for behavioral changes in this project.
 - For behavioral changes, write or update a focused failing test first, then implement the smallest change that makes it pass.
 - Test durable behavior and public contracts, not temporary scaffolding or incidental UI structure.
 - Keep the red-green-refactor loop visible in PR descriptions when practical.
 - If a change is docs-only, tooling-only, or cannot reasonably be tested first, state that explicitly in the PR notes.
 - Run the relevant focused tests before the full local suite. Before opening or updating a PR, run `./scripts/test-local.sh` unless the change is clearly docs-only.
+
+## Spoke Social Work
+
+- Spoke social behavior changes must use a visible red-green-refactor loop: one behavior test, minimal implementation, then the next behavior.
+- Recursive visible thread work must test the product behavior, not only helper shape:
+  - Bob can reply to Bob's own post.
+  - Bob can reply to Bob's own reply.
+  - Alice and Carol can reply to the post at any point.
+  - Alice and Carol can reply to any visible reply at any point.
+  - All participants can assemble and render the same nested thread from public Spoke/Jolt-facing data.
+- Tests should cover Bob/Alice/Carol scenarios through public Spoke interfaces or durable app-level helpers before UI polish.
 
 ## PR Closeout and Context Handoff
 
