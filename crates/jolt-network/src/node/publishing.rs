@@ -111,9 +111,41 @@ impl NetworkNode {
             identity.clone(),
             address.path().to_string(),
             content_id.clone(),
+            DeviceWriterPathMode::Singleton,
         )?;
 
         Ok((content_id, address, latest_sequence))
+    }
+
+    /// Publish a file as an append record bound to a path in this node's signed
+    /// identity namespace. Unlike `publish_file_at_path`, this never writes the
+    /// last-writer-wins update log: append records are independent elements of a
+    /// growing collection and must all coexist.
+    pub fn publish_file_appending_path(
+        &mut self,
+        file_path: &Path,
+        path: &str,
+    ) -> Result<(ContentId, JoltAddress, u64), NetworkError> {
+        let data = std::fs::read(file_path).map_err(NetworkError::Io)?;
+        self.publish_bytes_appending_path(&data, path)
+    }
+
+    pub(super) fn publish_bytes_appending_path(
+        &mut self,
+        data: &[u8],
+        path: &str,
+    ) -> Result<(ContentId, JoltAddress, u64), NetworkError> {
+        let identity = self.identity.identity_id();
+        let address = JoltAddress::new(identity.clone(), path)
+            .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        let content_id = self.publish_bytes(data)?;
+        let device_sequence = self.publish_local_device_writer_path(
+            identity,
+            address.path().to_string(),
+            content_id.clone(),
+            DeviceWriterPathMode::Append,
+        )?;
+        Ok((content_id, address, device_sequence))
     }
 
     fn publish_local_device_writer_path(
@@ -121,10 +153,10 @@ impl NetworkNode {
         identity: IdentityId,
         path: String,
         content_id: ContentId,
-    ) -> Result<(), NetworkError> {
+        mode: DeviceWriterPathMode,
+    ) -> Result<u64, NetworkError> {
         let created_at = unix_now();
-        let operation =
-            DeviceWriterOperation::set_path(path, content_id, DeviceWriterPathMode::Singleton);
+        let operation = DeviceWriterOperation::set_path(path, content_id, mode);
         let entry = match self
             .local_device_writer_logs
             .get(&identity)
@@ -170,6 +202,7 @@ impl NetworkNode {
                     "No local device authority records cached for {identity}"
                 ))
             })?;
+        let device_sequence = entry.body.device_sequence;
         let device_log = {
             let entries = self
                 .local_device_writer_logs
@@ -180,7 +213,7 @@ impl NetworkNode {
         };
 
         self.store_verified_device_writer_logs(identity, authority_records, vec![device_log])?;
-        Ok(())
+        Ok(device_sequence)
     }
 
     pub(super) fn publish_reachability(

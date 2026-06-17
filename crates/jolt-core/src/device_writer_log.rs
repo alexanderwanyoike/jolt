@@ -70,6 +70,13 @@ pub enum DeviceWriterLogError {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DeviceWriterLogEntryHash(pub [u8; 32]);
 
+impl DeviceWriterLogEntryHash {
+    /// Lowercase hex rendering, for stable identification across API boundaries.
+    pub fn to_hex(&self) -> String {
+        blake3::Hash::from_bytes(self.0).to_hex().to_string()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DeviceWriterPathMode {
     Singleton,
@@ -136,6 +143,19 @@ pub struct RejectedDeviceWriterEntry {
 pub enum DeviceWriterRejectionReason {
     UnknownDevice,
     RevokedDevice,
+}
+
+impl MergedDeviceIdentityState {
+    /// Enumerate append records whose path starts with `prefix`, paired with
+    /// their path, in deterministic order (paths ascending, then per-path merge
+    /// order). This is the read seam a Collection is assembled from.
+    pub fn append_records_under(&self, prefix: &str) -> Vec<(&str, &MergedDeviceWriterEntry)> {
+        self.append_records
+            .iter()
+            .filter(|(path, _)| path.starts_with(prefix))
+            .flat_map(|(path, entries)| entries.iter().map(move |entry| (path.as_str(), entry)))
+            .collect()
+    }
 }
 
 impl DeviceWriterOperation {

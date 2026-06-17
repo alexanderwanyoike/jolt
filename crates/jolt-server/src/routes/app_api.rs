@@ -12,7 +12,8 @@ use jolt_core::{
     IDENTITY_ENCRYPTION_KEYS_PATH,
 };
 use jolt_network::{
-    FetchResult, NetworkError, PublishResponse, PublishedContentInfo, ResolveResponse,
+    AppendRecordInfo, FetchResult, NetworkError, PublishResponse, PublishedContentInfo,
+    ResolveResponse,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -239,76 +240,15 @@ pub async fn open_encrypted(
 pub async fn publish_file(
     State(state): State<AppState>,
     headers: HeaderMap,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Result<Response, AppApiError> {
     let session = authenticated_session(&state, &headers).await?;
     require_local_identity(&state, &session).await?;
 
-    let mut file_data = None;
-    let mut path = None;
-
-    while let Ok(Some(field)) = multipart.next_field().await {
-        match field.name() {
-            Some("file") => match field.bytes().await {
-                Ok(bytes) => {
-                    file_data = Some(bytes);
-                }
-                Err(e) => {
-                    return Ok((
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({ "error": format!("Failed to read file: {e}") })),
-                    )
-                        .into_response());
-                }
-            },
-            Some("path") => match field.text().await {
-                Ok(value) if !value.trim().is_empty() => {
-                    path = Some(normalize_path(&value)?);
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    return Ok((
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({ "error": format!("Failed to read path: {e}") })),
-                    )
-                        .into_response());
-                }
-            },
-            _ => {}
-        }
-    }
-
-    let path = path.ok_or_else(|| {
-        AppApiError::Network(NetworkError::InvalidInput(
-            "app publish requires a path".to_string(),
-        ))
-    })?;
+    let (data, path) = read_file_and_path_fields(multipart).await?;
     require_path_capability(&session, "publish:", &path)?;
 
-    let data = match file_data {
-        Some(d) => d,
-        None => {
-            return Ok((
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "No file field in multipart request" })),
-            )
-                .into_response());
-        }
-    };
-
-    let temp_dir = std::env::temp_dir();
-    let unique_id = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let sequence = APP_TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let temp_path = temp_dir.join(format!(
-        "jolt_app_publish_{}_{unique_id}_{sequence}",
-        std::process::id(),
-    ));
-    std::fs::write(&temp_path, &data)
-        .map_err(|e| AppApiError::Network(jolt_network::NetworkError::Io(e)))?;
-
+    let temp_path = persist_app_temp_file("publish", &data)?;
     let result = state.daemon.publish(temp_path.clone(), Some(path)).await;
     let _ = std::fs::remove_file(&temp_path);
 
@@ -318,11 +258,77 @@ pub async fn publish_file(
     }
 }
 
-async fn publish_app_bytes(
-    state: &AppState,
-    data: Vec<u8>,
-    path: String,
-) -> Result<PublishResponse, AppApiError> {
+/// Publish content as an append record bound to a path the app owns. Unlike
+/// `publish_file`, append records coexist: this is the write seam for elements
+/// of a growing collection, where every element must survive concurrent writes
+/// rather than overwriting a single current value.
+pub async fn append_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    multipart: Multipart,
+) -> Result<Response, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+
+    let (data, path) = read_file_and_path_fields(multipart).await?;
+    require_path_capability(&session, "publish:", &path)?;
+
+    let temp_path = persist_app_temp_file("append", &data)?;
+    let result = state.daemon.publish_append(temp_path.clone(), path).await;
+    let _ = std::fs::remove_file(&temp_path);
+
+    match result {
+        Ok(response) => Ok((StatusCode::OK, Json(json!(response))).into_response()),
+        Err(e) => Err(AppApiError::Network(e)),
+    }
+}
+
+/// Read the `file` and `path` fields shared by the multipart publish endpoints.
+/// The path is normalized and required; the file bytes are required.
+async fn read_file_and_path_fields(
+    mut multipart: Multipart,
+) -> Result<(Vec<u8>, String), AppApiError> {
+    let mut file_data = None;
+    let mut path = None;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        match field.name() {
+            Some("file") => {
+                let bytes = field.bytes().await.map_err(|e| {
+                    AppApiError::Network(NetworkError::InvalidInput(format!(
+                        "failed to read file field: {e}"
+                    )))
+                })?;
+                file_data = Some(bytes.to_vec());
+            }
+            Some("path") => {
+                let value = field.text().await.map_err(|e| {
+                    AppApiError::Network(NetworkError::InvalidInput(format!(
+                        "failed to read path field: {e}"
+                    )))
+                })?;
+                if !value.trim().is_empty() {
+                    path = Some(normalize_path(&value)?);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let path = path.ok_or_else(|| {
+        AppApiError::Network(NetworkError::InvalidInput("a path is required".to_string()))
+    })?;
+    let data = file_data.ok_or_else(|| {
+        AppApiError::Network(NetworkError::InvalidInput(
+            "no file field in multipart request".to_string(),
+        ))
+    })?;
+    Ok((data, path))
+}
+
+/// Write `data` to a uniquely named temp file the daemon can read. The caller
+/// removes it after publishing.
+fn persist_app_temp_file(label: &str, data: &[u8]) -> Result<std::path::PathBuf, AppApiError> {
     let temp_dir = std::env::temp_dir();
     let unique_id = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -330,12 +336,46 @@ async fn publish_app_bytes(
         .as_nanos();
     let sequence = APP_TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let temp_path = temp_dir.join(format!(
-        "jolt_app_publish_{}_{unique_id}_{sequence}",
+        "jolt_app_{label}_{}_{unique_id}_{sequence}",
         std::process::id(),
     ));
-    std::fs::write(&temp_path, &data)
-        .map_err(|e| AppApiError::Network(jolt_network::NetworkError::Io(e)))?;
+    std::fs::write(&temp_path, data)
+        .map_err(|e| AppApiError::Network(NetworkError::Io(e)))?;
+    Ok(temp_path)
+}
 
+#[derive(Debug, Deserialize)]
+pub struct EnumerateRequest {
+    pub identity: String,
+    pub path_prefix: String,
+}
+
+/// List an identity's append records whose path starts with `path_prefix`. This
+/// is the read seam a Collection is assembled from. Reads cached merged
+/// device-writer state, never a rewritten blob.
+pub async fn enumerate_append_records(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<EnumerateRequest>,
+) -> Result<Json<Vec<AppendRecordInfo>>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_capability(&session, "resolve:public")?;
+
+    let identity = recipient_identity(&req.identity)?;
+    let prefix = normalize_path(&req.path_prefix)?;
+    let records = state
+        .daemon
+        .enumerate_append_records(identity, prefix)
+        .await?;
+    Ok(Json(records))
+}
+
+async fn publish_app_bytes(
+    state: &AppState,
+    data: Vec<u8>,
+    path: String,
+) -> Result<PublishResponse, AppApiError> {
+    let temp_path = persist_app_temp_file("publish", &data)?;
     let result = state.daemon.publish(temp_path.clone(), Some(path)).await;
     let _ = std::fs::remove_file(&temp_path);
     result.map_err(AppApiError::Network)

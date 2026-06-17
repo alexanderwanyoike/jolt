@@ -47,6 +47,31 @@ impl NetworkNode {
                 };
                 let _ = response_tx.send(result);
             }
+            DaemonCommand::PublishAppend {
+                file_path,
+                path,
+                response_tx,
+            } => {
+                let size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
+                let result = self.publish_file_appending_path(&file_path, &path).map(
+                    |(content_id, address, device_sequence)| PublishResponse {
+                        content_id: content_id.to_string(),
+                        size,
+                        path: Some(address.path().to_string()),
+                        address: Some(address.to_string()),
+                        latest_sequence: Some(device_sequence),
+                    },
+                );
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::EnumerateAppendRecords {
+                identity,
+                path_prefix,
+                response_tx,
+            } => {
+                let result = self.enumerate_append_records(&identity, &path_prefix);
+                let _ = response_tx.send(result);
+            }
             DaemonCommand::Fetch {
                 content_id,
                 response_tx,
