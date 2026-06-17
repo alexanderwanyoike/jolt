@@ -522,6 +522,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn daemon_publish_path_populates_device_writer_resolve_cache() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let file_path = dir.path().join("profile.txt");
+        std::fs::write(
+            &file_path,
+            b"profile published through normal daemon command",
+        )
+        .unwrap();
+
+        let (publish_tx, publish_rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::Publish {
+            file_path,
+            path: Some("/profile".to_string()),
+            response_tx: publish_tx,
+        });
+        let published = publish_rx.await.unwrap().unwrap();
+        let address = published.address.unwrap();
+
+        let (resolve_tx, resolve_rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::Resolve {
+            address,
+            response_tx: resolve_tx,
+        });
+
+        let resolved = resolve_rx.await.unwrap().unwrap();
+        assert_eq!(resolved.content_id, published.content_id);
+        assert_eq!(resolved.path, "/profile");
+        assert_eq!(resolved.source, "device_writer_cache");
+    }
+
+    #[tokio::test]
     async fn daemon_resolution_times_out_when_update_log_provider_stalls() {
         let dir = tempdir().unwrap();
         let mut node = make_node(dir.path());

@@ -24,9 +24,9 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::info;
 
 use jolt_core::{
-    verify_update_log_for_identity, ContentId, EncryptedObjectEnvelope, IdentityEncryptionKey,
-    IdentityEncryptionPrivateKey, IdentityId, JoltAddress, MergedDeviceIdentityState,
-    ResolvedJoltTarget, UpdateLogEntry,
+    verify_update_log_for_identity, ContentId, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+    EncryptedObjectEnvelope, IdentityEncryptionKey, IdentityEncryptionPrivateKey, IdentityId,
+    JoltAddress, MergedDeviceIdentityState, ResolvedJoltTarget, UpdateLogEntry,
 };
 #[cfg(test)]
 use jolt_core::{EncryptedObjectRecipient, IdentityHeadHint, RelayRecord, RelayRecordCapability};
@@ -164,6 +164,10 @@ pub struct NetworkNode {
     update_logs: HashMap<IdentityId, Vec<UpdateLogEntry>>,
     /// Verified merged device-writer state by owner identity.
     device_writer_states: HashMap<IdentityId, CachedDeviceWriterState>,
+    /// Local per-device writer logs by owner identity.
+    local_device_writer_logs: HashMap<IdentityId, Vec<DeviceWriterLogEntry>>,
+    /// Local device authority records by owner identity.
+    local_device_authority_records: HashMap<IdentityId, Vec<DeviceAuthorizationRecord>>,
     /// Signed, expiring identity-head hints learned through relay gossip.
     identity_head_hints: IdentityHeadHintBook,
     /// Connection quality tracking: peer -> connection info

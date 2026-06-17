@@ -65,6 +65,8 @@ impl NetworkNode {
             discovered_providers: HashMap::new(),
             update_logs,
             device_writer_states: HashMap::new(),
+            local_device_writer_logs: HashMap::new(),
+            local_device_authority_records: HashMap::new(),
             identity_head_hints: IdentityHeadHintBook::default(),
             peer_connections: HashMap::new(),
             started_at: Instant::now(),
