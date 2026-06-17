@@ -2,7 +2,7 @@
 
 **Type:** AFK after design  
 **Milestone:** Identity and Device Sprint  
-**Status:** Ready after 091 and 093  
+**Status:** In progress
 **Blocked by:** 091, 093
 
 ## Why
@@ -52,3 +52,41 @@ Singleton paths such as `/profile` need deterministic winner selection.
 Append-style app records should normally coexist. Apps remain responsible for
 interpreting their own object schemas.
 
+## Implementation Notes
+
+- Added `jolt-core::device_writer_log` primitives for signed per-device writer
+  log entries.
+- Added deterministic merge over verified identity authority state:
+  - singleton path winner selection is stable across discovery order;
+  - losing singleton entries are retained as conflict diagnostics;
+  - append-style records from multiple devices coexist in deterministic order;
+  - revoked-device entries after the accepted device sequence are ignored and
+    preserved as rejected-entry diagnostics.
+- Added merged-state `.jolt` path resolution for singleton paths.
+- Device writer entries require canonical signed paths with a leading `/`;
+  user-facing address normalization is not applied to signed writer records.
+- Added local verification hardening for hostile inputs:
+  - wrong device signatures are rejected;
+  - broken per-device hash chains are rejected;
+  - out-of-order per-device sequences are rejected;
+  - unknown-device entries are ignored and retained as rejected diagnostics.
+
+## Verification
+
+- Red first:
+  - `cargo test -p jolt-core --test device_writer_log -- --nocapture` failed on
+    the missing device-writer public API.
+  - `cargo test -p jolt-core resolves_jolt_address_from_merged_device_state --test device_writer_log -- --nocapture`
+    failed on the missing merged-state resolver.
+  - `cargo test -p jolt-core preserves_append_records_from_multiple_devices_in_deterministic_order --test device_writer_log -- --nocapture`
+    failed on the missing append-record constructor.
+  - `cargo test -p jolt-core ignores_revoked_device_entries_after_accepted_sequence --test device_writer_log -- --nocapture`
+    failed because rejected diagnostics did not preserve the rejected CID.
+  - `cargo test -p jolt-core rejects_malformed_device_writer_paths --test device_writer_log -- --nocapture`
+    failed until device writer entries required canonical paths.
+- Green:
+  - `cargo test -p jolt-core rejects_malformed_device_writer_paths --test device_writer_log -- --nocapture`
+  - `cargo test -p jolt-core --test device_writer_log -- --nocapture` covers 9
+    device-writer tests, including hostile-input verification.
+  - `cargo test -p jolt-core`
+  - `./scripts/test-local.sh`

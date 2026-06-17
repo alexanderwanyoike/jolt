@@ -2,7 +2,7 @@
 
 **Type:** AFK after design  
 **Milestone:** Identity and Device Sprint  
-**Status:** In review
+**Status:** Done
 **Blocked by:** 091
 
 ## Why
