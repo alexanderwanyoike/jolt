@@ -122,10 +122,6 @@ Supporting cards:
   CLI alongside the installed Console.
 - [085](085-pastey-distribution-v0.md): ship Pastey as a signed AppImage with a
   curl install/update path.
-- [086](086-spoke-desktop-shell-v0.md): turn Spoke from Vite-only into a Tauri
-  desktop app.
-- [087](087-spoke-distribution-v0.md): ship Spoke as a signed AppImage with a
-  curl install/update path.
 - [088](088-bootstrap-relay-deployment-v0.md): make a headless bootstrap relay
   easy to install and operate from the released `jolt` binary.
 - [089](089-relay-pinning-whitelist-v0.md): keep discovery open but authorize
@@ -293,19 +289,16 @@ into the protocol layer.
 | [075](075-recipient-ingress-v0.md) | AFK after design | Implemented in PR | Implement generic recipient-controlled ingress for Spoke replies/mentions. |
 | [076](076-optional-and-authorized-relay-pinning.md) | AFK | Ready after 072 | Make pinning optional and relay-policy-authorized. |
 | [077](077-jolt-distribution-v0.md) | AFK | Ready after 072 | Make Jolt realistically installable as Console, daemon, and CLI. |
-| [078](078-spoke-social-poc.md) | HITL then AFK | Ready after 073/075 | Build the small social PoC that tests Jolt's product bet. |
 | [079](079-pastey-final-compatibility-pass.md) | AFK | Ready near freeze | Verify Pastey still works against final v0 APIs and docs. |
-| [080](080-v0-freeze-and-bugfix-window.md) | HITL | Ready after 078/079 | Hard stop new features and run the v0 bugfix/docs/demo pass. |
+| [080](080-v0-freeze-and-bugfix-window.md) | HITL | Ready after app demo checks | Hard stop new features and run the v0 bugfix/docs/demo pass. |
 | [081](081-launch-and-postmortem.md) | HITL | Ready after 080 | Publish the project, gather feedback, and decide continue/pause/bin. |
 | [082](082-network-node-module-refactor.md) | AFK | In Progress | Refactor `NetworkNode` into focused internal modules while preserving behavior. |
 | [083](083-console-auto-update-v0.md) | AFK after design | Ready after 077 | Add signed, user-approved packaged Console updates with installer fallback. |
 | [084](084-install-jolt-cli-with-console.md) | AFK | Ready | Install the user-callable `jolt` CLI alongside Jolt Console. |
 | [085](085-pastey-distribution-v0.md) | AFK | Ready | Add Pastey AppImage CI, curl install, and signed updates. |
-| [086](086-spoke-desktop-shell-v0.md) | AFK | Ready | Add a Tauri desktop shell for Spoke. |
-| [087](087-spoke-distribution-v0.md) | AFK | Ready after 086 | Add Spoke AppImage CI, curl install, and signed updates. |
 | [088](088-bootstrap-relay-deployment-v0.md) | AFK | Parked; bootstrap node working for now | Make a bootstrap relay easy to deploy from the released `jolt` binary. |
 | [089](089-relay-pinning-whitelist-v0.md) | AFK | Ready after 088 | Add a simple relay pinning allowlist while keeping discovery open. |
-| [090](090-v0-demo-and-launch-writeup.md) | HITL | Ready after 085/087/088/089 | Draft the demo/write-up and decide continue, pause, or bin. |
+| [090](090-v0-demo-and-launch-writeup.md) | HITL | Ready after 085/088/089 and Spoke release smoke | Draft the demo/write-up and decide continue, pause, or bin. |
 | [091](091-true-multi-writer-identity-device-model.md) | HITL | Designed in PR | Define user identity, device writers, revocation, and true multi-writer merge semantics. |
 | [092](092-multiple-local-identities-v0.md) | AFK after design | Ready after 091 | Let one node manage and switch between multiple local user identities. |
 | [093](093-device-authorization-and-revocation-v0.md) | AFK after design | Ready after 091 | Add authorized and revocable device writers for a user identity. |
