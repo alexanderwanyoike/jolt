@@ -4390,7 +4390,7 @@ async fn test_publish_endpoint_can_bind_content_to_jolt_path() {
     assert_eq!(resolved["path"], path);
     assert_eq!(resolved["content_id"], content_id.to_string());
     assert_eq!(resolved["latest_sequence"], 0);
-    assert_eq!(resolved["source"], "cache");
+    assert_eq!(resolved["source"], "device_writer_cache");
 
     handle.shutdown().await.ok();
 }

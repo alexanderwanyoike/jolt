@@ -5,9 +5,11 @@ use libp2p::multiaddr::Protocol;
 use tracing::debug;
 
 use jolt_core::{
-    verify_update_log_for_identity, ContentId, ContentManifest, IdentityHeadHint, IdentityId,
-    JoltAddress, LiveReachabilityEndpoint, OfflineIngressEndpoint, ReachabilityRecord,
-    UpdateAction, UpdateLogEntry, VerifiedReachability, SIGNED_REACHABILITY_PATH,
+    verify_update_log_for_identity, ContentId, ContentManifest, DeviceAuthorizationOperation,
+    DeviceAuthorizationRecord, DeviceWriterLogEntry, DeviceWriterOperation, DeviceWriterPathMode,
+    IdentityHeadHint, IdentityId, JoltAddress, LiveReachabilityEndpoint, OfflineIngressEndpoint,
+    ReachabilityRecord, UpdateAction, UpdateLogEntry, VerifiedReachability,
+    SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
 use jolt_store::ContentStore;
@@ -16,6 +18,8 @@ use crate::command::PublishReachabilityResponse;
 use crate::error::NetworkError;
 
 use super::{unix_now, NetworkNode, RELAY_RECORD_TTL_SECS};
+
+const LEGACY_ROOT_DEVICE_ID: &str = "dev_legacy_root";
 
 impl NetworkNode {
     /// Publish a file to the content store. Returns the ContentId.
@@ -103,8 +107,80 @@ impl NetworkNode {
         if let Err(e) = self.refresh_local_identity_head_hint(&identity) {
             debug!("Identity-head hint refresh skipped: {e}");
         }
+        self.publish_local_device_writer_path(
+            identity.clone(),
+            address.path().to_string(),
+            content_id.clone(),
+        )?;
 
         Ok((content_id, address, latest_sequence))
+    }
+
+    fn publish_local_device_writer_path(
+        &mut self,
+        identity: IdentityId,
+        path: String,
+        content_id: ContentId,
+    ) -> Result<(), NetworkError> {
+        let created_at = unix_now();
+        let operation =
+            DeviceWriterOperation::set_path(path, content_id, DeviceWriterPathMode::Singleton);
+        let entry = match self
+            .local_device_writer_logs
+            .get(&identity)
+            .and_then(|entries| entries.last())
+        {
+            Some(previous) => previous
+                .append(operation, created_at, |bytes| self.identity.sign(bytes))
+                .map_err(|e| NetworkError::Protocol(e.to_string()))?,
+            None => DeviceWriterLogEntry::genesis(
+                identity.clone(),
+                LEGACY_ROOT_DEVICE_ID,
+                operation,
+                created_at,
+                |bytes| self.identity.sign(bytes),
+            )
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?,
+        };
+
+        if !self.local_device_authority_records.contains_key(&identity) {
+            let record = DeviceAuthorizationRecord::genesis(
+                self.identity.public_key_bytes(),
+                identity.clone(),
+                DeviceAuthorizationOperation::authorize_device(
+                    LEGACY_ROOT_DEVICE_ID,
+                    self.identity.public_key_bytes(),
+                    vec!["identity:write".to_string()],
+                    Some("Legacy root device".to_string()),
+                    created_at,
+                ),
+                created_at,
+                |bytes| self.identity.sign(bytes),
+            )
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+            self.local_device_authority_records
+                .insert(identity.clone(), vec![record]);
+        }
+        let authority_records = self
+            .local_device_authority_records
+            .get(&identity)
+            .cloned()
+            .ok_or_else(|| {
+                NetworkError::Protocol(format!(
+                    "No local device authority records cached for {identity}"
+                ))
+            })?;
+        let device_log = {
+            let entries = self
+                .local_device_writer_logs
+                .entry(identity.clone())
+                .or_default();
+            entries.push(entry);
+            entries.clone()
+        };
+
+        self.store_verified_device_writer_logs(identity, authority_records, vec![device_log])?;
+        Ok(())
     }
 
     pub(super) fn publish_reachability(

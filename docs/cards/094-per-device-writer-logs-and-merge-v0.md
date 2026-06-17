@@ -78,6 +78,12 @@ interpreting their own object schemas.
     single-writer update logs;
   - `/api/v1/resolve` returns `source: "device_writer_cache"` when resolving
     from that state.
+- Added local daemon publishing into device-writer state:
+  - normal `Publish { path: ... }` creates/appends a local device-writer log
+    entry for the daemon's legacy root device;
+  - path publish refreshes the merged device-writer cache immediately;
+  - `/api/v1/publish` followed by `/api/v1/resolve` now resolves from
+    `source: "device_writer_cache"`.
 
 ## Verification
 
@@ -107,3 +113,13 @@ interpreting their own object schemas.
 - Green for daemon/server integration:
   - `cargo test -p jolt-network device_writer -- --nocapture`
   - `cargo test -p jolt-server test_resolve_endpoint_uses_verified_device_writer_cache -- --nocapture`
+- Red first for daemon publish integration:
+  - `cargo test -p jolt-network daemon_publish_path_populates_device_writer_resolve_cache -- --nocapture`
+    failed because normal daemon path publish still resolved through the legacy
+    update-log cache.
+- Green for daemon publish integration:
+  - `cargo test -p jolt-network daemon_publish_path_populates_device_writer_resolve_cache -- --nocapture`
+  - `cargo test -p jolt-server test_publish_endpoint_can_bind_content_to_jolt_path -- --nocapture`
+  - `cargo test -p jolt-network`
+  - `cargo test -p jolt-server`
+  - `./scripts/test-local.sh`
