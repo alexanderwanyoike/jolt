@@ -331,8 +331,8 @@ into the protocol layer.
 | [090](090-v0-demo-and-launch-writeup.md) | HITL | Ready after 085/088/089 and Spoke release smoke | Draft the demo/write-up and decide continue, pause, or bin. |
 | [091](091-true-multi-writer-identity-device-model.md) | HITL | Designed in PR | Define user identity, device writers, revocation, and true multi-writer merge semantics. |
 | [092](092-multiple-local-identities-v0.md) | AFK after design | Done | Let one node manage and switch between multiple local user identities. |
-| [093](093-device-authorization-and-revocation-v0.md) | AFK after design | In review | Add authorized and revocable device writers for a user identity. |
-| [094](094-per-device-writer-logs-and-merge-v0.md) | AFK after design | Ready after 091 and 093 | Resolve identity state from per-device signed writer logs. |
+| [093](093-device-authorization-and-revocation-v0.md) | AFK after design | Done | Add authorized and revocable device writers for a user identity. |
+| [094](094-per-device-writer-logs-and-merge-v0.md) | AFK after design | In progress | Resolve identity state from per-device signed writer logs. |
 | [095](095-identity-scoped-app-grants-v0.md) | AFK after design | Ready after 092 and 093 | Scope app grants to one app, one device, and one user identity. |
 | [096](096-app-data-follows-identity-v0.md) | AFK after design | Ready after 094 and 095 | Let app indexes follow the identity while content bytes remain fetch/cache/pin policy. |
 | [097](097-private-content-device-access-v0.md) | AFK after design | Ready after 093 and 096 | Extend private content access to authorized devices with explicit historical rewrap. |
