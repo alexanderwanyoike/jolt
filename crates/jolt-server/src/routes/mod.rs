@@ -2,6 +2,7 @@ pub mod app_api;
 pub mod app_sessions;
 pub mod cache;
 pub mod dashboard;
+pub mod device_authority;
 pub mod fetch;
 pub mod health;
 pub mod home_relay;

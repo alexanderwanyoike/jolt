@@ -2,7 +2,7 @@
 
 **Type:** AFK after design  
 **Milestone:** Identity and Device Sprint  
-**Status:** Ready after 091  
+**Status:** In review
 **Blocked by:** 091
 
 ## Why
@@ -27,15 +27,15 @@ Implement device authorization records for a user identity:
 
 ## Acceptance Criteria
 
-- [ ] A user identity can authorize at least one device writer.
-- [ ] A user identity can authorize a second device without sharing the first
+- [x] A user identity can authorize at least one device writer.
+- [x] A user identity can authorize a second device without sharing the first
       device's private key.
-- [ ] Device authorization records are signed and verifiable.
-- [ ] Device revocation records are signed and verifiable.
-- [ ] Revoked devices cannot produce accepted new identity state after the
+- [x] Device authorization records are signed and verifiable.
+- [x] Device revocation records are signed and verifiable.
+- [x] Revoked devices cannot produce accepted new identity state after the
       revocation point.
-- [ ] Existing single-device identities have a clear transitional path.
-- [ ] Tests cover authorized write, unauthorized write, and revoked-device
+- [x] Existing single-device identities have a clear transitional path.
+- [x] Tests cover authorized write, unauthorized write, and revoked-device
       rejection.
 
 ## Non-Goals
@@ -50,3 +50,37 @@ Implement device authorization records for a user identity:
 Revocation prevents future accepted writes and future key wrapping. It cannot
 make a device forget content or plaintext it already cached.
 
+## Implementation Notes
+
+- Added signed identity authority records to `jolt-core`, with root-signed
+  authorization and revocation operations.
+- Added deterministic authority-chain verification, materialized authorized
+  device state, and `device_can_write(device_id, sequence)` for revoked-device
+  cutoff checks.
+- Added negative authority-chain tests for non-root signatures, broken previous
+  hashes, out-of-order sequences, unknown-device revocation, revoked devices
+  without accepted-through cutoffs, and device encryption key preservation.
+- Added a transitional `dev_legacy_root` device record for the current
+  single-key identity model.
+- Added admin endpoints for listing the local authority chain, authorizing a
+  generated local device, and revoking a device.
+- Device authority mutations now validate the candidate chain before committing
+  it to local state, so rejected revocations do not poison the in-memory chain.
+- Added device-authority API regression tests for idempotent local authority
+  bootstrap/listing and continuing with valid mutations after a rejected
+  revocation.
+- The daemon signs authority records internally; the HTTP server never receives
+  private key material.
+- The verified authority chain is published under
+  `/.well-known/jolt/device-authority` as signed identity state.
+
+## Verification
+
+- `cargo test -p jolt-core --test identity_authority -- --nocapture`
+- `cargo test -p jolt-server test_admin_device_authority_can_authorize_and_revoke_local_device --test api_integration -- --nocapture`
+- `cargo test -p jolt-server test_admin_device_authority_list_is_idempotent --test api_integration -- --nocapture`
+- `cargo test -p jolt-server test_admin_device_authority_rejects_unknown_device_revocation --test api_integration -- --nocapture`
+- `cargo test -p jolt-server test_admin_device_authority_can_continue_after_rejected_revocation --test api_integration -- --nocapture`
+- `cargo test -p jolt-server device_authority --test api_integration -- --nocapture`
+- `cargo test -p jolt-server identity --test api_integration -- --nocapture`
+- `./scripts/test-local.sh`

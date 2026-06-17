@@ -317,6 +317,19 @@ impl DaemonHandle {
         receive_plain(rx).await
     }
 
+    /// Ask the daemon's local identity key to sign protocol authority bytes.
+    pub async fn sign_local_identity(&self, payload: Vec<u8>) -> Result<Vec<u8>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::SignLocalIdentity {
+                payload,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_plain(rx).await
+    }
+
     /// Get the list of connected peers.
     pub async fn peers(&self) -> Result<Vec<PeerInfo>, NetworkError> {
         let (tx, rx) = oneshot::channel();
