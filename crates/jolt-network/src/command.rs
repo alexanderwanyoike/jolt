@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
 use jolt_core::{
-    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
-    OfflineIngressEndpoint, PinRequest, RelayHint, RelayRecord, VerifiedReachability,
+    DeviceAuthorizationRecord, DeviceWriterLogEntry, EncryptedObjectRecipient,
+    IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint, OfflineIngressEndpoint,
+    PinRequest, RelayHint, RelayRecord, VerifiedReachability,
 };
 
 use crate::config::HomeRelayConfig;
@@ -122,6 +123,12 @@ pub enum DaemonCommand {
     StoreUpdateLog {
         identity: IdentityId,
         entries: Vec<jolt_core::UpdateLogEntry>,
+        response_tx: oneshot::Sender<Result<u64, NetworkError>>,
+    },
+    StoreDeviceWriterLogs {
+        identity: IdentityId,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
         response_tx: oneshot::Sender<Result<u64, NetworkError>>,
     },
     Unpin {

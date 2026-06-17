@@ -1,8 +1,9 @@
 use std::time::{Duration, Instant};
 
 use jolt_core::{
-    resolve_jolt_address, verify_update_log_for_identity, IdentityId, JoltAddress,
-    ResolvedJoltTarget,
+    merge_device_writer_logs, resolve_jolt_address, resolve_merged_device_jolt_address,
+    verify_identity_authority_chain, verify_update_log_for_identity, DeviceAuthorizationRecord,
+    DeviceWriterLogEntry, IdentityId, JoltAddress, ResolvedJoltTarget,
 };
 use tokio::sync::oneshot;
 
@@ -10,6 +11,7 @@ use crate::command::ResolveResponse;
 use crate::error::NetworkError;
 use crate::protocol::UpdateLogRequest;
 
+use super::CachedDeviceWriterState;
 use super::NetworkNode;
 
 pub(super) struct PendingResolve {
@@ -71,6 +73,56 @@ impl NetworkNode {
             reachability_hints: target.reachability,
             source: source.into(),
         })
+    }
+
+    pub(super) fn resolve_device_writer_response_from_cache(
+        &self,
+        address: &JoltAddress,
+        source: impl Into<String>,
+    ) -> Result<ResolveResponse, NetworkError> {
+        let state = self
+            .device_writer_states
+            .get(address.identity())
+            .ok_or_else(|| {
+                NetworkError::Protocol(format!(
+                    "No verified device writer state cached for {}",
+                    address.identity()
+                ))
+            })?;
+        let target = resolve_merged_device_jolt_address(address, &state.merged)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+
+        Ok(ResolveResponse {
+            address: address.to_string(),
+            identity: target.identity.to_string(),
+            path: target.path,
+            latest_sequence: state.authority_sequence,
+            content_id: target.content_id.to_string(),
+            reachability_hints: target.reachability,
+            source: source.into(),
+        })
+    }
+
+    /// Store a verified merged device-writer state for an identity.
+    pub fn store_verified_device_writer_logs(
+        &mut self,
+        identity: IdentityId,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    ) -> Result<u64, NetworkError> {
+        let authority = verify_identity_authority_chain(&identity, &authority_records)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let merged = merge_device_writer_logs(&authority, device_logs)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let authority_sequence = authority.latest_sequence;
+        self.device_writer_states.insert(
+            identity,
+            CachedDeviceWriterState {
+                authority_sequence,
+                merged,
+            },
+        );
+        Ok(authority_sequence)
     }
 
     pub(super) fn request_daemon_resolve_from_provider(
@@ -226,7 +278,10 @@ impl NetworkNode {
 mod tests {
     use std::time::Duration;
 
-    use jolt_core::{ContentId, JoltAddress, UpdateAction, UpdateLogEntry};
+    use jolt_core::{
+        ContentId, DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+        DeviceWriterOperation, DeviceWriterPathMode, JoltAddress, UpdateAction, UpdateLogEntry,
+    };
     use jolt_identity::NodeIdentity;
     use jolt_store::{CacheConfig, ContentStore};
     use libp2p::request_response;
@@ -249,6 +304,27 @@ mod tests {
         let identity = NodeIdentity::generate();
         let store = make_store(dir);
         NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap()
+    }
+
+    fn authorize_device(
+        root: &NodeIdentity,
+        device: &NodeIdentity,
+        device_id: &str,
+    ) -> DeviceAuthorizationRecord {
+        DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            root.identity_id(),
+            DeviceAuthorizationOperation::authorize_device(
+                device_id,
+                device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Laptop".to_string()),
+                1_780_579_200,
+            ),
+            1_780_579_200,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -359,6 +435,90 @@ mod tests {
             .unwrap();
         assert_eq!(refreshed.content_id, new_content_id.to_string());
         assert_eq!(refreshed.latest_sequence, 1);
+    }
+
+    #[tokio::test]
+    async fn daemon_resolution_uses_cached_device_writer_state() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_laptop";
+        let authority = vec![authorize_device(&root, &laptop, device_id)];
+        let content_id = ContentId::from_bytes(b"profile from laptop device log");
+        let device_log = vec![DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            device_id,
+            DeviceWriterOperation::set_path(
+                "/profile",
+                content_id.clone(),
+                DeviceWriterPathMode::Singleton,
+            ),
+            100,
+            |bytes| laptop.sign(bytes),
+        )
+        .unwrap()];
+        let address = JoltAddress::new(identity.clone(), "/profile").unwrap();
+
+        node.store_verified_device_writer_logs(identity, authority, vec![device_log])
+            .unwrap();
+
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::Resolve {
+            address: address.to_string(),
+            response_tx: tx,
+        });
+
+        let resolved = rx.await.unwrap().unwrap();
+        assert_eq!(resolved.content_id, content_id.to_string());
+        assert_eq!(resolved.path, "/profile");
+        assert_eq!(resolved.source, "device_writer_cache");
+    }
+
+    #[tokio::test]
+    async fn daemon_store_device_writer_logs_command_updates_resolve_cache() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_laptop";
+        let authority = vec![authorize_device(&root, &laptop, device_id)];
+        let content_id = ContentId::from_bytes(b"profile stored through daemon command");
+        let device_log = vec![DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            device_id,
+            DeviceWriterOperation::set_path(
+                "/profile",
+                content_id.clone(),
+                DeviceWriterPathMode::Singleton,
+            ),
+            100,
+            |bytes| laptop.sign(bytes),
+        )
+        .unwrap()];
+        let address = JoltAddress::new(identity.clone(), "/profile").unwrap();
+
+        let (store_tx, store_rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::StoreDeviceWriterLogs {
+            identity,
+            authority_records: authority,
+            device_logs: vec![device_log],
+            response_tx: store_tx,
+        });
+
+        assert_eq!(store_rx.await.unwrap().unwrap(), 0);
+
+        let (resolve_tx, resolve_rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::Resolve {
+            address: address.to_string(),
+            response_tx: resolve_tx,
+        });
+
+        let resolved = resolve_rx.await.unwrap().unwrap();
+        assert_eq!(resolved.content_id, content_id.to_string());
+        assert_eq!(resolved.source, "device_writer_cache");
     }
 
     #[tokio::test]

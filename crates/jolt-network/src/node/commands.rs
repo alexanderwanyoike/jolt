@@ -100,6 +100,13 @@ impl NetworkNode {
                     }
                 };
 
+                if let Ok(response) =
+                    self.resolve_device_writer_response_from_cache(&address, "device_writer_cache")
+                {
+                    let _ = response_tx.send(Ok(response));
+                    return;
+                }
+
                 let fallback_response = self
                     .resolve_response_from_cache(&address, None, "cache")
                     .ok();
@@ -404,6 +411,19 @@ impl NetworkNode {
                         self.announce_update_log_provider(&identity)?;
                         Ok(sequence)
                     });
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::StoreDeviceWriterLogs {
+                identity,
+                authority_records,
+                device_logs,
+                response_tx,
+            } => {
+                let result = self.store_verified_device_writer_logs(
+                    identity,
+                    authority_records,
+                    device_logs,
+                );
                 let _ = response_tx.send(result);
             }
             DaemonCommand::Unpin {
