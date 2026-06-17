@@ -3,8 +3,9 @@ use std::{path::PathBuf, time::Duration};
 use tokio::sync::{mpsc, oneshot};
 
 use jolt_core::{
-    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
-    OfflineIngressEndpoint, PinRequest, UpdateLogEntry,
+    DeviceAuthorizationRecord, DeviceWriterLogEntry, EncryptedObjectRecipient,
+    IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint, OfflineIngressEndpoint,
+    PinRequest, UpdateLogEntry,
 };
 
 use crate::command::{
@@ -462,6 +463,26 @@ impl DaemonHandle {
             .send(DaemonCommand::StoreUpdateLog {
                 identity,
                 entries,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    /// Store verified device-authority records plus per-device writer logs.
+    pub async fn store_device_writer_logs(
+        &self,
+        identity: IdentityId,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    ) -> Result<u64, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::StoreDeviceWriterLogs {
+                identity,
+                authority_records,
+                device_logs,
                 response_tx: tx,
             })
             .await

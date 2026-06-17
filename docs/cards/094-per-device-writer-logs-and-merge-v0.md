@@ -70,6 +70,14 @@ interpreting their own object schemas.
   - broken per-device hash chains are rejected;
   - out-of-order per-device sequences are rejected;
   - unknown-device entries are ignored and retained as rejected diagnostics.
+- Added daemon/server resolve integration for verified device-writer state:
+  - `NetworkNode` can cache verified authority records plus per-device writer
+    logs as merged device-writer state;
+  - `DaemonCommand` and `DaemonHandle` can store verified device-writer logs;
+  - daemon `Resolve` prefers the merged device-writer cache before legacy
+    single-writer update logs;
+  - `/api/v1/resolve` returns `source: "device_writer_cache"` when resolving
+    from that state.
 
 ## Verification
 
@@ -90,3 +98,12 @@ interpreting their own object schemas.
     device-writer tests, including hostile-input verification.
   - `cargo test -p jolt-core`
   - `./scripts/test-local.sh`
+- Red first for daemon/server integration:
+  - `cargo test -p jolt-network daemon_resolution_uses_cached_device_writer_state -- --nocapture`
+    failed because the daemon had no `store_verified_device_writer_logs` cache
+    API.
+  - `cargo test -p jolt-network daemon_store_device_writer_logs_command_updates_resolve_cache -- --nocapture`
+    failed because `DaemonCommand::StoreDeviceWriterLogs` did not exist.
+- Green for daemon/server integration:
+  - `cargo test -p jolt-network device_writer -- --nocapture`
+  - `cargo test -p jolt-server test_resolve_endpoint_uses_verified_device_writer_cache -- --nocapture`

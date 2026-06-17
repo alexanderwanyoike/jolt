@@ -1,8 +1,10 @@
 use jolt_core::{
-    generate_identity_encryption_keypair, ContentId, EncryptedObjectEnvelope,
-    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityEncryptionKeyRecord, IdentityId,
-    JoltAddress, PinRequest, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
-    IDENTITY_AUTHORITY_PATH, IDENTITY_ENCRYPTION_KEYS_PATH, SIGNED_REACHABILITY_PATH,
+    generate_identity_encryption_keypair, ContentId, DeviceAuthorizationOperation,
+    DeviceAuthorizationRecord, DeviceWriterLogEntry, DeviceWriterOperation, DeviceWriterPathMode,
+    EncryptedObjectEnvelope, EncryptedObjectRecipient, IdentityEncryptionKey,
+    IdentityEncryptionKeyRecord, IdentityId, JoltAddress, PinRequest, RelayRecord,
+    RelayRecordCapability, UpdateAction, UpdateLogEntry, IDENTITY_AUTHORITY_PATH,
+    IDENTITY_ENCRYPTION_KEYS_PATH, SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
 use jolt_network::{
@@ -141,6 +143,27 @@ fn signed_profile_log(identity: &NodeIdentity, label: &[u8]) -> Vec<UpdateLogEnt
         |bytes| identity.sign(bytes),
     )
     .unwrap()]
+}
+
+fn device_authority_record(
+    root: &NodeIdentity,
+    device: &NodeIdentity,
+    device_id: &str,
+) -> DeviceAuthorizationRecord {
+    DeviceAuthorizationRecord::genesis(
+        root.public_key_bytes(),
+        root.identity_id(),
+        DeviceAuthorizationOperation::authorize_device(
+            device_id,
+            device.public_key_bytes(),
+            vec!["identity:write".to_string()],
+            Some("Laptop".to_string()),
+            1_780_579_200,
+        ),
+        1_780_579_200,
+        |bytes| root.sign(bytes),
+    )
+    .unwrap()
 }
 
 fn base_url(port: u16) -> String {
@@ -2707,6 +2730,55 @@ async fn test_resolve_endpoint_uses_verified_update_log_cache() {
     assert_eq!(body["content_id"], content_id.to_string());
     assert_eq!(body["reachability_hints"].as_array().unwrap().len(), 0);
     assert_eq!(body["source"], "cache");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_resolve_endpoint_uses_verified_device_writer_cache() {
+    let (port, handle, _dir) = start_test_server().await;
+    let root = NodeIdentity::generate();
+    let laptop = NodeIdentity::generate();
+    let identity = root.identity_id();
+    let device_id = "dev_laptop";
+    let authority = vec![device_authority_record(&root, &laptop, device_id)];
+    let content_id = ContentId::from_bytes(b"device writer profile via api");
+    let device_log = vec![DeviceWriterLogEntry::genesis(
+        identity.clone(),
+        device_id,
+        DeviceWriterOperation::set_path(
+            "/profile",
+            content_id.clone(),
+            DeviceWriterPathMode::Singleton,
+        ),
+        100,
+        |bytes| laptop.sign(bytes),
+    )
+    .unwrap()];
+    let address = JoltAddress::new(identity.clone(), "/profile").unwrap();
+
+    handle
+        .store_device_writer_logs(identity.clone(), authority, vec![device_log])
+        .await
+        .unwrap();
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/api/v1/resolve", base_url(port)))
+        .json(&serde_json::json!({ "address": address.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["address"], address.to_string());
+    assert_eq!(body["identity"], identity.to_string());
+    assert_eq!(body["path"], "/profile");
+    assert_eq!(body["latest_sequence"], 0);
+    assert_eq!(body["content_id"], content_id.to_string());
+    assert_eq!(body["reachability_hints"].as_array().unwrap().len(), 0);
+    assert_eq!(body["source"], "device_writer_cache");
 
     handle.shutdown().await.ok();
 }

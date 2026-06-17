@@ -25,7 +25,8 @@ use tracing::info;
 
 use jolt_core::{
     verify_update_log_for_identity, ContentId, EncryptedObjectEnvelope, IdentityEncryptionKey,
-    IdentityEncryptionPrivateKey, IdentityId, JoltAddress, ResolvedJoltTarget, UpdateLogEntry,
+    IdentityEncryptionPrivateKey, IdentityId, JoltAddress, MergedDeviceIdentityState,
+    ResolvedJoltTarget, UpdateLogEntry,
 };
 #[cfg(test)]
 use jolt_core::{EncryptedObjectRecipient, IdentityHeadHint, RelayRecord, RelayRecordCapability};
@@ -55,6 +56,11 @@ use crate::protocol::{
 struct PendingUpdateLogPin {
     identity: IdentityId,
     response_tx: oneshot::Sender<Result<u64, NetworkError>>,
+}
+
+struct CachedDeviceWriterState {
+    authority_sequence: u64,
+    merged: MergedDeviceIdentityState,
 }
 
 struct PendingIdentityProviderForwardGroup {
@@ -156,6 +162,8 @@ pub struct NetworkNode {
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
     /// Verified update logs by owner identity.
     update_logs: HashMap<IdentityId, Vec<UpdateLogEntry>>,
+    /// Verified merged device-writer state by owner identity.
+    device_writer_states: HashMap<IdentityId, CachedDeviceWriterState>,
     /// Signed, expiring identity-head hints learned through relay gossip.
     identity_head_hints: IdentityHeadHintBook,
     /// Connection quality tracking: peer -> connection info
