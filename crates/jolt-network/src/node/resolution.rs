@@ -7,7 +7,7 @@ use jolt_core::{
 };
 use tokio::sync::oneshot;
 
-use crate::command::ResolveResponse;
+use crate::command::{AppendRecordInfo, ResolveResponse};
 use crate::error::NetworkError;
 use crate::protocol::UpdateLogRequest;
 
@@ -101,6 +101,34 @@ impl NetworkNode {
             reachability_hints: target.reachability,
             source: source.into(),
         })
+    }
+
+    /// Enumerate the append records cached for `identity` whose path starts
+    /// with `path_prefix`. This is the read seam a Collection is assembled
+    /// from: it reads the merged device-writer state, never a rewritten blob.
+    /// Returns an empty list when no device-writer state is cached for the
+    /// identity.
+    pub fn enumerate_append_records(
+        &self,
+        identity: &IdentityId,
+        path_prefix: &str,
+    ) -> Result<Vec<AppendRecordInfo>, NetworkError> {
+        let Some(state) = self.device_writer_states.get(identity) else {
+            return Ok(Vec::new());
+        };
+        Ok(state
+            .merged
+            .append_records_under(path_prefix)
+            .into_iter()
+            .map(|(path, entry)| AppendRecordInfo {
+                path: path.to_string(),
+                content_id: entry.content_id.to_string(),
+                device_id: entry.device_id.clone(),
+                device_sequence: entry.device_sequence,
+                created_at: entry.created_at,
+                entry_hash: entry.entry_hash.to_hex(),
+            })
+            .collect())
     }
 
     /// Store a verified merged device-writer state for an identity.
@@ -551,6 +579,93 @@ mod tests {
         assert_eq!(resolved.content_id, published.content_id);
         assert_eq!(resolved.path, "/profile");
         assert_eq!(resolved.source, "device_writer_cache");
+    }
+
+    #[tokio::test]
+    async fn daemon_append_publish_records_coexist_under_prefix() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let identity = node.identity.identity_id();
+
+        for (name, path, body) in [
+            ("a.txt", "/app/items/1", b"record one".as_slice()),
+            ("b.txt", "/app/items/2", b"record two".as_slice()),
+        ] {
+            let file_path = dir.path().join(name);
+            std::fs::write(&file_path, body).unwrap();
+            let (tx, rx) = oneshot::channel();
+            node.handle_command(DaemonCommand::PublishAppend {
+                file_path,
+                path: path.to_string(),
+                response_tx: tx,
+            });
+            let response = rx.await.unwrap().unwrap();
+            assert_eq!(response.path.as_deref(), Some(path));
+        }
+
+        // Append publish must never write the last-writer-wins update log.
+        assert!(node.update_log_entries(&identity).is_none());
+
+        let state = node.device_writer_states.get(&identity).unwrap();
+        let records = state.merged.append_records_under("/app/items/");
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].0, "/app/items/1");
+        assert_eq!(records[1].0, "/app/items/2");
+    }
+
+    #[tokio::test]
+    async fn daemon_enumerate_append_records_filters_remote_identity_by_prefix() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_laptop";
+        let authority = vec![authorize_device(&root, &laptop, device_id)];
+        let record = ContentId::from_bytes(b"remote record");
+        let unrelated = ContentId::from_bytes(b"unrelated record");
+        let genesis = DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            device_id,
+            DeviceWriterOperation::append_record("/app/items/1", record.clone()),
+            100,
+            |bytes| laptop.sign(bytes),
+        )
+        .unwrap();
+        let second = genesis
+            .append(
+                DeviceWriterOperation::append_record("/app/other/x", unrelated),
+                101,
+                |bytes| laptop.sign(bytes),
+            )
+            .unwrap();
+        node.store_verified_device_writer_logs(
+            identity.clone(),
+            authority,
+            vec![vec![genesis, second]],
+        )
+        .unwrap();
+
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: identity.clone(),
+            path_prefix: "/app/items/".to_string(),
+            response_tx: tx,
+        });
+        let records = rx.await.unwrap().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].path, "/app/items/1");
+        assert_eq!(records[0].content_id, record.to_string());
+        assert_eq!(records[0].device_id, device_id);
+
+        // Unknown identity yields an empty list rather than an error.
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: NodeIdentity::generate().identity_id(),
+            path_prefix: "/".to_string(),
+            response_tx: tx,
+        });
+        assert!(rx.await.unwrap().unwrap().is_empty());
     }
 
     #[tokio::test]

@@ -19,6 +19,16 @@ pub enum DaemonCommand {
         path: Option<String>,
         response_tx: oneshot::Sender<Result<PublishResponse, NetworkError>>,
     },
+    PublishAppend {
+        file_path: PathBuf,
+        path: String,
+        response_tx: oneshot::Sender<Result<PublishResponse, NetworkError>>,
+    },
+    EnumerateAppendRecords {
+        identity: IdentityId,
+        path_prefix: String,
+        response_tx: oneshot::Sender<Result<Vec<AppendRecordInfo>, NetworkError>>,
+    },
     Fetch {
         content_id: String,
         response_tx: oneshot::Sender<Result<FetchResult, NetworkError>>,
@@ -150,6 +160,16 @@ pub struct PublishResponse {
     pub address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_sequence: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppendRecordInfo {
+    pub path: String,
+    pub content_id: String,
+    pub device_id: String,
+    pub device_sequence: u64,
+    pub created_at: u64,
+    pub entry_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

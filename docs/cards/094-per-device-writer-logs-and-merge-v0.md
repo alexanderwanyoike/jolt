@@ -84,6 +84,20 @@ interpreting their own object schemas.
   - path publish refreshes the merged device-writer cache immediately;
   - `/api/v1/publish` followed by `/api/v1/resolve` now resolves from
     `source: "device_writer_cache"`.
+- Added the append-record app-API surface (Spoke card J1):
+  - `MergedDeviceIdentityState::append_records_under(prefix)` enumerates the
+    merge engine's `append_records` map by path prefix in deterministic order;
+  - `publish_file_appending_path` publishes a device-writer Append entry and
+    never writes the last-writer-wins update log (append records must coexist);
+  - `DaemonCommand::PublishAppend` / `DaemonHandle::publish_append` and
+    `DaemonCommand::EnumerateAppendRecords` / `DaemonHandle::enumerate_append_records`;
+  - `POST /app/v1/append` (capability `publish:<path>`, local identity only) and
+    `POST /app/v1/enumerate` (capability `resolve:public`, any identity) expose
+    append publish and prefix enumeration over the app API. Enumeration reads
+    cached merged device-writer state; remote-identity device-writer sync stays
+    out of scope (still pending below).
+- This work does not yet wire device writer logs into provider discovery,
+  network sync, or persisted store format.
 
 ## Verification
 
@@ -123,3 +137,19 @@ interpreting their own object schemas.
   - `cargo test -p jolt-network`
   - `cargo test -p jolt-server`
   - `./scripts/test-local.sh`
+- Red first for the append-record app-API slice (Spoke card J1):
+  - `cargo test -p jolt-core enumerates_append_records_under_a_path_prefix --test device_writer_log`
+    failed on the missing `append_records_under` helper.
+  - `cargo test -p jolt-network daemon_append_publish_records_coexist_under_prefix`
+    failed on the missing `DaemonCommand::PublishAppend`.
+  - `cargo test -p jolt-server test_app_can_append_and_enumerate_records_by_prefix`
+    failed on the missing `/app/v1/append` and `/app/v1/enumerate` routes.
+- Green for the append-record app-API slice:
+  - `cargo test -p jolt-core --test device_writer_log` (10 tests)
+  - `cargo test -p jolt-network --lib` (56 tests)
+  - `cargo test -p jolt-server --test api_integration test_app_can_append_and_enumerate_records_by_prefix`
+- Known pre-existing flakiness (reproduced with this slice stashed, so unrelated):
+  the network-dependent `two_nodes_dht_provider_announce_and_fetch`,
+  `test_fetch_endpoint_distinguishes_unresolved_jolt_address`, and
+  `test_resolve_endpoint_reports_no_update_log_provider_candidates` fail in this
+  sandbox because no bootstrap relays / DHT providers are reachable.

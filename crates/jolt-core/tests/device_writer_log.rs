@@ -182,6 +182,51 @@ fn preserves_append_records_from_multiple_devices_in_deterministic_order() {
 }
 
 #[test]
+fn enumerates_append_records_under_a_path_prefix_in_deterministic_order() {
+    let root = signing_key();
+    let laptop = signing_key();
+    let (identity, authority) = authority_for_devices(&root, &[("dev_laptop", &laptop, "Laptop")]);
+
+    let record_one = content_id(b"record one");
+    let record_two = content_id(b"record two");
+    let unrelated = content_id(b"unrelated record");
+    let genesis = DeviceWriterLogEntry::genesis(
+        identity.clone(),
+        "dev_laptop",
+        DeviceWriterOperation::append_record("/app/items/1", record_one.clone()),
+        100,
+        |bytes| sign(&laptop, bytes),
+    )
+    .unwrap();
+    let second = genesis
+        .append(
+            DeviceWriterOperation::append_record("/app/items/2", record_two.clone()),
+            101,
+            |bytes| sign(&laptop, bytes),
+        )
+        .unwrap();
+    let third = second
+        .append(
+            DeviceWriterOperation::append_record("/app/other/x", unrelated.clone()),
+            102,
+            |bytes| sign(&laptop, bytes),
+        )
+        .unwrap();
+    let log = vec![genesis, second, third];
+
+    let merged = merge_device_writer_logs(&authority, vec![log]).unwrap();
+    let records = merged.append_records_under("/app/items/");
+
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].0, "/app/items/1");
+    assert_eq!(records[0].1.content_id, record_one);
+    assert_eq!(records[1].0, "/app/items/2");
+    assert_eq!(records[1].1.content_id, record_two);
+    // A prefix outside the collection enumerates nothing from it.
+    assert_eq!(merged.append_records_under("/app/missing/").len(), 0);
+}
+
+#[test]
 fn ignores_revoked_device_entries_after_accepted_sequence() {
     let root = signing_key();
     let laptop = signing_key();

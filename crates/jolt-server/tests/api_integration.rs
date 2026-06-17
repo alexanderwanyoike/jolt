@@ -1567,6 +1567,77 @@ async fn test_app_publish_requires_session_and_path_capability() {
 }
 
 #[tokio::test]
+async fn test_app_can_append_and_enumerate_records_by_prefix() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &["publish:/app/*", "resolve:public"],
+    )
+    .await;
+
+    for (path, body) in [
+        ("/app/items/1", b"record one".as_slice()),
+        ("/app/items/2", b"record two".as_slice()),
+        ("/app/other/x", b"unrelated".as_slice()),
+    ] {
+        let form = reqwest::multipart::Form::new()
+            .part(
+                "file",
+                reqwest::multipart::Part::bytes(body.to_vec()).file_name("record.json"),
+            )
+            .text("path", path.to_string());
+        let appended = client
+            .post(format!("{}/app/v1/append", base_url(port)))
+            .bearer_auth(&token)
+            .multipart(form)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(appended.status(), 200);
+        let value: serde_json::Value = appended.json().await.unwrap();
+        assert_eq!(value["path"], path);
+    }
+
+    let enumerated = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "identity": identity,
+            "path_prefix": "/app/items/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(enumerated.status(), 200);
+    let records: serde_json::Value = enumerated.json().await.unwrap();
+    let records = records.as_array().unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["path"], "/app/items/1");
+    assert_eq!(records[1]["path"], "/app/items/2");
+    assert!(!records[0]["content_id"].as_str().unwrap().is_empty());
+
+    // Enumeration requires the read capability.
+    let no_read_token = approve_app_session(&client, port, &identity, &["publish:/app/*"]).await;
+    let denied = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&no_read_token)
+        .json(&serde_json::json!({
+            "identity": identity,
+            "path_prefix": "/app/items/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 403);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_inventory_is_filtered_to_granted_prefix() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
