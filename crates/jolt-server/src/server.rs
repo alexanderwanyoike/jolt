@@ -7,6 +7,7 @@ use tracing::info;
 
 use jolt_network::DaemonHandle;
 
+use crate::device_authority::DeviceAuthorityStore;
 use crate::local_identities::LocalIdentityStore;
 use crate::network_settings::NetworkSettingsStore;
 use crate::routes;
@@ -34,11 +35,13 @@ pub fn build_router_with_stores(
 ) -> Router {
     let local_identities =
         LocalIdentityStore::new(daemon.local_identity_address().map(ToOwned::to_owned));
+    let device_authority = DeviceAuthorityStore::new();
     let state = AppState {
         daemon,
         sessions,
         network_settings,
         local_identities,
+        device_authority,
     };
 
     Router::new()
@@ -126,6 +129,18 @@ pub fn build_router_with_stores(
         .route(
             "/admin/v1/identities/active",
             post(routes::local_identities::select_active),
+        )
+        .route(
+            "/admin/v1/device-authority",
+            get(routes::device_authority::list),
+        )
+        .route(
+            "/admin/v1/device-authority/devices",
+            post(routes::device_authority::authorize_device),
+        )
+        .route(
+            "/admin/v1/device-authority/devices/{device_id}/revoke",
+            post(routes::device_authority::revoke_device),
         )
         .route(
             "/admin/v1/network-settings",

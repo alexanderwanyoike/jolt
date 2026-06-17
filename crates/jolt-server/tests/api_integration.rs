@@ -2,7 +2,7 @@ use jolt_core::{
     generate_identity_encryption_keypair, ContentId, EncryptedObjectEnvelope,
     EncryptedObjectRecipient, IdentityEncryptionKey, IdentityEncryptionKeyRecord, IdentityId,
     JoltAddress, PinRequest, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
-    IDENTITY_ENCRYPTION_KEYS_PATH, SIGNED_REACHABILITY_PATH,
+    IDENTITY_AUTHORITY_PATH, IDENTITY_ENCRYPTION_KEYS_PATH, SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
 use jolt_network::{
@@ -659,6 +659,202 @@ async fn test_admin_can_delete_generated_local_identity() {
     assert_eq!(delete_daemon_resp.status(), 400);
     let body: serde_json::Value = delete_daemon_resp.json().await.unwrap();
     assert_eq!(body["code"], "local_identity_protected");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_can_authorize_and_revoke_local_device() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let daemon_identity = handle.status().await.unwrap().identity_address;
+
+    let initial_resp = client
+        .get(format!("{}/admin/v1/device-authority", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(initial_resp.status(), 200);
+    let initial: serde_json::Value = initial_resp.json().await.unwrap();
+    assert_eq!(initial["identity"], daemon_identity);
+    assert_eq!(initial["latest_sequence"], 0);
+    assert_eq!(initial["devices"].as_array().unwrap().len(), 1);
+    assert_eq!(initial["devices"][0]["device_id"], "dev_legacy_root");
+    assert_eq!(initial["devices"][0]["status"], "active");
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Laptop" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+    let authorized: serde_json::Value = authorize_resp.json().await.unwrap();
+    assert_eq!(authorized["identity"], daemon_identity);
+    assert_eq!(authorized["latest_sequence"], 1);
+    let generated_device_id = authorized["device"]["device_id"].as_str().unwrap();
+    assert_ne!(generated_device_id, "dev_legacy_root");
+    assert_eq!(authorized["device"]["label"], "Laptop");
+    assert_eq!(authorized["device"]["status"], "active");
+
+    let revoke_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/{generated_device_id}/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 3,
+            "reason": "lost_device"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoke_resp.status(), 200);
+    let revoked: serde_json::Value = revoke_resp.json().await.unwrap();
+    assert_eq!(revoked["latest_sequence"], 2);
+    assert_eq!(revoked["device"]["device_id"], generated_device_id);
+    assert_eq!(revoked["device"]["status"], "revoked");
+    assert_eq!(revoked["device"]["accepted_through_device_sequence"], 3);
+
+    let resolve_resp = client
+        .post(format!("{}/api/v1/resolve", base_url(port)))
+        .json(&serde_json::json!({
+            "address": format!("{daemon_identity}{IDENTITY_AUTHORITY_PATH}")
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resolve_resp.status(), 200);
+    let resolved: serde_json::Value = resolve_resp.json().await.unwrap();
+    assert_eq!(resolved["path"], IDENTITY_AUTHORITY_PATH);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_list_is_idempotent() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let daemon_identity = handle.status().await.unwrap().identity_address;
+
+    let first_resp = client
+        .get(format!("{}/admin/v1/device-authority", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first_resp.status(), 200);
+    let first: serde_json::Value = first_resp.json().await.unwrap();
+    assert_eq!(first["identity"], daemon_identity);
+    assert_eq!(first["latest_sequence"], 0);
+    assert_eq!(first["devices"].as_array().unwrap().len(), 1);
+
+    let second_resp = client
+        .get(format!("{}/admin/v1/device-authority", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second_resp.status(), 200);
+    let second: serde_json::Value = second_resp.json().await.unwrap();
+    assert_eq!(second["identity"], first["identity"]);
+    assert_eq!(second["latest_sequence"], first["latest_sequence"]);
+    assert_eq!(second["devices"], first["devices"]);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_rejects_unknown_device_revocation() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let revoke_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/dev_missing/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 3,
+            "reason": "not_authorized"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(revoke_resp.status(), 400);
+    let body: serde_json::Value = revoke_resp.json().await.unwrap();
+    assert_eq!(body["code"], "device_authority_invalid");
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("cannot revoke unknown device dev_missing"));
+
+    let authority_resp = client
+        .get(format!("{}/admin/v1/device-authority", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authority_resp.status(), 200);
+    let authority: serde_json::Value = authority_resp.json().await.unwrap();
+    assert_eq!(authority["latest_sequence"], 0);
+    assert_eq!(authority["devices"].as_array().unwrap().len(), 1);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_can_continue_after_rejected_revocation() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let rejected_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/dev_missing/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 3,
+            "reason": "not_authorized"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejected_resp.status(), 400);
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Recovered laptop" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+    let authorized: serde_json::Value = authorize_resp.json().await.unwrap();
+    assert_eq!(authorized["latest_sequence"], 1);
+    assert_eq!(authorized["devices"].as_array().unwrap().len(), 2);
+    let generated_device_id = authorized["device"]["device_id"].as_str().unwrap();
+
+    let revoke_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/{generated_device_id}/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 4,
+            "reason": "rotated"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoke_resp.status(), 200);
+    let revoked: serde_json::Value = revoke_resp.json().await.unwrap();
+    assert_eq!(revoked["latest_sequence"], 2);
+    assert_eq!(revoked["device"]["status"], "revoked");
+    assert_eq!(revoked["device"]["accepted_through_device_sequence"], 4);
 
     handle.shutdown().await.ok();
 }

@@ -78,6 +78,10 @@ pub enum DaemonCommand {
     GetStatus {
         response_tx: oneshot::Sender<NodeStatus>,
     },
+    SignLocalIdentity {
+        payload: Vec<u8>,
+        response_tx: oneshot::Sender<Vec<u8>>,
+    },
     GetPeers {
         response_tx: oneshot::Sender<Vec<PeerInfo>>,
     },

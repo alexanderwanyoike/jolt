@@ -2,6 +2,7 @@ pub mod content_id;
 pub mod encrypted_object;
 pub mod error;
 pub mod identity_address;
+pub mod identity_authority;
 pub mod identity_encryption_key;
 pub mod identity_head_hint;
 pub mod pin_request;
@@ -18,6 +19,12 @@ pub use encrypted_object::{
 };
 pub use error::JoltError;
 pub use identity_address::{IdentityId, JoltAddress};
+pub use identity_authority::{
+    verify_identity_authority_chain, AuthorizedDevice, AuthorizedDeviceStatus,
+    DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceAuthorizationRecordBody,
+    DeviceAuthorizationRecordHash, DeviceEncryptionPublicKey, IdentityAuthorityError,
+    VerifiedIdentityAuthority, IDENTITY_AUTHORITY_PATH,
+};
 pub use identity_encryption_key::{
     verify_identity_encryption_key_record_for_identity, IdentityEncryptionKey,
     IdentityEncryptionKeyRecord, IdentityEncryptionKeyRecordBody, IdentityEncryptionKeyRecordError,

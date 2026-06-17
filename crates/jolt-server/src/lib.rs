@@ -1,3 +1,4 @@
+pub mod device_authority;
 pub mod error;
 pub mod local_identities;
 pub mod network_settings;

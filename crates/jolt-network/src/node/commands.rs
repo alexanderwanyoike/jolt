@@ -224,6 +224,12 @@ impl NetworkNode {
             DaemonCommand::GetStatus { response_tx } => {
                 let _ = response_tx.send(self.build_status());
             }
+            DaemonCommand::SignLocalIdentity {
+                payload,
+                response_tx,
+            } => {
+                let _ = response_tx.send(self.identity.sign(&payload));
+            }
             DaemonCommand::GetPeers { response_tx } => {
                 let peers = self
                     .swarm
