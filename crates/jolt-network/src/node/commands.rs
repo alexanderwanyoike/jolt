@@ -69,8 +69,25 @@ impl NetworkNode {
                 path_prefix,
                 response_tx,
             } => {
-                let result = self.enumerate_append_records(&identity, &path_prefix);
-                let _ = response_tx.send(result);
+                // For a remote identity with no cached device-writer state,
+                // discover providers and sync the identity's authorized device
+                // writer logs before answering, so a fresh reader sees the
+                // remote identity's live merged append records rather than an
+                // empty local cache. Local identities and already-synced remote
+                // identities answer immediately from cache.
+                let is_local = identity == self.identity.identity_id();
+                if !is_local && !self.has_device_writer_state(&identity) {
+                    self.begin_device_writer_sync(
+                        super::resolution::DeviceWriterSyncWaiter::Enumerate {
+                            identity,
+                            path_prefix,
+                            response_tx,
+                        },
+                    );
+                } else {
+                    let result = self.enumerate_append_records(&identity, &path_prefix);
+                    let _ = response_tx.send(result);
+                }
             }
             DaemonCommand::Fetch {
                 content_id,
@@ -136,6 +153,21 @@ impl NetworkNode {
                     .resolve_response_from_cache(&address, None, "cache")
                     .ok();
                 let identity = address.identity().clone();
+
+                // Kick off a background device-writer sync for remote identities
+                // with no cached device-writer state. This populates the
+                // device-writer cache (append records and merged singletons) so
+                // subsequent resolves/enumerations see live remote state, while
+                // the legacy update-log path below answers this request now.
+                if identity != self.identity.identity_id()
+                    && !self.has_device_writer_state(&identity)
+                {
+                    self.begin_device_writer_sync(
+                        super::resolution::DeviceWriterSyncWaiter::Refresh {
+                            identity: identity.clone(),
+                        },
+                    );
+                }
 
                 if let Some(response) = fallback_response.clone() {
                     let _ = response_tx.send(Ok(response));

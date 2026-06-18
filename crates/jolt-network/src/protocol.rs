@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use jolt_core::{IdentityHeadHint, IdentityId, RelayRecord, RelayRecordCapability, UpdateLogEntry};
+use jolt_core::{
+    DeviceAuthorizationRecord, DeviceWriterLogEntry, IdentityHeadHint, IdentityId, RelayRecord,
+    RelayRecordCapability, UpdateLogEntry,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentRequest {
@@ -23,6 +26,24 @@ pub struct UpdateLogRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateLogResponse {
     pub entries: Vec<UpdateLogEntry>,
+}
+
+/// Ask a provider for an identity's device-authority records and the per-device
+/// writer logs it holds. This mirrors `UpdateLogRequest` but carries the
+/// multi-writer device-log state instead of the legacy single-writer log.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceWriterSyncRequest {
+    pub identity: IdentityId,
+}
+
+/// A provider's view of an identity's device-writer state: the verified
+/// device-authority chain plus every per-device writer log it can serve. The
+/// requester re-verifies and re-merges these locally, so an unverified or
+/// hostile response cannot poison the cache.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DeviceWriterSyncResponse {
+    pub authority_records: Vec<DeviceAuthorizationRecord>,
+    pub device_logs: Vec<Vec<DeviceWriterLogEntry>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,6 +168,69 @@ mod tests {
         let decoded: UpdateLogResponse = ciborium::from_reader(&buf[..]).unwrap();
 
         assert_eq!(decoded.entries, vec![entry]);
+    }
+
+    #[test]
+    fn device_writer_sync_request_cbor_round_trip() {
+        let identity = IdentityId::from_public_key([5; 32]);
+        let request = DeviceWriterSyncRequest {
+            identity: identity.clone(),
+        };
+
+        let mut buf = Vec::new();
+        ciborium::into_writer(&request, &mut buf).unwrap();
+        let decoded: DeviceWriterSyncRequest = ciborium::from_reader(&buf[..]).unwrap();
+
+        assert_eq!(decoded.identity, identity);
+    }
+
+    #[test]
+    fn device_writer_sync_response_cbor_round_trip() {
+        use jolt_core::{
+            ContentId, DeviceAuthorizationOperation, DeviceAuthorizationRecord,
+            DeviceWriterLogEntry, DeviceWriterOperation, DeviceWriterPathMode,
+        };
+
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let authority = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_a",
+                device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Phone".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        let device_log = vec![DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            "dev_a",
+            DeviceWriterOperation::set_path(
+                "/profile",
+                ContentId::from_bytes(b"profile"),
+                DeviceWriterPathMode::Singleton,
+            ),
+            100,
+            |bytes| device.sign(bytes),
+        )
+        .unwrap()];
+        let response = DeviceWriterSyncResponse {
+            authority_records: authority.clone(),
+            device_logs: vec![device_log.clone()],
+        };
+
+        let mut buf = Vec::new();
+        ciborium::into_writer(&response, &mut buf).unwrap();
+        let decoded: DeviceWriterSyncResponse = ciborium::from_reader(&buf[..]).unwrap();
+
+        assert_eq!(decoded.authority_records, authority);
+        assert_eq!(decoded.device_logs, vec![device_log]);
     }
 
     #[test]
