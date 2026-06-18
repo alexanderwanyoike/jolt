@@ -10,8 +10,11 @@ use crate::state::AppState;
 
 pub async fn request_session(
     State(state): State<AppState>,
-    Json(request): Json<AppSessionRequest>,
+    Json(mut request): Json<AppSessionRequest>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
+    if request.requested_identity.is_none() {
+        request.requested_identity = state.local_identities.active_identity().await;
+    }
     let response = state.sessions.create_request(request).await?;
     Ok(Json(response))
 }
@@ -36,7 +39,14 @@ pub async fn current_session(
 pub async fn list_requests(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
-    Ok(Json(state.sessions.list_requests().await))
+    let identity = state
+        .local_identities
+        .active_identity()
+        .await
+        .ok_or(AppSessionStoreError::MissingIdentity)?;
+    Ok(Json(
+        state.sessions.list_requests_for_identity(&identity).await,
+    ))
 }
 
 pub async fn approve_request(
@@ -83,14 +93,29 @@ pub async fn reject_request(
 pub async fn list_sessions(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
-    Ok(Json(state.sessions.list_sessions().await))
+    let identity = state
+        .local_identities
+        .active_identity()
+        .await
+        .ok_or(AppSessionStoreError::MissingIdentity)?;
+    Ok(Json(
+        state.sessions.list_sessions_for_identity(&identity).await,
+    ))
 }
 
 pub async fn revoke_session(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
-    let response = state.sessions.revoke_session(&session_id).await?;
+    let identity = state
+        .local_identities
+        .active_identity()
+        .await
+        .ok_or(AppSessionStoreError::MissingIdentity)?;
+    let response = state
+        .sessions
+        .revoke_session_for_identity(&session_id, &identity)
+        .await?;
     Ok(Json(response))
 }
 
@@ -191,10 +216,7 @@ async fn identity_can_receive_daemon_capabilities(
     if state.local_identities.is_daemon_identity(identity).await {
         return Ok(true);
     }
-    if !state.local_identities.contains(identity).await {
-        return Ok(true);
-    }
-    Ok(state.daemon.status().await?.identity_address == identity)
+    Ok(false)
 }
 
 fn bearer_token(headers: &HeaderMap) -> Result<&str, AppSessionStoreError> {
