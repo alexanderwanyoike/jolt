@@ -12,7 +12,7 @@ use jolt_core::{
     SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
-use jolt_store::ContentStore;
+use jolt_store::{ContentStore, PersistedDeviceWriterLog};
 
 use crate::command::PublishReachabilityResponse;
 use crate::error::NetworkError;
@@ -212,6 +212,24 @@ impl NetworkNode {
             entries.clone()
         };
 
+        // Persist the device-writer log before serving it. Append records live
+        // only here (never the update log), so without this they would not
+        // survive a daemon restart - the identity's own posts/accepted-reply
+        // refs, and the records it serves to peers, would vanish.
+        self.store
+            .save_device_writer_log(
+                &identity,
+                &PersistedDeviceWriterLog {
+                    authority_records: authority_records.clone(),
+                    device_log: device_log.clone(),
+                },
+            )
+            .map_err(|e| {
+                NetworkError::Protocol(format!(
+                    "failed to persist device-writer log for {identity}: {e}"
+                ))
+            })?;
+
         self.store_verified_device_writer_logs(
             identity.clone(),
             authority_records,
@@ -379,6 +397,43 @@ impl NetworkNode {
         let mut update_logs = HashMap::new();
         update_logs.insert(identity_id, entries);
         Ok(update_logs)
+    }
+
+    /// Rebuild this node's own device-writer state from the persisted log, if
+    /// any. Repopulates the local device log and authority records (so a later
+    /// append continues the existing per-device chain) and the merged
+    /// device-writer state (so the identity's append records enumerate and are
+    /// served to peers) - the in-memory counterpart of `save_device_writer_log`.
+    pub(super) fn load_persisted_local_device_writer_log(&mut self) -> Result<(), NetworkError> {
+        let identity_id = self.identity.identity_id();
+        let Some(record) = self.store.load_device_writer_log(&identity_id).map_err(|e| {
+            NetworkError::Protocol(format!(
+                "failed to load persisted device-writer log for {identity_id}: {e}"
+            ))
+        })?
+        else {
+            return Ok(());
+        };
+
+        // store_verified_device_writer_logs verifies the authority chain and
+        // merges the log into device_writer_states; reject a tampered log just
+        // as the persisted update-log path does.
+        self.store_verified_device_writer_logs(
+            identity_id.clone(),
+            record.authority_records.clone(),
+            vec![record.device_log.clone()],
+        )
+        .map_err(|e| {
+            NetworkError::Protocol(format!(
+                "invalid persisted device-writer log for {identity_id}: {e}"
+            ))
+        })?;
+
+        self.local_device_authority_records
+            .insert(identity_id.clone(), record.authority_records);
+        self.local_device_writer_logs
+            .insert(identity_id, record.device_log);
+        Ok(())
     }
 
     /// Store a verified update log for an identity, ignoring stale valid logs.

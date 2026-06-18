@@ -1056,6 +1056,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn remote_enumerate_refreshes_already_cached_device_writer_state() {
+        // A peer that has already synced a remote identity's device-writer state
+        // must still surface records the author appends *afterwards*. Regression:
+        // enumerate short-circuited whenever any state was cached, so an author's
+        // later appends (e.g. Spoke accepted-reply refs published after a reader's
+        // first feed load) stayed invisible to peers who had synced earlier.
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_laptop";
+        let authority = vec![authorize_device(&root, &laptop, device_id)];
+
+        let post = ContentId::from_bytes(b"spoke post");
+        let accepted = ContentId::from_bytes(b"spoke accepted reply ref");
+
+        // A provider stays reachable for the whole test.
+        let provider = libp2p::PeerId::random();
+        let key = NetworkNode::update_log_provider_key(&identity);
+        node.discovered_providers.insert(key, vec![provider]);
+
+        // First read: the author has published only the post. The reader syncs
+        // and caches that single-record device log.
+        let first_log = append_log(
+            &identity,
+            &laptop,
+            device_id,
+            &[("/spoke/posts/1", post.clone())],
+        );
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: identity.clone(),
+            path_prefix: "/spoke/posts/".to_string(),
+            response_tx: tx,
+        });
+        assert_eq!(node.pending_device_writer_syncs.len(), 1);
+        deliver_device_writer_sync_response(
+            &mut node,
+            provider,
+            authority.clone(),
+            vec![first_log],
+        );
+        assert_eq!(rx.await.unwrap().unwrap().len(), 1);
+        assert!(node.has_device_writer_state(&identity));
+
+        // The author now appends an accepted-reply ref under a different prefix.
+        let second_log = append_log(
+            &identity,
+            &laptop,
+            device_id,
+            &[
+                ("/spoke/posts/1", post.clone()),
+                ("/spoke/accepted/post_1/reply_1", accepted.clone()),
+            ],
+        );
+
+        // The peer re-enumerates the accepted-reply Collection. Even though it
+        // already holds cached state, it must refresh from the reachable provider
+        // and surface the newly appended record rather than answering from the
+        // stale cache.
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: identity.clone(),
+            path_prefix: "/spoke/accepted/post_1/".to_string(),
+            response_tx: tx,
+        });
+        assert_eq!(
+            node.pending_device_writer_syncs.len(),
+            1,
+            "a cached-but-stale remote enumerate must trigger a refresh sync"
+        );
+        deliver_device_writer_sync_response(&mut node, provider, authority, vec![second_log]);
+
+        let records = rx.await.unwrap().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].path, "/spoke/accepted/post_1/reply_1");
+        assert_eq!(records[0].content_id, accepted.to_string());
+    }
+
+    #[tokio::test]
     async fn two_device_remote_identity_merges_deterministically_regardless_of_sync_order() {
         // Authorize two devices, each with its own append record, and verify the
         // merged enumeration is identical no matter which device log syncs
