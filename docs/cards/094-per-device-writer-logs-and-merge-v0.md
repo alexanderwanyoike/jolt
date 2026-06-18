@@ -29,15 +29,23 @@ Implement the minimal true multi-writer identity state path:
 
 ## Acceptance Criteria
 
-- [ ] Two authorized devices can publish independent identity state while both
+- [x] Two authorized devices can publish independent identity state while both
       are online.
-- [ ] `.jolt` resolution produces the same merged result regardless of device
-      log discovery order.
-- [ ] Concurrent append-style app records from different devices can coexist.
-- [ ] Concurrent singleton path updates resolve deterministically.
-- [ ] Conflict history is inspectable enough for diagnostics.
-- [ ] Writes from revoked devices are ignored after revocation.
-- [ ] Tests cover two-device concurrent publishes and deterministic merge.
+- [x] `.jolt` resolution produces the same merged result regardless of device
+      log discovery order. (Deterministic merge is order-independent both within
+      the merge engine and across remote sync order; see
+      `two_device_remote_identity_merges_deterministically_regardless_of_sync_order`.)
+- [x] Concurrent append-style app records from different devices can coexist,
+      including after remote sync.
+- [x] Concurrent singleton path updates resolve deterministically.
+- [x] Conflict history is inspectable enough for diagnostics (losing singleton
+      and rejected device entries are retained, including for revoked devices
+      observed after sync).
+- [x] Writes from revoked devices are ignored after revocation, including after
+      remote sync.
+- [x] Tests cover two-device concurrent publishes and deterministic merge, plus
+      remote-identity sync becoming enumerable, deterministic two-device remote
+      merge, revoked-device exclusion after sync, and provider retry on failure.
 
 ## Non-Goals
 
@@ -93,11 +101,39 @@ interpreting their own object schemas.
     `DaemonCommand::EnumerateAppendRecords` / `DaemonHandle::enumerate_append_records`;
   - `POST /app/v1/append` (capability `publish:<path>`, local identity only) and
     `POST /app/v1/enumerate` (capability `resolve:public`, any identity) expose
-    append publish and prefix enumeration over the app API. Enumeration reads
-    cached merged device-writer state; remote-identity device-writer sync stays
-    out of scope (still pending below).
-- This work does not yet wire device writer logs into provider discovery,
-  network sync, or persisted store format.
+    append publish and prefix enumeration over the app API.
+- Added live remote-identity device-writer sync (this is the piece that was
+  previously pending):
+  - new `/jolt/device-writer/1.0.0` request/response protocol
+    (`DeviceWriterSyncRequest { identity }` ->
+    `DeviceWriterSyncResponse { authority_records, device_logs }`); the responder
+    serves whatever device-writer state it has cached, and the requester
+    re-verifies and re-merges locally so a hostile response cannot poison the
+    cache;
+  - discovery reuses the existing `jolt:update-log:<identity>` DHT/relay provider
+    key, so device-writer sync rides the same provider-discovery path as the
+    legacy update-log resolve. Append-only publishes now announce that provider
+    key too (they never touch the update log, so they would otherwise be
+    undiscoverable);
+  - `store_verified_device_writer_logs` now accumulates per-device logs keyed by
+    device id and keeps the highest-sequence verified authority chain, so device
+    logs discovered from different providers or in any order converge on the same
+    deterministic merged view, and a later sync carrying a revocation is honoured;
+  - `EnumerateAppendRecords` for a remote identity with no cached state discovers
+    providers, fetches and merges the identity's authorized device-writer logs,
+    then answers from live merged state (an empty list when no remote state could
+    be synced). `Resolve` of a remote identity opportunistically warms the
+    device-writer cache in the background while the legacy update-log path answers
+    the request;
+  - device-writer sync peeks (does not consume) the shared provider pool so it
+    never steals a provider the legacy resolve path expects; failed providers are
+    retried, and a sync timeout safety net guarantees parked waiters are answered.
+- Still out of scope / deferred: a persisted on-disk store format for device-writer
+  state (it is rebuilt from sync on restart); periodic background re-sync of an
+  already-cached remote identity (a cached remote enumerate answers from cache
+  without re-fetching, and a fresh resolve warms it); and per-device-log content
+  addressing (device logs are served inline in the sync response rather than as
+  pinnable CID snapshots).
 
 ## Verification
 
@@ -148,6 +184,20 @@ interpreting their own object schemas.
   - `cargo test -p jolt-core --test device_writer_log` (10 tests)
   - `cargo test -p jolt-network --lib` (56 tests)
   - `cargo test -p jolt-server --test api_integration test_app_can_append_and_enumerate_records_by_prefix`
+- Red first for live remote-identity device-writer sync:
+  - `cargo test -p jolt-network remote_append_records_become_enumerable_after_device_writer_sync`
+    failed before the device-writer sync protocol, discovery wiring, and the
+    `EnumerateAppendRecords` remote-sync path existed.
+  - `cargo test -p jolt-network two_device_remote_identity_merges_deterministically_regardless_of_sync_order`
+    failed before `store_verified_device_writer_logs` accumulated per-device logs
+    across syncs.
+  - `cargo test -p jolt-network revoked_device_append_records_are_excluded_after_sync`
+    failed before remote sync verified/merged authority chains carrying revocations.
+- Green for live remote-identity device-writer sync:
+  - `cargo test -p jolt-network --lib device_writer` (device-writer sync unit tests)
+  - `cargo test -p jolt-network --lib` (whole network lib suite)
+  - `cargo test -p jolt-core`
+  - `./scripts/test-local.sh`
 - Known pre-existing flakiness (reproduced with this slice stashed, so unrelated):
   the network-dependent `two_nodes_dht_provider_announce_and_fetch`,
   `test_fetch_endpoint_distinguishes_unresolved_jolt_address`, and

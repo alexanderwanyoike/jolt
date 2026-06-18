@@ -114,6 +114,13 @@ fn build_behaviour(
         )],
         request_response::Config::default(),
     );
+    let device_writer_sync = request_response::cbor::Behaviour::new(
+        [(
+            StreamProtocol::new("/jolt/device-writer/1.0.0"),
+            ProtocolSupport::Full,
+        )],
+        request_response::Config::default(),
+    );
     let relay_exchange = request_response::cbor::Behaviour::new(
         [(
             StreamProtocol::new("/jolt/relays/1.0.0"),
@@ -136,6 +143,7 @@ fn build_behaviour(
         mdns,
         content_fetch,
         update_log_sync,
+        device_writer_sync,
         relay_exchange,
         kademlia,
         identify,

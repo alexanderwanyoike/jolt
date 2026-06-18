@@ -212,7 +212,20 @@ impl NetworkNode {
             entries.clone()
         };
 
-        self.store_verified_device_writer_logs(identity, authority_records, vec![device_log])?;
+        self.store_verified_device_writer_logs(
+            identity.clone(),
+            authority_records,
+            vec![device_log],
+        )?;
+
+        // Announce this node as a provider for the identity so remote readers
+        // can discover and sync the device-writer logs. Reuses the existing
+        // update-log provider key, so device-writer sync rides the same
+        // discovery path. Append-only publishes never touch the update log, so
+        // without this they would otherwise be undiscoverable.
+        if let Err(e) = self.announce_update_log_provider(&identity) {
+            debug!("Device-writer provider announcement skipped: {e}");
+        }
         Ok(device_sequence)
     }
 

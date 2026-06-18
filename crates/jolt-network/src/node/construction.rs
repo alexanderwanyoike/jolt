@@ -62,6 +62,8 @@ impl NetworkNode {
             pending_jolt_resolutions: HashMap::new(),
             pending_daemon_resolutions: HashMap::new(),
             pending_resolves: HashMap::new(),
+            pending_device_writer_syncs: HashMap::new(),
+            pending_device_writer_waiters: HashMap::new(),
             discovered_providers: HashMap::new(),
             update_logs,
             device_writer_states: HashMap::new(),

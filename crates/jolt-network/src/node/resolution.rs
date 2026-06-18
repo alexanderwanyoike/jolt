@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use jolt_core::{
@@ -9,10 +10,42 @@ use tokio::sync::oneshot;
 
 use crate::command::{AppendRecordInfo, ResolveResponse};
 use crate::error::NetworkError;
-use crate::protocol::UpdateLogRequest;
+use crate::protocol::{DeviceWriterSyncRequest, UpdateLogRequest};
 
 use super::CachedDeviceWriterState;
 use super::NetworkNode;
+
+/// A waiter parked on a device-writer sync for a remote identity. Once the sync
+/// completes (or fails), the waiter is answered from freshly merged state.
+pub(super) enum DeviceWriterSyncWaiter {
+    /// An `EnumerateAppendRecords` command waiting for live remote state.
+    Enumerate {
+        identity: IdentityId,
+        path_prefix: String,
+        response_tx: oneshot::Sender<Result<Vec<AppendRecordInfo>, NetworkError>>,
+    },
+    /// A background refresh that only populates the device-writer cache so that
+    /// later enumerations/resolutions see live remote state. No waiter is
+    /// answered. This is how a `.jolt` resolve opportunistically warms the
+    /// device-writer cache while the legacy update-log path answers the resolve.
+    Refresh { identity: IdentityId },
+}
+
+impl DeviceWriterSyncWaiter {
+    fn identity(&self) -> &IdentityId {
+        match self {
+            Self::Enumerate { identity, .. } => identity,
+            Self::Refresh { identity } => identity,
+        }
+    }
+}
+
+/// An in-flight device-writer sync request to a single provider.
+pub(super) struct PendingDeviceWriterSync {
+    pub(super) identity: IdentityId,
+    pub(super) provider: libp2p::PeerId,
+    pub(super) deadline: Instant,
+}
 
 pub(super) struct PendingResolve {
     pub(super) address: JoltAddress,
@@ -132,15 +165,59 @@ impl NetworkNode {
     }
 
     /// Store a verified merged device-writer state for an identity.
+    ///
+    /// Newly supplied authority records and per-device writer logs are merged
+    /// with any already-cached state for the identity, so that device logs
+    /// discovered from different providers (or in different orders) converge on
+    /// the same deterministic merged view. The authority chain with the highest
+    /// verified sequence wins, so a later sync that carries a device revocation
+    /// is honoured.
     pub fn store_verified_device_writer_logs(
         &mut self,
         identity: IdentityId,
         authority_records: Vec<DeviceAuthorizationRecord>,
         device_logs: Vec<Vec<DeviceWriterLogEntry>>,
     ) -> Result<u64, NetworkError> {
+        let candidate_authority = verify_identity_authority_chain(&identity, &authority_records)
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+
+        // Choose the authority chain to merge under: keep whichever verified
+        // chain has the higher sequence so a revocation is never dropped.
+        let existing = self.device_writer_states.get(&identity);
+        let use_candidate_authority = existing
+            .map(|state| candidate_authority.latest_sequence >= state.authority_sequence)
+            .unwrap_or(true);
+        let authority_records = if use_candidate_authority {
+            authority_records
+        } else {
+            existing
+                .map(|state| state.authority_records.clone())
+                .unwrap_or(authority_records)
+        };
         let authority = verify_identity_authority_chain(&identity, &authority_records)
             .map_err(|e| NetworkError::Protocol(e.to_string()))?;
-        let merged = merge_device_writer_logs(&authority, device_logs)
+
+        // Accumulate device logs by device id. The longest log per device wins,
+        // matching the legacy single-writer update-log "newer sequence wins"
+        // rule and keeping merge order independent of discovery order.
+        let mut accumulated: HashMap<String, Vec<DeviceWriterLogEntry>> = existing
+            .map(|state| state.device_logs.clone())
+            .unwrap_or_default();
+        for log in device_logs {
+            let Some(first) = log.first() else {
+                continue;
+            };
+            let device_id = first.body.device_id.clone();
+            let keep = accumulated
+                .get(&device_id)
+                .map(|known| log.len() > known.len())
+                .unwrap_or(true);
+            if keep {
+                accumulated.insert(device_id, log);
+            }
+        }
+
+        let merged = merge_device_writer_logs(&authority, accumulated.values().cloned())
             .map_err(|e| NetworkError::Protocol(e.to_string()))?;
         let authority_sequence = authority.latest_sequence;
         self.device_writer_states.insert(
@@ -148,9 +225,38 @@ impl NetworkNode {
             CachedDeviceWriterState {
                 authority_sequence,
                 merged,
+                authority_records,
+                device_logs: accumulated,
             },
         );
         Ok(authority_sequence)
+    }
+
+    /// A provider-facing snapshot of the device-writer state cached for an
+    /// identity: the verified authority chain plus every per-device writer log
+    /// this node can serve. Returns `None` when no state is cached.
+    pub(super) fn device_writer_sync_snapshot(
+        &self,
+        identity: &IdentityId,
+    ) -> Option<(
+        Vec<DeviceAuthorizationRecord>,
+        Vec<Vec<DeviceWriterLogEntry>>,
+    )> {
+        let state = self.device_writer_states.get(identity)?;
+        let mut device_logs: Vec<_> = state.device_logs.values().cloned().collect();
+        // Serve in a deterministic order so responses are reproducible.
+        device_logs.sort_by(|left, right| {
+            let left_id = left
+                .first()
+                .map(|e| e.body.device_id.as_str())
+                .unwrap_or("");
+            let right_id = right
+                .first()
+                .map(|e| e.body.device_id.as_str())
+                .unwrap_or("");
+            left_id.cmp(right_id)
+        });
+        Some((state.authority_records.clone(), device_logs))
     }
 
     pub(super) fn request_daemon_resolve_from_provider(
@@ -212,6 +318,180 @@ impl NetworkNode {
                 fallback_response,
             },
         );
+    }
+
+    /// Whether this node currently caches device-writer state for an identity.
+    pub(super) fn has_device_writer_state(&self, identity: &IdentityId) -> bool {
+        self.device_writer_states.contains_key(identity)
+    }
+
+    /// Begin a device-writer sync for a remote identity on behalf of `waiter`.
+    ///
+    /// This mirrors the legacy update-log resolve path: reuse provider discovery
+    /// (the same `jolt:update-log:<identity>` DHT/relay key), then request the
+    /// provider's device-authority records and per-device writer logs over the
+    /// dedicated device-writer sync protocol. The waiter is answered once the
+    /// response is verified and merged, or when discovery/sync gives up.
+    pub(super) fn begin_device_writer_sync(&mut self, waiter: DeviceWriterSyncWaiter) {
+        let identity = waiter.identity().clone();
+
+        // If a sync for this identity is already in flight, just park the waiter
+        // so it is answered when that request resolves.
+        let sync_in_flight = self
+            .pending_device_writer_syncs
+            .values()
+            .any(|pending| pending.identity == identity);
+        if sync_in_flight {
+            self.pending_device_writer_waiters
+                .entry(identity)
+                .or_default()
+                .push(waiter);
+            return;
+        }
+
+        // Peek (do not consume) so the legacy update-log resolve path can still
+        // take the same provider; both paths share the provider pool.
+        let provider = self.peek_discovered_update_log_provider_except(&identity, None);
+
+        // If there is neither a known provider nor any realistic way to discover
+        // one (no relays, no connected peers), do not park the waiter forever:
+        // answer it immediately from whatever is cached. For an unknown remote
+        // identity this is an empty enumeration, which is a valid answer.
+        if provider.is_none() && !self.should_refresh_cached_resolution(&identity) {
+            self.pending_device_writer_waiters
+                .entry(identity.clone())
+                .or_default()
+                .push(waiter);
+            self.answer_device_writer_waiters(&identity);
+            return;
+        }
+
+        self.find_update_log_providers(&identity);
+        let provider =
+            provider.or_else(|| self.peek_discovered_update_log_provider_except(&identity, None));
+        self.pending_device_writer_waiters
+            .entry(identity.clone())
+            .or_default()
+            .push(waiter);
+        if let Some(provider) = provider {
+            self.request_device_writer_sync_from_provider(identity, &provider);
+        }
+    }
+
+    pub(super) fn request_device_writer_sync_from_provider(
+        &mut self,
+        identity: IdentityId,
+        provider: &libp2p::PeerId,
+    ) {
+        let request = DeviceWriterSyncRequest {
+            identity: identity.clone(),
+        };
+        let request_id = self
+            .swarm
+            .behaviour_mut()
+            .device_writer_sync
+            .send_request(provider, request);
+        self.pending_device_writer_syncs.insert(
+            request_id,
+            PendingDeviceWriterSync {
+                identity,
+                provider: *provider,
+                deadline: Instant::now() + self.resolve_timeout,
+            },
+        );
+    }
+
+    /// Dispatch parked device-writer sync waiters to a freshly discovered
+    /// provider for `identity`.
+    pub(super) fn request_pending_device_writer_syncs_from_provider(
+        &mut self,
+        identity: &IdentityId,
+        provider: &libp2p::PeerId,
+    ) {
+        if !self.pending_device_writer_waiters.contains_key(identity) {
+            return;
+        }
+        let already_in_flight = self
+            .pending_device_writer_syncs
+            .values()
+            .any(|pending| &pending.identity == identity);
+        if already_in_flight {
+            return;
+        }
+        self.request_device_writer_sync_from_provider(identity.clone(), provider);
+    }
+
+    /// Answer every parked waiter for an identity from current cached state,
+    /// then clear them. Enumerate waiters always succeed with whatever is cached
+    /// (an empty list is a valid answer when no remote state could be synced);
+    /// refresh waiters carry no response and simply warm the cache.
+    pub(super) fn answer_device_writer_waiters(&mut self, identity: &IdentityId) {
+        let Some(waiters) = self.pending_device_writer_waiters.remove(identity) else {
+            return;
+        };
+        for waiter in waiters {
+            match waiter {
+                DeviceWriterSyncWaiter::Enumerate {
+                    identity,
+                    path_prefix,
+                    response_tx,
+                } => {
+                    let _ =
+                        response_tx.send(self.enumerate_append_records(&identity, &path_prefix));
+                }
+                DeviceWriterSyncWaiter::Refresh { .. } => {}
+            }
+        }
+    }
+
+    pub(super) fn check_device_writer_sync_timeouts(&mut self) {
+        let now = Instant::now();
+        let timed_out: Vec<_> = self
+            .pending_device_writer_syncs
+            .iter()
+            .filter_map(|(request_id, pending)| (pending.deadline <= now).then_some(*request_id))
+            .collect();
+
+        for request_id in timed_out {
+            if let Some(pending) = self.pending_device_writer_syncs.remove(&request_id) {
+                self.on_device_writer_sync_settled(
+                    &pending.identity,
+                    &pending.provider,
+                    Some(NetworkError::Timeout),
+                );
+            }
+        }
+    }
+
+    /// Drive a device-writer sync forward after a response, failure, or timeout
+    /// from `provider`. On success the state is already merged; on failure this
+    /// retries the next discovered provider, and only answers parked waiters
+    /// once no providers remain.
+    pub(super) fn on_device_writer_sync_settled(
+        &mut self,
+        identity: &IdentityId,
+        provider: &libp2p::PeerId,
+        error: Option<NetworkError>,
+    ) {
+        if error.is_none() {
+            self.answer_device_writer_waiters(identity);
+            return;
+        }
+
+        // Retry the next discovered provider. Peek (do not consume) so the
+        // shared provider pool stays intact for the legacy update-log path; the
+        // sync-timeout safety net guarantees parked waiters are eventually
+        // answered even if every provider is unreachable.
+        if let Some(next_provider) =
+            self.peek_discovered_update_log_provider_except(identity, Some(provider))
+        {
+            self.request_device_writer_sync_from_provider(identity.clone(), &next_provider);
+            return;
+        }
+
+        // No more providers: answer waiters from whatever is cached (which may
+        // be nothing for a never-seen identity).
+        self.answer_device_writer_waiters(identity);
     }
 
     pub(super) fn should_refresh_cached_resolution(&self, identity: &IdentityId) -> bool {
@@ -322,7 +602,66 @@ mod tests {
     use crate::config::NetworkConfig;
     use crate::error::NetworkError;
     use crate::node::NetworkNode;
-    use crate::protocol::UpdateLogResponse;
+    use crate::protocol::{DeviceWriterSyncResponse, UpdateLogResponse};
+
+    /// Build a single-device writer log of append records for `identity`, signed
+    /// by `device`, one entry per `(path, content_id)` pair.
+    fn append_log(
+        identity: &jolt_core::IdentityId,
+        device: &NodeIdentity,
+        device_id: &str,
+        records: &[(&str, ContentId)],
+    ) -> Vec<DeviceWriterLogEntry> {
+        let mut entries: Vec<DeviceWriterLogEntry> = Vec::new();
+        for (index, (path, content_id)) in records.iter().enumerate() {
+            let operation = DeviceWriterOperation::append_record(*path, content_id.clone());
+            let created_at = 100 + index as u64;
+            let entry = match entries.last() {
+                None => DeviceWriterLogEntry::genesis(
+                    identity.clone(),
+                    device_id,
+                    operation,
+                    created_at,
+                    |bytes| device.sign(bytes),
+                )
+                .unwrap(),
+                Some(previous) => previous
+                    .append(operation, created_at, |bytes| device.sign(bytes))
+                    .unwrap(),
+            };
+            entries.push(entry);
+        }
+        entries
+    }
+
+    /// Drive a device-writer sync triggered by a daemon command: feed the
+    /// in-flight `device_writer_sync` request a provider response carrying the
+    /// supplied authority records and device logs.
+    fn deliver_device_writer_sync_response(
+        node: &mut NetworkNode,
+        provider: libp2p::PeerId,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    ) {
+        let request_id = *node
+            .pending_device_writer_syncs
+            .keys()
+            .next()
+            .expect("a device-writer sync request should be in flight");
+        node.handle_swarm_event(SwarmEvent::Behaviour(JoltBehaviourEvent::DeviceWriterSync(
+            request_response::Event::Message {
+                peer: provider,
+                connection_id: libp2p::swarm::ConnectionId::new_unchecked(1),
+                message: request_response::Message::Response {
+                    request_id,
+                    response: DeviceWriterSyncResponse {
+                        authority_records,
+                        device_logs,
+                    },
+                },
+            },
+        )));
+    }
 
     fn make_store(dir: &std::path::Path) -> ContentStore {
         ContentStore::open(dir, CacheConfig::default()).unwrap()
@@ -666,6 +1005,291 @@ mod tests {
             response_tx: tx,
         });
         assert!(rx.await.unwrap().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn remote_append_records_become_enumerable_after_device_writer_sync() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_laptop";
+        let authority = vec![authorize_device(&root, &laptop, device_id)];
+        let post_a = ContentId::from_bytes(b"spoke post a");
+        let post_b = ContentId::from_bytes(b"spoke post b");
+        let device_log = append_log(
+            &identity,
+            &laptop,
+            device_id,
+            &[
+                ("/spoke/posts/1", post_a.clone()),
+                ("/spoke/posts/2", post_b.clone()),
+            ],
+        );
+
+        // A discovered provider is known for the remote identity, but no
+        // device-writer state is cached yet: a fresh reader sees nothing.
+        let provider = libp2p::PeerId::random();
+        let key = NetworkNode::update_log_provider_key(&identity);
+        node.discovered_providers.insert(key, vec![provider]);
+
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: identity.clone(),
+            path_prefix: "/spoke/posts/".to_string(),
+            response_tx: tx,
+        });
+
+        // The enumerate is parked behind a device-writer sync, not answered yet.
+        assert_eq!(node.pending_device_writer_syncs.len(), 1);
+
+        deliver_device_writer_sync_response(&mut node, provider, authority, vec![device_log]);
+
+        let records = rx.await.unwrap().unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].path, "/spoke/posts/1");
+        assert_eq!(records[0].content_id, post_a.to_string());
+        assert_eq!(records[1].path, "/spoke/posts/2");
+        assert_eq!(records[1].content_id, post_b.to_string());
+        assert_eq!(records[0].device_id, device_id);
+    }
+
+    #[tokio::test]
+    async fn two_device_remote_identity_merges_deterministically_regardless_of_sync_order() {
+        // Authorize two devices, each with its own append record, and verify the
+        // merged enumeration is identical no matter which device log syncs
+        // first. Each ordering is driven through a separate node.
+        let root = NodeIdentity::generate();
+        let phone = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        // Build a two-device authority chain: authorize phone, then laptop.
+        let phone_auth = DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_phone",
+                phone.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Phone".to_string()),
+                1_780_579_200,
+            ),
+            1_780_579_200,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap();
+        let laptop_auth = phone_auth
+            .append(
+                DeviceAuthorizationOperation::authorize_device(
+                    "dev_laptop",
+                    laptop.public_key_bytes(),
+                    vec!["identity:write".to_string()],
+                    Some("Laptop".to_string()),
+                    1_780_579_300,
+                ),
+                1_780_579_300,
+                |bytes| root.sign(bytes),
+            )
+            .unwrap();
+        let two_device_authority = vec![phone_auth, laptop_auth];
+
+        let from_phone = ContentId::from_bytes(b"post from phone");
+        let from_laptop = ContentId::from_bytes(b"post from laptop");
+        let phone_log = append_log(
+            &identity,
+            &phone,
+            "dev_phone",
+            &[("/spoke/posts/p", from_phone.clone())],
+        );
+        let laptop_log = append_log(
+            &identity,
+            &laptop,
+            "dev_laptop",
+            &[("/spoke/posts/l", from_laptop.clone())],
+        );
+
+        async fn enumerate_with_order(
+            identity: jolt_core::IdentityId,
+            authority: Vec<DeviceAuthorizationRecord>,
+            first: Vec<DeviceWriterLogEntry>,
+            second: Vec<DeviceWriterLogEntry>,
+        ) -> Vec<(String, String)> {
+            let dir = tempdir().unwrap();
+            let mut node = make_node(dir.path());
+            let provider = libp2p::PeerId::random();
+            let key = NetworkNode::update_log_provider_key(&identity);
+            node.discovered_providers.insert(key, vec![provider]);
+
+            let (tx, rx) = oneshot::channel();
+            node.handle_command(DaemonCommand::EnumerateAppendRecords {
+                identity: identity.clone(),
+                path_prefix: "/spoke/posts/".to_string(),
+                response_tx: tx,
+            });
+            // The provider response carries both devices in a chosen order; the
+            // merge is order-independent within the response too.
+            deliver_device_writer_sync_response(
+                &mut node,
+                provider,
+                authority,
+                vec![first, second],
+            );
+            rx.await
+                .unwrap()
+                .unwrap()
+                .into_iter()
+                .map(|record| (record.path, record.content_id))
+                .collect::<Vec<_>>()
+        }
+
+        let phone_first = enumerate_with_order(
+            identity.clone(),
+            two_device_authority.clone(),
+            phone_log.clone(),
+            laptop_log.clone(),
+        )
+        .await;
+        let laptop_first = enumerate_with_order(
+            identity.clone(),
+            two_device_authority,
+            laptop_log,
+            phone_log,
+        )
+        .await;
+
+        assert_eq!(phone_first, laptop_first);
+        assert_eq!(phone_first.len(), 2);
+        assert!(phone_first
+            .iter()
+            .any(|(path, cid)| path == "/spoke/posts/p" && cid == &from_phone.to_string()));
+        assert!(phone_first
+            .iter()
+            .any(|(path, cid)| path == "/spoke/posts/l" && cid == &from_laptop.to_string()));
+    }
+
+    #[tokio::test]
+    async fn revoked_device_append_records_are_excluded_after_sync() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_laptop";
+
+        // Authorize then revoke the device, accepting nothing it wrote.
+        let authorize = DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                device_id,
+                laptop.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Laptop".to_string()),
+                1_780_579_200,
+            ),
+            1_780_579_200,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap();
+        let revoke = authorize
+            .append(
+                DeviceAuthorizationOperation::revoke_device(
+                    device_id,
+                    None,
+                    Some("lost device".to_string()),
+                    1_780_579_400,
+                ),
+                1_780_579_400,
+                |bytes| root.sign(bytes),
+            )
+            .unwrap();
+        let authority = vec![authorize, revoke];
+
+        let revoked_record = ContentId::from_bytes(b"record from revoked device");
+        let device_log = append_log(
+            &identity,
+            &laptop,
+            device_id,
+            &[("/spoke/posts/1", revoked_record.clone())],
+        );
+
+        let provider = libp2p::PeerId::random();
+        let key = NetworkNode::update_log_provider_key(&identity);
+        node.discovered_providers.insert(key, vec![provider]);
+
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: identity.clone(),
+            path_prefix: "/spoke/posts/".to_string(),
+            response_tx: tx,
+        });
+        deliver_device_writer_sync_response(&mut node, provider, authority, vec![device_log]);
+
+        let records = rx.await.unwrap().unwrap();
+        assert!(
+            records.is_empty(),
+            "records from a revoked device must be excluded after sync, got {records:?}"
+        );
+
+        // The rejected entry is preserved as a diagnostic, not silently dropped.
+        let state = node.device_writer_states.get(&identity).unwrap();
+        assert!(state
+            .merged
+            .rejected_entries
+            .iter()
+            .any(|entry| entry.content_id == revoked_record));
+    }
+
+    #[tokio::test]
+    async fn device_writer_sync_retries_next_provider_after_failure() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_laptop";
+        let authority = vec![authorize_device(&root, &laptop, device_id)];
+        let record = ContentId::from_bytes(b"record served by fallback provider");
+        let device_log = append_log(
+            &identity,
+            &laptop,
+            device_id,
+            &[("/spoke/posts/1", record.clone())],
+        );
+
+        let failing = libp2p::PeerId::random();
+        let fallback = libp2p::PeerId::random();
+        let key = NetworkNode::update_log_provider_key(&identity);
+        node.discovered_providers
+            .insert(key, vec![failing, fallback]);
+
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: identity.clone(),
+            path_prefix: "/spoke/posts/".to_string(),
+            response_tx: tx,
+        });
+
+        let failing_request_id = *node.pending_device_writer_syncs.keys().next().unwrap();
+        node.handle_swarm_event(SwarmEvent::Behaviour(JoltBehaviourEvent::DeviceWriterSync(
+            request_response::Event::OutboundFailure {
+                peer: failing,
+                connection_id: libp2p::swarm::ConnectionId::new_unchecked(1),
+                request_id: failing_request_id,
+                error: request_response::OutboundFailure::DialFailure,
+            },
+        )));
+
+        // The sync should now be retrying the fallback provider.
+        assert_eq!(node.pending_device_writer_syncs.len(), 1);
+        let retry = node.pending_device_writer_syncs.values().next().unwrap();
+        assert_eq!(retry.provider, fallback);
+
+        deliver_device_writer_sync_response(&mut node, fallback, authority, vec![device_log]);
+        let records = rx.await.unwrap().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].content_id, record.to_string());
     }
 
     #[tokio::test]

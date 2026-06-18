@@ -188,6 +188,25 @@ impl NetworkNode {
         None
     }
 
+    /// Peek the first discovered provider for an identity's update log without
+    /// removing it from the shared discovery pool. Device-writer sync uses this
+    /// so it does not steal a provider that the legacy update-log resolve path
+    /// expects to consume; both paths read the same `jolt:update-log:<identity>`
+    /// provider set.
+    pub(super) fn peek_discovered_update_log_provider_except(
+        &self,
+        identity: &IdentityId,
+        excluded: Option<&libp2p::PeerId>,
+    ) -> Option<libp2p::PeerId> {
+        let key = Self::update_log_provider_key(identity);
+        self.discovered_providers.get(&key).and_then(|providers| {
+            providers
+                .iter()
+                .find(|provider| Some(*provider) != excluded)
+                .copied()
+        })
+    }
+
     /// Query the DHT for providers of the given content.
     pub fn find_providers(&mut self, content_id: &ContentId) -> libp2p::kad::QueryId {
         let key = libp2p::kad::RecordKey::new(&content_id.to_string().into_bytes());
