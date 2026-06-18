@@ -105,10 +105,10 @@ export function AppsPage({ client = tauriDaemonClient, refreshIntervalMs = 5000 
     }
   }
 
-  const pending = useMemo(
+  const requests = useMemo(
     () =>
       permissions.requests
-        .filter((request) => request.status === "pending")
+        .filter((request) => request.status === "pending" || request.status === "rejected")
         .sort(compareGrantRecency),
     [permissions.requests]
   );
@@ -140,10 +140,10 @@ export function AppsPage({ client = tauriDaemonClient, refreshIntervalMs = 5000 
       </div>
       {error ? <div className="permission-error">Permission API error: {error}</div> : null}
       <div className="permission-layout">
-        <PermissionColumn title="Pending requests">
-          {loading && pending.length === 0 ? <EmptyState label="Loading app requests..." /> : null}
-          {!loading && pending.length === 0 ? <EmptyState label="No pending app requests." /> : null}
-          {pending.map((request) => (
+        <PermissionColumn title="Requests">
+          {loading && requests.length === 0 ? <EmptyState label="Loading app requests..." /> : null}
+          {!loading && requests.length === 0 ? <EmptyState label="No app requests yet." /> : null}
+          {requests.map((request) => (
             <PermissionRequestCard
               key={request.request_id}
               request={request}
@@ -220,6 +220,7 @@ function PermissionRequestCard({
     [request.requested_capabilities]
   );
   const blocked = capabilities.some((capability) => !capability.grantable);
+  const actionable = request.status === "pending";
   const identity = request.requested_identity ?? activeIdentity ?? "a selected identity";
 
   return (
@@ -237,7 +238,7 @@ function PermissionRequestCard({
           type="button"
           aria-label={`Approve ${request.app_name}`}
           onClick={onApprove}
-          disabled={busy || blocked}
+          disabled={busy || blocked || !actionable}
         >
           Approve
         </button>
@@ -246,7 +247,7 @@ function PermissionRequestCard({
           className="danger-button"
           aria-label={`Reject ${request.app_name}`}
           onClick={onReject}
-          disabled={busy}
+          disabled={busy || !actionable}
         >
           Reject
         </button>

@@ -5,6 +5,7 @@ use axum::Json;
 use serde_json::json;
 
 use crate::device_authority::{AuthorizeDeviceRequest, DeviceAuthorityError, RevokeDeviceRequest};
+use crate::session_store::AppSessionStoreError;
 use crate::state::AppState;
 
 pub async fn list(
@@ -30,19 +31,39 @@ pub async fn revoke_device(
     Path(device_id): Path<String>,
     Json(request): Json<RevokeDeviceRequest>,
 ) -> Result<impl IntoResponse, DeviceAuthorityApiError> {
-    Ok(Json(
-        state
-            .device_authority
-            .revoke_device(&state.daemon, device_id, request)
-            .await?,
-    ))
+    let response = state
+        .device_authority
+        .revoke_device(&state.daemon, device_id.clone(), request)
+        .await?;
+    state
+        .sessions
+        .revoke_sessions_for_device(&device_id)
+        .await?;
+    Ok(Json(response))
 }
 
-pub struct DeviceAuthorityApiError(DeviceAuthorityError);
+pub enum DeviceAuthorityApiError {
+    Authority(DeviceAuthorityError),
+    Sessions(AppSessionStoreError),
+}
 
 impl IntoResponse for DeviceAuthorityApiError {
     fn into_response(self) -> Response {
-        let (status, code) = match &self.0 {
+        let err = match self {
+            Self::Authority(err) => err,
+            Self::Sessions(err) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "code": "device_authority_session_revoke_failed",
+                        "error": err.to_string()
+                    })),
+                )
+                    .into_response();
+            }
+        };
+
+        let (status, code) = match &err {
             DeviceAuthorityError::UnknownDevice(_) => {
                 (StatusCode::NOT_FOUND, "device_authority_unknown_device")
             }
@@ -61,7 +82,7 @@ impl IntoResponse for DeviceAuthorityApiError {
             status,
             Json(json!({
                 "code": code,
-                "error": self.0.to_string()
+                "error": err.to_string()
             })),
         )
             .into_response()
@@ -70,6 +91,12 @@ impl IntoResponse for DeviceAuthorityApiError {
 
 impl From<DeviceAuthorityError> for DeviceAuthorityApiError {
     fn from(err: DeviceAuthorityError) -> Self {
-        Self(err)
+        Self::Authority(err)
+    }
+}
+
+impl From<AppSessionStoreError> for DeviceAuthorityApiError {
+    fn from(err: AppSessionStoreError) -> Self {
+        Self::Sessions(err)
     }
 }

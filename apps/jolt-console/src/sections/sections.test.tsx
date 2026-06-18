@@ -209,6 +209,18 @@ describe("Console section pages", () => {
               granted_capabilities: [],
               status: "pending",
               created_at: 1_780_000_000
+            },
+            {
+              request_id: "req_rejected",
+              app_id: "archiver.local",
+              app_name: "Archiver",
+              app_origin: "http://127.0.0.1:5191",
+              requested_identity: "alice.jolt",
+              requested_capabilities: ["resolve:public"],
+              granted_capabilities: [],
+              status: "rejected",
+              created_at: 1_780_000_200,
+              rejected_at: 1_780_000_250
             }
           ];
         }
@@ -253,7 +265,9 @@ describe("Console section pages", () => {
 
     const pendingRows = await screen.findAllByRole("button", { name: /request details/i });
     expect(pendingRows[0]).toHaveTextContent("Scratch");
-    expect(pendingRows[1]).toHaveTextContent("Pastey");
+    expect(pendingRows[1]).toHaveTextContent("Archiver");
+    expect(pendingRows[1]).toHaveTextContent("rejected");
+    expect(pendingRows[2]).toHaveTextContent("Pastey");
 
     const sessionRows = screen.getAllByRole("button", { name: /session details/i });
     expect(sessionRows[0]).toHaveTextContent("Pastey");
@@ -261,7 +275,7 @@ describe("Console section pages", () => {
 
     expect(screen.queryByText("create or update signed paths under /pastes/*")).not.toBeInTheDocument();
 
-    await userEvent.click(pendingRows[1]);
+    await userEvent.click(pendingRows[2]);
     expect(screen.getAllByText("alice.jolt")).not.toHaveLength(0);
     expect(screen.getByText("create or update signed paths under /pastes/*")).toBeInTheDocument();
     expect(screen.getByText("admin-only request: cannot be approved")).toBeInTheDocument();
@@ -442,7 +456,7 @@ describe("Console section pages", () => {
 
     expect(screen.getByText(/admin\/v1\/app-requests/)).toBeInTheDocument();
     expect(screen.getByText(/admin\/v1\/app-sessions/)).toBeInTheDocument();
-    expect(await screen.findByText("No pending app requests.")).toBeInTheDocument();
+    expect(await screen.findByText("No app requests yet.")).toBeInTheDocument();
     expect(screen.getByText("No app sessions yet.")).toBeInTheDocument();
   });
 
@@ -481,7 +495,7 @@ describe("Console section pages", () => {
     render(<AppsPage client={client} refreshIntervalMs={1000} />);
 
     await act(async () => {});
-    expect(screen.getByText("No pending app requests.")).toBeInTheDocument();
+    expect(screen.getByText("No app requests yet.")).toBeInTheDocument();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
