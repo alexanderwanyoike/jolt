@@ -69,14 +69,21 @@ impl NetworkNode {
                 path_prefix,
                 response_tx,
             } => {
-                // For a remote identity with no cached device-writer state,
-                // discover providers and sync the identity's authorized device
-                // writer logs before answering, so a fresh reader sees the
-                // remote identity's live merged append records rather than an
-                // empty local cache. Local identities and already-synced remote
-                // identities answer immediately from cache.
+                // For a remote identity, discover providers and sync the
+                // identity's authorized device-writer logs before answering, so
+                // the reader sees the remote identity's live merged append
+                // records. This refreshes even when state is already cached: the
+                // author may have appended new records (e.g. Spoke accepted-reply
+                // refs) since the reader's last sync, and answering only from the
+                // cache would hide them. begin_device_writer_sync falls back to
+                // the cached answer when no provider is reachable, so a stale
+                // cache is still served rather than an error. Local identities
+                // own their authoritative state and answer immediately.
                 let is_local = identity == self.identity.identity_id();
-                if !is_local && !self.has_device_writer_state(&identity) {
+                if is_local {
+                    let result = self.enumerate_append_records(&identity, &path_prefix);
+                    let _ = response_tx.send(result);
+                } else {
                     self.begin_device_writer_sync(
                         super::resolution::DeviceWriterSyncWaiter::Enumerate {
                             identity,
@@ -84,9 +91,6 @@ impl NetworkNode {
                             response_tx,
                         },
                     );
-                } else {
-                    let result = self.enumerate_append_records(&identity, &path_prefix);
-                    let _ = response_tx.send(result);
                 }
             }
             DaemonCommand::Fetch {
