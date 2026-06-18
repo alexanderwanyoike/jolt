@@ -2,7 +2,7 @@
 
 **Type:** AFK after design  
 **Milestone:** Identity and Device Sprint  
-**Status:** In progress
+**Status:** Done
 **Blocked by:** 091, 093
 
 ## Why
@@ -128,12 +128,23 @@ interpreting their own object schemas.
   - device-writer sync peeks (does not consume) the shared provider pool so it
     never steals a provider the legacy resolve path expects; failed providers are
     retried, and a sync timeout safety net guarantees parked waiters are answered.
-- Still out of scope / deferred: a persisted on-disk store format for device-writer
-  state (it is rebuilt from sync on restart); periodic background re-sync of an
-  already-cached remote identity (a cached remote enumerate answers from cache
-  without re-fetching, and a fresh resolve warms it); and per-device-log content
-  addressing (device logs are served inline in the sync response rather than as
-  pinnable CID snapshots).
+- Added append enumeration refresh and local device-writer persistence:
+  - non-local `EnumerateAppendRecords` now attempts a live device-writer refresh
+    even when cached state already exists, then falls back to the cached answer
+    if no provider is reachable;
+  - local device-writer logs are persisted through
+    `ContentStore::save_device_writer_log` / `load_device_writer_log`;
+  - `NetworkNode` rebuilds the local device-writer state on startup, so local
+    append records survive daemon restart and later appends continue the
+    existing per-device chain;
+  - this fixed the Spoke-shaped case where a peer had already synced an author's
+    post, then missed a later accepted-reply reference because enumeration read
+    only from a stale cache.
+- Still out of scope / deferred: durable storage for every remote identity's
+  synced device-writer cache (remote state can be rebuilt by sync); periodic
+  background re-sync independent of explicit enumerate/resolve calls; and
+  per-device-log content addressing (device logs are served inline in the sync
+  response rather than as pinnable CID snapshots).
 
 ## Verification
 
@@ -198,6 +209,23 @@ interpreting their own object schemas.
   - `cargo test -p jolt-network --lib` (whole network lib suite)
   - `cargo test -p jolt-core`
   - `./scripts/test-local.sh`
+- Red first for append enumeration refresh and local device-writer persistence:
+  - `cargo test -p jolt-network remote_enumerate_refreshes_already_cached_device_writer_state`
+    failed while non-local enumeration short-circuited from any existing cached
+    state.
+  - `cargo test -p jolt-network local_append_records_survive_node_restart`
+    failed while local append records lived only in memory.
+  - `cargo test -p jolt-network local_appends_continue_persisted_device_log_after_restart`
+    failed while a post-restart append could not continue the persisted
+    per-device chain.
+- Green for append enumeration refresh and local device-writer persistence:
+  - `cargo test -p jolt-network remote_enumerate_refreshes_already_cached_device_writer_state`
+  - `cargo test -p jolt-network local_append_records_survive_node_restart`
+  - `cargo test -p jolt-network local_appends_continue_persisted_device_log_after_restart`
+  - Live three-daemon Bob/Alice/Carol verification: after a peer synced an
+    author's post, the author appended an accepted-reply ref, and the peer's
+    re-enumeration surfaced it; append records survived two daemon restarts and
+    re-synced to peers.
 - Known pre-existing flakiness (reproduced with this slice stashed, so unrelated):
   the network-dependent `two_nodes_dht_provider_announce_and_fetch`,
   `test_fetch_endpoint_distinguishes_unresolved_jolt_address`, and
