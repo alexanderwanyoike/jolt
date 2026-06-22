@@ -90,7 +90,10 @@ The immediate sequence is:
    identity-scoped.
 6. [096](096-app-data-follows-identity-v0.md): make app indexes follow the
    identity while content fetch/cache/pin stays explicit.
-7. [097](097-private-content-device-access-v0.md): make private content access
+7. [096a](096a-identity-export-import-console-v0.md): add admin-only
+   identity export/import in CLI, daemon API, and Console so recovery is
+   possible before private device access.
+8. [097](097-private-content-device-access-v0.md): make private content access
    work honestly across authorized devices.
 
 The follow-on community discovery sequence is:
@@ -158,6 +161,8 @@ Supporting cards:
   device.
 - [096](096-app-data-follows-identity-v0.md): support app indexes that follow a
   user identity without automatic byte sync.
+- [096a](096a-identity-export-import-console-v0.md): support admin-only
+  identity export/import in CLI, daemon API, and Console.
 - [097](097-private-content-device-access-v0.md): extend private content
   encryption to authorized devices and explicit historical rewrap.
 - [098](098-community-identity-and-membership-model.md): define community
@@ -335,7 +340,8 @@ into the protocol layer.
 | [094](094-per-device-writer-logs-and-merge-v0.md) | AFK after design | Done | Resolve identity state from per-device signed writer logs. |
 | [095](095-identity-scoped-app-grants-v0.md) | AFK after design | Ready after 092 and 093 | Scope app grants to one app, one device, and one user identity. |
 | [096](096-app-data-follows-identity-v0.md) | AFK after design | Ready after 094 and 095 | Let app indexes follow the identity while content bytes remain fetch/cache/pin policy. |
-| [097](097-private-content-device-access-v0.md) | AFK after design | Ready after 093 and 096 | Extend private content access to authorized devices with explicit historical rewrap. |
+| [096a](096a-identity-export-import-console-v0.md) | AFK after design | Ready after 096 | Add admin-only identity export/import in CLI, daemon API, and Console. |
+| [097](097-private-content-device-access-v0.md) | AFK after design | Ready after 093, 096, and 096a | Extend private content access to authorized devices with explicit historical rewrap. |
 | [098](098-community-identity-and-membership-model.md) | HITL | Ready after 091 | Define communities as Jolt identities with watch/join policy and signed membership. |
 | [099](099-community-membership-v0.md) | AFK after design | Ready after 098 | Implement generic community join, open/request policies, grants, and revocation. |
 | [100](100-community-scoped-app-indexes-v0.md) | AFK after design | Ready after 099 | Let apps publish and search community-scoped signed indexes locally. |
