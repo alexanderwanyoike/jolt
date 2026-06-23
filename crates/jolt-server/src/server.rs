@@ -71,6 +71,10 @@ pub fn build_router_with_stores(
             post(routes::app_api::publish_encrypted),
         )
         .route(
+            "/app/v1/encrypted/append",
+            post(routes::app_api::append_encrypted),
+        )
+        .route(
             "/app/v1/encrypted/decrypt",
             post(routes::app_api::decrypt_encrypted),
         )

@@ -12,8 +12,8 @@ use jolt_core::{
     IDENTITY_ENCRYPTION_KEYS_PATH,
 };
 use jolt_network::{
-    AppendRecordInfo, FetchResult, NetworkError, PublishResponse, PublishedContentInfo,
-    ResolveResponse,
+    AppendRecordInfo, EncryptedObjectResponse, FetchResult, NetworkError, PublishResponse,
+    PublishedContentInfo, ResolveResponse,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -90,6 +90,7 @@ pub struct EncryptedPublishResponse {
 #[derive(Debug, Deserialize)]
 pub struct EncryptedDecryptRequest {
     pub target: String,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -127,26 +128,7 @@ pub async fn publish_encrypted(
 ) -> Result<Json<EncryptedPublishResponse>, AppApiError> {
     let session = authenticated_session(&state, &headers).await?;
     require_local_identity(&state, &session).await?;
-    let path = normalize_path(&req.path)?;
-    require_path_capability(&session, "encrypt:", &path)?;
-    require_path_capability(&session, "publish:encrypted:", &path)?;
-
-    let local_key = state.daemon.ensure_local_identity_encryption_key().await?;
-    let local_identity = JoltAddress::from_str(&state.daemon.status().await?.identity_address)
-        .map_err(|e| AppApiError::Network(NetworkError::Protocol(e.to_string())))?
-        .identity()
-        .clone();
-    let recipient_keys =
-        resolve_recipient_keys(&state, &req.recipients, &local_identity, local_key).await?;
-    let encrypted = state
-        .daemon
-        .encrypt_object(
-            req.plaintext,
-            req.content_type
-                .unwrap_or_else(|| "application/octet-stream".to_string()),
-            recipient_keys,
-        )
-        .await?;
+    let (path, encrypted) = encrypt_app_request(&state, &session, req).await?;
     let published = publish_app_bytes(&state, encrypted.data, path).await?;
 
     Ok(Json(EncryptedPublishResponse {
@@ -159,6 +141,89 @@ pub async fn publish_encrypted(
     }))
 }
 
+async fn encrypt_app_request(
+    state: &AppState,
+    session: &AppSessionView,
+    req: EncryptedPublishRequest,
+) -> Result<(String, EncryptedObjectResponse), AppApiError> {
+    let path = normalize_path(&req.path)?;
+    require_path_capability(session, "encrypt:", &path)?;
+    require_path_capability(session, "publish:encrypted:", &path)?;
+
+    let local_key = state.daemon.ensure_local_identity_encryption_key().await?;
+    let local_identity = JoltAddress::from_str(&state.daemon.status().await?.identity_address)
+        .map_err(|e| AppApiError::Network(NetworkError::Protocol(e.to_string())))?
+        .identity()
+        .clone();
+    let recipient_keys =
+        resolve_recipient_keys(state, &req.recipients, &local_identity, local_key).await?;
+    let encrypted = state
+        .daemon
+        .encrypt_object(
+            req.plaintext,
+            req.content_type
+                .unwrap_or_else(|| "application/octet-stream".to_string()),
+            recipient_keys,
+        )
+        .await?;
+    Ok((path, encrypted))
+}
+
+pub async fn append_encrypted(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<EncryptedPublishRequest>,
+) -> Result<Json<EncryptedPublishResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+    let (path, encrypted) = encrypt_app_request(&state, &session, req).await?;
+    let published = publish_app_append_bytes(&state, encrypted.data, path).await?;
+
+    Ok(Json(EncryptedPublishResponse {
+        content_id: published.content_id,
+        size: published.size,
+        path: published.path,
+        address: published.address,
+        latest_sequence: published.latest_sequence,
+        recipient_count: encrypted.recipient_count,
+    }))
+}
+
+async fn encrypted_target(
+    state: &AppState,
+    req: &EncryptedDecryptRequest,
+    operation: &str,
+) -> Result<(String, String), AppApiError> {
+    match JoltAddress::from_str(&req.target) {
+        Ok(address) => {
+            let resolved = state.daemon.resolve(address.to_string()).await?;
+            if let Some(raw_path) = &req.path {
+                let requested_path = normalize_path(raw_path)?;
+                if requested_path != resolved.path {
+                    return Err(AppApiError::Network(NetworkError::InvalidInput(format!(
+                        "encrypted {operation} path {requested_path} does not match target path {}",
+                        resolved.path
+                    ))));
+                }
+            }
+            Ok((resolved.content_id, resolved.path))
+        }
+        Err(e) if req.target.contains(".jolt") => {
+            Err(AppApiError::Network(NetworkError::InvalidInput(format!(
+                "encrypted {operation} target must be a valid .jolt address or content id: {e}"
+            ))))
+        }
+        Err(_) => {
+            let path = req.path.as_deref().ok_or_else(|| {
+                AppApiError::Network(NetworkError::InvalidInput(format!(
+                    "encrypted {operation} by content id requires a path"
+                )))
+            })?;
+            Ok((req.target.clone(), normalize_path(path)?))
+        }
+    }
+}
+
 pub async fn decrypt_encrypted(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -167,23 +232,18 @@ pub async fn decrypt_encrypted(
     let session = authenticated_session(&state, &headers).await?;
     require_local_identity(&state, &session).await?;
 
-    let address = JoltAddress::from_str(&req.target).map_err(|e| {
-        AppApiError::Network(NetworkError::InvalidInput(format!(
-            "encrypted decrypt target must be a .jolt address: {e}"
-        )))
-    })?;
-    let resolved = state.daemon.resolve(address.to_string()).await?;
-    require_path_capability(&session, "decrypt:", &resolved.path)?;
+    let (content_id, path) = encrypted_target(&state, &req, "decrypt").await?;
+    require_path_capability(&session, "decrypt:", &path)?;
     let fetched = state
         .daemon
-        .fetch(resolved.content_id.clone())
+        .fetch(content_id.clone())
         .await
-        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &resolved.content_id)))?;
+        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &content_id)))?;
     let decrypted = state.daemon.decrypt_object(fetched.data).await?;
 
     Ok(Json(EncryptedDecryptResponse {
-        content_id: resolved.content_id,
-        path: resolved.path,
+        content_id,
+        path,
         plaintext: decrypted.plaintext,
         size: decrypted.size,
         content_type: decrypted.content_type,
@@ -198,25 +258,20 @@ pub async fn open_encrypted(
     let session = authenticated_session(&state, &headers).await?;
     require_local_identity(&state, &session).await?;
 
-    let address = JoltAddress::from_str(&req.target).map_err(|e| {
-        AppApiError::Network(NetworkError::InvalidInput(format!(
-            "encrypted open target must be a .jolt address: {e}"
-        )))
-    })?;
-    let resolved = state.daemon.resolve(address.to_string()).await?;
-    require_path_capability(&session, "decrypt:", &resolved.path)?;
+    let (content_id, path) = encrypted_target(&state, &req, "open").await?;
+    require_path_capability(&session, "decrypt:", &path)?;
     let fetched = state
         .daemon
-        .fetch(resolved.content_id.clone())
+        .fetch(content_id.clone())
         .await
-        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &resolved.content_id)))?;
+        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &content_id)))?;
     let ciphertext = fetched.data;
     let ciphertext_size = fetched.size;
 
     match state.daemon.decrypt_object(ciphertext.clone()).await {
         Ok(decrypted) => Ok(Json(EncryptedOpenResponse {
-            content_id: resolved.content_id,
-            path: resolved.path,
+            content_id,
+            path,
             status: EncryptedOpenStatus::Decrypted,
             plaintext: Some(decrypted.plaintext),
             ciphertext: None,
@@ -225,8 +280,8 @@ pub async fn open_encrypted(
             decrypt_error: None,
         })),
         Err(err) => Ok(Json(EncryptedOpenResponse {
-            content_id: resolved.content_id,
-            path: resolved.path,
+            content_id,
+            path,
             status: EncryptedOpenStatus::Ciphertext,
             plaintext: None,
             ciphertext: Some(ciphertext),
@@ -339,8 +394,7 @@ fn persist_app_temp_file(label: &str, data: &[u8]) -> Result<std::path::PathBuf,
         "jolt_app_{label}_{}_{unique_id}_{sequence}",
         std::process::id(),
     ));
-    std::fs::write(&temp_path, data)
-        .map_err(|e| AppApiError::Network(NetworkError::Io(e)))?;
+    std::fs::write(&temp_path, data).map_err(|e| AppApiError::Network(NetworkError::Io(e)))?;
     Ok(temp_path)
 }
 
@@ -377,6 +431,17 @@ async fn publish_app_bytes(
 ) -> Result<PublishResponse, AppApiError> {
     let temp_path = persist_app_temp_file("publish", &data)?;
     let result = state.daemon.publish(temp_path.clone(), Some(path)).await;
+    let _ = std::fs::remove_file(&temp_path);
+    result.map_err(AppApiError::Network)
+}
+
+async fn publish_app_append_bytes(
+    state: &AppState,
+    data: Vec<u8>,
+    path: String,
+) -> Result<PublishResponse, AppApiError> {
+    let temp_path = persist_app_temp_file("append", &data)?;
+    let result = state.daemon.publish_append(temp_path.clone(), path).await;
     let _ = std::fs::remove_file(&temp_path);
     result.map_err(AppApiError::Network)
 }

@@ -89,7 +89,7 @@ The immediate sequence is:
 5. [095](095-identity-scoped-app-grants-v0.md): make app grants explicitly
    identity-scoped.
 6. [096](096-app-data-follows-identity-v0.md): make app indexes follow the
-   identity while content fetch/cache/pin stays explicit.
+   identity while content fetch/cache/pin stays explicit. Implemented in PR.
 7. [096a](096a-identity-export-import-console-v0.md): add admin-only
    identity export/import in CLI, daemon API, and Console so recovery is
    possible before private device access.
@@ -339,7 +339,7 @@ into the protocol layer.
 | [093](093-device-authorization-and-revocation-v0.md) | AFK after design | Done | Add authorized and revocable device writers for a user identity. |
 | [094](094-per-device-writer-logs-and-merge-v0.md) | AFK after design | Done | Resolve identity state from per-device signed writer logs. |
 | [095](095-identity-scoped-app-grants-v0.md) | AFK after design | Ready after 092 and 093 | Scope app grants to one app, one device, and one user identity. |
-| [096](096-app-data-follows-identity-v0.md) | AFK after design | Ready after 094 and 095 | Let app indexes follow the identity while content bytes remain fetch/cache/pin policy. |
+| [096](096-app-data-follows-identity-v0.md) | AFK after design | Implemented in PR | Let app indexes follow the identity while content bytes remain fetch/cache/pin policy. |
 | [096a](096a-identity-export-import-console-v0.md) | AFK after design | Ready after 096 | Add admin-only identity export/import in CLI, daemon API, and Console. |
 | [097](097-private-content-device-access-v0.md) | AFK after design | Ready after 093, 096, and 096a | Extend private content access to authorized devices with explicit historical rewrap. |
 | [098](098-community-identity-and-membership-model.md) | HITL | Ready after 091 | Define communities as Jolt identities with watch/join policy and signed membership. |
