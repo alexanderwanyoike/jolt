@@ -30,9 +30,17 @@ body {
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
     linear-gradient(180deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    radial-gradient(circle at 80% 12%, rgba(140, 216, 232, 0.08), transparent 34%),
+    radial-gradient(
+      circle at 80% 12%,
+      rgba(140, 216, 232, 0.08),
+      transparent 34%
+    ),
     var(--bg);
-  background-size: 34px 34px, 34px 34px, auto, auto;
+  background-size:
+    34px 34px,
+    34px 34px,
+    auto,
+    auto;
   color: var(--text);
   letter-spacing: 0;
 }
@@ -402,6 +410,77 @@ a.status-pill {
   border-bottom: 1px solid rgba(236, 128, 111, 0.35);
   color: var(--red);
   background: rgba(236, 128, 111, 0.08);
+}
+
+.identity-status-message {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(141, 214, 165, 0.32);
+  color: var(--green);
+  background: rgba(141, 214, 165, 0.08);
+}
+
+.identity-recovery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.identity-recovery-form {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+  border-right: 1px solid var(--line);
+}
+
+.identity-recovery-form:last-child {
+  border-right: 0;
+}
+
+.identity-recovery-form h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.identity-recovery-form p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.identity-recovery-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.identity-recovery-form input[type="text"],
+.identity-recovery-form input[type="password"],
+.identity-recovery-form textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 9px 10px;
+  background: var(--ink);
+  color: var(--text);
+  font: inherit;
+}
+
+.identity-recovery-form textarea {
+  min-height: 170px;
+  resize: vertical;
+}
+
+.identity-confirm {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  color: var(--text);
+}
+
+.identity-confirm input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
 }
 
 .diagnostics-output {
@@ -946,11 +1025,27 @@ a.status-pill {
   .permission-column + .permission-column {
     border-top: 1px solid var(--line);
   }
+
+  .identity-recovery-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .identity-recovery-form,
+  .identity-recovery-form:last-child {
+    border-right: 0;
+  }
+
+  .identity-recovery-form + .identity-recovery-form {
+    border-top: 1px solid var(--line);
+  }
 }
 
 @media (min-width: 1400px) {
   .permission-summary-copy {
-    grid-template-columns: minmax(160px, 0.7fr) minmax(180px, 1fr) minmax(220px, 1.3fr);
+    grid-template-columns: minmax(160px, 0.7fr) minmax(180px, 1fr) minmax(
+        220px,
+        1.3fr
+      );
     align-items: center;
     gap: 10px;
   }

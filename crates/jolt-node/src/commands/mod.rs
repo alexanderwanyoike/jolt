@@ -2,6 +2,7 @@ pub mod bootstrap;
 pub mod cache;
 pub mod fetch;
 pub mod home_relay;
+pub mod identity;
 pub mod publish;
 pub mod relay;
 pub mod resolve;

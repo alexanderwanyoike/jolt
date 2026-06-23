@@ -1,5 +1,6 @@
 pub mod device_authority;
 pub mod error;
+pub mod identity_recovery;
 pub mod local_identities;
 pub mod network_settings;
 pub mod routes;

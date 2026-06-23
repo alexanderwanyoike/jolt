@@ -67,6 +67,31 @@ export type LocalIdentitiesPayload = {
   identities: LocalIdentity[];
 };
 
+export type IdentityExportBundle = {
+  magic: string;
+  version: number;
+  identity: string;
+  kdf: unknown;
+  cipher: unknown;
+  salt: string;
+  nonce: string;
+  ciphertext: string;
+};
+
+export type IdentityExportResponse = {
+  identity: string;
+  encryption_key_count: number;
+  bundle: IdentityExportBundle;
+};
+
+export type IdentityImportResponse = {
+  identity: string;
+  imported: boolean;
+  restart_required: boolean;
+  encryption_key_count: number;
+  app_sessions_imported: boolean;
+};
+
 export type DaemonPayload = {
   status: DaemonStatus;
   peers: PeerInfo[];
@@ -76,7 +101,12 @@ export type DaemonPayload = {
   localIdentities: LocalIdentitiesPayload;
 };
 
-export type AppSessionStatus = "pending" | "active" | "rejected" | "revoked" | "expired";
+export type AppSessionStatus =
+  | "pending"
+  | "active"
+  | "rejected"
+  | "revoked"
+  | "expired";
 
 export type AppSessionGrant = {
   request_id: string;

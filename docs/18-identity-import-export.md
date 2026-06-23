@@ -2,7 +2,17 @@
 
 ## Status
 
-Design proposal for card `048`.
+Implemented as the v0 recovery bridge in card `096a`.
+
+The shipped v0 exposes admin-only daemon API routes, CLI commands, and Console
+controls for encrypted identity export/import. It protects the export bundle
+with a passphrase-derived Argon2id/XChaCha20-Poly1305 key and stores imported
+material through the normal daemon identity and local identity encryption-key
+paths.
+
+This remains shared-key portability, not delegated multi-device authorization:
+an imported daemon has the same root identity and peer key as the source daemon,
+app sessions are not imported, and users must approve apps again after import.
 
 ## Problem
 

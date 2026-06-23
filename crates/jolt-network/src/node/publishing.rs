@@ -406,11 +406,14 @@ impl NetworkNode {
     /// served to peers) - the in-memory counterpart of `save_device_writer_log`.
     pub(super) fn load_persisted_local_device_writer_log(&mut self) -> Result<(), NetworkError> {
         let identity_id = self.identity.identity_id();
-        let Some(record) = self.store.load_device_writer_log(&identity_id).map_err(|e| {
-            NetworkError::Protocol(format!(
-                "failed to load persisted device-writer log for {identity_id}: {e}"
-            ))
-        })?
+        let Some(record) = self
+            .store
+            .load_device_writer_log(&identity_id)
+            .map_err(|e| {
+                NetworkError::Protocol(format!(
+                    "failed to load persisted device-writer log for {identity_id}: {e}"
+                ))
+            })?
         else {
             return Ok(());
         };

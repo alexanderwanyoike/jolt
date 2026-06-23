@@ -7,11 +7,14 @@ import type {
   DaemonPayload,
   DaemonStatus,
   HomeRelayConfig,
+  IdentityExportBundle,
+  IdentityExportResponse,
+  IdentityImportResponse,
   LocalIdentitiesPayload,
   LocalIdentity,
   NetworkSettingsPayload,
   PeerInfo,
-  PublishedContent
+  PublishedContent,
 } from "./types";
 
 export const DEFAULT_DAEMON_URL = "http://127.0.0.1:9862";
@@ -33,60 +36,96 @@ export const tauriDaemonClient: DaemonClient = {
   },
   delete<T>(path: string) {
     return invoke<T>("daemon_delete", { path });
-  }
+  },
 };
 
-export async function loadDaemonPayload(client: DaemonClient): Promise<DaemonPayload> {
-  const [status, peers, cacheStats, cacheEntries, published, localIdentities] = await Promise.all([
-    client.get<DaemonStatus>("/api/v1/status"),
-    client.get<PeerInfo[]>("/api/v1/peers"),
-    client.get<CacheStats>("/api/v1/cache/stats"),
-    client.get<CacheEntry[]>("/api/v1/cache/entries"),
-    client.get<PublishedContent[]>("/api/v1/published"),
-    client.get<LocalIdentitiesPayload>("/admin/v1/identities")
-  ]);
+export async function loadDaemonPayload(
+  client: DaemonClient,
+): Promise<DaemonPayload> {
+  const [status, peers, cacheStats, cacheEntries, published, localIdentities] =
+    await Promise.all([
+      client.get<DaemonStatus>("/api/v1/status"),
+      client.get<PeerInfo[]>("/api/v1/peers"),
+      client.get<CacheStats>("/api/v1/cache/stats"),
+      client.get<CacheEntry[]>("/api/v1/cache/entries"),
+      client.get<PublishedContent[]>("/api/v1/published"),
+      client.get<LocalIdentitiesPayload>("/admin/v1/identities"),
+    ]);
 
   return {
     status,
     peers,
     cacheStats,
     cacheEntries,
-    published: filterPublishedForActiveIdentity(published, localIdentities.active_identity),
-    localIdentities
+    published: filterPublishedForActiveIdentity(
+      published,
+      localIdentities.active_identity,
+    ),
+    localIdentities,
   };
 }
 
 export async function createLocalIdentity(
   client: DaemonClient,
-  label?: string
+  label?: string,
 ): Promise<LocalIdentity> {
-  return client.post<LocalIdentity>("/admin/v1/identities", { label: label || null });
+  return client.post<LocalIdentity>("/admin/v1/identities", {
+    label: label || null,
+  });
 }
 
 export async function selectLocalIdentity(
   client: DaemonClient,
-  identity: string
+  identity: string,
 ): Promise<LocalIdentitiesPayload> {
-  return client.post<LocalIdentitiesPayload>("/admin/v1/identities/active", { identity });
+  return client.post<LocalIdentitiesPayload>("/admin/v1/identities/active", {
+    identity,
+  });
 }
 
 export async function deleteLocalIdentity(
   client: DaemonClient,
-  identity: string
+  identity: string,
 ): Promise<LocalIdentitiesPayload> {
   if (!client.delete) {
     throw new Error("Daemon client does not support identity deletion");
   }
   return client.delete<LocalIdentitiesPayload>(
-    `/admin/v1/identities/${encodeURIComponent(identity)}`
+    `/admin/v1/identities/${encodeURIComponent(identity)}`,
   );
 }
 
-export async function loadAppPermissions(client: DaemonClient): Promise<AppPermissionsPayload> {
+export async function exportIdentity(
+  client: DaemonClient,
+  passphrase: string,
+  label?: string,
+): Promise<IdentityExportResponse> {
+  return client.post<IdentityExportResponse>("/admin/v1/identities/export", {
+    passphrase,
+    label: label || null,
+  });
+}
+
+export async function importIdentity(
+  client: DaemonClient,
+  bundle: IdentityExportBundle,
+  passphrase: string,
+  allowOverwrite: boolean,
+): Promise<IdentityImportResponse> {
+  return client.post<IdentityImportResponse>("/admin/v1/identities/import", {
+    passphrase,
+    bundle,
+    allow_overwrite: allowOverwrite,
+  });
+}
+
+export async function loadAppPermissions(
+  client: DaemonClient,
+): Promise<AppPermissionsPayload> {
   const [requests, sessions, localIdentities] = await Promise.all([
     client.get<AppSessionGrant[]>("/admin/v1/app-requests"),
     client.get<AppSessionGrant[]>("/admin/v1/app-sessions"),
-    client.get<LocalIdentitiesPayload>("/admin/v1/identities")
+    client.get<LocalIdentitiesPayload>("/admin/v1/identities"),
   ]);
 
   return { requests, sessions, localIdentities };
@@ -94,7 +133,7 @@ export async function loadAppPermissions(client: DaemonClient): Promise<AppPermi
 
 function filterPublishedForActiveIdentity(
   published: PublishedContent[],
-  activeIdentity?: string | null
+  activeIdentity?: string | null,
 ): PublishedContent[] {
   if (!activeIdentity) return published;
   const addressPrefix = `${activeIdentity}/`;
@@ -102,32 +141,39 @@ function filterPublishedForActiveIdentity(
 }
 
 export async function loadNetworkSettings(
-  client: DaemonClient
+  client: DaemonClient,
 ): Promise<NetworkSettingsPayload> {
   return client.get<NetworkSettingsPayload>("/admin/v1/network-settings");
 }
 
 export async function addBootstrapRelay(
   client: DaemonClient,
-  multiaddr: string
+  multiaddr: string,
 ): Promise<NetworkSettingsPayload> {
-  return client.post<NetworkSettingsPayload>("/admin/v1/bootstrap-relays", { multiaddr });
+  return client.post<NetworkSettingsPayload>("/admin/v1/bootstrap-relays", {
+    multiaddr,
+  });
 }
 
 export async function removeBootstrapRelay(
   client: DaemonClient,
-  multiaddr: string
+  multiaddr: string,
 ): Promise<NetworkSettingsPayload> {
-  return client.post<NetworkSettingsPayload>("/admin/v1/bootstrap-relays/remove", { multiaddr });
+  return client.post<NetworkSettingsPayload>(
+    "/admin/v1/bootstrap-relays/remove",
+    { multiaddr },
+  );
 }
 
 export async function setHomeRelay(
   client: DaemonClient,
-  request: Pick<HomeRelayConfig, "multiaddr" | "capability" | "api_url">
+  request: Pick<HomeRelayConfig, "multiaddr" | "capability" | "api_url">,
 ): Promise<NetworkSettingsPayload> {
   return client.post<NetworkSettingsPayload>("/admin/v1/home-relay", request);
 }
 
-export async function clearHomeRelay(client: DaemonClient): Promise<NetworkSettingsPayload> {
+export async function clearHomeRelay(
+  client: DaemonClient,
+): Promise<NetworkSettingsPayload> {
   return client.post<NetworkSettingsPayload>("/admin/v1/home-relay/clear");
 }
