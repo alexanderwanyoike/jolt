@@ -1998,6 +1998,86 @@ async fn test_app_can_append_and_enumerate_records_by_prefix() {
 }
 
 #[tokio::test]
+async fn test_app_can_encrypt_append_and_enumerate_records_by_prefix() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/app/private/*",
+            "decrypt:/app/private/*",
+            "publish:encrypted:/app/private/*",
+            "resolve:public",
+        ],
+    )
+    .await;
+
+    let append_resp = client
+        .post(format!("{}/app/v1/encrypted/append", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/app/private/items/1",
+            "plaintext": b"private record one".to_vec(),
+            "content_type": "application/json",
+            "recipients": [identity]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(append_resp.status(), 200);
+    let appended: serde_json::Value = append_resp.json().await.unwrap();
+    assert_eq!(appended["path"], "/app/private/items/1");
+    assert!(appended["content_id"].as_str().unwrap().len() > 0);
+    assert_eq!(appended["recipient_count"], 1);
+
+    let enumerated = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "identity": identity,
+            "path_prefix": "/app/private/items/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(enumerated.status(), 200);
+    let records: serde_json::Value = enumerated.json().await.unwrap();
+    let records = records.as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["path"], "/app/private/items/1");
+    assert_eq!(records[0]["content_id"], appended["content_id"]);
+
+    let open_resp = client
+        .post(format!("{}/app/v1/encrypted/open", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "target": appended["content_id"],
+            "path": records[0]["path"],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(open_resp.status(), 200);
+    let opened: serde_json::Value = open_resp.json().await.unwrap();
+    assert_eq!(opened["status"], "decrypted");
+    assert_eq!(opened["content_id"], appended["content_id"]);
+    assert_eq!(opened["path"], "/app/private/items/1");
+    assert_eq!(opened["content_type"], "application/json");
+    let plaintext: Vec<u8> = opened["plaintext"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(plaintext, b"private record one");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_inventory_is_filtered_to_granted_prefix() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();

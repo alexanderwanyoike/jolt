@@ -2,7 +2,7 @@
 
 **Type:** AFK after design  
 **Milestone:** Identity and Device Sprint  
-**Status:** Ready after 094 and 095  
+**Status:** Implemented in PR  
 **Blocked by:** 094, 095
 
 ## Why
@@ -40,18 +40,18 @@ Add or formalize the generic primitives apps need for identity-scoped app data:
 
 ## Acceptance Criteria
 
-- [ ] An app can publish an identity-scoped index without Jolt understanding the
+- [x] An app can publish an identity-scoped index without Jolt understanding the
       app's schema.
-- [ ] An app can publish an encrypted identity-scoped index for private app
+- [x] An app can publish an encrypted identity-scoped index for private app
       data without Jolt understanding the app's schema.
-- [ ] A second authorized device can resolve the same app index for that user
+- [x] A second authorized device can resolve the same app index for that user
       identity.
-- [ ] Referenced public content can be fetched lazily from available providers.
-- [ ] Referenced encrypted content can be fetched lazily and decrypted only by
+- [x] Referenced public content can be fetched lazily from available providers.
+- [x] Referenced encrypted content can be fetched lazily and decrypted only by
       authorized devices.
-- [ ] App content can be marked to keep on this device for offline use.
-- [ ] The daemon clearly distinguishes app index sync from content byte sync.
-- [ ] A Pastey follow-me smoke path is documented or automated.
+- [x] App content can be marked to keep on this device for offline use.
+- [x] The daemon clearly distinguishes app index sync from content byte sync.
+- [x] A Pastey follow-me smoke path is documented or automated.
 
 ## Non-Goals
 
@@ -73,3 +73,28 @@ private plane = encrypted content plus key grants
 Encrypted app data may still expose outer metadata such as the existence of an
 identity path, CID availability, object size, and timing. Preventing that
 metadata leakage is not required for this v0 slice.
+
+## Implementation Notes
+
+- Public app indexes use `POST /app/v1/append` plus `POST /app/v1/enumerate`.
+  They store app-owned append records under user identity paths and leave body
+  bytes content-addressed for lazy fetch/cache/pin policy.
+- Private app indexes now use `POST /app/v1/encrypted/append`, which encrypts
+  through the daemon and publishes the encrypted object as an append record
+  under the app-owned path.
+- `POST /app/v1/encrypted/open` and `POST /app/v1/encrypted/decrypt` accept
+  either a `.jolt` address or a raw content ID plus `path`. The raw CID form is
+  what apps use after enumerating encrypted append records: the signed append
+  record supplies the path context, and the daemon checks `decrypt:<path>`
+  before fetching/decrypting.
+- The protocol remains app-agnostic. Jolt sees signed paths, append records,
+  CIDs, encrypted envelopes, and path-scoped capabilities, not Pastey/Spoke
+  schemas.
+
+## Verification Notes
+
+- Red: `cargo test -p jolt-server test_app_can_encrypt_append_and_enumerate_records_by_prefix --test api_integration -- --nocapture`
+  first failed with `404` before `/app/v1/encrypted/append` existed, then with
+  `400` before encrypted open accepted raw content IDs with path context.
+- Green: `cargo test -p jolt-server test_app_can_encrypt_append_and_enumerate_records_by_prefix --test api_integration -- --nocapture`
+- Green: `cargo test -p jolt-server test_app_ --test api_integration -- --nocapture`
