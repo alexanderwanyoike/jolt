@@ -42,6 +42,7 @@ export function IdentityPage({
     ? `${activeName} (${activeIdentity})`
     : "--";
   const [identityName, setIdentityName] = useState("");
+  const [exportIdentityAddress, setExportIdentityAddress] = useState("");
   const [exportPassphrase, setExportPassphrase] = useState("");
   const [exportLabel, setExportLabel] = useState("");
   const [importPassphrase, setImportPassphrase] = useState("");
@@ -51,6 +52,8 @@ export function IdentityPage({
   const [recoveryStatus, setRecoveryStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selectedExportIdentity =
+    exportIdentityAddress || activeIdentity || daemonIdentity || "";
 
   async function createIdentity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -115,6 +118,7 @@ export function IdentityPage({
         client,
         exportPassphrase,
         exportLabel.trim(),
+        selectedExportIdentity,
       );
       const path = await recoveryFileClient.save(
         response.identity,
@@ -277,7 +281,7 @@ export function IdentityPage({
 
       <SectionPanel
         eyebrow="Recovery"
-        summary="export or import daemon identity"
+        summary="export or import identities"
       >
         {recoveryStatus ? (
           <div className="identity-status-message">{recoveryStatus}</div>
@@ -288,12 +292,29 @@ export function IdentityPage({
             onSubmit={exportDaemonIdentity}
           >
             <div>
-              <h2>Export daemon identity</h2>
+              <h2>Export identity</h2>
               <p>
                 Anyone with the export file can become this identity unless you
                 add a passphrase.
               </p>
             </div>
+            <label>
+              Identity
+              <select
+                value={selectedExportIdentity}
+                onChange={(event) => setExportIdentityAddress(event.target.value)}
+                disabled={busy || identities.length === 0}
+              >
+                {identities.map((identity) => {
+                  const name = identity.label?.trim() || "Unnamed identity";
+                  return (
+                    <option key={identity.address} value={identity.address}>
+                      {name} ({identity.address})
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
             <label>
               Label
               <input

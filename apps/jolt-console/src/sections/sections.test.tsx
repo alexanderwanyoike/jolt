@@ -237,6 +237,7 @@ describe("Console section pages", () => {
     );
 
     expect(client.post).toHaveBeenCalledWith("/admin/v1/identities/export", {
+      identity: "alice.jolt",
       passphrase: null,
       label: "Laptop",
     });
@@ -245,6 +246,57 @@ describe("Console section pages", () => {
       screen.getByText("Exported alice.jolt to /tmp/alice.jolt-identity."),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Export bundle")).not.toBeInTheDocument();
+  });
+
+  it("exports the selected local identity through the native save dialog", async () => {
+    const bundle = {
+      magic: "jolt.identity.export",
+      version: 1,
+      identity: "work.jolt",
+      created_at: 1_780_000_000,
+      kdf: { name: "argon2id", salt: "salt" },
+      cipher: { name: "xchacha20poly1305", nonce: "nonce" },
+      ciphertext: "ciphertext",
+    };
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(),
+      post: vi.fn(async () => ({
+        identity: "work.jolt",
+        encryption_key_count: 0,
+        bundle,
+      })),
+    };
+    const recoveryFileClient: IdentityRecoveryFileClient = {
+      save: vi.fn(async () => "/tmp/work.jolt-identity"),
+      open: vi.fn(),
+    };
+
+    render(
+      <IdentityPage
+        client={client}
+        snapshot={snapshot()}
+        recoveryFileClient={recoveryFileClient}
+      />,
+    );
+
+    await userEvent.selectOptions(
+      screen.getByLabelText("Identity"),
+      "work.jolt",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Export identity" }),
+    );
+
+    expect(client.post).toHaveBeenCalledWith("/admin/v1/identities/export", {
+      identity: "work.jolt",
+      passphrase: null,
+      label: null,
+    });
+    expect(recoveryFileClient.save).toHaveBeenCalledWith("work.jolt", bundle);
+    expect(
+      screen.getByText("Exported work.jolt to /tmp/work.jolt-identity."),
+    ).toBeInTheDocument();
   });
 
   it("imports an identity bundle through the native open dialog", async () => {

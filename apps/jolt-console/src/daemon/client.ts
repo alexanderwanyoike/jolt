@@ -116,11 +116,23 @@ export async function exportIdentity(
   client: DaemonClient,
   passphrase: string,
   label?: string,
+  identity?: string,
 ): Promise<IdentityExportResponse> {
-  return client.post<IdentityExportResponse>("/admin/v1/identities/export", {
+  const body: {
+    passphrase: string | null;
+    label: string | null;
+    identity?: string;
+  } = {
     passphrase: passphrase || null,
     label: label || null,
-  });
+  };
+  if (identity) {
+    body.identity = identity;
+  }
+  return client.post<IdentityExportResponse>(
+    "/admin/v1/identities/export",
+    body,
+  );
 }
 
 export async function importIdentity(

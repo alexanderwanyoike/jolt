@@ -19,6 +19,8 @@ pub struct IdentityRecoveryStore {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExportIdentityRequest {
     #[serde(default)]
+    pub identity: Option<String>,
+    #[serde(default)]
     pub passphrase: Option<String>,
     pub label: Option<String>,
 }
@@ -101,6 +103,23 @@ impl IdentityRecoveryStore {
     ) -> Result<ExportIdentityResponse, IdentityRecoveryError> {
         let identity = NodeIdentity::load(&self.identity_dir)?;
         let encryption_keys = self.load_exported_encryption_keypairs()?;
+        self.export_node_identity(identity, encryption_keys, request)
+    }
+
+    pub fn export_local_identity(
+        &self,
+        identity: NodeIdentity,
+        request: ExportIdentityRequest,
+    ) -> Result<ExportIdentityResponse, IdentityRecoveryError> {
+        self.export_node_identity(identity, Vec::new(), request)
+    }
+
+    fn export_node_identity(
+        &self,
+        identity: NodeIdentity,
+        encryption_keys: Vec<ExportedIdentityEncryptionKeypair>,
+        request: ExportIdentityRequest,
+    ) -> Result<ExportIdentityResponse, IdentityRecoveryError> {
         let encryption_key_count = encryption_keys.len();
         let identity_address = identity.jolt_address().to_string();
         let bundle = encrypt_identity_export(

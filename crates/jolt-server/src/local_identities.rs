@@ -91,6 +91,28 @@ impl LocalIdentityStore {
         })
     }
 
+    pub async fn generated_identity(
+        &self,
+        identity: &str,
+    ) -> Result<Option<NodeIdentity>, LocalIdentityError> {
+        let identity = identity.trim();
+        if identity.is_empty() {
+            return Err(LocalIdentityError::MissingIdentity);
+        }
+
+        let state = self.state.lock().await;
+        let record = state
+            .records
+            .iter()
+            .find(|record| record.address() == identity)
+            .ok_or_else(|| LocalIdentityError::UnknownIdentity(identity.to_string()))?;
+
+        Ok(match record {
+            LocalIdentityRecord::Daemon { .. } => None,
+            LocalIdentityRecord::Generated { identity, .. } => Some(clone_node_identity(identity)),
+        })
+    }
+
     pub async fn contains(&self, identity: &str) -> bool {
         self.state
             .lock()
@@ -237,4 +259,9 @@ fn view_for_address(state: &LocalIdentityState, address: &str) -> Option<LocalId
             label: record.label(),
         })
     })
+}
+
+fn clone_node_identity(identity: &NodeIdentity) -> NodeIdentity {
+    NodeIdentity::from_signing_key_bytes(&identity.signing_key_bytes())
+        .expect("stored generated identity has valid signing key bytes")
 }

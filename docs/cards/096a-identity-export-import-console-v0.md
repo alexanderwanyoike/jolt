@@ -133,6 +133,24 @@ Follow-up adjustment in PR #163:
   `apps/jolt-console`
 - Green: `npm run test -- --runInBand` from `apps/jolt-console`
 - Green: `npm run build` from `apps/jolt-console`
+- Red: `npx vitest run src/sections/sections.test.tsx -t "exports the selected local identity"`
+  from `apps/jolt-console` failed while Console export had no identity
+  selector.
+- Red: `npx vitest run src/daemon/client.test.ts -t "routes identity export"`
+  from `apps/jolt-console` failed while the export helper omitted the requested
+  identity.
+- Red: `cargo test -p jolt-server --test api_integration test_admin_exports_selected_generated_local_identity_recovery_bundle -- --nocapture`
+  failed while the admin export route ignored requested generated local
+  identities and returned the daemon identity.
+- Green: `npx vitest run src/sections/sections.test.tsx -t "exports the selected local identity"`
+  from `apps/jolt-console`
+- Green: `npx vitest run src/daemon/client.test.ts -t "routes identity export"`
+  from `apps/jolt-console`
+- Green: `cargo test -p jolt-server --test api_integration test_admin_exports_selected_generated_local_identity_recovery_bundle -- --nocapture`
+- Green: `cargo test -p jolt-server --test api_integration identity -- --nocapture`
+- Green: `npm run test -- --runInBand` from `apps/jolt-console`
+- Green: `npm run build` from `apps/jolt-console`
+- Green: `./scripts/test-local.sh`
 
 The integration smoke uses two daemon profiles: the source exports an encrypted
 bundle, the target refuses overwrite without explicit permission, imports with

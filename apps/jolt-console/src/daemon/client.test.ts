@@ -265,7 +265,9 @@ describe("identity recovery helpers", () => {
         }),
     };
 
-    await expect(exportIdentity(client, "", "Laptop")).resolves.toEqual({
+    await expect(
+      exportIdentity(client, "", "Laptop", "work.jolt"),
+    ).resolves.toEqual({
       identity: "alice.jolt",
       encryption_key_count: 1,
       bundle,
@@ -282,6 +284,7 @@ describe("identity recovery helpers", () => {
       1,
       "/admin/v1/identities/export",
       {
+        identity: "work.jolt",
         passphrase: null,
         label: "Laptop",
       },
