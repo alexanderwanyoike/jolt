@@ -83,7 +83,7 @@ impl DaemonClient {
 
     pub async fn export_identity(
         &self,
-        passphrase: &str,
+        passphrase: Option<&str>,
         label: Option<&str>,
     ) -> Result<serde_json::Value> {
         let resp = self
@@ -112,7 +112,7 @@ impl DaemonClient {
     pub async fn import_identity(
         &self,
         bundle: serde_json::Value,
-        passphrase: &str,
+        passphrase: Option<&str>,
         allow_overwrite: bool,
     ) -> Result<serde_json::Value> {
         let resp = self

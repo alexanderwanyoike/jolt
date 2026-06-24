@@ -1,11 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonClient } from "../daemon/client";
@@ -23,6 +17,7 @@ import { SettingsPage } from "./SettingsPage";
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   cleanup();
 });
 
@@ -194,14 +189,26 @@ describe("Console section pages", () => {
   });
 
   it("exports the daemon identity after explicit private-key risk confirmation", async () => {
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    const createObjectUrl = vi.fn(() => "blob:jolt-identity");
+    const revokeObjectUrl = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectUrl,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: revokeObjectUrl,
+    });
     const bundle = {
       magic: "jolt.identity.export",
       version: 1,
       identity: "alice.jolt",
-      kdf: { name: "argon2id" },
-      cipher: { name: "xchacha20poly1305" },
-      salt: "salt",
-      nonce: "nonce",
+      created_at: 1_780_000_000,
+      kdf: { name: "argon2id", salt: "salt" },
+      cipher: { name: "xchacha20poly1305", nonce: "nonce" },
       ciphertext: "ciphertext",
     };
     const client: DaemonClient = {
@@ -217,15 +224,17 @@ describe("Console section pages", () => {
     render(<IdentityPage client={client} snapshot={snapshot()} />);
 
     expect(
+      screen.getByRole("button", { name: "Export identity" }),
+    ).toBeDisabled();
+    expect(
       screen.getByText(
-        "Anyone with the export file and passphrase can become this identity.",
+        "Anyone with the export file can become this identity unless you add a passphrase.",
       ),
     ).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Label"), "Laptop");
-    await userEvent.type(
-      screen.getAllByLabelText("Passphrase")[0],
-      "correct horse battery staple",
-    );
+    expect(
+      screen.getByRole("button", { name: "Export identity" }),
+    ).toBeDisabled();
     await userEvent.click(
       screen.getByLabelText("I understand this exports private identity keys."),
     );
@@ -234,15 +243,16 @@ describe("Console section pages", () => {
     );
 
     expect(client.post).toHaveBeenCalledWith("/admin/v1/identities/export", {
-      passphrase: "correct horse battery staple",
+      passphrase: null,
       label: "Laptop",
     });
-    expect(screen.getByLabelText("Export bundle")).toHaveValue(
-      JSON.stringify(bundle, null, 2),
-    );
     expect(
-      screen.getByText("Exported alice.jolt with 1 encryption key."),
+      screen.getByText("Exported alice.jolt to a recovery file."),
     ).toBeInTheDocument();
+    expect(click).toHaveBeenCalledOnce();
+    expect(createObjectUrl).toHaveBeenCalledOnce();
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:jolt-identity");
+    expect(screen.queryByLabelText("Export bundle")).not.toBeInTheDocument();
   });
 
   it("imports an identity bundle with explicit overwrite and restart acknowledgement", async () => {
@@ -251,10 +261,9 @@ describe("Console section pages", () => {
       magic: "jolt.identity.export",
       version: 1,
       identity: "alice.jolt",
-      kdf: { name: "argon2id" },
-      cipher: { name: "xchacha20poly1305" },
-      salt: "salt",
-      nonce: "nonce",
+      created_at: 1_780_000_000,
+      kdf: { name: "argon2id", salt: "salt" },
+      cipher: { name: "xchacha20poly1305", nonce: "nonce" },
       ciphertext: "ciphertext",
     };
     const client: DaemonClient = {
@@ -271,12 +280,11 @@ describe("Console section pages", () => {
 
     render(<IdentityPage client={client} snapshot={snapshot({ refresh })} />);
 
-    fireEvent.change(screen.getByLabelText("Bundle JSON"), {
-      target: { value: JSON.stringify(bundle) },
-    });
-    await userEvent.type(
-      screen.getAllByLabelText("Passphrase")[1],
-      "correct horse battery staple",
+    await userEvent.upload(
+      screen.getByLabelText("Identity bundle file"),
+      new File([JSON.stringify(bundle)], "alice.jolt-identity", {
+        type: "application/json",
+      }),
     );
     await userEvent.click(
       screen.getByLabelText("Allow replacing the existing daemon identity."),
@@ -289,7 +297,7 @@ describe("Console section pages", () => {
     );
 
     expect(client.post).toHaveBeenCalledWith("/admin/v1/identities/import", {
-      passphrase: "correct horse battery staple",
+      passphrase: null,
       bundle,
       allow_overwrite: true,
     });

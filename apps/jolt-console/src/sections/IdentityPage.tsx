@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { DetailGrid, DetailRow, SectionPanel } from "../components/primitives";
 import {
   createLocalIdentity,
@@ -9,6 +9,7 @@ import {
   type DaemonClient,
 } from "../daemon/client";
 import type { DaemonSnapshot } from "../daemon/useDaemonSnapshot";
+import type { IdentityExportBundle } from "../daemon/types";
 
 export function IdentityPage({
   client,
@@ -34,8 +35,7 @@ export function IdentityPage({
   const [exportPassphrase, setExportPassphrase] = useState("");
   const [exportLabel, setExportLabel] = useState("");
   const [exportRiskAccepted, setExportRiskAccepted] = useState(false);
-  const [exportBundleJson, setExportBundleJson] = useState("");
-  const [importBundleJson, setImportBundleJson] = useState("");
+  const [importBundleFile, setImportBundleFile] = useState<File | null>(null);
   const [importPassphrase, setImportPassphrase] = useState("");
   const [importAllowOverwrite, setImportAllowOverwrite] = useState(false);
   const [importRiskAccepted, setImportRiskAccepted] = useState(false);
@@ -107,9 +107,9 @@ export function IdentityPage({
         exportPassphrase,
         exportLabel.trim(),
       );
-      setExportBundleJson(JSON.stringify(response.bundle, null, 2));
+      downloadIdentityBundle(response.identity, response.bundle);
       setRecoveryStatus(
-        `Exported ${response.identity} with ${response.encryption_key_count} encryption key.`,
+        `Exported ${response.identity} to a recovery file.`,
       );
     } catch (nextError) {
       setError(
@@ -126,7 +126,12 @@ export function IdentityPage({
     setError(null);
     setRecoveryStatus(null);
     try {
-      const bundle = JSON.parse(importBundleJson);
+      if (!importBundleFile) {
+        throw new Error("Select an identity bundle file.");
+      }
+      const bundle = JSON.parse(
+        await importBundleFile.text(),
+      ) as IdentityExportBundle;
       const response = await importIdentity(
         client,
         bundle,
@@ -146,6 +151,10 @@ export function IdentityPage({
     } finally {
       setBusy(false);
     }
+  }
+
+  function selectImportBundle(event: ChangeEvent<HTMLInputElement>) {
+    setImportBundleFile(event.target.files?.[0] ?? null);
   }
 
   return (
@@ -253,8 +262,8 @@ export function IdentityPage({
             <div>
               <h2>Export daemon identity</h2>
               <p>
-                Anyone with the export file and passphrase can become this
-                identity.
+                Anyone with the export file can become this identity unless you
+                add a passphrase.
               </p>
             </div>
             <label>
@@ -268,7 +277,7 @@ export function IdentityPage({
               />
             </label>
             <label>
-              Passphrase
+              Passphrase (optional)
               <input
                 type="password"
                 value={exportPassphrase}
@@ -289,20 +298,10 @@ export function IdentityPage({
             </label>
             <button
               type="submit"
-              disabled={busy || !exportRiskAccepted || !exportPassphrase}
+              disabled={busy || !exportRiskAccepted}
             >
               Export identity
             </button>
-            <label>
-              Export bundle
-              <textarea
-                className="mono"
-                value={exportBundleJson}
-                onChange={(event) => setExportBundleJson(event.target.value)}
-                rows={10}
-                readOnly
-              />
-            </label>
           </form>
 
           <form
@@ -317,17 +316,21 @@ export function IdentityPage({
               </p>
             </div>
             <label>
-              Bundle JSON
-              <textarea
-                className="mono"
-                value={importBundleJson}
-                onChange={(event) => setImportBundleJson(event.target.value)}
+              Identity bundle file
+              <input
+                type="file"
+                accept=".jolt-identity,.json,application/json"
+                onChange={selectImportBundle}
                 disabled={busy}
-                rows={10}
               />
+              {importBundleFile ? (
+                <span className="file-selection">
+                  Selected {importBundleFile.name}
+                </span>
+              ) : null}
             </label>
             <label>
-              Passphrase
+              Passphrase (optional)
               <input
                 type="password"
                 value={importPassphrase}
@@ -359,12 +362,7 @@ export function IdentityPage({
             </label>
             <button
               type="submit"
-              disabled={
-                busy ||
-                !importRiskAccepted ||
-                !importBundleJson ||
-                !importPassphrase
-              }
+              disabled={busy || !importRiskAccepted || !importBundleFile}
             >
               Import identity
             </button>
@@ -373,4 +371,23 @@ export function IdentityPage({
       </SectionPanel>
     </>
   );
+}
+
+function downloadIdentityBundle(identity: string, bundle: IdentityExportBundle) {
+  const filename = `${safeFilename(identity)}.jolt-identity`;
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], {
+    type: "application/json",
+  });
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(href);
+}
+
+function safeFilename(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "_") || "jolt-identity";
 }
