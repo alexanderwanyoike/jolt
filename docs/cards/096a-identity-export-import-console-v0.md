@@ -51,9 +51,8 @@ Implement the card 048 design as a user-facing recovery flow:
       app sessions.
 - [x] Console can export the active identity through a native save dialog
       instead of a text box or browser download workaround.
-- [x] Console can import an identity bundle into a daemon profile through a
-      native open dialog, replacing the daemon identity and restarting the
-      daemon automatically when required.
+- [x] Console can import an identity bundle through a native open dialog as a
+      local identity without replacing the daemon/default identity.
 - [x] The export includes signing key material and local identity encryption
       private keys needed for existing private objects.
 - [x] Imported identities do not import app sessions and do not auto-approve
@@ -118,8 +117,12 @@ Follow-up adjustment in PR #163:
 - Red: `npx vitest run src/sections/sections.test.tsx -t "imports an identity bundle through the native open dialog"`
   from `apps/jolt-console` failed while the Console still showed the overwrite
   checkbox and did not restart after import.
+- Red: `cargo test -p jolt-server test_admin_imports_identity_recovery_bundle_as_local_identity_without_replacing_daemon --test api_integration -- --nocapture`
+  failed while the admin import route still treated Console import as daemon
+  identity replacement.
 - Green: `npx vitest run src/sections/sections.test.tsx` from
   `apps/jolt-console`
+- Green: `cargo test -p jolt-server test_admin_imports_identity_recovery_bundle_as_local_identity_without_replacing_daemon --test api_integration -- --nocapture`
 - Green: `npm run test -- --runInBand` from `apps/jolt-console`
 - Green: `npm run build` from `apps/jolt-console`
 - Green: `./scripts/test-local.sh`

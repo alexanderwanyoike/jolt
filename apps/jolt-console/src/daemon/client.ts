@@ -128,11 +128,13 @@ export async function importIdentity(
   bundle: IdentityExportBundle,
   passphrase: string,
   allowOverwrite: boolean,
+  asLocalIdentity = false,
 ): Promise<IdentityImportResponse> {
   return client.post<IdentityImportResponse>("/admin/v1/identities/import", {
     passphrase: passphrase || null,
     bundle,
     allow_overwrite: allowOverwrite,
+    as_local_identity: asLocalIdentity,
   });
 }
 

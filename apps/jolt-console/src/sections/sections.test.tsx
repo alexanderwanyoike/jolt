@@ -264,7 +264,7 @@ describe("Console section pages", () => {
       post: vi.fn(async () => ({
         identity: "alice.jolt",
         imported: true,
-        restart_required: true,
+        restart_required: false,
         encryption_key_count: 1,
         app_sessions_imported: false,
       })),
@@ -308,7 +308,7 @@ describe("Console section pages", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        "Import validates the bundle, replaces the daemon identity, and restarts the daemon when required.",
+        "Import validates the bundle and adds it as a local identity without replacing the daemon identity.",
       ),
     ).toBeInTheDocument();
     await userEvent.click(
@@ -319,11 +319,12 @@ describe("Console section pages", () => {
     expect(client.post).toHaveBeenCalledWith("/admin/v1/identities/import", {
       passphrase: null,
       bundle,
-      allow_overwrite: true,
+      allow_overwrite: false,
+      as_local_identity: true,
     });
-    expect(lifecycleClient.restart).toHaveBeenCalledOnce();
+    expect(lifecycleClient.restart).not.toHaveBeenCalled();
     expect(
-      screen.getByText("Imported alice.jolt and restarted the daemon."),
+      screen.getByText("Imported alice.jolt as a local identity."),
     ).toBeInTheDocument();
     expect(refresh).toHaveBeenCalledOnce();
   });

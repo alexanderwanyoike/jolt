@@ -145,6 +145,7 @@ export function IdentityPage({
         client,
         bundle,
         importPassphrase,
+        false,
         true,
       );
       if (response.restart_required) {
@@ -153,7 +154,7 @@ export function IdentityPage({
           `Imported ${response.identity} and restarted the daemon.`,
         );
       } else {
-        setRecoveryStatus(`Imported ${response.identity}.`);
+        setRecoveryStatus(`Imported ${response.identity} as a local identity.`);
       }
       await snapshot.refresh();
     } catch (nextError) {
@@ -305,8 +306,8 @@ export function IdentityPage({
             <div>
               <h2>Import daemon identity</h2>
               <p>
-                Import validates the bundle, replaces the daemon identity, and
-                restarts the daemon when required.
+                Import validates the bundle and adds it as a local identity
+                without replacing the daemon identity.
               </p>
             </div>
             <label>

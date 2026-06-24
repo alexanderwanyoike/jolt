@@ -293,6 +293,7 @@ describe("identity recovery helpers", () => {
         passphrase: null,
         bundle,
         allow_overwrite: true,
+        as_local_identity: false,
       },
     );
   });

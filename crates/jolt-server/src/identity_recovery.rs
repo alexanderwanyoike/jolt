@@ -37,6 +37,8 @@ pub struct ImportIdentityRequest {
     pub bundle: IdentityExportBundle,
     #[serde(default)]
     pub allow_overwrite: bool,
+    #[serde(default)]
+    pub as_local_identity: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -46,6 +48,12 @@ pub struct ImportIdentityResponse {
     pub restart_required: bool,
     pub encryption_key_count: usize,
     pub app_sessions_imported: bool,
+}
+
+pub struct LocalIdentityImport {
+    pub identity: NodeIdentity,
+    pub label: Option<String>,
+    pub encryption_key_count: usize,
 }
 
 #[derive(Debug, Error)]
@@ -138,6 +146,20 @@ impl IdentityRecoveryStore {
             restart_required: true,
             encryption_key_count: plaintext.identity_encryption_keys.len(),
             app_sessions_imported: false,
+        })
+    }
+
+    pub fn import_local_identity(
+        &self,
+        request: ImportIdentityRequest,
+    ) -> Result<LocalIdentityImport, IdentityRecoveryError> {
+        let plaintext =
+            decrypt_identity_export(&request.bundle, request.passphrase.as_deref().unwrap_or(""))?;
+        let identity = identity_from_export(&plaintext)?;
+        Ok(LocalIdentityImport {
+            identity,
+            label: plaintext.source.label,
+            encryption_key_count: plaintext.identity_encryption_keys.len(),
         })
     }
 

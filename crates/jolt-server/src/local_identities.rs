@@ -117,6 +117,26 @@ impl LocalIdentityStore {
         Ok(view_for_address(&state, &address).expect("created identity exists"))
     }
 
+    pub async fn import_recovered(
+        &self,
+        identity: NodeIdentity,
+        label: Option<String>,
+    ) -> LocalIdentityView {
+        let mut state = self.state.lock().await;
+        let address = identity.jolt_address().to_string();
+        if let Some(existing) = view_for_address(&state, &address) {
+            return existing;
+        }
+
+        state
+            .records
+            .push(LocalIdentityRecord::Generated { identity, label });
+        if state.active_identity.is_none() {
+            state.active_identity = Some(address.clone());
+        }
+        view_for_address(&state, &address).expect("imported identity exists")
+    }
+
     pub async fn select(
         &self,
         request: SelectLocalIdentityRequest,
