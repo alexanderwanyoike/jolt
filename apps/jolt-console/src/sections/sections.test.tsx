@@ -2,7 +2,10 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DaemonClient } from "../daemon/client";
+import type {
+  DaemonClient,
+  IdentityRecoveryFileClient,
+} from "../daemon/client";
 import type { DaemonLifecycleClient } from "../daemon/lifecycle";
 import type { DaemonSnapshot } from "../daemon/useDaemonSnapshot";
 import { AppsPage } from "./AppsPage";
@@ -188,20 +191,7 @@ describe("Console section pages", () => {
     expect(refresh).toHaveBeenCalledOnce();
   });
 
-  it("exports the daemon identity after explicit private-key risk confirmation", async () => {
-    const click = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => undefined);
-    const createObjectUrl = vi.fn(() => "blob:jolt-identity");
-    const revokeObjectUrl = vi.fn();
-    Object.defineProperty(URL, "createObjectURL", {
-      configurable: true,
-      value: createObjectUrl,
-    });
-    Object.defineProperty(URL, "revokeObjectURL", {
-      configurable: true,
-      value: revokeObjectUrl,
-    });
+  it("exports the daemon identity through the native save dialog", async () => {
     const bundle = {
       magic: "jolt.identity.export",
       version: 1,
@@ -220,24 +210,28 @@ describe("Console section pages", () => {
         bundle,
       })),
     };
+    const recoveryFileClient: IdentityRecoveryFileClient = {
+      save: vi.fn(async () => "/tmp/alice.jolt-identity"),
+      open: vi.fn(),
+    };
 
-    render(<IdentityPage client={client} snapshot={snapshot()} />);
+    render(
+      <IdentityPage
+        client={client}
+        snapshot={snapshot()}
+        recoveryFileClient={recoveryFileClient}
+      />,
+    );
 
     expect(
-      screen.getByRole("button", { name: "Export identity" }),
-    ).toBeDisabled();
+      screen.queryByLabelText("I understand this exports private identity keys."),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(
         "Anyone with the export file can become this identity unless you add a passphrase.",
       ),
     ).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Label"), "Laptop");
-    expect(
-      screen.getByRole("button", { name: "Export identity" }),
-    ).toBeDisabled();
-    await userEvent.click(
-      screen.getByLabelText("I understand this exports private identity keys."),
-    );
     await userEvent.click(
       screen.getByRole("button", { name: "Export identity" }),
     );
@@ -246,16 +240,14 @@ describe("Console section pages", () => {
       passphrase: null,
       label: "Laptop",
     });
+    expect(recoveryFileClient.save).toHaveBeenCalledWith("alice.jolt", bundle);
     expect(
-      screen.getByText("Exported alice.jolt to a recovery file."),
+      screen.getByText("Exported alice.jolt to /tmp/alice.jolt-identity."),
     ).toBeInTheDocument();
-    expect(click).toHaveBeenCalledOnce();
-    expect(createObjectUrl).toHaveBeenCalledOnce();
-    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:jolt-identity");
     expect(screen.queryByLabelText("Export bundle")).not.toBeInTheDocument();
   });
 
-  it("imports an identity bundle with explicit overwrite and restart acknowledgement", async () => {
+  it("imports an identity bundle through the native open dialog", async () => {
     const refresh = vi.fn(async () => true);
     const bundle = {
       magic: "jolt.identity.export",
@@ -277,25 +269,33 @@ describe("Console section pages", () => {
         app_sessions_imported: false,
       })),
     };
+    const recoveryFileClient: IdentityRecoveryFileClient = {
+      save: vi.fn(),
+      open: vi.fn(async () => bundle),
+    };
 
-    render(<IdentityPage client={client} snapshot={snapshot({ refresh })} />);
-
-    await userEvent.upload(
-      screen.getByLabelText("Identity bundle file"),
-      new File([JSON.stringify(bundle)], "alice.jolt-identity", {
-        type: "application/json",
-      }),
+    render(
+      <IdentityPage
+        client={client}
+        snapshot={snapshot({ refresh })}
+        recoveryFileClient={recoveryFileClient}
+      />,
     );
+
+    expect(
+      screen.queryByLabelText("Identity bundle file"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("I understand this imports private identity keys."),
+    ).not.toBeInTheDocument();
     await userEvent.click(
       screen.getByLabelText("Allow replacing the existing daemon identity."),
-    );
-    await userEvent.click(
-      screen.getByLabelText("I understand this imports private identity keys."),
     );
     await userEvent.click(
       screen.getByRole("button", { name: "Import identity" }),
     );
 
+    expect(recoveryFileClient.open).toHaveBeenCalledOnce();
     expect(client.post).toHaveBeenCalledWith("/admin/v1/identities/import", {
       passphrase: null,
       bundle,

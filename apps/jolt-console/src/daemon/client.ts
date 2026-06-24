@@ -26,6 +26,11 @@ export type DaemonClient = {
   delete?<T>(path: string): Promise<T>;
 };
 
+export type IdentityRecoveryFileClient = {
+  save(identity: string, bundle: IdentityExportBundle): Promise<string | null>;
+  open(): Promise<IdentityExportBundle | null>;
+};
+
 export const tauriDaemonClient: DaemonClient = {
   daemonUrl: DEFAULT_DAEMON_URL,
   get<T>(path: string) {
@@ -36,6 +41,18 @@ export const tauriDaemonClient: DaemonClient = {
   },
   delete<T>(path: string) {
     return invoke<T>("daemon_delete", { path });
+  },
+};
+
+export const tauriIdentityRecoveryFileClient: IdentityRecoveryFileClient = {
+  save(identity: string, bundle: IdentityExportBundle) {
+    return invoke<string | null>("identity_export_save_file", {
+      identity,
+      bundle,
+    });
+  },
+  open() {
+    return invoke<IdentityExportBundle | null>("identity_export_open_file");
   },
 };
 

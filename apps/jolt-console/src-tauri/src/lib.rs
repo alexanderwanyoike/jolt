@@ -7,6 +7,7 @@ use std::{
 
 use serde::Serialize;
 use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
 
 const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:9862";
 const DEFAULT_API_BIND: &str = "127.0.0.1";
@@ -108,6 +109,65 @@ async fn daemon_lifecycle_restart(
 ) -> Result<DaemonLifecycleReport, String> {
     stop_owned_daemon(&lifecycle)?;
     daemon_lifecycle_start(lifecycle).await
+}
+
+#[tauri::command]
+async fn identity_export_save_file(
+    window: tauri::Window,
+    identity: String,
+    bundle: serde_json::Value,
+) -> Result<Option<String>, String> {
+    let file_name = format!("{}.jolt-identity", safe_identity_export_filename(&identity));
+    let Some(file_path) = window
+        .dialog()
+        .file()
+        .add_filter("Jolt identity", &["jolt-identity", "json"])
+        .set_file_name(file_name)
+        .blocking_save_file()
+    else {
+        return Ok(None);
+    };
+    let path = file_path
+        .into_path()
+        .map_err(|error| format!("invalid export file path: {error}"))?;
+    let content = serde_json::to_string_pretty(&bundle)
+        .map_err(|error| format!("failed to encode identity bundle: {error}"))?;
+
+    std::fs::write(&path, content).map_err(|error| {
+        format!(
+            "failed to write identity bundle {}: {error}",
+            path.display()
+        )
+    })?;
+
+    Ok(Some(path.display().to_string()))
+}
+
+#[tauri::command]
+async fn identity_export_open_file(
+    window: tauri::Window,
+) -> Result<Option<serde_json::Value>, String> {
+    let Some(file_path) = window
+        .dialog()
+        .file()
+        .add_filter("Jolt identity", &["jolt-identity", "json"])
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+    let path = file_path
+        .into_path()
+        .map_err(|error| format!("invalid import file path: {error}"))?;
+    let content = std::fs::read_to_string(&path)
+        .map_err(|error| format!("failed to read identity bundle {}: {error}", path.display()))?;
+    let bundle = serde_json::from_str(&content).map_err(|error| {
+        format!(
+            "identity bundle {} is not valid JSON: {error}",
+            path.display()
+        )
+    })?;
+
+    Ok(Some(bundle))
 }
 
 async fn daemon_request(
@@ -279,6 +339,22 @@ fn daemon_log_path() -> PathBuf {
         .unwrap_or_else(|| std::env::temp_dir().join("jolt-console-daemon.log"))
 }
 
+fn safe_identity_export_filename(value: &str) -> String {
+    let filename = value
+        .chars()
+        .map(|character| match character {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '_' | '-' => character,
+            _ => '_',
+        })
+        .collect::<String>();
+
+    if filename.is_empty() {
+        "jolt-identity".to_string()
+    } else {
+        filename
+    }
+}
+
 #[derive(Debug, PartialEq)]
 struct DaemonStartPlan {
     program: PathBuf,
@@ -411,6 +487,7 @@ struct DaemonLifecycleReport {
 pub fn run() {
     tauri::Builder::default()
         .manage(Mutex::new(DaemonLifecycleManager::default()))
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -421,7 +498,9 @@ pub fn run() {
             daemon_lifecycle_status,
             daemon_lifecycle_start,
             daemon_lifecycle_stop,
-            daemon_lifecycle_restart
+            daemon_lifecycle_restart,
+            identity_export_save_file,
+            identity_export_open_file
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Jolt Console")
@@ -497,6 +576,15 @@ mod tests {
         std::fs::write(&path, "one\ntwo\nthree\n").unwrap();
 
         assert_eq!(tail_lines(&path, 2), vec!["two", "three"]);
+    }
+
+    #[test]
+    fn safe_identity_export_filename_removes_path_chars() {
+        assert_eq!(
+            safe_identity_export_filename("../alice/key:jolt"),
+            ".._alice_key_jolt"
+        );
+        assert_eq!(safe_identity_export_filename(""), "jolt-identity");
     }
 
     #[cfg(unix)]

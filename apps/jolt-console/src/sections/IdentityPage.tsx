@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { DetailGrid, DetailRow, SectionPanel } from "../components/primitives";
 import {
   createLocalIdentity,
@@ -6,17 +6,20 @@ import {
   exportIdentity,
   importIdentity,
   selectLocalIdentity,
+  tauriIdentityRecoveryFileClient,
   type DaemonClient,
+  type IdentityRecoveryFileClient,
 } from "../daemon/client";
 import type { DaemonSnapshot } from "../daemon/useDaemonSnapshot";
-import type { IdentityExportBundle } from "../daemon/types";
 
 export function IdentityPage({
   client,
   snapshot,
+  recoveryFileClient = tauriIdentityRecoveryFileClient,
 }: {
   client: DaemonClient;
   snapshot: DaemonSnapshot;
+  recoveryFileClient?: IdentityRecoveryFileClient;
 }) {
   const status = snapshot.status ?? {};
   const localIdentities = snapshot.localIdentities;
@@ -34,11 +37,8 @@ export function IdentityPage({
   const [identityName, setIdentityName] = useState("");
   const [exportPassphrase, setExportPassphrase] = useState("");
   const [exportLabel, setExportLabel] = useState("");
-  const [exportRiskAccepted, setExportRiskAccepted] = useState(false);
-  const [importBundleFile, setImportBundleFile] = useState<File | null>(null);
   const [importPassphrase, setImportPassphrase] = useState("");
   const [importAllowOverwrite, setImportAllowOverwrite] = useState(false);
-  const [importRiskAccepted, setImportRiskAccepted] = useState(false);
   const [recoveryStatus, setRecoveryStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,10 +107,15 @@ export function IdentityPage({
         exportPassphrase,
         exportLabel.trim(),
       );
-      downloadIdentityBundle(response.identity, response.bundle);
-      setRecoveryStatus(
-        `Exported ${response.identity} to a recovery file.`,
+      const path = await recoveryFileClient.save(
+        response.identity,
+        response.bundle,
       );
+      if (path) {
+        setRecoveryStatus(`Exported ${response.identity} to ${path}.`);
+      } else {
+        setRecoveryStatus("Export cancelled.");
+      }
     } catch (nextError) {
       setError(
         nextError instanceof Error ? nextError.message : String(nextError),
@@ -126,12 +131,11 @@ export function IdentityPage({
     setError(null);
     setRecoveryStatus(null);
     try {
-      if (!importBundleFile) {
-        throw new Error("Select an identity bundle file.");
+      const bundle = await recoveryFileClient.open();
+      if (!bundle) {
+        setRecoveryStatus("Import cancelled.");
+        return;
       }
-      const bundle = JSON.parse(
-        await importBundleFile.text(),
-      ) as IdentityExportBundle;
       const response = await importIdentity(
         client,
         bundle,
@@ -151,10 +155,6 @@ export function IdentityPage({
     } finally {
       setBusy(false);
     }
-  }
-
-  function selectImportBundle(event: ChangeEvent<HTMLInputElement>) {
-    setImportBundleFile(event.target.files?.[0] ?? null);
   }
 
   return (
@@ -285,21 +285,7 @@ export function IdentityPage({
                 disabled={busy}
               />
             </label>
-            <label className="identity-confirm">
-              <input
-                type="checkbox"
-                checked={exportRiskAccepted}
-                onChange={(event) =>
-                  setExportRiskAccepted(event.target.checked)
-                }
-                disabled={busy}
-              />
-              I understand this exports private identity keys.
-            </label>
-            <button
-              type="submit"
-              disabled={busy || !exportRiskAccepted}
-            >
+            <button type="submit" disabled={busy}>
               Export identity
             </button>
           </form>
@@ -315,20 +301,6 @@ export function IdentityPage({
                 identity unless allowed.
               </p>
             </div>
-            <label>
-              Identity bundle file
-              <input
-                type="file"
-                accept=".jolt-identity,.json,application/json"
-                onChange={selectImportBundle}
-                disabled={busy}
-              />
-              {importBundleFile ? (
-                <span className="file-selection">
-                  Selected {importBundleFile.name}
-                </span>
-              ) : null}
-            </label>
             <label>
               Passphrase (optional)
               <input
@@ -349,21 +321,7 @@ export function IdentityPage({
               />
               Allow replacing the existing daemon identity.
             </label>
-            <label className="identity-confirm">
-              <input
-                type="checkbox"
-                checked={importRiskAccepted}
-                onChange={(event) =>
-                  setImportRiskAccepted(event.target.checked)
-                }
-                disabled={busy}
-              />
-              I understand this imports private identity keys.
-            </label>
-            <button
-              type="submit"
-              disabled={busy || !importRiskAccepted || !importBundleFile}
-            >
+            <button type="submit" disabled={busy}>
               Import identity
             </button>
           </form>
@@ -371,23 +329,4 @@ export function IdentityPage({
       </SectionPanel>
     </>
   );
-}
-
-function downloadIdentityBundle(identity: string, bundle: IdentityExportBundle) {
-  const filename = `${safeFilename(identity)}.jolt-identity`;
-  const blob = new Blob([JSON.stringify(bundle, null, 2)], {
-    type: "application/json",
-  });
-  const href = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = href;
-  anchor.download = filename;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(href);
-}
-
-function safeFilename(value: string) {
-  return value.replace(/[^a-zA-Z0-9._-]+/g, "_") || "jolt-identity";
 }

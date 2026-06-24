@@ -456,7 +456,6 @@ a.status-pill {
 
 .identity-recovery-form input[type="text"],
 .identity-recovery-form input[type="password"],
-.identity-recovery-form input[type="file"],
 .identity-recovery-form textarea {
   width: 100%;
   border: 1px solid var(--line-strong);
@@ -470,11 +469,6 @@ a.status-pill {
 .identity-recovery-form textarea {
   min-height: 170px;
   resize: vertical;
-}
-
-.file-selection {
-  color: var(--text);
-  font-size: 12px;
 }
 
 .identity-confirm {

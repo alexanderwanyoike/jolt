@@ -31,7 +31,7 @@ Implement the card 048 design as a user-facing recovery flow:
 - encrypted identity export bundle format;
 - CLI export/import commands;
 - admin-only daemon API for export/import;
-- Console export/import UX with explicit risk confirmation;
+- Console export/import UX with native save/open file dialogs;
 - import validation against public key, derived identity ID, and encryption key
   material;
 - storage through the normal local identity/key paths, not ad hoc file copying;
@@ -49,10 +49,10 @@ Implement the card 048 design as a user-facing recovery flow:
       profile after validating the decrypted identity material.
 - [x] The admin API exposes export/import routes that are unavailable to normal
       app sessions.
-- [x] Console can export the active identity after a clear private-key risk
-      confirmation and downloads the bundle to a file instead of a text box.
+- [x] Console can export the active identity through a native save dialog
+      instead of a text box or browser download workaround.
 - [x] Console can import an identity bundle into a daemon profile without
-      silently overwriting an existing identity, reading the bundle from a file.
+      silently overwriting an existing identity, using a native open dialog.
 - [x] The export includes signing key material and local identity encryption
       private keys needed for existing private objects.
 - [x] Imported identities do not import app sessions and do not auto-approve
