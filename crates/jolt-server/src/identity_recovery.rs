@@ -18,7 +18,10 @@ pub struct IdentityRecoveryStore {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExportIdentityRequest {
-    pub passphrase: String,
+    #[serde(default)]
+    pub identity: Option<String>,
+    #[serde(default)]
+    pub passphrase: Option<String>,
     pub label: Option<String>,
 }
 
@@ -31,10 +34,13 @@ pub struct ExportIdentityResponse {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ImportIdentityRequest {
-    pub passphrase: String,
+    #[serde(default)]
+    pub passphrase: Option<String>,
     pub bundle: IdentityExportBundle,
     #[serde(default)]
     pub allow_overwrite: bool,
+    #[serde(default)]
+    pub as_local_identity: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -44,6 +50,12 @@ pub struct ImportIdentityResponse {
     pub restart_required: bool,
     pub encryption_key_count: usize,
     pub app_sessions_imported: bool,
+}
+
+pub struct LocalIdentityImport {
+    pub identity: NodeIdentity,
+    pub label: Option<String>,
+    pub encryption_key_count: usize,
 }
 
 #[derive(Debug, Error)]
@@ -91,12 +103,29 @@ impl IdentityRecoveryStore {
     ) -> Result<ExportIdentityResponse, IdentityRecoveryError> {
         let identity = NodeIdentity::load(&self.identity_dir)?;
         let encryption_keys = self.load_exported_encryption_keypairs()?;
+        self.export_node_identity(identity, encryption_keys, request)
+    }
+
+    pub fn export_local_identity(
+        &self,
+        identity: NodeIdentity,
+        request: ExportIdentityRequest,
+    ) -> Result<ExportIdentityResponse, IdentityRecoveryError> {
+        self.export_node_identity(identity, Vec::new(), request)
+    }
+
+    fn export_node_identity(
+        &self,
+        identity: NodeIdentity,
+        encryption_keys: Vec<ExportedIdentityEncryptionKeypair>,
+        request: ExportIdentityRequest,
+    ) -> Result<ExportIdentityResponse, IdentityRecoveryError> {
         let encryption_key_count = encryption_keys.len();
         let identity_address = identity.jolt_address().to_string();
         let bundle = encrypt_identity_export(
             &identity,
             encryption_keys,
-            &request.passphrase,
+            request.passphrase.as_deref().unwrap_or(""),
             IdentityExportSource {
                 jolt_version: self.jolt_version.clone(),
                 exported_at: unix_now(),
@@ -114,7 +143,8 @@ impl IdentityRecoveryStore {
         &self,
         request: ImportIdentityRequest,
     ) -> Result<ImportIdentityResponse, IdentityRecoveryError> {
-        let plaintext = decrypt_identity_export(&request.bundle, &request.passphrase)?;
+        let plaintext =
+            decrypt_identity_export(&request.bundle, request.passphrase.as_deref().unwrap_or(""))?;
         let identity = identity_from_export(&plaintext)?;
         let incoming = identity.jolt_address().to_string();
         if let Ok(existing) = NodeIdentity::load(&self.identity_dir) {
@@ -135,6 +165,20 @@ impl IdentityRecoveryStore {
             restart_required: true,
             encryption_key_count: plaintext.identity_encryption_keys.len(),
             app_sessions_imported: false,
+        })
+    }
+
+    pub fn import_local_identity(
+        &self,
+        request: ImportIdentityRequest,
+    ) -> Result<LocalIdentityImport, IdentityRecoveryError> {
+        let plaintext =
+            decrypt_identity_export(&request.bundle, request.passphrase.as_deref().unwrap_or(""))?;
+        let identity = identity_from_export(&plaintext)?;
+        Ok(LocalIdentityImport {
+            identity,
+            label: plaintext.source.label,
+            encryption_key_count: plaintext.identity_encryption_keys.len(),
         })
     }
 

@@ -221,15 +221,15 @@ pub enum RelayDiagnoseCommands {
 
 #[derive(Subcommand)]
 pub enum IdentityCommands {
-    /// Export the daemon profile identity to a passphrase-protected recovery bundle
+    /// Export the daemon profile identity to a recovery bundle
     Export {
         /// Output bundle path
         #[arg(long)]
         out: PathBuf,
 
-        /// Export passphrase. Anyone with this passphrase and bundle can act as the identity.
+        /// Optional export passphrase. Without one, the file itself is enough to act as the identity.
         #[arg(long)]
-        passphrase: String,
+        passphrase: Option<String>,
 
         /// Optional human label stored in the encrypted bundle metadata
         #[arg(long)]
@@ -242,9 +242,9 @@ pub enum IdentityCommands {
         #[arg(long = "from")]
         from: PathBuf,
 
-        /// Bundle passphrase
+        /// Optional bundle passphrase
         #[arg(long)]
-        passphrase: String,
+        passphrase: Option<String>,
 
         /// Allow replacing an existing different daemon identity. Requires daemon restart.
         #[arg(long)]
@@ -271,8 +271,6 @@ mod tests {
             "export",
             "--out",
             "alice.jolt-identity",
-            "--passphrase",
-            "correct horse battery staple",
             "--label",
             "Alice laptop",
         ]);
@@ -286,7 +284,7 @@ mod tests {
                     },
             } => {
                 assert_eq!(out, PathBuf::from("alice.jolt-identity"));
-                assert_eq!(passphrase, "correct horse battery staple");
+                assert_eq!(passphrase.as_deref(), None);
                 assert_eq!(label.as_deref(), Some("Alice laptop"));
             }
             _ => panic!("expected Identity Export command"),
@@ -298,8 +296,6 @@ mod tests {
             "import",
             "--from",
             "alice.jolt-identity",
-            "--passphrase",
-            "correct horse battery staple",
             "--allow-overwrite",
         ]);
         match cli.command {
@@ -312,7 +308,7 @@ mod tests {
                     },
             } => {
                 assert_eq!(from, PathBuf::from("alice.jolt-identity"));
-                assert_eq!(passphrase, "correct horse battery staple");
+                assert_eq!(passphrase.as_deref(), None);
                 assert!(allow_overwrite);
             }
             _ => panic!("expected Identity Import command"),

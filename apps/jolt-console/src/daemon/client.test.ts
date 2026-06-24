@@ -241,10 +241,9 @@ describe("identity recovery helpers", () => {
       magic: "jolt.identity.export",
       version: 1,
       identity: "alice.jolt",
-      kdf: { name: "argon2id" },
-      cipher: { name: "xchacha20poly1305" },
-      salt: "salt",
-      nonce: "nonce",
+      created_at: 1_780_000_000,
+      kdf: { name: "argon2id", salt: "salt" },
+      cipher: { name: "xchacha20poly1305", nonce: "nonce" },
       ciphertext: "ciphertext",
     };
     const client: DaemonClient = {
@@ -267,15 +266,13 @@ describe("identity recovery helpers", () => {
     };
 
     await expect(
-      exportIdentity(client, "correct horse battery staple", "Laptop"),
+      exportIdentity(client, "", "Laptop", "work.jolt"),
     ).resolves.toEqual({
       identity: "alice.jolt",
       encryption_key_count: 1,
       bundle,
     });
-    await expect(
-      importIdentity(client, bundle, "correct horse battery staple", true),
-    ).resolves.toEqual({
+    await expect(importIdentity(client, bundle, "", true)).resolves.toEqual({
       identity: "alice.jolt",
       imported: true,
       restart_required: true,
@@ -287,7 +284,8 @@ describe("identity recovery helpers", () => {
       1,
       "/admin/v1/identities/export",
       {
-        passphrase: "correct horse battery staple",
+        identity: "work.jolt",
+        passphrase: null,
         label: "Laptop",
       },
     );
@@ -295,9 +293,10 @@ describe("identity recovery helpers", () => {
       2,
       "/admin/v1/identities/import",
       {
-        passphrase: "correct horse battery staple",
+        passphrase: null,
         bundle,
         allow_overwrite: true,
+        as_local_identity: false,
       },
     );
   });

@@ -1,14 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DaemonClient } from "../daemon/client";
+import type {
+  DaemonClient,
+  IdentityRecoveryFileClient,
+} from "../daemon/client";
 import type { DaemonLifecycleClient } from "../daemon/lifecycle";
 import type { DaemonSnapshot } from "../daemon/useDaemonSnapshot";
 import { AppsPage } from "./AppsPage";
@@ -23,6 +20,7 @@ import { SettingsPage } from "./SettingsPage";
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   cleanup();
 });
 
@@ -193,15 +191,14 @@ describe("Console section pages", () => {
     expect(refresh).toHaveBeenCalledOnce();
   });
 
-  it("exports the daemon identity after explicit private-key risk confirmation", async () => {
+  it("exports the daemon identity through the native save dialog", async () => {
     const bundle = {
       magic: "jolt.identity.export",
       version: 1,
       identity: "alice.jolt",
-      kdf: { name: "argon2id" },
-      cipher: { name: "xchacha20poly1305" },
-      salt: "salt",
-      nonce: "nonce",
+      created_at: 1_780_000_000,
+      kdf: { name: "argon2id", salt: "salt" },
+      cipher: { name: "xchacha20poly1305", nonce: "nonce" },
       ciphertext: "ciphertext",
     };
     const client: DaemonClient = {
@@ -213,48 +210,104 @@ describe("Console section pages", () => {
         bundle,
       })),
     };
+    const recoveryFileClient: IdentityRecoveryFileClient = {
+      save: vi.fn(async () => "/tmp/alice.jolt-identity"),
+      open: vi.fn(),
+    };
 
-    render(<IdentityPage client={client} snapshot={snapshot()} />);
+    render(
+      <IdentityPage
+        client={client}
+        snapshot={snapshot()}
+        recoveryFileClient={recoveryFileClient}
+      />,
+    );
 
     expect(
+      screen.queryByLabelText("I understand this exports private identity keys."),
+    ).not.toBeInTheDocument();
+    expect(
       screen.getByText(
-        "Anyone with the export file and passphrase can become this identity.",
+        "Anyone with the export file can become this identity unless you add a passphrase.",
       ),
     ).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Label"), "Laptop");
-    await userEvent.type(
-      screen.getAllByLabelText("Passphrase")[0],
-      "correct horse battery staple",
-    );
     await userEvent.click(
-      screen.getByLabelText("I understand this exports private identity keys."),
+      screen.getByRole("button", { name: "Export identity" }),
+    );
+
+    expect(client.post).toHaveBeenCalledWith("/admin/v1/identities/export", {
+      identity: "alice.jolt",
+      passphrase: null,
+      label: "Laptop",
+    });
+    expect(recoveryFileClient.save).toHaveBeenCalledWith("alice.jolt", bundle);
+    expect(
+      screen.getByText("Exported alice.jolt to /tmp/alice.jolt-identity."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Export bundle")).not.toBeInTheDocument();
+  });
+
+  it("exports the selected local identity through the native save dialog", async () => {
+    const bundle = {
+      magic: "jolt.identity.export",
+      version: 1,
+      identity: "work.jolt",
+      created_at: 1_780_000_000,
+      kdf: { name: "argon2id", salt: "salt" },
+      cipher: { name: "xchacha20poly1305", nonce: "nonce" },
+      ciphertext: "ciphertext",
+    };
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(),
+      post: vi.fn(async () => ({
+        identity: "work.jolt",
+        encryption_key_count: 0,
+        bundle,
+      })),
+    };
+    const recoveryFileClient: IdentityRecoveryFileClient = {
+      save: vi.fn(async () => "/tmp/work.jolt-identity"),
+      open: vi.fn(),
+    };
+
+    render(
+      <IdentityPage
+        client={client}
+        snapshot={snapshot()}
+        recoveryFileClient={recoveryFileClient}
+      />,
+    );
+
+    await userEvent.selectOptions(
+      screen.getByLabelText("Identity"),
+      "work.jolt",
     );
     await userEvent.click(
       screen.getByRole("button", { name: "Export identity" }),
     );
 
     expect(client.post).toHaveBeenCalledWith("/admin/v1/identities/export", {
-      passphrase: "correct horse battery staple",
-      label: "Laptop",
+      identity: "work.jolt",
+      passphrase: null,
+      label: null,
     });
-    expect(screen.getByLabelText("Export bundle")).toHaveValue(
-      JSON.stringify(bundle, null, 2),
-    );
+    expect(recoveryFileClient.save).toHaveBeenCalledWith("work.jolt", bundle);
     expect(
-      screen.getByText("Exported alice.jolt with 1 encryption key."),
+      screen.getByText("Exported work.jolt to /tmp/work.jolt-identity."),
     ).toBeInTheDocument();
   });
 
-  it("imports an identity bundle with explicit overwrite and restart acknowledgement", async () => {
+  it("imports an identity bundle through the native open dialog", async () => {
     const refresh = vi.fn(async () => true);
     const bundle = {
       magic: "jolt.identity.export",
       version: 1,
       identity: "alice.jolt",
-      kdf: { name: "argon2id" },
-      cipher: { name: "xchacha20poly1305" },
-      salt: "salt",
-      nonce: "nonce",
+      created_at: 1_780_000_000,
+      kdf: { name: "argon2id", salt: "salt" },
+      cipher: { name: "xchacha20poly1305", nonce: "nonce" },
       ciphertext: "ciphertext",
     };
     const client: DaemonClient = {
@@ -263,41 +316,155 @@ describe("Console section pages", () => {
       post: vi.fn(async () => ({
         identity: "alice.jolt",
         imported: true,
-        restart_required: true,
+        restart_required: false,
         encryption_key_count: 1,
         app_sessions_imported: false,
       })),
     };
+    const recoveryFileClient: IdentityRecoveryFileClient = {
+      save: vi.fn(),
+      open: vi.fn(async () => bundle),
+    };
+    const lifecycleClient: DaemonLifecycleClient = {
+      status: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      restart: vi.fn(async () => ({
+        daemon_url: "http://127.0.0.1:9862",
+        reachability: "healthy",
+        ownership: "console",
+        pid: 123,
+        message: "Console owns this daemon.",
+        last_error: null,
+        log_tail: [],
+      })),
+    };
 
-    render(<IdentityPage client={client} snapshot={snapshot({ refresh })} />);
+    render(
+      <IdentityPage
+        client={client}
+        snapshot={snapshot({ refresh })}
+        recoveryFileClient={recoveryFileClient}
+        lifecycleClient={lifecycleClient}
+      />,
+    );
 
-    fireEvent.change(screen.getByLabelText("Bundle JSON"), {
-      target: { value: JSON.stringify(bundle) },
-    });
-    await userEvent.type(
-      screen.getAllByLabelText("Passphrase")[1],
-      "correct horse battery staple",
-    );
-    await userEvent.click(
-      screen.getByLabelText("Allow replacing the existing daemon identity."),
-    );
-    await userEvent.click(
-      screen.getByLabelText("I understand this imports private identity keys."),
-    );
+    expect(
+      screen.queryByLabelText("Identity bundle file"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("I understand this imports private identity keys."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Allow replacing the existing daemon identity."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Import validates the bundle and adds it as a local identity without replacing the daemon identity.",
+      ),
+    ).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: "Import identity" }),
     );
 
+    expect(recoveryFileClient.open).toHaveBeenCalledOnce();
     expect(client.post).toHaveBeenCalledWith("/admin/v1/identities/import", {
-      passphrase: "correct horse battery staple",
+      passphrase: null,
       bundle,
-      allow_overwrite: true,
+      allow_overwrite: false,
+      as_local_identity: true,
     });
+    expect(lifecycleClient.restart).not.toHaveBeenCalled();
     expect(
-      screen.getByText(
-        "Imported alice.jolt. Restart the daemon before using this identity.",
-      ),
+      screen.getByText("Imported alice.jolt as a local identity."),
     ).toBeInTheDocument();
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("asks for an import passphrase only after the selected bundle requires one", async () => {
+    const refresh = vi.fn(async () => true);
+    const bundle = {
+      magic: "jolt.identity.export",
+      version: 1,
+      identity: "alice.jolt",
+      created_at: 1_780_000_000,
+      kdf: { name: "argon2id", salt: "salt" },
+      cipher: { name: "xchacha20poly1305", nonce: "nonce" },
+      ciphertext: "ciphertext",
+    };
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(),
+      post: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error(
+            'daemon returned 400 Bad Request: {"code":"identity_recovery_invalid","error":"identity export/import failed: identity export passphrase is incorrect or bundle was tampered with"}',
+          ),
+        )
+        .mockResolvedValueOnce({
+          identity: "alice.jolt",
+          imported: true,
+          restart_required: false,
+          encryption_key_count: 1,
+          app_sessions_imported: false,
+        }),
+    };
+    const recoveryFileClient: IdentityRecoveryFileClient = {
+      save: vi.fn(),
+      open: vi.fn(async () => bundle),
+    };
+
+    render(
+      <IdentityPage
+        client={client}
+        snapshot={snapshot({ refresh })}
+        recoveryFileClient={recoveryFileClient}
+      />,
+    );
+
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Import identity" }),
+    );
+
+    expect(recoveryFileClient.open).toHaveBeenCalledOnce();
+    expect(client.post).toHaveBeenNthCalledWith(
+      1,
+      "/admin/v1/identities/import",
+      {
+        passphrase: null,
+        bundle,
+        allow_overwrite: false,
+        as_local_identity: true,
+      },
+    );
+    expect(await screen.findByLabelText("Passphrase")).toBeInTheDocument();
+    expect(
+      screen.getByText("This identity export needs a passphrase."),
+    ).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Passphrase"), "correct horse");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Unlock and import" }),
+    );
+
+    expect(recoveryFileClient.open).toHaveBeenCalledOnce();
+    expect(client.post).toHaveBeenNthCalledWith(
+      2,
+      "/admin/v1/identities/import",
+      {
+        passphrase: "correct horse",
+        bundle,
+        allow_overwrite: false,
+        as_local_identity: true,
+      },
+    );
+    expect(
+      screen.getByText("Imported alice.jolt as a local identity."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
     expect(refresh).toHaveBeenCalledOnce();
   });
 

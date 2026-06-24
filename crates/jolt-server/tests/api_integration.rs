@@ -979,6 +979,134 @@ async fn test_admin_can_delete_generated_local_identity() {
 }
 
 #[tokio::test]
+async fn test_admin_exports_selected_generated_local_identity_recovery_bundle() {
+    let profile = tempfile::tempdir().unwrap();
+    let (port, handle, _dir) =
+        start_test_server_with_profile_dir(profile.path().to_path_buf()).await;
+    let client = reqwest::Client::new();
+    let daemon_identity = handle.local_identity_address().unwrap().to_string();
+
+    let create_resp = client
+        .post(format!("{}/admin/v1/identities", base_url(port)))
+        .json(&serde_json::json!({ "label": "Work" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_resp.status(), 200);
+    let created: serde_json::Value = create_resp.json().await.unwrap();
+    let work_identity = created["address"].as_str().unwrap().to_string();
+    assert_ne!(work_identity, daemon_identity);
+
+    let export_resp = client
+        .post(format!("{}/admin/v1/identities/export", base_url(port)))
+        .json(&serde_json::json!({
+            "identity": work_identity,
+            "passphrase": "",
+            "label": "Work laptop"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(export_resp.status(), 200);
+    let exported: serde_json::Value = export_resp.json().await.unwrap();
+    assert_eq!(exported["identity"], work_identity);
+    assert_eq!(exported["bundle"]["identity"], work_identity);
+    assert_eq!(exported["encryption_key_count"], 0);
+
+    let daemon_export_resp = client
+        .post(format!("{}/admin/v1/identities/export", base_url(port)))
+        .json(&serde_json::json!({
+            "identity": daemon_identity,
+            "passphrase": "",
+            "label": "Default laptop"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(daemon_export_resp.status(), 200);
+    let daemon_exported: serde_json::Value = daemon_export_resp.json().await.unwrap();
+    assert_eq!(daemon_exported["identity"], daemon_identity);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_imports_identity_recovery_bundle_as_local_identity_without_replacing_daemon() {
+    let source_profile = tempfile::tempdir().unwrap();
+    let target_profile = tempfile::tempdir().unwrap();
+    let (source_port, source_handle, _source_holder) =
+        start_test_server_with_profile_dir(source_profile.path().to_path_buf()).await;
+    let client = reqwest::Client::new();
+    let source_identity = source_handle.local_identity_address().unwrap().to_string();
+
+    let export_resp = client
+        .post(format!(
+            "{}/admin/v1/identities/export",
+            base_url(source_port)
+        ))
+        .json(&serde_json::json!({
+            "passphrase": "",
+            "label": "Recovered"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(export_resp.status(), 200);
+    let exported: serde_json::Value = export_resp.json().await.unwrap();
+    let bundle = exported["bundle"].clone();
+
+    let (target_port, target_handle, _target_holder) =
+        start_test_server_with_profile_dir(target_profile.path().to_path_buf()).await;
+    let target_identity = target_handle.local_identity_address().unwrap().to_string();
+    assert_ne!(target_identity, source_identity);
+
+    let import_resp = client
+        .post(format!(
+            "{}/admin/v1/identities/import",
+            base_url(target_port)
+        ))
+        .json(&serde_json::json!({
+            "passphrase": "",
+            "bundle": bundle,
+            "as_local_identity": true
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(import_resp.status(), 200);
+    let imported: serde_json::Value = import_resp.json().await.unwrap();
+    assert_eq!(imported["identity"], source_identity);
+    assert_eq!(imported["imported"], true);
+    assert_eq!(imported["restart_required"], false);
+    assert_eq!(imported["app_sessions_imported"], false);
+
+    assert_eq!(
+        target_handle.status().await.unwrap().identity_address,
+        target_identity
+    );
+
+    let identities_resp = client
+        .get(format!("{}/admin/v1/identities", base_url(target_port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(identities_resp.status(), 200);
+    let identities: serde_json::Value = identities_resp.json().await.unwrap();
+    assert_eq!(identities["active_identity"], target_identity);
+    let identities = identities["identities"].as_array().unwrap();
+    assert_eq!(identities.len(), 2);
+    assert!(identities
+        .iter()
+        .any(|identity| identity["address"] == target_identity));
+    assert!(identities.iter().any(|identity| {
+        identity["address"] == source_identity && identity["label"] == "Recovered"
+    }));
+
+    source_handle.shutdown().await.ok();
+    target_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_admin_can_export_and_import_identity_recovery_bundle() {
     let source_root = tempfile::tempdir().unwrap();
     let target_root = tempfile::tempdir().unwrap();

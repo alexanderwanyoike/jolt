@@ -26,6 +26,11 @@ export type DaemonClient = {
   delete?<T>(path: string): Promise<T>;
 };
 
+export type IdentityRecoveryFileClient = {
+  save(identity: string, bundle: IdentityExportBundle): Promise<string | null>;
+  open(): Promise<IdentityExportBundle | null>;
+};
+
 export const tauriDaemonClient: DaemonClient = {
   daemonUrl: DEFAULT_DAEMON_URL,
   get<T>(path: string) {
@@ -36,6 +41,18 @@ export const tauriDaemonClient: DaemonClient = {
   },
   delete<T>(path: string) {
     return invoke<T>("daemon_delete", { path });
+  },
+};
+
+export const tauriIdentityRecoveryFileClient: IdentityRecoveryFileClient = {
+  save(identity: string, bundle: IdentityExportBundle) {
+    return invoke<string | null>("identity_export_save_file", {
+      identity,
+      bundle,
+    });
+  },
+  open() {
+    return invoke<IdentityExportBundle | null>("identity_export_open_file");
   },
 };
 
@@ -99,11 +116,23 @@ export async function exportIdentity(
   client: DaemonClient,
   passphrase: string,
   label?: string,
+  identity?: string,
 ): Promise<IdentityExportResponse> {
-  return client.post<IdentityExportResponse>("/admin/v1/identities/export", {
-    passphrase,
+  const body: {
+    passphrase: string | null;
+    label: string | null;
+    identity?: string;
+  } = {
+    passphrase: passphrase || null,
     label: label || null,
-  });
+  };
+  if (identity) {
+    body.identity = identity;
+  }
+  return client.post<IdentityExportResponse>(
+    "/admin/v1/identities/export",
+    body,
+  );
 }
 
 export async function importIdentity(
@@ -111,11 +140,13 @@ export async function importIdentity(
   bundle: IdentityExportBundle,
   passphrase: string,
   allowOverwrite: boolean,
+  asLocalIdentity = false,
 ): Promise<IdentityImportResponse> {
   return client.post<IdentityImportResponse>("/admin/v1/identities/import", {
-    passphrase,
+    passphrase: passphrase || null,
     bundle,
     allow_overwrite: allowOverwrite,
+    as_local_identity: asLocalIdentity,
   });
 }
 

@@ -6,16 +6,27 @@ import {
   exportIdentity,
   importIdentity,
   selectLocalIdentity,
+  tauriIdentityRecoveryFileClient,
   type DaemonClient,
+  type IdentityRecoveryFileClient,
 } from "../daemon/client";
+import {
+  tauriDaemonLifecycleClient,
+  type DaemonLifecycleClient,
+} from "../daemon/lifecycle";
+import type { IdentityExportBundle } from "../daemon/types";
 import type { DaemonSnapshot } from "../daemon/useDaemonSnapshot";
 
 export function IdentityPage({
   client,
   snapshot,
+  recoveryFileClient = tauriIdentityRecoveryFileClient,
+  lifecycleClient = tauriDaemonLifecycleClient,
 }: {
   client: DaemonClient;
   snapshot: DaemonSnapshot;
+  recoveryFileClient?: IdentityRecoveryFileClient;
+  lifecycleClient?: DaemonLifecycleClient;
 }) {
   const status = snapshot.status ?? {};
   const localIdentities = snapshot.localIdentities;
@@ -31,17 +42,18 @@ export function IdentityPage({
     ? `${activeName} (${activeIdentity})`
     : "--";
   const [identityName, setIdentityName] = useState("");
+  const [exportIdentityAddress, setExportIdentityAddress] = useState("");
   const [exportPassphrase, setExportPassphrase] = useState("");
   const [exportLabel, setExportLabel] = useState("");
-  const [exportRiskAccepted, setExportRiskAccepted] = useState(false);
-  const [exportBundleJson, setExportBundleJson] = useState("");
-  const [importBundleJson, setImportBundleJson] = useState("");
   const [importPassphrase, setImportPassphrase] = useState("");
-  const [importAllowOverwrite, setImportAllowOverwrite] = useState(false);
-  const [importRiskAccepted, setImportRiskAccepted] = useState(false);
+  const [pendingImportBundle, setPendingImportBundle] =
+    useState<IdentityExportBundle | null>(null);
+  const [importNeedsPassphrase, setImportNeedsPassphrase] = useState(false);
   const [recoveryStatus, setRecoveryStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selectedExportIdentity =
+    exportIdentityAddress || activeIdentity || daemonIdentity || "";
 
   async function createIdentity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -106,11 +118,17 @@ export function IdentityPage({
         client,
         exportPassphrase,
         exportLabel.trim(),
+        selectedExportIdentity,
       );
-      setExportBundleJson(JSON.stringify(response.bundle, null, 2));
-      setRecoveryStatus(
-        `Exported ${response.identity} with ${response.encryption_key_count} encryption key.`,
+      const path = await recoveryFileClient.save(
+        response.identity,
+        response.bundle,
       );
+      if (path) {
+        setRecoveryStatus(`Exported ${response.identity} to ${path}.`);
+      } else {
+        setRecoveryStatus("Export cancelled.");
+      }
     } catch (nextError) {
       setError(
         nextError instanceof Error ? nextError.message : String(nextError),
@@ -125,21 +143,44 @@ export function IdentityPage({
     setBusy(true);
     setError(null);
     setRecoveryStatus(null);
+    let bundle = pendingImportBundle;
     try {
-      const bundle = JSON.parse(importBundleJson);
+      if (!bundle) {
+        bundle = await recoveryFileClient.open();
+      }
+      if (!bundle) {
+        setRecoveryStatus("Import cancelled.");
+        return;
+      }
       const response = await importIdentity(
         client,
         bundle,
         importPassphrase,
-        importAllowOverwrite,
+        false,
+        true,
       );
-      setRecoveryStatus(
-        response.restart_required
-          ? `Imported ${response.identity}. Restart the daemon before using this identity.`
-          : `Imported ${response.identity}.`,
-      );
+      if (response.restart_required) {
+        await lifecycleClient.restart();
+        setRecoveryStatus(
+          `Imported ${response.identity} and restarted the daemon.`,
+        );
+      } else {
+        setRecoveryStatus(`Imported ${response.identity} as a local identity.`);
+      }
+      setImportNeedsPassphrase(false);
+      setPendingImportBundle(null);
+      setImportPassphrase("");
       await snapshot.refresh();
     } catch (nextError) {
+      if (bundle && isIdentityExportPassphraseError(nextError)) {
+        setPendingImportBundle(bundle);
+        setImportNeedsPassphrase(true);
+        setRecoveryStatus("This identity export needs a passphrase.");
+        if (importNeedsPassphrase) {
+          setError("That passphrase did not unlock the identity export.");
+        }
+        return;
+      }
       setError(
         nextError instanceof Error ? nextError.message : String(nextError),
       );
@@ -240,7 +281,7 @@ export function IdentityPage({
 
       <SectionPanel
         eyebrow="Recovery"
-        summary="export or import daemon identity"
+        summary="export or import identities"
       >
         {recoveryStatus ? (
           <div className="identity-status-message">{recoveryStatus}</div>
@@ -251,12 +292,29 @@ export function IdentityPage({
             onSubmit={exportDaemonIdentity}
           >
             <div>
-              <h2>Export daemon identity</h2>
+              <h2>Export identity</h2>
               <p>
-                Anyone with the export file and passphrase can become this
-                identity.
+                Anyone with the export file can become this identity unless you
+                add a passphrase.
               </p>
             </div>
+            <label>
+              Identity
+              <select
+                value={selectedExportIdentity}
+                onChange={(event) => setExportIdentityAddress(event.target.value)}
+                disabled={busy || identities.length === 0}
+              >
+                {identities.map((identity) => {
+                  const name = identity.label?.trim() || "Unnamed identity";
+                  return (
+                    <option key={identity.address} value={identity.address}>
+                      {name} ({identity.address})
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
             <label>
               Label
               <input
@@ -268,7 +326,7 @@ export function IdentityPage({
               />
             </label>
             <label>
-              Passphrase
+              Passphrase (optional)
               <input
                 type="password"
                 value={exportPassphrase}
@@ -276,33 +334,9 @@ export function IdentityPage({
                 disabled={busy}
               />
             </label>
-            <label className="identity-confirm">
-              <input
-                type="checkbox"
-                checked={exportRiskAccepted}
-                onChange={(event) =>
-                  setExportRiskAccepted(event.target.checked)
-                }
-                disabled={busy}
-              />
-              I understand this exports private identity keys.
-            </label>
-            <button
-              type="submit"
-              disabled={busy || !exportRiskAccepted || !exportPassphrase}
-            >
+            <button type="submit" disabled={busy}>
               Export identity
             </button>
-            <label>
-              Export bundle
-              <textarea
-                className="mono"
-                value={exportBundleJson}
-                onChange={(event) => setExportBundleJson(event.target.value)}
-                rows={10}
-                readOnly
-              />
-            </label>
           </form>
 
           <form
@@ -312,65 +346,36 @@ export function IdentityPage({
             <div>
               <h2>Import daemon identity</h2>
               <p>
-                Import validates the bundle and never overwrites a different
-                identity unless allowed.
+                Import validates the bundle and adds it as a local identity
+                without replacing the daemon identity.
               </p>
             </div>
-            <label>
-              Bundle JSON
-              <textarea
-                className="mono"
-                value={importBundleJson}
-                onChange={(event) => setImportBundleJson(event.target.value)}
-                disabled={busy}
-                rows={10}
-              />
-            </label>
-            <label>
-              Passphrase
-              <input
-                type="password"
-                value={importPassphrase}
-                onChange={(event) => setImportPassphrase(event.target.value)}
-                disabled={busy}
-              />
-            </label>
-            <label className="identity-confirm">
-              <input
-                type="checkbox"
-                checked={importAllowOverwrite}
-                onChange={(event) =>
-                  setImportAllowOverwrite(event.target.checked)
-                }
-                disabled={busy}
-              />
-              Allow replacing the existing daemon identity.
-            </label>
-            <label className="identity-confirm">
-              <input
-                type="checkbox"
-                checked={importRiskAccepted}
-                onChange={(event) =>
-                  setImportRiskAccepted(event.target.checked)
-                }
-                disabled={busy}
-              />
-              I understand this imports private identity keys.
-            </label>
-            <button
-              type="submit"
-              disabled={
-                busy ||
-                !importRiskAccepted ||
-                !importBundleJson ||
-                !importPassphrase
-              }
-            >
-              Import identity
+            {importNeedsPassphrase ? (
+              <label>
+                Passphrase
+                <input
+                  type="password"
+                  value={importPassphrase}
+                  onChange={(event) => setImportPassphrase(event.target.value)}
+                  disabled={busy}
+                  autoFocus
+                />
+              </label>
+            ) : null}
+            <button type="submit" disabled={busy}>
+              {importNeedsPassphrase ? "Unlock and import" : "Import identity"}
             </button>
           </form>
         </div>
       </SectionPanel>
     </>
+  );
+}
+
+function isIdentityExportPassphraseError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("identity_recovery_invalid") &&
+    message.includes("identity export passphrase is incorrect")
   );
 }
