@@ -10,16 +10,22 @@ import {
   type DaemonClient,
   type IdentityRecoveryFileClient,
 } from "../daemon/client";
+import {
+  tauriDaemonLifecycleClient,
+  type DaemonLifecycleClient,
+} from "../daemon/lifecycle";
 import type { DaemonSnapshot } from "../daemon/useDaemonSnapshot";
 
 export function IdentityPage({
   client,
   snapshot,
   recoveryFileClient = tauriIdentityRecoveryFileClient,
+  lifecycleClient = tauriDaemonLifecycleClient,
 }: {
   client: DaemonClient;
   snapshot: DaemonSnapshot;
   recoveryFileClient?: IdentityRecoveryFileClient;
+  lifecycleClient?: DaemonLifecycleClient;
 }) {
   const status = snapshot.status ?? {};
   const localIdentities = snapshot.localIdentities;
@@ -38,7 +44,6 @@ export function IdentityPage({
   const [exportPassphrase, setExportPassphrase] = useState("");
   const [exportLabel, setExportLabel] = useState("");
   const [importPassphrase, setImportPassphrase] = useState("");
-  const [importAllowOverwrite, setImportAllowOverwrite] = useState(false);
   const [recoveryStatus, setRecoveryStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,13 +145,16 @@ export function IdentityPage({
         client,
         bundle,
         importPassphrase,
-        importAllowOverwrite,
+        true,
       );
-      setRecoveryStatus(
-        response.restart_required
-          ? `Imported ${response.identity}. Restart the daemon before using this identity.`
-          : `Imported ${response.identity}.`,
-      );
+      if (response.restart_required) {
+        await lifecycleClient.restart();
+        setRecoveryStatus(
+          `Imported ${response.identity} and restarted the daemon.`,
+        );
+      } else {
+        setRecoveryStatus(`Imported ${response.identity}.`);
+      }
       await snapshot.refresh();
     } catch (nextError) {
       setError(
@@ -297,8 +305,8 @@ export function IdentityPage({
             <div>
               <h2>Import daemon identity</h2>
               <p>
-                Import validates the bundle and never overwrites a different
-                identity unless allowed.
+                Import validates the bundle, replaces the daemon identity, and
+                restarts the daemon when required.
               </p>
             </div>
             <label>
@@ -309,17 +317,6 @@ export function IdentityPage({
                 onChange={(event) => setImportPassphrase(event.target.value)}
                 disabled={busy}
               />
-            </label>
-            <label className="identity-confirm">
-              <input
-                type="checkbox"
-                checked={importAllowOverwrite}
-                onChange={(event) =>
-                  setImportAllowOverwrite(event.target.checked)
-                }
-                disabled={busy}
-              />
-              Allow replacing the existing daemon identity.
             </label>
             <button type="submit" disabled={busy}>
               Import identity

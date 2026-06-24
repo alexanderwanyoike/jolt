@@ -471,18 +471,6 @@ a.status-pill {
   resize: vertical;
 }
 
-.identity-confirm {
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  color: var(--text);
-}
-
-.identity-confirm input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-}
-
 .diagnostics-output {
   min-height: 180px;
   white-space: pre-wrap;

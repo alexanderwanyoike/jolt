@@ -273,12 +273,27 @@ describe("Console section pages", () => {
       save: vi.fn(),
       open: vi.fn(async () => bundle),
     };
+    const lifecycleClient: DaemonLifecycleClient = {
+      status: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      restart: vi.fn(async () => ({
+        daemon_url: "http://127.0.0.1:9862",
+        reachability: "healthy",
+        ownership: "console",
+        pid: 123,
+        message: "Console owns this daemon.",
+        last_error: null,
+        log_tail: [],
+      })),
+    };
 
     render(
       <IdentityPage
         client={client}
         snapshot={snapshot({ refresh })}
         recoveryFileClient={recoveryFileClient}
+        lifecycleClient={lifecycleClient}
       />,
     );
 
@@ -288,9 +303,14 @@ describe("Console section pages", () => {
     expect(
       screen.queryByLabelText("I understand this imports private identity keys."),
     ).not.toBeInTheDocument();
-    await userEvent.click(
-      screen.getByLabelText("Allow replacing the existing daemon identity."),
-    );
+    expect(
+      screen.queryByLabelText("Allow replacing the existing daemon identity."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Import validates the bundle, replaces the daemon identity, and restarts the daemon when required.",
+      ),
+    ).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: "Import identity" }),
     );
@@ -301,10 +321,9 @@ describe("Console section pages", () => {
       bundle,
       allow_overwrite: true,
     });
+    expect(lifecycleClient.restart).toHaveBeenCalledOnce();
     expect(
-      screen.getByText(
-        "Imported alice.jolt. Restart the daemon before using this identity.",
-      ),
+      screen.getByText("Imported alice.jolt and restarted the daemon."),
     ).toBeInTheDocument();
     expect(refresh).toHaveBeenCalledOnce();
   });

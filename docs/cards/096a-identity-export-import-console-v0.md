@@ -51,8 +51,9 @@ Implement the card 048 design as a user-facing recovery flow:
       app sessions.
 - [x] Console can export the active identity through a native save dialog
       instead of a text box or browser download workaround.
-- [x] Console can import an identity bundle into a daemon profile without
-      silently overwriting an existing identity, using a native open dialog.
+- [x] Console can import an identity bundle into a daemon profile through a
+      native open dialog, replacing the daemon identity and restarting the
+      daemon automatically when required.
 - [x] The export includes signing key material and local identity encryption
       private keys needed for existing private objects.
 - [x] Imported identities do not import app sessions and do not auto-approve
@@ -111,6 +112,17 @@ Follow-up adjustment in PR #162:
 - Green: `cargo test -p jolt-node parse_identity_export_import_commands --bin jolt -- --nocapture`
 - Green: `cargo test -p jolt-server test_admin_can_export_and_import_identity_recovery_bundle --test api_integration -- --nocapture`
 - Green: `npm run build` from `apps/jolt-console`
+
+Follow-up adjustment in PR #163:
+
+- Red: `npx vitest run src/sections/sections.test.tsx -t "imports an identity bundle through the native open dialog"`
+  from `apps/jolt-console` failed while the Console still showed the overwrite
+  checkbox and did not restart after import.
+- Green: `npx vitest run src/sections/sections.test.tsx` from
+  `apps/jolt-console`
+- Green: `npm run test -- --runInBand` from `apps/jolt-console`
+- Green: `npm run build` from `apps/jolt-console`
+- Green: `./scripts/test-local.sh`
 
 The integration smoke uses two daemon profiles: the source exports an encrypted
 bundle, the target refuses overwrite without explicit permission, imports with
