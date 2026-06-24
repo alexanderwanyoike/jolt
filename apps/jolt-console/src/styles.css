@@ -55,6 +55,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
 .console-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);

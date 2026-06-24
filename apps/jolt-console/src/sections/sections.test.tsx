@@ -216,6 +216,7 @@ describe("Console section pages", () => {
 
     render(<IdentityPage client={client} snapshot={snapshot()} />);
 
+    expect(screen.getByRole("button", { name: "Export identity" })).toBeDisabled();
     expect(
       screen.getByText(
         "Anyone with the export file and passphrase can become this identity.",
@@ -226,6 +227,7 @@ describe("Console section pages", () => {
       screen.getAllByLabelText("Passphrase")[0],
       "correct horse battery staple",
     );
+    expect(screen.getByRole("button", { name: "Export identity" })).toBeDisabled();
     await userEvent.click(
       screen.getByLabelText("I understand this exports private identity keys."),
     );
