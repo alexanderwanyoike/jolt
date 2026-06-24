@@ -14,6 +14,7 @@ import {
   tauriDaemonLifecycleClient,
   type DaemonLifecycleClient,
 } from "../daemon/lifecycle";
+import type { IdentityExportBundle } from "../daemon/types";
 import type { DaemonSnapshot } from "../daemon/useDaemonSnapshot";
 
 export function IdentityPage({
@@ -44,6 +45,9 @@ export function IdentityPage({
   const [exportPassphrase, setExportPassphrase] = useState("");
   const [exportLabel, setExportLabel] = useState("");
   const [importPassphrase, setImportPassphrase] = useState("");
+  const [pendingImportBundle, setPendingImportBundle] =
+    useState<IdentityExportBundle | null>(null);
+  const [importNeedsPassphrase, setImportNeedsPassphrase] = useState(false);
   const [recoveryStatus, setRecoveryStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,8 +139,11 @@ export function IdentityPage({
     setBusy(true);
     setError(null);
     setRecoveryStatus(null);
+    let bundle = pendingImportBundle;
     try {
-      const bundle = await recoveryFileClient.open();
+      if (!bundle) {
+        bundle = await recoveryFileClient.open();
+      }
       if (!bundle) {
         setRecoveryStatus("Import cancelled.");
         return;
@@ -156,8 +163,20 @@ export function IdentityPage({
       } else {
         setRecoveryStatus(`Imported ${response.identity} as a local identity.`);
       }
+      setImportNeedsPassphrase(false);
+      setPendingImportBundle(null);
+      setImportPassphrase("");
       await snapshot.refresh();
     } catch (nextError) {
+      if (bundle && isIdentityExportPassphraseError(nextError)) {
+        setPendingImportBundle(bundle);
+        setImportNeedsPassphrase(true);
+        setRecoveryStatus("This identity export needs a passphrase.");
+        if (importNeedsPassphrase) {
+          setError("That passphrase did not unlock the identity export.");
+        }
+        return;
+      }
       setError(
         nextError instanceof Error ? nextError.message : String(nextError),
       );
@@ -310,21 +329,32 @@ export function IdentityPage({
                 without replacing the daemon identity.
               </p>
             </div>
-            <label>
-              Passphrase (optional)
-              <input
-                type="password"
-                value={importPassphrase}
-                onChange={(event) => setImportPassphrase(event.target.value)}
-                disabled={busy}
-              />
-            </label>
+            {importNeedsPassphrase ? (
+              <label>
+                Passphrase
+                <input
+                  type="password"
+                  value={importPassphrase}
+                  onChange={(event) => setImportPassphrase(event.target.value)}
+                  disabled={busy}
+                  autoFocus
+                />
+              </label>
+            ) : null}
             <button type="submit" disabled={busy}>
-              Import identity
+              {importNeedsPassphrase ? "Unlock and import" : "Import identity"}
             </button>
           </form>
         </div>
       </SectionPanel>
     </>
+  );
+}
+
+function isIdentityExportPassphraseError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("identity_recovery_invalid") &&
+    message.includes("identity export passphrase is incorrect")
   );
 }

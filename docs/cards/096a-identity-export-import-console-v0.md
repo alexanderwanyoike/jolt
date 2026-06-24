@@ -126,6 +126,13 @@ Follow-up adjustment in PR #163:
 - Green: `npm run test -- --runInBand` from `apps/jolt-console`
 - Green: `npm run build` from `apps/jolt-console`
 - Green: `./scripts/test-local.sh`
+- Red: `npx vitest run src/sections/sections.test.tsx -t "asks for an import passphrase"`
+  from `apps/jolt-console` failed while the import form always showed the
+  passphrase field and surfaced the raw daemon decrypt error.
+- Green: `npx vitest run src/sections/sections.test.tsx -t "import"` from
+  `apps/jolt-console`
+- Green: `npm run test -- --runInBand` from `apps/jolt-console`
+- Green: `npm run build` from `apps/jolt-console`
 
 The integration smoke uses two daemon profiles: the source exports an encrypted
 bundle, the target refuses overwrite without explicit permission, imports with

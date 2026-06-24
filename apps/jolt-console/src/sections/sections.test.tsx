@@ -303,6 +303,7 @@ describe("Console section pages", () => {
     expect(
       screen.queryByLabelText("I understand this imports private identity keys."),
     ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
     expect(
       screen.queryByLabelText("Allow replacing the existing daemon identity."),
     ).not.toBeInTheDocument();
@@ -326,6 +327,92 @@ describe("Console section pages", () => {
     expect(
       screen.getByText("Imported alice.jolt as a local identity."),
     ).toBeInTheDocument();
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("asks for an import passphrase only after the selected bundle requires one", async () => {
+    const refresh = vi.fn(async () => true);
+    const bundle = {
+      magic: "jolt.identity.export",
+      version: 1,
+      identity: "alice.jolt",
+      created_at: 1_780_000_000,
+      kdf: { name: "argon2id", salt: "salt" },
+      cipher: { name: "xchacha20poly1305", nonce: "nonce" },
+      ciphertext: "ciphertext",
+    };
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(),
+      post: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error(
+            'daemon returned 400 Bad Request: {"code":"identity_recovery_invalid","error":"identity export/import failed: identity export passphrase is incorrect or bundle was tampered with"}',
+          ),
+        )
+        .mockResolvedValueOnce({
+          identity: "alice.jolt",
+          imported: true,
+          restart_required: false,
+          encryption_key_count: 1,
+          app_sessions_imported: false,
+        }),
+    };
+    const recoveryFileClient: IdentityRecoveryFileClient = {
+      save: vi.fn(),
+      open: vi.fn(async () => bundle),
+    };
+
+    render(
+      <IdentityPage
+        client={client}
+        snapshot={snapshot({ refresh })}
+        recoveryFileClient={recoveryFileClient}
+      />,
+    );
+
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Import identity" }),
+    );
+
+    expect(recoveryFileClient.open).toHaveBeenCalledOnce();
+    expect(client.post).toHaveBeenNthCalledWith(
+      1,
+      "/admin/v1/identities/import",
+      {
+        passphrase: null,
+        bundle,
+        allow_overwrite: false,
+        as_local_identity: true,
+      },
+    );
+    expect(await screen.findByLabelText("Passphrase")).toBeInTheDocument();
+    expect(
+      screen.getByText("This identity export needs a passphrase."),
+    ).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Passphrase"), "correct horse");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Unlock and import" }),
+    );
+
+    expect(recoveryFileClient.open).toHaveBeenCalledOnce();
+    expect(client.post).toHaveBeenNthCalledWith(
+      2,
+      "/admin/v1/identities/import",
+      {
+        passphrase: "correct horse",
+        bundle,
+        allow_overwrite: false,
+        as_local_identity: true,
+      },
+    );
+    expect(
+      screen.getByText("Imported alice.jolt as a local identity."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
     expect(refresh).toHaveBeenCalledOnce();
   });
 
