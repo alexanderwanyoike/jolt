@@ -7,6 +7,7 @@ pub mod fetch;
 pub mod health;
 pub mod home_relay;
 pub mod identity_encryption_keys;
+pub mod identity_recovery;
 pub mod ingress;
 pub mod local_identities;
 pub mod network_settings;

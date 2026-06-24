@@ -11,6 +11,7 @@ use jolt_network::{
     DaemonHandle, HomeRelayCapability, HomeRelayConfig, Multiaddr, NetworkConfig, NetworkNode,
     PeerId,
 };
+use jolt_server::identity_recovery::IdentityRecoveryStore;
 use jolt_store::{CacheConfig, ContentStore};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -95,6 +96,50 @@ async fn start_test_server_with_network_settings_path(
         .unwrap();
 
     (port, handle, dir)
+}
+
+async fn start_test_server_with_profile_dir(
+    profile_dir: PathBuf,
+) -> (u16, DaemonHandle, tempfile::TempDir) {
+    let holder = tempfile::tempdir().unwrap();
+    let identity_dir = profile_dir.join("identity");
+    let content_store_dir = profile_dir.join("data");
+    let identity = NodeIdentity::load_or_generate(&identity_dir).unwrap();
+    let store = ContentStore::open(&content_store_dir, CacheConfig::default()).unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    node.set_fetch_timeout(std::time::Duration::from_secs(2));
+    node.set_resolve_timeout(std::time::Duration::from_secs(2));
+
+    let (cmd_tx, cmd_rx) = mpsc::channel(64);
+    let status_handle = DaemonHandle::new(cmd_tx.clone());
+    tokio::spawn(async move {
+        node.run_daemon_loop(cmd_rx).await;
+    });
+    let local_identity_address = status_handle.status().await.unwrap().identity_address;
+    let handle = DaemonHandle::new_with_local_identity(cmd_tx, local_identity_address);
+
+    let sessions =
+        jolt_server::session_store::AppSessionStore::open(profile_dir.join("app-sessions.json"))
+            .unwrap();
+    let network_settings =
+        jolt_server::network_settings::NetworkSettingsStore::open(profile_dir.join("network.json"))
+            .unwrap();
+    let identity_recovery = IdentityRecoveryStore::new(
+        identity_dir,
+        content_store_dir,
+        Some("integration-test".to_string()),
+    );
+    let (port, _server_handle) = jolt_server::server::start_server_with_explicit_stores(
+        handle.clone(),
+        0,
+        sessions,
+        network_settings,
+        identity_recovery,
+    )
+    .await
+    .unwrap();
+
+    (port, handle, holder)
 }
 
 async fn start_test_server_with_node(
@@ -931,6 +976,177 @@ async fn test_admin_can_delete_generated_local_identity() {
     assert_eq!(body["code"], "local_identity_protected");
 
     handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_can_export_and_import_identity_recovery_bundle() {
+    let source_root = tempfile::tempdir().unwrap();
+    let target_root = tempfile::tempdir().unwrap();
+    let source_profile = source_root.path().join("source-profile");
+    let target_profile = target_root.path().join("target-profile");
+
+    let (source_port, source_handle, _source_holder) =
+        start_test_server_with_profile_dir(source_profile.clone()).await;
+    let client = reqwest::Client::new();
+    let source_identity = source_handle.status().await.unwrap().identity_address;
+    source_handle
+        .ensure_local_identity_encryption_key()
+        .await
+        .unwrap();
+
+    let source_token = approve_app_session(
+        &client,
+        source_port,
+        &source_identity,
+        &["resolve:public", "fetch:public"],
+    )
+    .await;
+    assert!(!source_token.is_empty());
+
+    let export_resp = client
+        .post(format!(
+            "{}/admin/v1/identities/export",
+            base_url(source_port)
+        ))
+        .json(&serde_json::json!({
+            "passphrase": "correct horse battery staple",
+            "label": "integration export"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(export_resp.status(), 200);
+    let exported: serde_json::Value = export_resp.json().await.unwrap();
+    assert_eq!(exported["identity"], source_identity);
+    assert_eq!(exported["encryption_key_count"], 1);
+    let bundle = exported["bundle"].clone();
+
+    let app_export_attempt = client
+        .post(format!(
+            "{}/app/v1/identities/export",
+            base_url(source_port)
+        ))
+        .bearer_auth(&source_token)
+        .json(&serde_json::json!({ "passphrase": "correct horse battery staple" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(app_export_attempt.status(), 404);
+
+    let (target_port, target_handle, _target_holder) =
+        start_test_server_with_profile_dir(target_profile.clone()).await;
+    let original_target_identity = target_handle.status().await.unwrap().identity_address;
+    assert_ne!(original_target_identity, source_identity);
+
+    let refused = client
+        .post(format!(
+            "{}/admin/v1/identities/import",
+            base_url(target_port)
+        ))
+        .json(&serde_json::json!({
+            "passphrase": "correct horse battery staple",
+            "bundle": bundle
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), 409);
+
+    let import_resp = client
+        .post(format!(
+            "{}/admin/v1/identities/import",
+            base_url(target_port)
+        ))
+        .json(&serde_json::json!({
+            "passphrase": "correct horse battery staple",
+            "bundle": bundle,
+            "allow_overwrite": true
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(import_resp.status(), 200);
+    let imported: serde_json::Value = import_resp.json().await.unwrap();
+    assert_eq!(imported["identity"], source_identity);
+    assert_eq!(imported["imported"], true);
+    assert_eq!(imported["restart_required"], true);
+    assert_eq!(imported["encryption_key_count"], 1);
+    assert_eq!(imported["app_sessions_imported"], false);
+
+    let target_sessions_before_restart = client
+        .get(format!("{}/admin/v1/app-sessions", base_url(target_port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(target_sessions_before_restart.status(), 200);
+    let target_sessions: serde_json::Value = target_sessions_before_restart.json().await.unwrap();
+    assert_eq!(target_sessions.as_array().unwrap().len(), 0);
+
+    target_handle.shutdown().await.ok();
+
+    let (restarted_port, restarted_handle, _restarted_holder) =
+        start_test_server_with_profile_dir(target_profile).await;
+    let restarted_identity = restarted_handle.status().await.unwrap().identity_address;
+    assert_eq!(restarted_identity, source_identity);
+
+    let sessions_after_restart = client
+        .get(format!(
+            "{}/admin/v1/app-sessions",
+            base_url(restarted_port)
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sessions_after_restart.status(), 200);
+    let sessions: serde_json::Value = sessions_after_restart.json().await.unwrap();
+    assert_eq!(sessions.as_array().unwrap().len(), 0);
+
+    let imported_token = approve_app_session(
+        &client,
+        restarted_port,
+        &source_identity,
+        &["publish:/app/*", "resolve:public", "fetch:public"],
+    )
+    .await;
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(br#"{"title":"portable identity"}"#.to_vec())
+                .file_name("record.json"),
+        )
+        .text("path", "/app/items/imported".to_string());
+    let appended = client
+        .post(format!("{}/app/v1/append", base_url(restarted_port)))
+        .bearer_auth(&imported_token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(appended.status(), 200);
+    let appended: serde_json::Value = appended.json().await.unwrap();
+    assert_eq!(
+        appended["address"],
+        format!("{source_identity}/app/items/imported")
+    );
+
+    let enumerated = client
+        .post(format!("{}/app/v1/enumerate", base_url(restarted_port)))
+        .bearer_auth(&imported_token)
+        .json(&serde_json::json!({
+            "identity": source_identity,
+            "path_prefix": "/app/items/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(enumerated.status(), 200);
+    let records: serde_json::Value = enumerated.json().await.unwrap();
+    let records = records.as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["path"], "/app/items/imported");
+
+    source_handle.shutdown().await.ok();
+    restarted_handle.shutdown().await.ok();
 }
 
 #[tokio::test]

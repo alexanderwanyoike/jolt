@@ -5,9 +5,13 @@ edition.workspace = true
 
 [dependencies]
 jolt-core = { workspace = true }
+argon2 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+data-encoding = { workspace = true }
 ed25519-dalek = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 libp2p = { workspace = true }

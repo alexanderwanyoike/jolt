@@ -8,6 +8,7 @@ use tracing::info;
 use jolt_network::DaemonHandle;
 
 use crate::device_authority::DeviceAuthorityStore;
+use crate::identity_recovery::IdentityRecoveryStore;
 use crate::local_identities::LocalIdentityStore;
 use crate::network_settings::NetworkSettingsStore;
 use crate::routes;
@@ -25,13 +26,15 @@ pub fn build_router(daemon: DaemonHandle) -> Router {
 pub fn build_router_with_session_store(daemon: DaemonHandle, sessions: AppSessionStore) -> Router {
     let network_settings = NetworkSettingsStore::open_default()
         .unwrap_or_else(|err| panic!("failed to open network settings store: {err}"));
-    build_router_with_stores(daemon, sessions, network_settings)
+    let identity_recovery = IdentityRecoveryStore::open_default();
+    build_router_with_stores(daemon, sessions, network_settings, identity_recovery)
 }
 
 pub fn build_router_with_stores(
     daemon: DaemonHandle,
     sessions: AppSessionStore,
     network_settings: NetworkSettingsStore,
+    identity_recovery: IdentityRecoveryStore,
 ) -> Router {
     let local_identities =
         LocalIdentityStore::new(daemon.local_identity_address().map(ToOwned::to_owned));
@@ -42,6 +45,7 @@ pub fn build_router_with_stores(
         network_settings,
         local_identities,
         device_authority,
+        identity_recovery,
     };
 
     Router::new()
@@ -134,6 +138,14 @@ pub fn build_router_with_stores(
         .route(
             "/admin/v1/identities/{identity}",
             delete(routes::local_identities::delete_identity),
+        )
+        .route(
+            "/admin/v1/identities/export",
+            post(routes::identity_recovery::export_identity),
+        )
+        .route(
+            "/admin/v1/identities/import",
+            post(routes::identity_recovery::import_identity),
         )
         .route(
             "/admin/v1/identities/active",
@@ -273,7 +285,23 @@ pub async fn start_server_with_session_store_and_network_settings(
     sessions: AppSessionStore,
     network_settings: NetworkSettingsStore,
 ) -> Result<(u16, tokio::task::JoinHandle<()>), Box<dyn std::error::Error + Send + Sync>> {
-    let app = build_router_with_stores(daemon, sessions, network_settings);
+    let app = build_router_with_stores(
+        daemon,
+        sessions,
+        network_settings,
+        IdentityRecoveryStore::open_default(),
+    );
+    start_server_with_router(app, port).await
+}
+
+pub async fn start_server_with_explicit_stores(
+    daemon: DaemonHandle,
+    port: u16,
+    sessions: AppSessionStore,
+    network_settings: NetworkSettingsStore,
+    identity_recovery: IdentityRecoveryStore,
+) -> Result<(u16, tokio::task::JoinHandle<()>), Box<dyn std::error::Error + Send + Sync>> {
+    let app = build_router_with_stores(daemon, sessions, network_settings, identity_recovery);
     start_server_with_router(app, port).await
 }
 

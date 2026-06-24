@@ -253,7 +253,11 @@ mod tests {
         let records = node
             .enumerate_append_records(&identity_id, "/spoke/")
             .unwrap();
-        assert_eq!(records.len(), 2, "both pre- and post-restart records enumerate");
+        assert_eq!(
+            records.len(),
+            2,
+            "both pre- and post-restart records enumerate"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

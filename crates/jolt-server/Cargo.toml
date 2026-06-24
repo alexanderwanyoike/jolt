@@ -7,6 +7,7 @@ edition.workspace = true
 jolt-core = { workspace = true }
 jolt-identity = { workspace = true }
 jolt-network = { workspace = true }
+jolt-store = { workspace = true }
 axum = { workspace = true }
 axum-extra = { workspace = true }
 tower-http = { workspace = true }
@@ -23,4 +24,3 @@ hex = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-jolt-store = { workspace = true }

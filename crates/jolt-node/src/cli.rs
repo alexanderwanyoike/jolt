@@ -96,6 +96,12 @@ pub enum Commands {
         command: HomeRelayCommands,
     },
 
+    /// Export and import local identity recovery bundles
+    Identity {
+        #[command(subcommand)]
+        command: IdentityCommands,
+    },
+
     /// Inspect and diagnose this node as a relay operator
     Relay {
         #[command(subcommand)]
@@ -213,6 +219,39 @@ pub enum RelayDiagnoseCommands {
     },
 }
 
+#[derive(Subcommand)]
+pub enum IdentityCommands {
+    /// Export the daemon profile identity to a passphrase-protected recovery bundle
+    Export {
+        /// Output bundle path
+        #[arg(long)]
+        out: PathBuf,
+
+        /// Export passphrase. Anyone with this passphrase and bundle can act as the identity.
+        #[arg(long)]
+        passphrase: String,
+
+        /// Optional human label stored in the encrypted bundle metadata
+        #[arg(long)]
+        label: Option<String>,
+    },
+
+    /// Import an identity recovery bundle into this daemon profile
+    Import {
+        /// Input bundle path
+        #[arg(long = "from")]
+        from: PathBuf,
+
+        /// Bundle passphrase
+        #[arg(long)]
+        passphrase: String,
+
+        /// Allow replacing an existing different daemon identity. Requires daemon restart.
+        #[arg(long)]
+        allow_overwrite: bool,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,6 +261,62 @@ mod tests {
     fn parse_start_command() {
         let cli = Cli::parse_from(["jolt", "start"]);
         assert!(matches!(cli.command, Commands::Start { .. }));
+    }
+
+    #[test]
+    fn parse_identity_export_import_commands() {
+        let cli = Cli::parse_from([
+            "jolt",
+            "identity",
+            "export",
+            "--out",
+            "alice.jolt-identity",
+            "--passphrase",
+            "correct horse battery staple",
+            "--label",
+            "Alice laptop",
+        ]);
+        match cli.command {
+            Commands::Identity {
+                command:
+                    IdentityCommands::Export {
+                        out,
+                        passphrase,
+                        label,
+                    },
+            } => {
+                assert_eq!(out, PathBuf::from("alice.jolt-identity"));
+                assert_eq!(passphrase, "correct horse battery staple");
+                assert_eq!(label.as_deref(), Some("Alice laptop"));
+            }
+            _ => panic!("expected Identity Export command"),
+        }
+
+        let cli = Cli::parse_from([
+            "jolt",
+            "identity",
+            "import",
+            "--from",
+            "alice.jolt-identity",
+            "--passphrase",
+            "correct horse battery staple",
+            "--allow-overwrite",
+        ]);
+        match cli.command {
+            Commands::Identity {
+                command:
+                    IdentityCommands::Import {
+                        from,
+                        passphrase,
+                        allow_overwrite,
+                    },
+            } => {
+                assert_eq!(from, PathBuf::from("alice.jolt-identity"));
+                assert_eq!(passphrase, "correct horse battery staple");
+                assert!(allow_overwrite);
+            }
+            _ => panic!("expected Identity Import command"),
+        }
     }
 
     #[test]

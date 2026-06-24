@@ -17,6 +17,16 @@ impl NodeIdentity {
         Self { signing_key }
     }
 
+    /// Reconstruct an identity from raw Ed25519 signing key bytes.
+    pub fn from_signing_key_bytes(bytes: &[u8]) -> Result<Self, IdentityError> {
+        let key_array: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| IdentityError::InvalidKey("key must be 32 bytes".to_string()))?;
+        Ok(Self {
+            signing_key: SigningKey::from_bytes(&key_array),
+        })
+    }
+
     /// Save the keypair to a directory.
     /// Private key is stored as raw bytes with restrictive permissions.
     /// TODO: M6 - encrypt at rest with Argon2id KDF + ChaCha20-Poly1305
@@ -71,6 +81,11 @@ impl NodeIdentity {
     /// Get the raw public key bytes (32 bytes).
     pub fn public_key_bytes(&self) -> [u8; 32] {
         self.signing_key.verifying_key().to_bytes()
+    }
+
+    /// Get raw Ed25519 signing key bytes for admin-only identity export.
+    pub fn signing_key_bytes(&self) -> [u8; 32] {
+        self.signing_key.to_bytes()
     }
 
     /// Get the canonical Jolt identity ID derived from this identity key.
