@@ -80,12 +80,12 @@ async fn main() -> anyhow::Result<()> {
                 out,
                 passphrase,
                 label,
-            } => commands::identity::export(&out, &passphrase, label.as_deref()).await?,
+            } => commands::identity::export(&out, passphrase.as_deref(), label.as_deref()).await?,
             IdentityCommands::Import {
                 from,
                 passphrase,
                 allow_overwrite,
-            } => commands::identity::import(&from, &passphrase, allow_overwrite).await?,
+            } => commands::identity::import(&from, passphrase.as_deref(), allow_overwrite).await?,
         },
         Commands::Relay { command } => match command {
             RelayCommands::Status { json } => commands::relay::status(json).await?,

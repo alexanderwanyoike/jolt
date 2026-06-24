@@ -18,7 +18,8 @@ pub struct IdentityRecoveryStore {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExportIdentityRequest {
-    pub passphrase: String,
+    #[serde(default)]
+    pub passphrase: Option<String>,
     pub label: Option<String>,
 }
 
@@ -31,7 +32,8 @@ pub struct ExportIdentityResponse {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ImportIdentityRequest {
-    pub passphrase: String,
+    #[serde(default)]
+    pub passphrase: Option<String>,
     pub bundle: IdentityExportBundle,
     #[serde(default)]
     pub allow_overwrite: bool,
@@ -96,7 +98,7 @@ impl IdentityRecoveryStore {
         let bundle = encrypt_identity_export(
             &identity,
             encryption_keys,
-            &request.passphrase,
+            request.passphrase.as_deref().unwrap_or(""),
             IdentityExportSource {
                 jolt_version: self.jolt_version.clone(),
                 exported_at: unix_now(),
@@ -114,7 +116,8 @@ impl IdentityRecoveryStore {
         &self,
         request: ImportIdentityRequest,
     ) -> Result<ImportIdentityResponse, IdentityRecoveryError> {
-        let plaintext = decrypt_identity_export(&request.bundle, &request.passphrase)?;
+        let plaintext =
+            decrypt_identity_export(&request.bundle, request.passphrase.as_deref().unwrap_or(""))?;
         let identity = identity_from_export(&plaintext)?;
         let incoming = identity.jolt_address().to_string();
         if let Ok(existing) = NodeIdentity::load(&self.identity_dir) {

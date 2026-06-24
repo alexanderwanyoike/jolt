@@ -101,7 +101,7 @@ export async function exportIdentity(
   label?: string,
 ): Promise<IdentityExportResponse> {
   return client.post<IdentityExportResponse>("/admin/v1/identities/export", {
-    passphrase,
+    passphrase: passphrase || null,
     label: label || null,
   });
 }
@@ -113,7 +113,7 @@ export async function importIdentity(
   allowOverwrite: boolean,
 ): Promise<IdentityImportResponse> {
   return client.post<IdentityImportResponse>("/admin/v1/identities/import", {
-    passphrase,
+    passphrase: passphrase || null,
     bundle,
     allow_overwrite: allowOverwrite,
   });

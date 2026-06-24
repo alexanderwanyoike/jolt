@@ -39,8 +39,9 @@ Key decisions:
 - The export file is an encrypted recovery bundle, not an app data export.
 - The bundle must include the root identity signing secret and local identity
   encryption private keys needed to decrypt existing private objects.
-- Export is protected with an explicit export passphrase using Argon2id and
-  XChaCha20-Poly1305.
+- Export supports an optional SSH-key-style passphrase using Argon2id and
+  XChaCha20-Poly1305. Without a passphrase, the export file itself is enough to
+  act as the identity.
 - v0 shared-key import is positioned as recovery or deliberate device move, not
   safe seamless multi-device collaboration.
 - Delegated device keys are the future model for scoped per-device revocation,

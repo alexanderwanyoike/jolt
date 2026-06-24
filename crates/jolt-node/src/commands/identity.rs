@@ -6,7 +6,7 @@ use crate::client::DaemonClient;
 
 const DEFAULT_API_PORT: u16 = 9862;
 
-pub async fn export(out: &Path, passphrase: &str, label: Option<&str>) -> Result<()> {
+pub async fn export(out: &Path, passphrase: Option<&str>, label: Option<&str>) -> Result<()> {
     let client = DaemonClient::new(DEFAULT_API_PORT);
     let response = client.export_identity(passphrase, label).await?;
     let identity = response["identity"].as_str().unwrap_or("<unknown>");
@@ -18,11 +18,11 @@ pub async fn export(out: &Path, passphrase: &str, label: Option<&str>) -> Result
     std::fs::write(out, raw)
         .with_context(|| format!("failed to write identity bundle to {}", out.display()))?;
     println!("Exported identity {identity} to {}", out.display());
-    println!("Anyone with this file and its passphrase can act as this identity.");
+    println!("Anyone with this file can act as this identity unless a passphrase was set.");
     Ok(())
 }
 
-pub async fn import(from: &Path, passphrase: &str, allow_overwrite: bool) -> Result<()> {
+pub async fn import(from: &Path, passphrase: Option<&str>, allow_overwrite: bool) -> Result<()> {
     let raw = std::fs::read_to_string(from)
         .with_context(|| format!("failed to read identity bundle from {}", from.display()))?;
     let bundle: serde_json::Value = serde_json::from_str(&raw)

@@ -17,7 +17,6 @@ const CIPHER_NAME: &str = "xchacha20poly1305";
 const KEY_LEN: usize = 32;
 const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 24;
-const MIN_PASSPHRASE_LEN: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdentityExportBundle {
@@ -82,8 +81,6 @@ pub struct IdentityExportSource {
 
 #[derive(Debug, Error)]
 pub enum IdentityExportError {
-    #[error("export passphrase must be at least {MIN_PASSPHRASE_LEN} characters")]
-    WeakPassphrase,
     #[error("identity export bundle has unsupported magic or version")]
     UnsupportedBundle,
     #[error("identity export bundle uses unsupported encryption parameters")]
@@ -104,10 +101,6 @@ pub fn encrypt_identity_export(
     passphrase: &str,
     source: IdentityExportSource,
 ) -> Result<IdentityExportBundle, IdentityExportError> {
-    if passphrase.len() < MIN_PASSPHRASE_LEN {
-        return Err(IdentityExportError::WeakPassphrase);
-    }
-
     let created_at = source.exported_at;
     let address = identity.jolt_address().to_string();
     let plaintext = IdentityExportPlaintext {
@@ -357,10 +350,13 @@ mod tests {
     }
 
     #[test]
-    fn encrypted_identity_export_rejects_weak_passphrases() {
+    fn encrypted_identity_export_allows_empty_passphrase() {
         let identity = NodeIdentity::generate();
-        let err = encrypt_identity_export(&identity, Vec::new(), "short", source()).unwrap_err();
-        assert!(matches!(err, IdentityExportError::WeakPassphrase));
+        let bundle = encrypt_identity_export(&identity, Vec::new(), "", source()).unwrap();
+        let plaintext = decrypt_identity_export(&bundle, "").unwrap();
+
+        let imported = identity_from_export(&plaintext).unwrap();
+        assert_eq!(imported.public_key_bytes(), identity.public_key_bytes());
     }
 
     fn exported_keypair(identity: &NodeIdentity) -> ExportedIdentityEncryptionKeypair {

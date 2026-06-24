@@ -71,10 +71,16 @@ export type IdentityExportBundle = {
   magic: string;
   version: number;
   identity: string;
-  kdf: unknown;
-  cipher: unknown;
-  salt: string;
-  nonce: string;
+  created_at: number;
+  kdf: {
+    name: string;
+    params?: unknown;
+    salt: string;
+  };
+  cipher: {
+    name: string;
+    nonce: string;
+  };
   ciphertext: string;
 };
 

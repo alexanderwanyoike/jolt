@@ -14,7 +14,7 @@ For v0, Jolt should support deliberate, admin-only identity recovery:
 
 ```text
 export identity from Console or CLI;
-protect the export with a passphrase;
+optionally protect the export with a passphrase;
 import it into another daemon profile;
 approve apps again on that device;
 see identity-scoped app data resolve through the normal app/index path.
@@ -42,16 +42,17 @@ Implement the card 048 design as a user-facing recovery flow:
 
 ## Acceptance Criteria
 
-- [x] `jolt identity export --out <file>` writes a passphrase-protected identity
-      recovery bundle.
+- [x] `jolt identity export --out <file>` writes an identity recovery bundle;
+      the passphrase is optional, so a no-passphrase file must be treated like
+      an unencrypted private SSH key.
 - [x] `jolt identity import --from <file>` imports the bundle into a daemon
       profile after validating the decrypted identity material.
 - [x] The admin API exposes export/import routes that are unavailable to normal
       app sessions.
 - [x] Console can export the active identity after a clear private-key risk
-      confirmation.
+      confirmation and downloads the bundle to a file instead of a text box.
 - [x] Console can import an identity bundle into a daemon profile without
-      silently overwriting an existing identity.
+      silently overwriting an existing identity, reading the bundle from a file.
 - [x] The export includes signing key material and local identity encryption
       private keys needed for existing private objects.
 - [x] Imported identities do not import app sessions and do not auto-approve
@@ -77,8 +78,11 @@ This card should preserve the safety language from
 [Identity Import and Export v0](../18-identity-import-export.md):
 
 ```text
-Anyone with the export file and passphrase can become this identity.
+Anyone with the export file can become this identity unless you add a passphrase.
 ```
+
+For the current SSH-key-style UX, the passphrase is optional. If no passphrase
+is set, the export file alone is enough to become the identity.
 
 The safer long-term model is delegated device authorization, where a new device
 gets its own revocable writer/decrypt authority instead of receiving the root
@@ -98,6 +102,15 @@ following can feel real to users.
   from `apps/jolt-console`
 - Green: `npm run build` from `apps/jolt-console`
 - Green: `./scripts/test-local.sh`
+
+Follow-up adjustment in PR #162:
+
+- Green: `npx vitest run src/daemon/client.test.ts src/sections/sections.test.tsx`
+  from `apps/jolt-console`
+- Green: `cargo test -p jolt-identity export_bundle -- --nocapture`
+- Green: `cargo test -p jolt-node parse_identity_export_import_commands --bin jolt -- --nocapture`
+- Green: `cargo test -p jolt-server test_admin_can_export_and_import_identity_recovery_bundle --test api_integration -- --nocapture`
+- Green: `npm run build` from `apps/jolt-console`
 
 The integration smoke uses two daemon profiles: the source exports an encrypted
 bundle, the target refuses overwrite without explicit permission, imports with
