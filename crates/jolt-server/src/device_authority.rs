@@ -5,9 +5,11 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jolt_core::{
-    verify_identity_authority_chain, AuthorizedDevice, AuthorizedDeviceStatus,
-    DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceAuthorizationRecordBody,
-    IdentityAuthorityError, IdentityId, JoltAddress, IDENTITY_AUTHORITY_PATH,
+    generate_identity_encryption_keypair, verify_identity_authority_chain, AuthorizedDevice,
+    AuthorizedDeviceStatus, DeviceAuthorizationOperation, DeviceAuthorizationRecord,
+    DeviceAuthorizationRecordBody, DeviceEncryptionPublicKey, EncryptedObjectRecipient,
+    IdentityAuthorityError, IdentityEncryptionKey, IdentityEncryptionPrivateKey, IdentityId,
+    JoltAddress, IDENTITY_AUTHORITY_PATH,
 };
 use jolt_identity::NodeIdentity;
 use jolt_network::{DaemonHandle, NetworkError};
@@ -32,6 +34,7 @@ struct DeviceAuthorityState {
 struct GeneratedDeviceRecord {
     _device_id: String,
     _identity: NodeIdentity,
+    _encryption_private_key: IdentityEncryptionPrivateKey,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -64,6 +67,7 @@ pub struct DeviceAuthorityMutationResponse {
 pub struct DeviceAuthorityDeviceView {
     pub device_id: String,
     pub signing_public_key: Vec<u8>,
+    pub encryption_keys: Vec<DeviceEncryptionPublicKey>,
     pub capabilities: Vec<String>,
     pub label: Option<String>,
     pub status: String,
@@ -109,14 +113,23 @@ impl DeviceAuthorityStore {
         request: AuthorizeDeviceRequest,
     ) -> Result<DeviceAuthorityMutationResponse, DeviceAuthorityError> {
         self.ensure_bootstrapped(daemon).await?;
+        let (identity, _) = local_identity_parts(daemon).await?;
         let device = NodeIdentity::generate();
         let device_id = format!("dev_{}", device.identity_id());
-        let operation = DeviceAuthorizationOperation::authorize_device(
+        let created_at = unix_now();
+        let (device_encryption_key, device_encryption_private_key) =
+            generate_identity_encryption_keypair(
+                identity,
+                format!("enc_x25519_{device_id}_v0"),
+                created_at,
+            );
+        let operation = DeviceAuthorizationOperation::authorize_device_with_encryption_keys(
             device_id.clone(),
             device.public_key_bytes(),
+            vec![device_encryption_public_key(&device_encryption_key)],
             default_device_capabilities(),
             request.label,
-            unix_now(),
+            created_at,
         );
         let record = self.append_signed_record(daemon, operation).await?;
 
@@ -133,6 +146,7 @@ impl DeviceAuthorityStore {
         state.generated_devices.push(GeneratedDeviceRecord {
             _device_id: device_id.clone(),
             _identity: device,
+            _encryption_private_key: device_encryption_private_key,
         });
         state.records = records.clone();
         drop(state);
@@ -144,6 +158,34 @@ impl DeviceAuthorityStore {
             device: authorized_device,
             devices: response.devices,
         })
+    }
+
+    pub async fn active_authorized_device_encryption_recipients(
+        &self,
+        daemon: &DaemonHandle,
+    ) -> Result<Vec<EncryptedObjectRecipient>, DeviceAuthorityError> {
+        self.ensure_bootstrapped(daemon).await?;
+        let state = self.state.lock().await;
+        let identity = state
+            .records
+            .first()
+            .map(|record| record.body.identity.clone())
+            .ok_or(DeviceAuthorityError::MissingLocalIdentity)?;
+        let verified = verify_identity_authority_chain(&identity, &state.records)?;
+        Ok(verified
+            .devices
+            .values()
+            .filter(|device| device.status == AuthorizedDeviceStatus::Active)
+            .flat_map(|device| {
+                device
+                    .encryption_keys
+                    .iter()
+                    .map(|key| EncryptedObjectRecipient {
+                        identity: identity.clone(),
+                        key: identity_encryption_key(key),
+                    })
+            })
+            .collect())
     }
 
     pub async fn revoke_device(
@@ -307,6 +349,7 @@ fn device_view(device: &AuthorizedDevice) -> DeviceAuthorityDeviceView {
     DeviceAuthorityDeviceView {
         device_id: device.device_id.clone(),
         signing_public_key: device.signing_public_key.clone(),
+        encryption_keys: device.encryption_keys.clone(),
         capabilities: device.capabilities.clone(),
         label: device.label.clone(),
         status: match device.status {
@@ -318,6 +361,29 @@ fn device_view(device: &AuthorizedDevice) -> DeviceAuthorityDeviceView {
         revoked_at: device.revoked_at,
         revocation_reason: device.revocation_reason.clone(),
         accepted_through_device_sequence: device.accepted_through_device_sequence,
+    }
+}
+
+fn device_encryption_public_key(key: &IdentityEncryptionKey) -> DeviceEncryptionPublicKey {
+    DeviceEncryptionPublicKey {
+        key_id: key.key_id.clone(),
+        suite_family: key.suite_family.clone(),
+        public_key: key.public_key.clone(),
+        created_at: key.created_at,
+    }
+}
+
+fn identity_encryption_key(key: &DeviceEncryptionPublicKey) -> IdentityEncryptionKey {
+    IdentityEncryptionKey {
+        key_id: key.key_id.clone(),
+        suite_family: key.suite_family.clone(),
+        key_type: "OKP".to_string(),
+        curve: "X25519".to_string(),
+        public_key: key.public_key.clone(),
+        created_at: key.created_at,
+        not_before: key.created_at,
+        expires_at: None,
+        status: "active".to_string(),
     }
 }
 

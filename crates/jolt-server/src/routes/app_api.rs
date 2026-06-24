@@ -7,9 +7,9 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use axum_extra::extract::Multipart;
 use jolt_core::{
-    verify_identity_encryption_key_record_for_identity, EncryptedObjectRecipient,
-    IdentityEncryptionKey, IdentityEncryptionKeyRecord, IdentityId, JoltAddress,
-    IDENTITY_ENCRYPTION_KEYS_PATH,
+    verify_identity_encryption_key_record_for_identity, EncryptedObjectEnvelope,
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityEncryptionKeyRecord, IdentityId,
+    JoltAddress, IDENTITY_ENCRYPTION_KEYS_PATH,
 };
 use jolt_network::{
     AppendRecordInfo, EncryptedObjectResponse, FetchResult, NetworkError, PublishResponse,
@@ -110,10 +110,19 @@ pub enum EncryptedOpenStatus {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EncryptedAccessStatus {
+    Available,
+    NeedsRewrap,
+    NotAccessible,
+}
+
+#[derive(Debug, Serialize)]
 pub struct EncryptedOpenResponse {
     pub content_id: String,
     pub path: String,
     pub status: EncryptedOpenStatus,
+    pub access_status: EncryptedAccessStatus,
     pub plaintext: Option<Vec<u8>>,
     pub ciphertext: Option<Vec<u8>>,
     pub size: u64,
@@ -150,13 +159,7 @@ async fn encrypt_app_request(
     require_path_capability(session, "encrypt:", &path)?;
     require_path_capability(session, "publish:encrypted:", &path)?;
 
-    let local_key = state.daemon.ensure_local_identity_encryption_key().await?;
-    let local_identity = JoltAddress::from_str(&state.daemon.status().await?.identity_address)
-        .map_err(|e| AppApiError::Network(NetworkError::Protocol(e.to_string())))?
-        .identity()
-        .clone();
-    let recipient_keys =
-        resolve_recipient_keys(state, &req.recipients, &local_identity, local_key).await?;
+    let recipient_keys = resolve_app_encryption_recipients(state, &req.recipients).await?;
     let encrypted = state
         .daemon
         .encrypt_object(
@@ -267,12 +270,14 @@ pub async fn open_encrypted(
         .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &content_id)))?;
     let ciphertext = fetched.data;
     let ciphertext_size = fetched.size;
+    let access_status = encrypted_access_status(&state, &ciphertext).await?;
 
     match state.daemon.decrypt_object(ciphertext.clone()).await {
         Ok(decrypted) => Ok(Json(EncryptedOpenResponse {
             content_id,
             path,
             status: EncryptedOpenStatus::Decrypted,
+            access_status,
             plaintext: Some(decrypted.plaintext),
             ciphertext: None,
             size: decrypted.size,
@@ -283,6 +288,7 @@ pub async fn open_encrypted(
             content_id,
             path,
             status: EncryptedOpenStatus::Ciphertext,
+            access_status: EncryptedAccessStatus::NotAccessible,
             plaintext: None,
             ciphertext: Some(ciphertext),
             size: ciphertext_size,
@@ -290,6 +296,72 @@ pub async fn open_encrypted(
             decrypt_error: Some(err.to_string()),
         })),
     }
+}
+
+pub async fn rewrap_encrypted(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<EncryptedDecryptRequest>,
+) -> Result<Json<EncryptedPublishResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+
+    let (content_id, path) = encrypted_target(&state, &req, "rewrap").await?;
+    require_path_capability(&session, "decrypt:", &path)?;
+    require_path_capability(&session, "encrypt:", &path)?;
+    require_path_capability(&session, "publish:encrypted:", &path)?;
+
+    let fetched = state
+        .daemon
+        .fetch(content_id.clone())
+        .await
+        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &content_id)))?;
+    let decrypted = state.daemon.decrypt_object(fetched.data).await?;
+    let recipient_keys = resolve_app_encryption_recipients(&state, &[]).await?;
+    let encrypted = state
+        .daemon
+        .encrypt_object(
+            decrypted.plaintext,
+            decrypted.content_type.clone(),
+            recipient_keys,
+        )
+        .await?;
+    let published = publish_app_bytes(&state, encrypted.data, path).await?;
+
+    Ok(Json(EncryptedPublishResponse {
+        content_id: published.content_id,
+        size: published.size,
+        path: published.path,
+        address: published.address,
+        latest_sequence: published.latest_sequence,
+        recipient_count: encrypted.recipient_count,
+    }))
+}
+
+async fn encrypted_access_status(
+    state: &AppState,
+    encrypted_object: &[u8],
+) -> Result<EncryptedAccessStatus, AppApiError> {
+    let envelope = EncryptedObjectEnvelope::from_bytes(encrypted_object)
+        .map_err(|err| AppApiError::Network(NetworkError::InvalidInput(err.to_string())))?;
+    let active_device_recipients = state
+        .device_authority
+        .active_authorized_device_encryption_recipients(&state.daemon)
+        .await
+        .map_err(|err| AppApiError::Network(NetworkError::Protocol(err.to_string())))?;
+
+    let missing_active_device_key = active_device_recipients.iter().any(|active| {
+        !envelope.body.recipients.iter().any(|recipient| {
+            recipient.recipient_identity == active.identity
+                && recipient.recipient_key_id == active.key.key_id
+        })
+    });
+
+    Ok(if missing_active_device_key {
+        EncryptedAccessStatus::NeedsRewrap
+    } else {
+        EncryptedAccessStatus::Available
+    })
 }
 
 pub async fn publish_file(
@@ -446,22 +518,44 @@ async fn publish_app_append_bytes(
     result.map_err(AppApiError::Network)
 }
 
+async fn resolve_app_encryption_recipients(
+    state: &AppState,
+    recipients: &[String],
+) -> Result<Vec<EncryptedObjectRecipient>, AppApiError> {
+    let local_key = state.daemon.ensure_local_identity_encryption_key().await?;
+    let local_identity = JoltAddress::from_str(&state.daemon.status().await?.identity_address)
+        .map_err(|e| AppApiError::Network(NetworkError::Protocol(e.to_string())))?
+        .identity()
+        .clone();
+    let local_device_keys = state
+        .device_authority
+        .active_authorized_device_encryption_recipients(&state.daemon)
+        .await
+        .map_err(|err| AppApiError::Network(NetworkError::Protocol(err.to_string())))?;
+    resolve_recipient_keys(
+        state,
+        recipients,
+        &local_identity,
+        local_key,
+        local_device_keys,
+    )
+    .await
+}
+
 async fn resolve_recipient_keys(
     state: &AppState,
     recipients: &[String],
     local_identity: &IdentityId,
     local_key: IdentityEncryptionKey,
+    local_device_keys: Vec<EncryptedObjectRecipient>,
 ) -> Result<Vec<EncryptedObjectRecipient>, AppApiError> {
-    let mut keys = Vec::with_capacity(recipients.len());
+    let mut keys = Vec::with_capacity(recipients.len() + local_device_keys.len() + 1);
     let mut includes_local_identity = false;
     for recipient in recipients {
         let identity = recipient_identity(recipient)?;
         if &identity == local_identity {
             includes_local_identity = true;
-            keys.push(EncryptedObjectRecipient {
-                identity,
-                key: local_key.clone(),
-            });
+            push_local_recipient_keys(&mut keys, local_identity, &local_key, &local_device_keys);
             continue;
         }
 
@@ -492,13 +586,40 @@ async fn resolve_recipient_keys(
     }
 
     if !includes_local_identity {
-        keys.push(EncryptedObjectRecipient {
-            identity: local_identity.clone(),
-            key: local_key,
-        });
+        push_local_recipient_keys(&mut keys, local_identity, &local_key, &local_device_keys);
     }
 
     Ok(keys)
+}
+
+fn push_local_recipient_keys(
+    keys: &mut Vec<EncryptedObjectRecipient>,
+    local_identity: &IdentityId,
+    local_key: &IdentityEncryptionKey,
+    local_device_keys: &[EncryptedObjectRecipient],
+) {
+    push_unique_recipient(
+        keys,
+        EncryptedObjectRecipient {
+            identity: local_identity.clone(),
+            key: local_key.clone(),
+        },
+    );
+    for recipient in local_device_keys {
+        push_unique_recipient(keys, recipient.clone());
+    }
+}
+
+fn push_unique_recipient(
+    keys: &mut Vec<EncryptedObjectRecipient>,
+    recipient: EncryptedObjectRecipient,
+) {
+    if keys.iter().any(|existing| {
+        existing.identity == recipient.identity && existing.key.key_id == recipient.key.key_id
+    }) {
+        return;
+    }
+    keys.push(recipient);
 }
 
 fn recipient_identity(raw: &str) -> Result<IdentityId, AppApiError> {
