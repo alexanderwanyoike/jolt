@@ -2,7 +2,7 @@
 
 **Type:** HITL
 **Milestone:** Community Discovery Sprint
-**Status:** Ready after 091
+**Status:** Designed in PR
 **Blocked by:** 091
 
 ## Why
@@ -40,15 +40,15 @@ feeds, file libraries, paste collections, or other app concepts.
 
 ## Acceptance Criteria
 
-- [ ] The design treats communities as Jolt identities, not a separate protocol
+- [x] The design treats communities as Jolt identities, not a separate protocol
       namespace.
-- [ ] Users can watch public community state without joining.
-- [ ] Users can request or automatically obtain membership depending on the
+- [x] Users can watch public community state without joining.
+- [x] Users can request or automatically obtain membership depending on the
       community join policy.
-- [ ] Community membership and revocation are signed and verifiable.
-- [ ] Member-only community state can be encrypted to accepted members/devices.
-- [ ] The design keeps app semantics above the protocol layer.
-- [ ] The design explains how communities enable discovery without relay-owned
+- [x] Community membership and revocation are signed and verifiable.
+- [x] Member-only community state can be encrypted to accepted members/devices.
+- [x] The design keeps app semantics above the protocol layer.
+- [x] The design explains how communities enable discovery without relay-owned
       search.
 
 ## Non-Goals
@@ -66,3 +66,12 @@ The key split is:
 watch = local interest in public community state
 join = signed relationship granting participation and possibly decryption
 ```
+
+## Design
+
+Captured in
+[Community Identity and Membership Model](../21-community-identity-and-membership.md).
+
+## Verification
+
+- Docs-only design card; no behavioral tests required.

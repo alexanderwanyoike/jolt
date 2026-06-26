@@ -2,7 +2,7 @@
 
 **Type:** AFK after design  
 **Milestone:** Identity and Device Sprint  
-**Status:** In progress
+**Status:** Done
 **Blocked by:** 093, 096
 
 ## Why

@@ -341,8 +341,8 @@ into the protocol layer.
 | [095](095-identity-scoped-app-grants-v0.md) | AFK after design | Ready after 092 and 093 | Scope app grants to one app, one device, and one user identity. |
 | [096](096-app-data-follows-identity-v0.md) | AFK after design | Implemented in PR | Let app indexes follow the identity while content bytes remain fetch/cache/pin policy. |
 | [096a](096a-identity-export-import-console-v0.md) | AFK after design | Implemented in PR | Add admin-only identity export/import in CLI, daemon API, and Console. |
-| [097](097-private-content-device-access-v0.md) | AFK after design | Ready after 093, 096, and 096a | Extend private content access to authorized devices with explicit historical rewrap. |
-| [098](098-community-identity-and-membership-model.md) | HITL | Ready after 091 | Define communities as Jolt identities with watch/join policy and signed membership. |
+| [097](097-private-content-device-access-v0.md) | AFK after design | Done | Extend private content access to authorized devices with explicit historical rewrap. |
+| [098](098-community-identity-and-membership-model.md) | HITL | Designed in PR | Define communities as Jolt identities with watch/join policy and signed membership. |
 | [099](099-community-membership-v0.md) | AFK after design | Ready after 098 | Implement generic community join, open/request policies, grants, and revocation. |
 | [100](100-community-scoped-app-indexes-v0.md) | AFK after design | Ready after 099 | Let apps publish and search community-scoped signed indexes locally. |
 | [101](101-default-discoverable-communities-v0.md) | AFK after design | Ready after 099 | Ship default discoverable communities without auto-joining users. |
