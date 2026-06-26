@@ -1313,6 +1313,13 @@ async fn test_admin_device_authority_can_authorize_and_revoke_local_device() {
     assert_ne!(generated_device_id, "dev_legacy_root");
     assert_eq!(authorized["device"]["label"], "Laptop");
     assert_eq!(authorized["device"]["status"], "active");
+    assert_eq!(
+        authorized["device"]["encryption_keys"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 
     let revoke_resp = client
         .post(format!(
@@ -1344,6 +1351,82 @@ async fn test_admin_device_authority_can_authorize_and_revoke_local_device() {
     assert_eq!(resolve_resp.status(), 200);
     let resolved: serde_json::Value = resolve_resp.json().await.unwrap();
     assert_eq!(resolved["path"], IDENTITY_AUTHORITY_PATH);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_encrypted_publish_excludes_revoked_authorized_devices() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+
+    let revoked_device_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Lost phone" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoked_device_resp.status(), 200);
+    let revoked_device: serde_json::Value = revoked_device_resp.json().await.unwrap();
+    let revoked_device_id = revoked_device["device"]["device_id"].as_str().unwrap();
+
+    let active_device_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Replacement phone" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(active_device_resp.status(), 200);
+
+    let revoke_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/{revoked_device_id}/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 0,
+            "reason": "lost_device"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoke_resp.status(), 200);
+
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/pastes/*",
+            "decrypt:/pastes/*",
+            "publish:encrypted:/pastes/*",
+        ],
+    )
+    .await;
+
+    let publish_resp = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/pastes/revoked-excluded",
+            "plaintext": b"not for revoked devices".to_vec(),
+            "content_type": "text/plain",
+            "recipients": []
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    assert_eq!(published["recipient_count"], 2);
 
     handle.shutdown().await.ok();
 }
@@ -2346,6 +2429,18 @@ async fn test_app_can_encrypt_append_and_enumerate_records_by_prefix() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
     let identity = handle.status().await.unwrap().identity_address;
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Tablet" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+
     let token = approve_app_session(
         &client,
         port,
@@ -2375,7 +2470,7 @@ async fn test_app_can_encrypt_append_and_enumerate_records_by_prefix() {
     let appended: serde_json::Value = append_resp.json().await.unwrap();
     assert_eq!(appended["path"], "/app/private/items/1");
     assert!(appended["content_id"].as_str().unwrap().len() > 0);
-    assert_eq!(appended["recipient_count"], 1);
+    assert_eq!(appended["recipient_count"], 2);
 
     let enumerated = client
         .post(format!("{}/app/v1/enumerate", base_url(port)))
@@ -2674,6 +2769,238 @@ async fn test_app_can_encrypt_publish_self_only_private_content() {
 }
 
 #[tokio::test]
+async fn test_app_encrypts_self_private_content_for_active_authorized_devices() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Phone" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/pastes/*",
+            "decrypt:/pastes/*",
+            "publish:encrypted:/pastes/*",
+        ],
+    )
+    .await;
+
+    let publish_resp = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/pastes/device-wrapped",
+            "plaintext": b"follows future devices".to_vec(),
+            "content_type": "text/plain",
+            "recipients": []
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    assert_eq!(published["recipient_count"], 2);
+
+    let fetch_resp = client
+        .post(format!("{}/api/v1/fetch", base_url(port)))
+        .json(&serde_json::json!({ "target": published["content_id"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(fetch_resp.status(), 200);
+    let fetched: serde_json::Value = fetch_resp.json().await.unwrap();
+    let envelope_bytes: Vec<u8> = fetched["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    let envelope = EncryptedObjectEnvelope::from_bytes(&envelope_bytes).unwrap();
+    assert_eq!(envelope.body.recipients.len(), 2);
+    let recipient_identity = JoltAddress::from_str(&identity).unwrap().identity().clone();
+    assert!(envelope
+        .body
+        .recipients
+        .iter()
+        .all(|recipient| recipient.recipient_identity == recipient_identity));
+
+    let decrypt_resp = client
+        .post(format!("{}/app/v1/encrypted/decrypt", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "target": published["address"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(decrypt_resp.status(), 200);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_open_reports_historical_private_content_needs_rewrap() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/pastes/*",
+            "decrypt:/pastes/*",
+            "publish:encrypted:/pastes/*",
+        ],
+    )
+    .await;
+
+    let publish_resp = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/pastes/historical",
+            "plaintext": b"before phone auth".to_vec(),
+            "content_type": "text/plain",
+            "recipients": []
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    assert_eq!(published["recipient_count"], 1);
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Phone" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+
+    let open_resp = client
+        .post(format!("{}/app/v1/encrypted/open", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "target": published["content_id"],
+            "path": "/pastes/historical"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(open_resp.status(), 200);
+    let opened: serde_json::Value = open_resp.json().await.unwrap();
+    assert_eq!(opened["status"], "decrypted");
+    assert_eq!(opened["access_status"], "needs_rewrap");
+    let plaintext: Vec<u8> = opened["plaintext"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(plaintext, b"before phone auth");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_can_rewrap_historical_private_content_for_authorized_devices() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/pastes/*",
+            "decrypt:/pastes/*",
+            "publish:encrypted:/pastes/*",
+        ],
+    )
+    .await;
+
+    let publish_resp = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/pastes/rewrap-me",
+            "plaintext": b"rewrap this private paste".to_vec(),
+            "content_type": "text/plain",
+            "recipients": []
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let original: serde_json::Value = publish_resp.json().await.unwrap();
+    assert_eq!(original["recipient_count"], 1);
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Phone" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+
+    let rewrap_resp = client
+        .post(format!("{}/app/v1/encrypted/rewrap", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "target": original["content_id"],
+            "path": "/pastes/rewrap-me"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rewrap_resp.status(), 200);
+    let rewrapped: serde_json::Value = rewrap_resp.json().await.unwrap();
+    assert_eq!(rewrapped["path"], "/pastes/rewrap-me");
+    assert_ne!(rewrapped["content_id"], original["content_id"]);
+    assert_eq!(rewrapped["recipient_count"], 2);
+
+    let open_resp = client
+        .post(format!("{}/app/v1/encrypted/open", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "target": rewrapped["address"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(open_resp.status(), 200);
+    let opened: serde_json::Value = open_resp.json().await.unwrap();
+    assert_eq!(opened["status"], "decrypted");
+    assert_eq!(opened["access_status"], "available");
+    let plaintext: Vec<u8> = opened["plaintext"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(plaintext, b"rewrap this private paste");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_can_open_encrypted_content_with_one_daemon_call() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
@@ -2789,6 +3116,7 @@ async fn test_app_open_encrypted_content_returns_ciphertext_for_non_recipient() 
     assert_eq!(open_resp.status(), 200);
     let opened: serde_json::Value = open_resp.json().await.unwrap();
     assert_eq!(opened["status"], "ciphertext");
+    assert_eq!(opened["access_status"], "not_accessible");
     assert_eq!(opened["content_id"], published["content_id"]);
     assert_eq!(opened["path"], "/pastes/not-for-me");
     assert!(opened["plaintext"].is_null());

@@ -86,6 +86,10 @@ pub fn build_router_with_stores(
             "/app/v1/encrypted/open",
             post(routes::app_api::open_encrypted),
         )
+        .route(
+            "/app/v1/encrypted/rewrap",
+            post(routes::app_api::rewrap_encrypted),
+        )
         .route("/app/v1/published", get(routes::app_api::list_published))
         .route(
             "/app/v1/ingress/pending",
