@@ -197,9 +197,9 @@ impl NetworkNode {
         let authority = verify_identity_authority_chain(&identity, &authority_records)
             .map_err(|e| NetworkError::Protocol(e.to_string()))?;
 
-        // Accumulate device logs by device id. The longest log per device wins,
-        // matching the legacy single-writer update-log "newer sequence wins"
-        // rule and keeping merge order independent of discovery order.
+        // Accumulate device logs by device id. The longest log per device wins.
+        // Equal-length forks use the same terminal-entry ordering tuple as the
+        // core merge so provider arrival order cannot select the fork.
         let mut accumulated: HashMap<String, Vec<DeviceWriterLogEntry>> = existing
             .map(|state| state.device_logs.clone())
             .unwrap_or_default();
@@ -210,7 +210,7 @@ impl NetworkNode {
             let device_id = first.body.device_id.clone();
             let keep = accumulated
                 .get(&device_id)
-                .map(|known| log.len() > known.len())
+                .map(|known| device_log_is_newer(&log, known))
                 .unwrap_or(true);
             if keep {
                 accumulated.insert(device_id, log);
@@ -579,6 +579,30 @@ impl NetworkNode {
     /// Set the timeout for daemon `.jolt` provider discovery.
     pub fn set_resolve_timeout(&mut self, timeout: Duration) {
         self.resolve_timeout = timeout;
+    }
+}
+
+fn device_log_is_newer(candidate: &[DeviceWriterLogEntry], known: &[DeviceWriterLogEntry]) -> bool {
+    match candidate.len().cmp(&known.len()) {
+        std::cmp::Ordering::Greater => true,
+        std::cmp::Ordering::Less => false,
+        std::cmp::Ordering::Equal => {
+            let candidate = candidate
+                .last()
+                .expect("empty device logs are filtered before comparison");
+            let known = known.last().expect("stored device logs are never empty");
+            (
+                candidate.body.created_at,
+                candidate.body.device_sequence,
+                &candidate.body.device_id,
+                candidate.entry_hash().0,
+            ) > (
+                known.body.created_at,
+                known.body.device_sequence,
+                &known.body.device_id,
+                known.entry_hash().0,
+            )
+        }
     }
 }
 
@@ -1247,6 +1271,61 @@ mod tests {
         assert!(phone_first
             .iter()
             .any(|(path, cid)| path == "/spoke/posts/l" && cid == &from_laptop.to_string()));
+    }
+
+    #[tokio::test]
+    async fn equal_length_device_log_forks_converge_regardless_of_arrival_order() {
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let authority = vec![authorize_device(&root, &device, "dev_laptop")];
+        let first_fork = append_log(
+            &identity,
+            &device,
+            "dev_laptop",
+            &[("/spoke/posts/a", ContentId::from_bytes(b"fork a"))],
+        );
+        let second_fork = append_log(
+            &identity,
+            &device,
+            "dev_laptop",
+            &[("/spoke/posts/b", ContentId::from_bytes(b"fork b"))],
+        );
+
+        fn records_after(
+            identity: jolt_core::IdentityId,
+            authority: Vec<DeviceAuthorizationRecord>,
+            first: Vec<DeviceWriterLogEntry>,
+            second: Vec<DeviceWriterLogEntry>,
+        ) -> Vec<(String, String)> {
+            let dir = tempdir().unwrap();
+            let mut node = make_node(dir.path());
+            node.store_verified_device_writer_logs(
+                identity.clone(),
+                authority.clone(),
+                vec![first],
+            )
+            .unwrap();
+            node.store_verified_device_writer_logs(identity.clone(), authority, vec![second])
+                .unwrap();
+            node.device_writer_states[&identity]
+                .merged
+                .append_records_under("/spoke/posts/")
+                .into_iter()
+                .map(|(path, entry)| (path.to_string(), entry.content_id.to_string()))
+                .collect()
+        }
+
+        let first_then_second = records_after(
+            identity.clone(),
+            authority.clone(),
+            first_fork.clone(),
+            second_fork.clone(),
+        );
+        let second_then_first = records_after(identity, authority, second_fork, first_fork);
+
+        assert_eq!(first_then_second, second_then_first);
+        assert_eq!(first_then_second.len(), 1);
     }
 
     #[tokio::test]

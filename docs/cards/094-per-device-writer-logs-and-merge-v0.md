@@ -231,3 +231,12 @@ interpreting their own object schemas.
   `test_fetch_endpoint_distinguishes_unresolved_jolt_address`, and
   `test_resolve_endpoint_reports_no_update_log_provider_candidates` fail in this
   sandbox because no bootstrap relays / DHT providers are reachable.
+
+Release hardening for equal-length device-log forks:
+
+- Red: `cargo test -p jolt-network equal_length_device_log_forks_converge_regardless_of_arrival_order --lib -- --nocapture`
+  produced different append state when two valid same-device forks arrived in
+  opposite orders.
+- Green: the network cache now selects equal-length forks by the core merge
+  tuple `(created_at, device_sequence, device_id, entry_hash)`, so both arrival
+  orders converge before merge.
