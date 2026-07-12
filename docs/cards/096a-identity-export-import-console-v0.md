@@ -159,3 +159,15 @@ session, and publishes/enumerates an app append record under the imported
 identity. It does not assert that two concurrently running cloned root-key
 daemons sync with each other, because this v0 recovery model intentionally
 copies the root peer/identity key.
+
+Release hardening for recovery bundles:
+
+- CLI and Console exports now use the same owner-only file writer. On Unix it
+  creates new files as `0600` and also tightens an existing destination before
+  writing recovery material.
+- Bundle import rejects Argon2 parameters above the v1 export profile before
+  running the KDF, bounding attacker-controlled memory, iteration, and
+  parallelism costs.
+- Red: the owner-only overwrite test failed before the shared writer existed;
+  the excessive-KDF test previously continued into derivation/authentication.
+- Green: `cargo test -p jolt-identity identity_export --lib -- --nocapture`.

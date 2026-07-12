@@ -5,6 +5,8 @@ use data_encoding::BASE64URL_NOPAD;
 use jolt_core::{IdentityEncryptionKey, IdentityEncryptionPrivateKey, IdentityId};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::path::Path;
 use thiserror::Error;
 
 use crate::NodeIdentity;
@@ -17,6 +19,9 @@ const CIPHER_NAME: &str = "xchacha20poly1305";
 const KEY_LEN: usize = 32;
 const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 24;
+const MAX_KDF_MEMORY_KIB: u32 = 65_536;
+const MAX_KDF_ITERATIONS: u32 = 3;
+const MAX_KDF_PARALLELISM: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdentityExportBundle {
@@ -169,6 +174,12 @@ pub fn decrypt_identity_export(
     if bundle.kdf.name != KDF_NAME || bundle.cipher.name != CIPHER_NAME {
         return Err(IdentityExportError::UnsupportedProtection);
     }
+    if bundle.kdf.params.memory_kib > MAX_KDF_MEMORY_KIB
+        || bundle.kdf.params.iterations > MAX_KDF_ITERATIONS
+        || bundle.kdf.params.parallelism > MAX_KDF_PARALLELISM
+    {
+        return Err(IdentityExportError::UnsupportedProtection);
+    }
     let salt = decode(&bundle.kdf.salt)?;
     let nonce = decode(&bundle.cipher.nonce)?;
     if salt.len() != SALT_LEN || nonce.len() != NONCE_LEN {
@@ -191,6 +202,23 @@ pub fn decrypt_identity_export(
         .map_err(|e| IdentityExportError::InvalidPlaintext(e.to_string()))?;
     validate_plaintext(&plaintext, &bundle.identity)?;
     Ok(plaintext)
+}
+
+pub fn write_identity_export_file(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    file.write_all(contents)
 }
 
 pub fn identity_from_export(
@@ -357,6 +385,35 @@ mod tests {
 
         let imported = identity_from_export(&plaintext).unwrap();
         assert_eq!(imported.public_key_bytes(), identity.public_key_bytes());
+    }
+
+    #[test]
+    fn encrypted_identity_export_rejects_excessive_kdf_cost_before_derivation() {
+        let identity = NodeIdentity::generate();
+        let mut bundle =
+            encrypt_identity_export(&identity, Vec::new(), "passphrase", source()).unwrap();
+        bundle.kdf.params.memory_kib = 65_537;
+
+        let err = decrypt_identity_export(&bundle, "passphrase").unwrap_err();
+        assert!(matches!(err, IdentityExportError::UnsupportedProtection));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn identity_export_files_are_owner_only_even_when_overwriting() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("identity.jolt-identity");
+        std::fs::write(&path, "old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        write_identity_export_file(&path, b"recovery bundle").unwrap();
+
+        assert_eq!(
+            std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     fn exported_keypair(identity: &NodeIdentity) -> ExportedIdentityEncryptionKeypair {
