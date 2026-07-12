@@ -1233,7 +1233,7 @@ async fn test_admin_can_export_and_import_identity_recovery_bundle() {
         &client,
         restarted_port,
         &source_identity,
-        &["publish:/app/*", "resolve:public", "fetch:public"],
+        &["publish:/app/*", "enumerate:self:/app/*", "fetch:public"],
     )
     .await;
     let form = reqwest::multipart::Form::new()
@@ -2362,7 +2362,7 @@ async fn test_app_can_append_and_enumerate_records_by_prefix() {
         &client,
         port,
         &identity,
-        &["publish:/app/*", "resolve:public"],
+        &["publish:/app/*", "enumerate:self:/app/*"],
     )
     .await;
 
@@ -2407,14 +2407,111 @@ async fn test_app_can_append_and_enumerate_records_by_prefix() {
     assert_eq!(records[1]["path"], "/app/items/2");
     assert!(!records[0]["content_id"].as_str().unwrap().is_empty());
 
-    // Enumeration requires the read capability.
-    let no_read_token = approve_app_session(&client, port, &identity, &["publish:/app/*"]).await;
+    let outside_path = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "identity": identity,
+            "path_prefix": "/spoke/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(outside_path.status(), 403);
+
+    // Generic public resolution does not imply append-record enumeration.
+    let no_read_token = approve_app_session(&client, port, &identity, &["resolve:public"]).await;
     let denied = client
         .post(format!("{}/app/v1/enumerate", base_url(port)))
         .bearer_auth(&no_read_token)
         .json(&serde_json::json!({
             "identity": identity,
             "path_prefix": "/app/items/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 403);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_any_enumeration_is_path_scoped_across_identities() {
+    let (port, handle, _dir) = start_test_server().await;
+    let session_identity = handle.status().await.unwrap().identity_address;
+    let remote_root = NodeIdentity::generate();
+    let remote_device = NodeIdentity::generate();
+    let remote_identity = remote_root.identity_id();
+    let content_id = ContentId::from_bytes(b"remote spoke record");
+    let remote_log = vec![DeviceWriterLogEntry::genesis(
+        remote_identity.clone(),
+        "dev_remote",
+        DeviceWriterOperation::set_path(
+            "/spoke/posts/one",
+            content_id,
+            DeviceWriterPathMode::Append,
+        ),
+        100,
+        |bytes| remote_device.sign(bytes),
+    )
+    .unwrap()];
+    handle
+        .store_device_writer_logs(
+            remote_identity.clone(),
+            vec![device_authority_record(
+                &remote_root,
+                &remote_device,
+                "dev_remote",
+            )],
+            vec![remote_log],
+        )
+        .await
+        .unwrap();
+
+    let client = reqwest::Client::new();
+    let any_token = approve_app_session(
+        &client,
+        port,
+        &session_identity,
+        &["enumerate:any:/spoke/*"],
+    )
+    .await;
+    let allowed = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&any_token)
+        .json(&serde_json::json!({
+            "identity": remote_identity.to_string(),
+            "path_prefix": "/spoke/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(allowed.status(), 200);
+    assert_eq!(
+        allowed
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let self_token = approve_app_session(
+        &client,
+        port,
+        &session_identity,
+        &["enumerate:self:/spoke/*"],
+    )
+    .await;
+    let denied = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&self_token)
+        .json(&serde_json::json!({
+            "identity": remote_identity.to_string(),
+            "path_prefix": "/spoke/",
         }))
         .send()
         .await
@@ -2449,7 +2546,7 @@ async fn test_app_can_encrypt_append_and_enumerate_records_by_prefix() {
             "encrypt:/app/private/*",
             "decrypt:/app/private/*",
             "publish:encrypted:/app/private/*",
-            "resolve:public",
+            "enumerate:self:/app/private/*",
         ],
     )
     .await;

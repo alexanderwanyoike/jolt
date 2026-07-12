@@ -485,15 +485,42 @@ pub async fn enumerate_append_records(
     Json(req): Json<EnumerateRequest>,
 ) -> Result<Json<Vec<AppendRecordInfo>>, AppApiError> {
     let session = authenticated_session(&state, &headers).await?;
-    require_capability(&session, "resolve:public")?;
-
     let identity = recipient_identity(&req.identity)?;
     let prefix = normalize_path(&req.path_prefix)?;
+    require_enumerate_capability(&session, &identity, &prefix)?;
     let records = state
         .daemon
         .enumerate_append_records(identity, prefix)
         .await?;
     Ok(Json(records))
+}
+
+fn require_enumerate_capability(
+    session: &AppSessionView,
+    requested_identity: &IdentityId,
+    path: &str,
+) -> Result<(), AppApiError> {
+    let session_identity = session
+        .identity
+        .as_deref()
+        .ok_or_else(|| AppApiError::Forbidden("app session has no granted identity".to_string()))
+        .and_then(recipient_identity)?;
+    let self_request = &session_identity == requested_identity;
+    let allowed = session.granted_capabilities.iter().any(|capability| {
+        let pattern = capability.strip_prefix("enumerate:any:").or_else(|| {
+            self_request
+                .then(|| capability.strip_prefix("enumerate:self:"))
+                .flatten()
+        });
+        pattern.is_some_and(|pattern| path_matches(pattern, path))
+    });
+    if allowed {
+        Ok(())
+    } else {
+        Err(AppApiError::Forbidden(format!(
+            "enumeration of identity {requested_identity} at {path} is outside the granted identity and path scope"
+        )))
+    }
 }
 
 async fn publish_app_bytes(

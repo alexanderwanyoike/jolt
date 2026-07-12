@@ -502,6 +502,18 @@ function capabilityInfo(capability: string): CapabilityInfo {
       broadPath: isBroadPathScope(scope)
     };
   }
+  for (const prefix of ["enumerate:self:", "enumerate:any:"]) {
+    if (capability.startsWith(prefix)) {
+      const scope = capability.slice(prefix.length);
+      const identityScope = prefix === "enumerate:self:" ? "this identity" : "any identity";
+      return {
+        label: `enumerate public records under ${scope} for ${identityScope}`,
+        kind: "read",
+        grantable: isGrantablePathCapability(prefix, capability),
+        broadPath: isBroadPathScope(scope)
+      };
+    }
+  }
 
   return {
     label: capability,
@@ -524,6 +536,8 @@ function isGrantableCapability(capability: string) {
     isGrantablePathCapability("pin:own:", capability) ||
     isGrantablePathCapability("encrypt:", capability) ||
     isGrantablePathCapability("decrypt:", capability)
+    || isGrantablePathCapability("enumerate:self:", capability)
+    || isGrantablePathCapability("enumerate:any:", capability)
   );
 }
 
