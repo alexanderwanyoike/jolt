@@ -52,9 +52,19 @@ sequenceDiagram
 
 The encrypted package can be cached by any node, but only Bob can decrypt it.
 
-### Private (Group)
+### Private (Multiple Recipients)
 
-Encrypted for a group of users. All group members can read the content.
+The implemented envelope (doc 16) supports multiple recipients directly: the
+content key is wrapped once per recipient identity (and per authorized device
+key), so a set of identities can all decrypt the same object without a shared
+group key.
+
+### Private (Group) -- design sketch, not implemented
+
+A dedicated group model with a shared rotating `group_key` was an early design
+direction and is kept here as a sketch. It is not what v0 implements; v0 uses
+per-recipient content-key wraps as above. Community identity and membership
+(doc 21) is the current direction for group semantics.
 
 ```mermaid
 sequenceDiagram
@@ -99,6 +109,12 @@ sequenceDiagram
 The revoked member may still have copies of old content they previously downloaded and decrypted -- this is a physical reality, not a jolt limitation. The same is true of email, Slack, or any other system. Once bytes are on someone's device, no protocol can force deletion. What matters is that revocation is **immediate and forward-secure**: from the moment of revocation, the removed member cannot decrypt anything new.
 
 ## Access Control in Apps
+
+App access to encryption and decryption is itself capability-checked. An app
+session must hold `encrypt:<path>`, `decrypt:<path>`, or
+`publish:encrypted:<path>` grants, approved by the user in Console, before the
+daemon will encrypt, decrypt, or publish private content on its behalf (see
+doc 15 for the session model and doc 16 for the envelope APIs).
 
 Apps can use the access control system to implement features:
 
@@ -175,8 +191,9 @@ Sharing content:
   Apps cannot share data without the user's action
 
 Receiving shared content:
-  Encrypted content addressed to the user is automatically decrypted
-  Apps can filter/display but cannot suppress
+  Nothing decrypts automatically. Decryption is an explicit, capability-checked
+  app call (/app/v1/encrypted/decrypt or /open, gated by decrypt:<path>);
+  opening ingress items requires ingress:read
 
 Group membership:
   User must accept invitation to join a group

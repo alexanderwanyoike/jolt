@@ -29,6 +29,25 @@ In this model, the daemon is the local authority for identities, keys, settings,
 
 The session model is defined in [App Boundary and Sessions](15-app-boundary-and-sessions.md). The WASM/runtime material below remains a longer-term direction, not the immediate implementation path.
 
+### What Is Implemented Today
+
+The implemented app model already covers more than publish/fetch. Through
+capability-checked `/app/v1/*` endpoints, an approved external app can:
+
+- resolve public `.jolt` addresses and fetch public content;
+- publish signed path updates and append records under granted path scopes;
+- enumerate append records (own identity or, with an explicit grant, any
+  identity) within its approved namespace;
+- publish, decrypt, open, and rewrap encrypted objects (doc 16);
+- send, list, accept, reject, and open recipient-ingress items;
+- list its published inventory and request home-relay pins.
+
+The exact endpoint list, capability grammar, and session lifecycle are in
+doc 15. The manifest, install/update lifecycle, SDKs, and app-to-app
+messaging described below are design direction only; none of it is
+implemented, and the `capabilities.required` manifest schema below does not
+correspond to the implemented capability grammar in doc 15.
+
 ## Role in the Stack
 
 ```text
