@@ -51,6 +51,9 @@ impl IntoResponse for LocalIdentityApiError {
             LocalIdentityError::ProtectedIdentity(_) => {
                 (StatusCode::BAD_REQUEST, "local_identity_protected")
             }
+            LocalIdentityError::Storage(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "local_identity_storage")
+            }
         };
         (
             status,

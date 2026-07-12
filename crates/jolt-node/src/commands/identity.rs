@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use jolt_identity::write_identity_export_file;
 
 use crate::client::DaemonClient;
 
@@ -15,7 +16,7 @@ pub async fn export(out: &Path, passphrase: Option<&str>, label: Option<&str>) -
         .cloned()
         .context("daemon response did not include an identity bundle")?;
     let raw = serde_json::to_string_pretty(&bundle)?;
-    std::fs::write(out, raw)
+    write_identity_export_file(out, raw.as_bytes())
         .with_context(|| format!("failed to write identity bundle to {}", out.display()))?;
     println!("Exported identity {identity} to {}", out.display());
     println!("Anyone with this file can act as this identity unless a passphrase was set.");

@@ -53,6 +53,43 @@ verify that updates were signed by the identity owner. Applications can
 interpret the signed content however they choose; those application schemas are
 not part of the protocol.
 
+## Prior Art
+
+Jolt is not the first project to work on user-owned identity or platformless
+distribution. It borrows deliberately from earlier systems and differs from
+each in specific ways:
+
+- **Nostr:** Nostr identity is also a raw keypair, but keys are typically held
+  by the client (or a signer extension), and distribution works by publishing
+  events to relays that clients query. In Jolt, keys live in a local daemon
+  that grants scoped capabilities to apps, content is content-addressed and
+  fetched peer-to-peer, and relays are optional rendezvous and availability
+  helpers rather than the primary data plane.
+- **ATProto / Bluesky:** in ATProto, user data lives in a hosted PDS, global
+  experiences depend on indexing infrastructure, and identity resolution uses
+  a DID directory. Jolt has no required hosting and no global index: identity
+  is a local signing key, mutable state is a signed update log, and resolution
+  happens against peers and relays the user chooses.
+- **ActivityPub:** federation ties identity and content to a home server;
+  moving servers means migrating an account. Jolt identities are not tied to
+  any server. A relay can improve a user's availability, but it can be
+  replaced without changing the identity.
+- **Secure Scuttlebutt:** probably Jolt's closest ancestor: key-owned, signed,
+  append-only logs with offline-first replication. Jolt separates identity
+  state (signed path-to-CID mappings with sequence numbers) from content
+  blobs, so state is updatable rather than an ever-growing feed, and adds an
+  explicit app permission boundary at the daemon.
+- **IPFS / IPNS:** Jolt uses CIDs and libp2p, so it shares the
+  content-addressing layer. But Jolt is not a permanent public filesystem, and
+  it replaces IPNS-style mutable pointers with signed, sequenced update logs.
+  Identity, encrypted envelopes, reachability records, recipient ingress, and
+  app capabilities are protocol concerns in Jolt rather than layers left to
+  applications.
+
+If you know these systems well, the shortest summary is: Nostr-style key
+identity, Scuttlebutt-style signed logs, IPFS-style content addressing, plus a
+local capability-scoped daemon so applications never hold the user's keys.
+
 ## What Works Today
 
 Jolt v0 has working implementations of the core protocol and local runtime

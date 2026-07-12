@@ -3422,6 +3422,7 @@ dependencies = [
 name = "jolt-console"
 version = "0.3.4"
 dependencies = [
+ "jolt-identity",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -3536,6 +3537,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tower",
  "tower-http",
  "tracing",
 ]

@@ -43,10 +43,13 @@ export function useDaemonSnapshot(
     lastRefresh: null
   });
   const failureCount = useRef(0);
+  const refreshGeneration = useRef(0);
 
   const refresh = useCallback(async () => {
+    const generation = ++refreshGeneration.current;
     try {
       const payload = await loadDaemonPayload(client);
+      if (generation !== refreshGeneration.current) return true;
       failureCount.current = 0;
       setState({
         daemonUrl: client.daemonUrl,
@@ -62,6 +65,7 @@ export function useDaemonSnapshot(
       });
       return true;
     } catch (error) {
+      if (generation !== refreshGeneration.current) return false;
       failureCount.current += 1;
       setState((previous) => ({
         ...previous,

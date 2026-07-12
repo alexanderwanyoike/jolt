@@ -133,7 +133,7 @@ async fn identity_export_save_file(
     let content = serde_json::to_string_pretty(&bundle)
         .map_err(|error| format!("failed to encode identity bundle: {error}"))?;
 
-    std::fs::write(&path, content).map_err(|error| {
+    jolt_identity::write_identity_export_file(&path, content.as_bytes()).map_err(|error| {
         format!(
             "failed to write identity bundle {}: {error}",
             path.display()

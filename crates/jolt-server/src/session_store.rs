@@ -517,10 +517,20 @@ enum AppCapability {
     IngressSend,
     IngressRead,
     IngressDecide,
+    Enumerate {
+        identity_scope: EnumerateIdentityScope,
+        scope: PathScope,
+    },
     Path {
         action: PathCapabilityAction,
         scope: PathScope,
     },
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum EnumerateIdentityScope {
+    SelfIdentity,
+    AnyIdentity,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -547,6 +557,14 @@ impl AppCapability {
             "ingress:send" => Some(Self::IngressSend),
             "ingress:read" => Some(Self::IngressRead),
             "ingress:decide" => Some(Self::IngressDecide),
+            _ if raw.starts_with("enumerate:self:") => Some(Self::Enumerate {
+                identity_scope: EnumerateIdentityScope::SelfIdentity,
+                scope: PathScope::parse(raw.strip_prefix("enumerate:self:")?)?,
+            }),
+            _ if raw.starts_with("enumerate:any:") => Some(Self::Enumerate {
+                identity_scope: EnumerateIdentityScope::AnyIdentity,
+                scope: PathScope::parse(raw.strip_prefix("enumerate:any:")?)?,
+            }),
             _ => parse_path_capability(raw),
         }
     }
@@ -558,6 +576,20 @@ impl AppCapability {
             | (Self::IngressSend, Self::IngressSend)
             | (Self::IngressRead, Self::IngressRead)
             | (Self::IngressDecide, Self::IngressDecide) => true,
+            (
+                Self::Enumerate {
+                    identity_scope: requested_identity_scope,
+                    scope: requested_scope,
+                },
+                Self::Enumerate {
+                    identity_scope: granted_identity_scope,
+                    scope: granted_scope,
+                },
+            ) if requested_identity_scope == granted_identity_scope
+                || *requested_identity_scope == EnumerateIdentityScope::AnyIdentity =>
+            {
+                requested_scope.contains(granted_scope)
+            }
             (
                 Self::Path {
                     action: requested_action,

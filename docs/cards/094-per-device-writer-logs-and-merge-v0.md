@@ -232,6 +232,19 @@ interpreting their own object schemas.
   `test_resolve_endpoint_reports_no_update_log_provider_candidates` fail in this
   sandbox because no bootstrap relays / DHT providers are reachable.
 
+Release hardening for append enumeration capabilities:
+
+- Replaced the implicit `resolve:public` enumeration authority with explicit
+  `enumerate:self:<path>` and `enumerate:any:<path>` grants.
+- `self` binds the requested identity to the app session; `any` permits the
+  cross-identity reads needed by social apps while remaining path-scoped.
+- Existing sessions require reapproval rather than silently inheriting broad
+  enumeration authority.
+- Red: `cargo test -p jolt-server test_app_can_append_and_enumerate_records_by_prefix --test api_integration -- --nocapture`
+  failed because the new capability vocabulary was not grantable.
+- Green: focused API tests cover self-identity/path enforcement, rejection of
+  `resolve:public` alone, and explicitly scoped cross-identity enumeration.
+
 Release hardening for equal-length device-log forks:
 
 - Red: `cargo test -p jolt-network equal_length_device_log_forks_converge_regardless_of_arrival_order --lib -- --nocapture`
