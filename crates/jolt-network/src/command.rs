@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
 use jolt_core::{
-    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
-    OfflineIngressEndpoint, PinRequest, RelayHint, RelayRecord, VerifiedReachability,
+    DeviceAuthorizationRecord, DeviceWriterLogEntry, EncryptedObjectRecipient,
+    IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint, OfflineIngressEndpoint,
+    PinRequest, RelayHint, RelayRecord, VerifiedReachability,
 };
 
 use crate::config::HomeRelayConfig;
@@ -17,6 +18,16 @@ pub enum DaemonCommand {
         file_path: PathBuf,
         path: Option<String>,
         response_tx: oneshot::Sender<Result<PublishResponse, NetworkError>>,
+    },
+    PublishAppend {
+        file_path: PathBuf,
+        path: String,
+        response_tx: oneshot::Sender<Result<PublishResponse, NetworkError>>,
+    },
+    EnumerateAppendRecords {
+        identity: IdentityId,
+        path_prefix: String,
+        response_tx: oneshot::Sender<Result<Vec<AppendRecordInfo>, NetworkError>>,
     },
     Fetch {
         content_id: String,
@@ -78,6 +89,10 @@ pub enum DaemonCommand {
     GetStatus {
         response_tx: oneshot::Sender<NodeStatus>,
     },
+    SignLocalIdentity {
+        payload: Vec<u8>,
+        response_tx: oneshot::Sender<Vec<u8>>,
+    },
     GetPeers {
         response_tx: oneshot::Sender<Vec<PeerInfo>>,
     },
@@ -120,6 +135,12 @@ pub enum DaemonCommand {
         entries: Vec<jolt_core::UpdateLogEntry>,
         response_tx: oneshot::Sender<Result<u64, NetworkError>>,
     },
+    StoreDeviceWriterLogs {
+        identity: IdentityId,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+        response_tx: oneshot::Sender<Result<u64, NetworkError>>,
+    },
     Unpin {
         content_id: String,
         response_tx: oneshot::Sender<Result<(), NetworkError>>,
@@ -139,6 +160,16 @@ pub struct PublishResponse {
     pub address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_sequence: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppendRecordInfo {
+    pub path: String,
+    pub content_id: String,
+    pub device_id: String,
+    pub device_sequence: u64,
+    pub created_at: u64,
+    pub entry_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

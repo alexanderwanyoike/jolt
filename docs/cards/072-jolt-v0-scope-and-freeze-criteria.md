@@ -65,7 +65,7 @@ Critical path:
 2. [074](074-reachability-and-rendezvous-clarification.md): clarify
    reachability/rendezvous only as much as v0 needs.
 3. [075](075-recipient-ingress-v0.md): implement generic recipient ingress.
-4. [078](078-spoke-social-poc.md): build Spoke as the human-facing PoC.
+4. Build Spoke as the human-facing PoC in the Spoke repository.
 5. [080](080-v0-freeze-and-bugfix-window.md): freeze new features and fix only
    blocking bugs.
 6. [081](081-launch-and-postmortem.md): publish, gather feedback, and decide

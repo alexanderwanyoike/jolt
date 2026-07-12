@@ -8,8 +8,8 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 use cli::{
-    BootstrapCommands, CacheCommands, Cli, Commands, HomeRelayCommands, RelayCommands,
-    RelayDiagnoseCommands,
+    BootstrapCommands, CacheCommands, Cli, Commands, HomeRelayCommands, IdentityCommands,
+    RelayCommands, RelayDiagnoseCommands,
 };
 
 #[tokio::main]
@@ -74,6 +74,18 @@ async fn main() -> anyhow::Result<()> {
             } => commands::home_relay::set(&multiaddr, capability, api_url.as_deref()).await?,
             HomeRelayCommands::Pin { content_id } => commands::home_relay::pin(&content_id).await?,
             HomeRelayCommands::Clear => commands::home_relay::clear().await?,
+        },
+        Commands::Identity { command } => match command {
+            IdentityCommands::Export {
+                out,
+                passphrase,
+                label,
+            } => commands::identity::export(&out, passphrase.as_deref(), label.as_deref()).await?,
+            IdentityCommands::Import {
+                from,
+                passphrase,
+                allow_overwrite,
+            } => commands::identity::import(&from, passphrase.as_deref(), allow_overwrite).await?,
         },
         Commands::Relay { command } => match command {
             RelayCommands::Status { json } => commands::relay::status(json).await?,

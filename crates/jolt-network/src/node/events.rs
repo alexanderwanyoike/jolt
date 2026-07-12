@@ -6,8 +6,8 @@ use jolt_core::verify_update_log_for_identity;
 use crate::behaviour::JoltBehaviourEvent;
 use crate::error::NetworkError;
 use crate::protocol::{
-    ContentResponse, RelayExchangeRequest, RelayExchangeResponse, UpdateLogRequest,
-    UpdateLogResponse,
+    ContentResponse, DeviceWriterSyncResponse, RelayExchangeRequest, RelayExchangeResponse,
+    UpdateLogRequest, UpdateLogResponse,
 };
 
 use super::{unix_now, NetworkNode, PeerConnectionInfo};
@@ -358,6 +358,96 @@ impl NetworkNode {
                 }
             }
 
+            // --- Device Writer Sync ---
+            SwarmEvent::Behaviour(JoltBehaviourEvent::DeviceWriterSync(
+                request_response::Event::Message {
+                    message:
+                        request_response::Message::Request {
+                            request, channel, ..
+                        },
+                    ..
+                },
+            )) => {
+                info!(
+                    "Received device-writer sync request for: {}",
+                    request.identity
+                );
+
+                let response = self
+                    .device_writer_sync_snapshot(&request.identity)
+                    .map(
+                        |(authority_records, device_logs)| DeviceWriterSyncResponse {
+                            authority_records,
+                            device_logs,
+                        },
+                    )
+                    .unwrap_or_default();
+
+                if let Err(e) = self
+                    .swarm
+                    .behaviour_mut()
+                    .device_writer_sync
+                    .send_response(channel, response)
+                {
+                    warn!("Failed to send device-writer sync response: {e:?}");
+                }
+            }
+
+            SwarmEvent::Behaviour(JoltBehaviourEvent::DeviceWriterSync(
+                request_response::Event::Message {
+                    message:
+                        request_response::Message::Response {
+                            request_id,
+                            response,
+                        },
+                    ..
+                },
+            )) => {
+                if let Some(pending) = self.pending_device_writer_syncs.remove(&request_id) {
+                    info!(
+                        "Received device-writer sync response for {} ({} device logs)",
+                        pending.identity,
+                        response.device_logs.len()
+                    );
+                    let result = if response.authority_records.is_empty() {
+                        Err(Self::identity_head_invalid_failure(
+                            &pending.identity,
+                            "provider returned no device-authority records",
+                        ))
+                    } else {
+                        self.store_verified_device_writer_logs(
+                            pending.identity.clone(),
+                            response.authority_records,
+                            response.device_logs,
+                        )
+                        .map(|_| ())
+                        .map_err(|e| {
+                            Self::identity_head_invalid_failure(&pending.identity, e.to_string())
+                        })
+                    };
+                    self.on_device_writer_sync_settled(
+                        &pending.identity,
+                        &pending.provider,
+                        result.err(),
+                    );
+                }
+            }
+
+            SwarmEvent::Behaviour(JoltBehaviourEvent::DeviceWriterSync(
+                request_response::Event::OutboundFailure {
+                    request_id, error, ..
+                },
+            )) => {
+                warn!("Outbound device-writer sync request failed: {error}");
+                if let Some(pending) = self.pending_device_writer_syncs.remove(&request_id) {
+                    self.on_device_writer_sync_settled(
+                        &pending.identity,
+                        &pending.provider,
+                        Some(NetworkError::Protocol(error.to_string())),
+                    );
+                }
+            }
+
             // --- Relay Record Exchange ---
             SwarmEvent::Behaviour(JoltBehaviourEvent::RelayExchange(
                 request_response::Event::Message {
@@ -512,6 +602,9 @@ impl NetworkNode {
                             self.record_identity_provider_candidates(&identity, providers);
                         if let Some(provider) = providers.first() {
                             self.request_pending_resolves_from_provider(&identity, provider);
+                            self.request_pending_device_writer_syncs_from_provider(
+                                &identity, provider,
+                            );
                         }
                     }
                 }
@@ -612,6 +705,13 @@ impl NetworkNode {
                                                 Self::update_log_provider_key(identity) == key_str
                                             })
                                             .cloned();
+                                        let pending_device_writer_identity = self
+                                            .pending_device_writer_waiters
+                                            .keys()
+                                            .find(|identity| {
+                                                Self::update_log_provider_key(identity) == key_str
+                                            })
+                                            .cloned();
                                         for provider in providers {
                                             if provider != *self.swarm.local_peer_id() {
                                                 info!("DHT found provider {provider} for {key_str}");
@@ -635,6 +735,14 @@ impl NetworkNode {
 
                                                 if let Some(identity) = &pending_identity {
                                                     self.request_pending_resolves_from_provider(
+                                                        identity,
+                                                        &provider,
+                                                    );
+                                                }
+                                                if let Some(identity) =
+                                                    &pending_device_writer_identity
+                                                {
+                                                    self.request_pending_device_writer_syncs_from_provider(
                                                         identity,
                                                         &provider,
                                                     );

@@ -7,12 +7,13 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use axum_extra::extract::Multipart;
 use jolt_core::{
-    verify_identity_encryption_key_record_for_identity, EncryptedObjectRecipient,
-    IdentityEncryptionKey, IdentityEncryptionKeyRecord, IdentityId, JoltAddress,
-    IDENTITY_ENCRYPTION_KEYS_PATH,
+    verify_identity_encryption_key_record_for_identity, EncryptedObjectEnvelope,
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityEncryptionKeyRecord, IdentityId,
+    JoltAddress, IDENTITY_ENCRYPTION_KEYS_PATH,
 };
 use jolt_network::{
-    FetchResult, NetworkError, PublishResponse, PublishedContentInfo, ResolveResponse,
+    AppendRecordInfo, EncryptedObjectResponse, FetchResult, NetworkError, PublishResponse,
+    PublishedContentInfo, ResolveResponse,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -89,6 +90,7 @@ pub struct EncryptedPublishResponse {
 #[derive(Debug, Deserialize)]
 pub struct EncryptedDecryptRequest {
     pub target: String,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -108,10 +110,19 @@ pub enum EncryptedOpenStatus {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EncryptedAccessStatus {
+    Available,
+    NeedsRewrap,
+    NotAccessible,
+}
+
+#[derive(Debug, Serialize)]
 pub struct EncryptedOpenResponse {
     pub content_id: String,
     pub path: String,
     pub status: EncryptedOpenStatus,
+    pub access_status: EncryptedAccessStatus,
     pub plaintext: Option<Vec<u8>>,
     pub ciphertext: Option<Vec<u8>>,
     pub size: u64,
@@ -126,23 +137,192 @@ pub async fn publish_encrypted(
 ) -> Result<Json<EncryptedPublishResponse>, AppApiError> {
     let session = authenticated_session(&state, &headers).await?;
     require_local_identity(&state, &session).await?;
-    let path = normalize_path(&req.path)?;
-    require_path_capability(&session, "encrypt:", &path)?;
-    require_path_capability(&session, "publish:encrypted:", &path)?;
+    let (path, encrypted) = encrypt_app_request(&state, &session, req).await?;
+    let published = publish_app_bytes(&state, encrypted.data, path).await?;
 
-    let local_key = state.daemon.ensure_local_identity_encryption_key().await?;
-    let local_identity = JoltAddress::from_str(&state.daemon.status().await?.identity_address)
-        .map_err(|e| AppApiError::Network(NetworkError::Protocol(e.to_string())))?
-        .identity()
-        .clone();
-    let recipient_keys =
-        resolve_recipient_keys(&state, &req.recipients, &local_identity, local_key).await?;
+    Ok(Json(EncryptedPublishResponse {
+        content_id: published.content_id,
+        size: published.size,
+        path: published.path,
+        address: published.address,
+        latest_sequence: published.latest_sequence,
+        recipient_count: encrypted.recipient_count,
+    }))
+}
+
+async fn encrypt_app_request(
+    state: &AppState,
+    session: &AppSessionView,
+    req: EncryptedPublishRequest,
+) -> Result<(String, EncryptedObjectResponse), AppApiError> {
+    let path = normalize_path(&req.path)?;
+    require_path_capability(session, "encrypt:", &path)?;
+    require_path_capability(session, "publish:encrypted:", &path)?;
+
+    let recipient_keys = resolve_app_encryption_recipients(state, &req.recipients).await?;
     let encrypted = state
         .daemon
         .encrypt_object(
             req.plaintext,
             req.content_type
                 .unwrap_or_else(|| "application/octet-stream".to_string()),
+            recipient_keys,
+        )
+        .await?;
+    Ok((path, encrypted))
+}
+
+pub async fn append_encrypted(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<EncryptedPublishRequest>,
+) -> Result<Json<EncryptedPublishResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+    let (path, encrypted) = encrypt_app_request(&state, &session, req).await?;
+    let published = publish_app_append_bytes(&state, encrypted.data, path).await?;
+
+    Ok(Json(EncryptedPublishResponse {
+        content_id: published.content_id,
+        size: published.size,
+        path: published.path,
+        address: published.address,
+        latest_sequence: published.latest_sequence,
+        recipient_count: encrypted.recipient_count,
+    }))
+}
+
+async fn encrypted_target(
+    state: &AppState,
+    req: &EncryptedDecryptRequest,
+    operation: &str,
+) -> Result<(String, String), AppApiError> {
+    match JoltAddress::from_str(&req.target) {
+        Ok(address) => {
+            let resolved = state.daemon.resolve(address.to_string()).await?;
+            if let Some(raw_path) = &req.path {
+                let requested_path = normalize_path(raw_path)?;
+                if requested_path != resolved.path {
+                    return Err(AppApiError::Network(NetworkError::InvalidInput(format!(
+                        "encrypted {operation} path {requested_path} does not match target path {}",
+                        resolved.path
+                    ))));
+                }
+            }
+            Ok((resolved.content_id, resolved.path))
+        }
+        Err(e) if req.target.contains(".jolt") => {
+            Err(AppApiError::Network(NetworkError::InvalidInput(format!(
+                "encrypted {operation} target must be a valid .jolt address or content id: {e}"
+            ))))
+        }
+        Err(_) => {
+            let path = req.path.as_deref().ok_or_else(|| {
+                AppApiError::Network(NetworkError::InvalidInput(format!(
+                    "encrypted {operation} by content id requires a path"
+                )))
+            })?;
+            Ok((req.target.clone(), normalize_path(path)?))
+        }
+    }
+}
+
+pub async fn decrypt_encrypted(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<EncryptedDecryptRequest>,
+) -> Result<Json<EncryptedDecryptResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+
+    let (content_id, path) = encrypted_target(&state, &req, "decrypt").await?;
+    require_path_capability(&session, "decrypt:", &path)?;
+    let fetched = state
+        .daemon
+        .fetch(content_id.clone())
+        .await
+        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &content_id)))?;
+    let decrypted = state.daemon.decrypt_object(fetched.data).await?;
+
+    Ok(Json(EncryptedDecryptResponse {
+        content_id,
+        path,
+        plaintext: decrypted.plaintext,
+        size: decrypted.size,
+        content_type: decrypted.content_type,
+    }))
+}
+
+pub async fn open_encrypted(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<EncryptedDecryptRequest>,
+) -> Result<Json<EncryptedOpenResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+
+    let (content_id, path) = encrypted_target(&state, &req, "open").await?;
+    require_path_capability(&session, "decrypt:", &path)?;
+    let fetched = state
+        .daemon
+        .fetch(content_id.clone())
+        .await
+        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &content_id)))?;
+    let ciphertext = fetched.data;
+    let ciphertext_size = fetched.size;
+    let access_status = encrypted_access_status(&state, &ciphertext).await?;
+
+    match state.daemon.decrypt_object(ciphertext.clone()).await {
+        Ok(decrypted) => Ok(Json(EncryptedOpenResponse {
+            content_id,
+            path,
+            status: EncryptedOpenStatus::Decrypted,
+            access_status,
+            plaintext: Some(decrypted.plaintext),
+            ciphertext: None,
+            size: decrypted.size,
+            content_type: Some(decrypted.content_type),
+            decrypt_error: None,
+        })),
+        Err(err) => Ok(Json(EncryptedOpenResponse {
+            content_id,
+            path,
+            status: EncryptedOpenStatus::Ciphertext,
+            access_status: EncryptedAccessStatus::NotAccessible,
+            plaintext: None,
+            ciphertext: Some(ciphertext),
+            size: ciphertext_size,
+            content_type: None,
+            decrypt_error: Some(err.to_string()),
+        })),
+    }
+}
+
+pub async fn rewrap_encrypted(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<EncryptedDecryptRequest>,
+) -> Result<Json<EncryptedPublishResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+
+    let (content_id, path) = encrypted_target(&state, &req, "rewrap").await?;
+    require_path_capability(&session, "decrypt:", &path)?;
+    require_path_capability(&session, "encrypt:", &path)?;
+    require_path_capability(&session, "publish:encrypted:", &path)?;
+
+    let fetched = state
+        .daemon
+        .fetch(content_id.clone())
+        .await
+        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &content_id)))?;
+    let decrypted = state.daemon.decrypt_object(fetched.data).await?;
+    let recipient_keys = resolve_app_encryption_recipients(&state, &[]).await?;
+    let encrypted = state
+        .daemon
+        .encrypt_object(
+            decrypted.plaintext,
+            decrypted.content_type.clone(),
             recipient_keys,
         )
         .await?;
@@ -158,157 +338,44 @@ pub async fn publish_encrypted(
     }))
 }
 
-pub async fn decrypt_encrypted(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(req): Json<EncryptedDecryptRequest>,
-) -> Result<Json<EncryptedDecryptResponse>, AppApiError> {
-    let session = authenticated_session(&state, &headers).await?;
-    require_local_identity(&state, &session).await?;
-
-    let address = JoltAddress::from_str(&req.target).map_err(|e| {
-        AppApiError::Network(NetworkError::InvalidInput(format!(
-            "encrypted decrypt target must be a .jolt address: {e}"
-        )))
-    })?;
-    let resolved = state.daemon.resolve(address.to_string()).await?;
-    require_path_capability(&session, "decrypt:", &resolved.path)?;
-    let fetched = state
-        .daemon
-        .fetch(resolved.content_id.clone())
+async fn encrypted_access_status(
+    state: &AppState,
+    encrypted_object: &[u8],
+) -> Result<EncryptedAccessStatus, AppApiError> {
+    let envelope = EncryptedObjectEnvelope::from_bytes(encrypted_object)
+        .map_err(|err| AppApiError::Network(NetworkError::InvalidInput(err.to_string())))?;
+    let active_device_recipients = state
+        .device_authority
+        .active_authorized_device_encryption_recipients(&state.daemon)
         .await
-        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &resolved.content_id)))?;
-    let decrypted = state.daemon.decrypt_object(fetched.data).await?;
+        .map_err(|err| AppApiError::Network(NetworkError::Protocol(err.to_string())))?;
 
-    Ok(Json(EncryptedDecryptResponse {
-        content_id: resolved.content_id,
-        path: resolved.path,
-        plaintext: decrypted.plaintext,
-        size: decrypted.size,
-        content_type: decrypted.content_type,
-    }))
-}
+    let missing_active_device_key = active_device_recipients.iter().any(|active| {
+        !envelope.body.recipients.iter().any(|recipient| {
+            recipient.recipient_identity == active.identity
+                && recipient.recipient_key_id == active.key.key_id
+        })
+    });
 
-pub async fn open_encrypted(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(req): Json<EncryptedDecryptRequest>,
-) -> Result<Json<EncryptedOpenResponse>, AppApiError> {
-    let session = authenticated_session(&state, &headers).await?;
-    require_local_identity(&state, &session).await?;
-
-    let address = JoltAddress::from_str(&req.target).map_err(|e| {
-        AppApiError::Network(NetworkError::InvalidInput(format!(
-            "encrypted open target must be a .jolt address: {e}"
-        )))
-    })?;
-    let resolved = state.daemon.resolve(address.to_string()).await?;
-    require_path_capability(&session, "decrypt:", &resolved.path)?;
-    let fetched = state
-        .daemon
-        .fetch(resolved.content_id.clone())
-        .await
-        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &resolved.content_id)))?;
-    let ciphertext = fetched.data;
-    let ciphertext_size = fetched.size;
-
-    match state.daemon.decrypt_object(ciphertext.clone()).await {
-        Ok(decrypted) => Ok(Json(EncryptedOpenResponse {
-            content_id: resolved.content_id,
-            path: resolved.path,
-            status: EncryptedOpenStatus::Decrypted,
-            plaintext: Some(decrypted.plaintext),
-            ciphertext: None,
-            size: decrypted.size,
-            content_type: Some(decrypted.content_type),
-            decrypt_error: None,
-        })),
-        Err(err) => Ok(Json(EncryptedOpenResponse {
-            content_id: resolved.content_id,
-            path: resolved.path,
-            status: EncryptedOpenStatus::Ciphertext,
-            plaintext: None,
-            ciphertext: Some(ciphertext),
-            size: ciphertext_size,
-            content_type: None,
-            decrypt_error: Some(err.to_string()),
-        })),
-    }
+    Ok(if missing_active_device_key {
+        EncryptedAccessStatus::NeedsRewrap
+    } else {
+        EncryptedAccessStatus::Available
+    })
 }
 
 pub async fn publish_file(
     State(state): State<AppState>,
     headers: HeaderMap,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Result<Response, AppApiError> {
     let session = authenticated_session(&state, &headers).await?;
     require_local_identity(&state, &session).await?;
 
-    let mut file_data = None;
-    let mut path = None;
-
-    while let Ok(Some(field)) = multipart.next_field().await {
-        match field.name() {
-            Some("file") => match field.bytes().await {
-                Ok(bytes) => {
-                    file_data = Some(bytes);
-                }
-                Err(e) => {
-                    return Ok((
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({ "error": format!("Failed to read file: {e}") })),
-                    )
-                        .into_response());
-                }
-            },
-            Some("path") => match field.text().await {
-                Ok(value) if !value.trim().is_empty() => {
-                    path = Some(normalize_path(&value)?);
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    return Ok((
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({ "error": format!("Failed to read path: {e}") })),
-                    )
-                        .into_response());
-                }
-            },
-            _ => {}
-        }
-    }
-
-    let path = path.ok_or_else(|| {
-        AppApiError::Network(NetworkError::InvalidInput(
-            "app publish requires a path".to_string(),
-        ))
-    })?;
+    let (data, path) = read_file_and_path_fields(multipart).await?;
     require_path_capability(&session, "publish:", &path)?;
 
-    let data = match file_data {
-        Some(d) => d,
-        None => {
-            return Ok((
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "No file field in multipart request" })),
-            )
-                .into_response());
-        }
-    };
-
-    let temp_dir = std::env::temp_dir();
-    let unique_id = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let sequence = APP_TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let temp_path = temp_dir.join(format!(
-        "jolt_app_publish_{}_{unique_id}_{sequence}",
-        std::process::id(),
-    ));
-    std::fs::write(&temp_path, &data)
-        .map_err(|e| AppApiError::Network(jolt_network::NetworkError::Io(e)))?;
-
+    let temp_path = persist_app_temp_file("publish", &data)?;
     let result = state.daemon.publish(temp_path.clone(), Some(path)).await;
     let _ = std::fs::remove_file(&temp_path);
 
@@ -318,11 +385,77 @@ pub async fn publish_file(
     }
 }
 
-async fn publish_app_bytes(
-    state: &AppState,
-    data: Vec<u8>,
-    path: String,
-) -> Result<PublishResponse, AppApiError> {
+/// Publish content as an append record bound to a path the app owns. Unlike
+/// `publish_file`, append records coexist: this is the write seam for elements
+/// of a growing collection, where every element must survive concurrent writes
+/// rather than overwriting a single current value.
+pub async fn append_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    multipart: Multipart,
+) -> Result<Response, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+
+    let (data, path) = read_file_and_path_fields(multipart).await?;
+    require_path_capability(&session, "publish:", &path)?;
+
+    let temp_path = persist_app_temp_file("append", &data)?;
+    let result = state.daemon.publish_append(temp_path.clone(), path).await;
+    let _ = std::fs::remove_file(&temp_path);
+
+    match result {
+        Ok(response) => Ok((StatusCode::OK, Json(json!(response))).into_response()),
+        Err(e) => Err(AppApiError::Network(e)),
+    }
+}
+
+/// Read the `file` and `path` fields shared by the multipart publish endpoints.
+/// The path is normalized and required; the file bytes are required.
+async fn read_file_and_path_fields(
+    mut multipart: Multipart,
+) -> Result<(Vec<u8>, String), AppApiError> {
+    let mut file_data = None;
+    let mut path = None;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        match field.name() {
+            Some("file") => {
+                let bytes = field.bytes().await.map_err(|e| {
+                    AppApiError::Network(NetworkError::InvalidInput(format!(
+                        "failed to read file field: {e}"
+                    )))
+                })?;
+                file_data = Some(bytes.to_vec());
+            }
+            Some("path") => {
+                let value = field.text().await.map_err(|e| {
+                    AppApiError::Network(NetworkError::InvalidInput(format!(
+                        "failed to read path field: {e}"
+                    )))
+                })?;
+                if !value.trim().is_empty() {
+                    path = Some(normalize_path(&value)?);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let path = path.ok_or_else(|| {
+        AppApiError::Network(NetworkError::InvalidInput("a path is required".to_string()))
+    })?;
+    let data = file_data.ok_or_else(|| {
+        AppApiError::Network(NetworkError::InvalidInput(
+            "no file field in multipart request".to_string(),
+        ))
+    })?;
+    Ok((data, path))
+}
+
+/// Write `data` to a uniquely named temp file the daemon can read. The caller
+/// removes it after publishing.
+fn persist_app_temp_file(label: &str, data: &[u8]) -> Result<std::path::PathBuf, AppApiError> {
     let temp_dir = std::env::temp_dir();
     let unique_id = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -330,15 +463,110 @@ async fn publish_app_bytes(
         .as_nanos();
     let sequence = APP_TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let temp_path = temp_dir.join(format!(
-        "jolt_app_publish_{}_{unique_id}_{sequence}",
+        "jolt_app_{label}_{}_{unique_id}_{sequence}",
         std::process::id(),
     ));
-    std::fs::write(&temp_path, &data)
-        .map_err(|e| AppApiError::Network(jolt_network::NetworkError::Io(e)))?;
+    std::fs::write(&temp_path, data).map_err(|e| AppApiError::Network(NetworkError::Io(e)))?;
+    Ok(temp_path)
+}
 
+#[derive(Debug, Deserialize)]
+pub struct EnumerateRequest {
+    pub identity: String,
+    pub path_prefix: String,
+}
+
+/// List an identity's append records whose path starts with `path_prefix`. This
+/// is the read seam a Collection is assembled from. Reads cached merged
+/// device-writer state, never a rewritten blob.
+pub async fn enumerate_append_records(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<EnumerateRequest>,
+) -> Result<Json<Vec<AppendRecordInfo>>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let identity = recipient_identity(&req.identity)?;
+    let prefix = normalize_path(&req.path_prefix)?;
+    require_enumerate_capability(&session, &identity, &prefix)?;
+    let records = state
+        .daemon
+        .enumerate_append_records(identity, prefix)
+        .await?;
+    Ok(Json(records))
+}
+
+fn require_enumerate_capability(
+    session: &AppSessionView,
+    requested_identity: &IdentityId,
+    path: &str,
+) -> Result<(), AppApiError> {
+    let session_identity = session
+        .identity
+        .as_deref()
+        .ok_or_else(|| AppApiError::Forbidden("app session has no granted identity".to_string()))
+        .and_then(recipient_identity)?;
+    let self_request = &session_identity == requested_identity;
+    let allowed = session.granted_capabilities.iter().any(|capability| {
+        let pattern = capability.strip_prefix("enumerate:any:").or_else(|| {
+            self_request
+                .then(|| capability.strip_prefix("enumerate:self:"))
+                .flatten()
+        });
+        pattern.is_some_and(|pattern| path_matches(pattern, path))
+    });
+    if allowed {
+        Ok(())
+    } else {
+        Err(AppApiError::Forbidden(format!(
+            "enumeration of identity {requested_identity} at {path} is outside the granted identity and path scope"
+        )))
+    }
+}
+
+async fn publish_app_bytes(
+    state: &AppState,
+    data: Vec<u8>,
+    path: String,
+) -> Result<PublishResponse, AppApiError> {
+    let temp_path = persist_app_temp_file("publish", &data)?;
     let result = state.daemon.publish(temp_path.clone(), Some(path)).await;
     let _ = std::fs::remove_file(&temp_path);
     result.map_err(AppApiError::Network)
+}
+
+async fn publish_app_append_bytes(
+    state: &AppState,
+    data: Vec<u8>,
+    path: String,
+) -> Result<PublishResponse, AppApiError> {
+    let temp_path = persist_app_temp_file("append", &data)?;
+    let result = state.daemon.publish_append(temp_path.clone(), path).await;
+    let _ = std::fs::remove_file(&temp_path);
+    result.map_err(AppApiError::Network)
+}
+
+async fn resolve_app_encryption_recipients(
+    state: &AppState,
+    recipients: &[String],
+) -> Result<Vec<EncryptedObjectRecipient>, AppApiError> {
+    let local_key = state.daemon.ensure_local_identity_encryption_key().await?;
+    let local_identity = JoltAddress::from_str(&state.daemon.status().await?.identity_address)
+        .map_err(|e| AppApiError::Network(NetworkError::Protocol(e.to_string())))?
+        .identity()
+        .clone();
+    let local_device_keys = state
+        .device_authority
+        .active_authorized_device_encryption_recipients(&state.daemon)
+        .await
+        .map_err(|err| AppApiError::Network(NetworkError::Protocol(err.to_string())))?;
+    resolve_recipient_keys(
+        state,
+        recipients,
+        &local_identity,
+        local_key,
+        local_device_keys,
+    )
+    .await
 }
 
 async fn resolve_recipient_keys(
@@ -346,17 +574,15 @@ async fn resolve_recipient_keys(
     recipients: &[String],
     local_identity: &IdentityId,
     local_key: IdentityEncryptionKey,
+    local_device_keys: Vec<EncryptedObjectRecipient>,
 ) -> Result<Vec<EncryptedObjectRecipient>, AppApiError> {
-    let mut keys = Vec::with_capacity(recipients.len());
+    let mut keys = Vec::with_capacity(recipients.len() + local_device_keys.len() + 1);
     let mut includes_local_identity = false;
     for recipient in recipients {
         let identity = recipient_identity(recipient)?;
         if &identity == local_identity {
             includes_local_identity = true;
-            keys.push(EncryptedObjectRecipient {
-                identity,
-                key: local_key.clone(),
-            });
+            push_local_recipient_keys(&mut keys, local_identity, &local_key, &local_device_keys);
             continue;
         }
 
@@ -387,13 +613,40 @@ async fn resolve_recipient_keys(
     }
 
     if !includes_local_identity {
-        keys.push(EncryptedObjectRecipient {
-            identity: local_identity.clone(),
-            key: local_key,
-        });
+        push_local_recipient_keys(&mut keys, local_identity, &local_key, &local_device_keys);
     }
 
     Ok(keys)
+}
+
+fn push_local_recipient_keys(
+    keys: &mut Vec<EncryptedObjectRecipient>,
+    local_identity: &IdentityId,
+    local_key: &IdentityEncryptionKey,
+    local_device_keys: &[EncryptedObjectRecipient],
+) {
+    push_unique_recipient(
+        keys,
+        EncryptedObjectRecipient {
+            identity: local_identity.clone(),
+            key: local_key.clone(),
+        },
+    );
+    for recipient in local_device_keys {
+        push_unique_recipient(keys, recipient.clone());
+    }
+}
+
+fn push_unique_recipient(
+    keys: &mut Vec<EncryptedObjectRecipient>,
+    recipient: EncryptedObjectRecipient,
+) {
+    if keys.iter().any(|existing| {
+        existing.identity == recipient.identity && existing.key.key_id == recipient.key.key_id
+    }) {
+        return;
+    }
+    keys.push(recipient);
 }
 
 fn recipient_identity(raw: &str) -> Result<IdentityId, AppApiError> {

@@ -5,6 +5,7 @@ const root = new URL("..", import.meta.url).pathname;
 
 const files = {
   packageJson: readFileSync(join(root, "package.json"), "utf8"),
+  devSidecarScript: readFileSync(join(root, "scripts/stage-dev-sidecar.sh"), "utf8"),
   packageScript: readFileSync(join(root, "../../scripts/package-jolt-console.sh"), "utf8"),
   main: readFileSync(join(root, "src/main.tsx"), "utf8"),
   app: readFileSync(join(root, "src/app/App.tsx"), "utf8"),
@@ -74,6 +75,15 @@ if (!Array.isArray(tauriConfig.bundle?.targets) || !tauriConfig.bundle.targets.i
 
 if (!Array.isArray(tauriConfig.bundle?.externalBin) || !tauriConfig.bundle.externalBin.includes("binaries/jolt")) {
   throw new Error("Tauri bundle must declare the jolt daemon sidecar");
+}
+
+if (
+  !files.packageJson.includes("build:jolt-sidecar") ||
+  !files.packageJson.includes("npm run build:jolt-sidecar && tauri") ||
+  !files.devSidecarScript.includes("cargo build -p jolt-node --bin jolt") ||
+  !files.devSidecarScript.includes("src-tauri/binaries/jolt-$TARGET_TRIPLE")
+) {
+  throw new Error("Console dev startup must refresh the local jolt sidecar");
 }
 
 if (!tauriConfig.plugins?.updater?.pubkey || !tauriConfig.plugins?.updater?.endpoints?.length) {

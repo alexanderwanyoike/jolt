@@ -1,7 +1,9 @@
 use jolt_core::{
-    generate_identity_encryption_keypair, ContentId, EncryptedObjectEnvelope,
-    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityEncryptionKeyRecord, IdentityId,
-    JoltAddress, PinRequest, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
+    generate_identity_encryption_keypair, ContentId, DeviceAuthorizationOperation,
+    DeviceAuthorizationRecord, DeviceWriterLogEntry, DeviceWriterOperation, DeviceWriterPathMode,
+    EncryptedObjectEnvelope, EncryptedObjectRecipient, IdentityEncryptionKey,
+    IdentityEncryptionKeyRecord, IdentityId, JoltAddress, PinRequest, RelayRecord,
+    RelayRecordCapability, UpdateAction, UpdateLogEntry, IDENTITY_AUTHORITY_PATH,
     IDENTITY_ENCRYPTION_KEYS_PATH, SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
@@ -9,6 +11,7 @@ use jolt_network::{
     DaemonHandle, HomeRelayCapability, HomeRelayConfig, Multiaddr, NetworkConfig, NetworkNode,
     PeerId,
 };
+use jolt_server::identity_recovery::IdentityRecoveryStore;
 use jolt_store::{CacheConfig, ContentStore};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -31,6 +34,14 @@ async fn start_test_server_with_session_path(
 ) -> (u16, DaemonHandle, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let identity = NodeIdentity::generate();
+    start_test_server_with_identity_and_session_path(identity, session_path, dir).await
+}
+
+async fn start_test_server_with_identity_and_session_path(
+    identity: NodeIdentity,
+    session_path: PathBuf,
+    dir: tempfile::TempDir,
+) -> (u16, DaemonHandle, tempfile::TempDir) {
     let local_identity_address = identity.jolt_address().to_string();
     let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
     let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
@@ -87,6 +98,50 @@ async fn start_test_server_with_network_settings_path(
     (port, handle, dir)
 }
 
+async fn start_test_server_with_profile_dir(
+    profile_dir: PathBuf,
+) -> (u16, DaemonHandle, tempfile::TempDir) {
+    let holder = tempfile::tempdir().unwrap();
+    let identity_dir = profile_dir.join("identity");
+    let content_store_dir = profile_dir.join("data");
+    let identity = NodeIdentity::load_or_generate(&identity_dir).unwrap();
+    let store = ContentStore::open(&content_store_dir, CacheConfig::default()).unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    node.set_fetch_timeout(std::time::Duration::from_secs(2));
+    node.set_resolve_timeout(std::time::Duration::from_secs(2));
+
+    let (cmd_tx, cmd_rx) = mpsc::channel(64);
+    let status_handle = DaemonHandle::new(cmd_tx.clone());
+    tokio::spawn(async move {
+        node.run_daemon_loop(cmd_rx).await;
+    });
+    let local_identity_address = status_handle.status().await.unwrap().identity_address;
+    let handle = DaemonHandle::new_with_local_identity(cmd_tx, local_identity_address);
+
+    let sessions =
+        jolt_server::session_store::AppSessionStore::open(profile_dir.join("app-sessions.json"))
+            .unwrap();
+    let network_settings =
+        jolt_server::network_settings::NetworkSettingsStore::open(profile_dir.join("network.json"))
+            .unwrap();
+    let identity_recovery = IdentityRecoveryStore::new(
+        identity_dir,
+        content_store_dir,
+        Some("integration-test".to_string()),
+    );
+    let (port, _server_handle) = jolt_server::server::start_server_with_explicit_stores(
+        handle.clone(),
+        0,
+        sessions,
+        network_settings,
+        identity_recovery,
+    )
+    .await
+    .unwrap();
+
+    (port, handle, holder)
+}
+
 async fn start_test_server_with_node(
     p2p_port: Option<u16>,
 ) -> (u16, DaemonHandle, tempfile::TempDir) {
@@ -112,12 +167,14 @@ async fn start_test_server_from_node(
     node.set_resolve_timeout(std::time::Duration::from_secs(2));
 
     let (cmd_tx, cmd_rx) = mpsc::channel(64);
-    let handle = DaemonHandle::new(cmd_tx);
+    let status_handle = DaemonHandle::new(cmd_tx.clone());
 
     // Run daemon loop in background
     tokio::spawn(async move {
         node.run_daemon_loop(cmd_rx).await;
     });
+    let local_identity_address = status_handle.status().await.unwrap().identity_address;
+    let handle = DaemonHandle::new_with_local_identity(cmd_tx, local_identity_address);
 
     // Start HTTP server on random port
     let sessions =
@@ -141,6 +198,27 @@ fn signed_profile_log(identity: &NodeIdentity, label: &[u8]) -> Vec<UpdateLogEnt
         |bytes| identity.sign(bytes),
     )
     .unwrap()]
+}
+
+fn device_authority_record(
+    root: &NodeIdentity,
+    device: &NodeIdentity,
+    device_id: &str,
+) -> DeviceAuthorizationRecord {
+    DeviceAuthorizationRecord::genesis(
+        root.public_key_bytes(),
+        root.identity_id(),
+        DeviceAuthorizationOperation::authorize_device(
+            device_id,
+            device.public_key_bytes(),
+            vec!["identity:write".to_string()],
+            Some("Laptop".to_string()),
+            1_780_579_200,
+        ),
+        1_780_579_200,
+        |bytes| root.sign(bytes),
+    )
+    .unwrap()
 }
 
 fn base_url(port: u16) -> String {
@@ -335,8 +413,11 @@ async fn test_health_endpoint() {
 
 #[tokio::test]
 async fn test_app_session_request_is_visible_to_admin() {
-    let (port, handle, _dir) = start_test_server().await;
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
     let client = reqwest::Client::new();
+    let local_identity = handle.local_identity_address().unwrap().to_string();
 
     let request_resp = client
         .post(format!("{}/app/v1/sessions/request", base_url(port)))
@@ -344,7 +425,7 @@ async fn test_app_session_request_is_visible_to_admin() {
             "app_id": "pastey.local",
             "app_name": "Pastey",
             "app_origin": "http://127.0.0.1:5174",
-            "requested_identity": "alice-public.jolt",
+            "requested_identity": local_identity,
             "requested_capabilities": [
                 "resolve:public",
                 "fetch:public",
@@ -377,7 +458,7 @@ async fn test_app_session_request_is_visible_to_admin() {
     assert_eq!(requests[0]["status"], "pending");
     assert_eq!(requests[0]["app_id"], "pastey.local");
     assert_eq!(requests[0]["app_name"], "Pastey");
-    assert_eq!(requests[0]["requested_identity"], "alice-public.jolt");
+    assert_eq!(requests[0]["requested_identity"], local_identity);
     assert_eq!(
         requests[0]["requested_capabilities"]
             .as_array()
@@ -391,15 +472,18 @@ async fn test_app_session_request_is_visible_to_admin() {
 
 #[tokio::test]
 async fn test_admin_can_approve_app_session_request() {
-    let (port, handle, _dir) = start_test_server().await;
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
     let client = reqwest::Client::new();
+    let local_identity = handle.local_identity_address().unwrap().to_string();
 
     let request_resp = client
         .post(format!("{}/app/v1/sessions/request", base_url(port)))
         .json(&serde_json::json!({
             "app_id": "pastey.local",
             "app_name": "Pastey",
-            "requested_identity": "alice-public.jolt",
+            "requested_identity": local_identity,
             "requested_capabilities": [
                 "resolve:public",
                 "fetch:public",
@@ -419,7 +503,7 @@ async fn test_admin_can_approve_app_session_request() {
             base_url(port)
         ))
         .json(&serde_json::json!({
-            "identity": "alice-public.jolt",
+            "identity": local_identity,
             "capabilities": [
                 "resolve:public",
                 "fetch:public",
@@ -439,7 +523,7 @@ async fn test_admin_can_approve_app_session_request() {
     assert!(!session_token.is_empty());
     assert_eq!(approved["request_id"], request_id);
     assert_eq!(approved["status"], "active");
-    assert_eq!(approved["identity"], "alice-public.jolt");
+    assert_eq!(approved["identity"], local_identity);
 
     let sessions_resp = client
         .get(format!("{}/admin/v1/app-sessions", base_url(port)))
@@ -454,7 +538,7 @@ async fn test_admin_can_approve_app_session_request() {
     assert_eq!(sessions[0]["session_id"], session_id);
     assert_eq!(sessions[0]["request_id"], request_id);
     assert_eq!(sessions[0]["status"], "active");
-    assert_eq!(sessions[0]["identity"], "alice-public.jolt");
+    assert_eq!(sessions[0]["identity"], local_identity);
     assert!(sessions[0].get("session_token").is_none());
     assert!(sessions[0].get("token_hash").is_none());
 
@@ -497,7 +581,7 @@ async fn test_admin_can_approve_app_session_request_for_local_identity() {
     let pending: serde_json::Value = pending_resp.json().await.unwrap();
     assert_eq!(
         pending.as_array().unwrap()[0]["requested_identity"],
-        serde_json::Value::Null
+        local_identity
     );
 
     let approve_resp = client
@@ -522,6 +606,1093 @@ async fn test_admin_can_approve_app_session_request_for_local_identity() {
     let approved: serde_json::Value = approve_resp.json().await.unwrap();
     assert_eq!(approved["status"], "active");
     assert_eq!(approved["identity"], local_identity);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_selected_local_identity_is_used_for_app_session_approval() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
+    let client = reqwest::Client::new();
+    let daemon_identity = handle.local_identity_address().unwrap().to_string();
+
+    let identities_resp = client
+        .get(format!("{}/admin/v1/identities", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(identities_resp.status(), 200);
+    let identities: serde_json::Value = identities_resp.json().await.unwrap();
+    assert_eq!(identities["active_identity"], daemon_identity);
+    assert_eq!(identities["identities"].as_array().unwrap().len(), 1);
+    assert_eq!(identities["identities"][0]["address"], daemon_identity);
+
+    let create_resp = client
+        .post(format!("{}/admin/v1/identities", base_url(port)))
+        .json(&serde_json::json!({ "label": "Work" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_resp.status(), 200);
+    let created: serde_json::Value = create_resp.json().await.unwrap();
+    let work_identity = created["address"].as_str().unwrap().to_string();
+    assert_ne!(work_identity, daemon_identity);
+    assert_eq!(created["label"], "Work");
+    assert_eq!(created["active"], false);
+
+    let select_resp = client
+        .post(format!("{}/admin/v1/identities/active", base_url(port)))
+        .json(&serde_json::json!({ "identity": work_identity }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(select_resp.status(), 200);
+    let selected: serde_json::Value = select_resp.json().await.unwrap();
+    assert_eq!(selected["active_identity"], work_identity);
+    assert_eq!(selected["identities"].as_array().unwrap().len(), 2);
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": null,
+            "requested_capabilities": ["resolve:public"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": null,
+            "capabilities": ["resolve:public"],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(approve_resp.status(), 200);
+    let approved: serde_json::Value = approve_resp.json().await.unwrap();
+    assert_eq!(approved["identity"], work_identity);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_app_grants_are_scoped_to_selected_local_identity() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
+    let client = reqwest::Client::new();
+    let daemon_identity = handle.local_identity_address().unwrap().to_string();
+
+    let create_resp = client
+        .post(format!("{}/admin/v1/identities", base_url(port)))
+        .json(&serde_json::json!({ "label": "Work" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_resp.status(), 200);
+    let created: serde_json::Value = create_resp.json().await.unwrap();
+    let work_identity = created["address"].as_str().unwrap().to_string();
+
+    let daemon_token = approve_app_session(
+        &client,
+        port,
+        &daemon_identity,
+        &["resolve:public", "fetch:public"],
+    )
+    .await;
+    assert!(!daemon_token.is_empty());
+
+    let select_work_resp = client
+        .post(format!("{}/admin/v1/identities/active", base_url(port)))
+        .json(&serde_json::json!({ "identity": work_identity }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(select_work_resp.status(), 200);
+
+    let work_token = approve_app_session(
+        &client,
+        port,
+        &work_identity,
+        &["resolve:public", "fetch:public"],
+    )
+    .await;
+    assert!(!work_token.is_empty());
+
+    let work_sessions_resp = client
+        .get(format!("{}/admin/v1/app-sessions", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(work_sessions_resp.status(), 200);
+    let work_sessions: serde_json::Value = work_sessions_resp.json().await.unwrap();
+    let work_sessions = work_sessions.as_array().unwrap();
+    assert_eq!(work_sessions.len(), 1);
+    assert_eq!(work_sessions[0]["identity"], work_identity);
+    let work_session_id = work_sessions[0]["session_id"].as_str().unwrap().to_string();
+
+    let select_daemon_resp = client
+        .post(format!("{}/admin/v1/identities/active", base_url(port)))
+        .json(&serde_json::json!({ "identity": daemon_identity }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(select_daemon_resp.status(), 200);
+
+    let daemon_sessions_resp = client
+        .get(format!("{}/admin/v1/app-sessions", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(daemon_sessions_resp.status(), 200);
+    let daemon_sessions: serde_json::Value = daemon_sessions_resp.json().await.unwrap();
+    let daemon_sessions = daemon_sessions.as_array().unwrap();
+    assert_eq!(daemon_sessions.len(), 1);
+    assert_eq!(daemon_sessions[0]["identity"], daemon_identity);
+    let daemon_session_id = daemon_sessions[0]["session_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let cross_identity_revoke = client
+        .post(format!(
+            "{}/admin/v1/app-sessions/{work_session_id}/revoke",
+            base_url(port)
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(cross_identity_revoke.status(), 404);
+
+    let revoke_daemon_resp = client
+        .post(format!(
+            "{}/admin/v1/app-sessions/{daemon_session_id}/revoke",
+            base_url(port)
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoke_daemon_resp.status(), 200);
+    let revoked_daemon: serde_json::Value = revoke_daemon_resp.json().await.unwrap();
+    assert_eq!(revoked_daemon["identity"], daemon_identity);
+    assert_eq!(revoked_daemon["status"], "revoked");
+
+    let select_work_again_resp = client
+        .post(format!("{}/admin/v1/identities/active", base_url(port)))
+        .json(&serde_json::json!({ "identity": work_identity }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(select_work_again_resp.status(), 200);
+
+    let work_sessions_resp = client
+        .get(format!("{}/admin/v1/app-sessions", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(work_sessions_resp.status(), 200);
+    let work_sessions: serde_json::Value = work_sessions_resp.json().await.unwrap();
+    let work_sessions = work_sessions.as_array().unwrap();
+    assert_eq!(work_sessions.len(), 1);
+    assert_eq!(work_sessions[0]["session_id"], work_session_id);
+    assert_eq!(work_sessions[0]["identity"], work_identity);
+    assert_eq!(work_sessions[0]["status"], "active");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_app_requests_are_scoped_to_selected_local_identity() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
+    let client = reqwest::Client::new();
+    let daemon_identity = handle.local_identity_address().unwrap().to_string();
+
+    let create_resp = client
+        .post(format!("{}/admin/v1/identities", base_url(port)))
+        .json(&serde_json::json!({ "label": "Work" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_resp.status(), 200);
+    let created: serde_json::Value = create_resp.json().await.unwrap();
+    let work_identity = created["address"].as_str().unwrap().to_string();
+
+    let select_work_resp = client
+        .post(format!("{}/admin/v1/identities/active", base_url(port)))
+        .json(&serde_json::json!({ "identity": work_identity }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(select_work_resp.status(), 200);
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": null,
+            "requested_capabilities": ["resolve:public"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let work_requests_resp = client
+        .get(format!("{}/admin/v1/app-requests", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(work_requests_resp.status(), 200);
+    let work_requests: serde_json::Value = work_requests_resp.json().await.unwrap();
+    let work_requests = work_requests.as_array().unwrap();
+    assert_eq!(work_requests.len(), 1);
+    assert_eq!(work_requests[0]["request_id"], request_id);
+    assert_eq!(work_requests[0]["requested_identity"], work_identity);
+    assert_eq!(work_requests[0]["status"], "pending");
+
+    let select_daemon_resp = client
+        .post(format!("{}/admin/v1/identities/active", base_url(port)))
+        .json(&serde_json::json!({ "identity": daemon_identity }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(select_daemon_resp.status(), 200);
+
+    let daemon_requests_resp = client
+        .get(format!("{}/admin/v1/app-requests", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(daemon_requests_resp.status(), 200);
+    let daemon_requests: serde_json::Value = daemon_requests_resp.json().await.unwrap();
+    assert_eq!(daemon_requests.as_array().unwrap().len(), 0);
+
+    let select_work_again_resp = client
+        .post(format!("{}/admin/v1/identities/active", base_url(port)))
+        .json(&serde_json::json!({ "identity": work_identity }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(select_work_again_resp.status(), 200);
+
+    let reject_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/reject",
+            base_url(port)
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reject_resp.status(), 200);
+
+    let rejected_requests_resp = client
+        .get(format!("{}/admin/v1/app-requests", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejected_requests_resp.status(), 200);
+    let rejected_requests: serde_json::Value = rejected_requests_resp.json().await.unwrap();
+    let rejected_requests = rejected_requests.as_array().unwrap();
+    assert_eq!(rejected_requests.len(), 1);
+    assert_eq!(rejected_requests[0]["request_id"], request_id);
+    assert_eq!(rejected_requests[0]["requested_identity"], work_identity);
+    assert_eq!(rejected_requests[0]["status"], "rejected");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_can_delete_generated_local_identity() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
+    let client = reqwest::Client::new();
+    let daemon_identity = handle.local_identity_address().unwrap().to_string();
+
+    let create_resp = client
+        .post(format!("{}/admin/v1/identities", base_url(port)))
+        .json(&serde_json::json!({ "label": "Work" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_resp.status(), 200);
+    let created: serde_json::Value = create_resp.json().await.unwrap();
+    let work_identity = created["address"].as_str().unwrap().to_string();
+
+    let select_resp = client
+        .post(format!("{}/admin/v1/identities/active", base_url(port)))
+        .json(&serde_json::json!({ "identity": work_identity }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(select_resp.status(), 200);
+
+    let delete_resp = client
+        .delete(format!(
+            "{}/admin/v1/identities/{}",
+            base_url(port),
+            work_identity
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(delete_resp.status(), 200);
+    let deleted: serde_json::Value = delete_resp.json().await.unwrap();
+    assert_eq!(deleted["active_identity"], daemon_identity);
+    assert_eq!(deleted["identities"].as_array().unwrap().len(), 1);
+    assert_eq!(deleted["identities"][0]["address"], daemon_identity);
+    assert_eq!(deleted["identities"][0]["active"], true);
+
+    let delete_daemon_resp = client
+        .delete(format!(
+            "{}/admin/v1/identities/{}",
+            base_url(port),
+            daemon_identity
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(delete_daemon_resp.status(), 400);
+    let body: serde_json::Value = delete_daemon_resp.json().await.unwrap();
+    assert_eq!(body["code"], "local_identity_protected");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_exports_selected_generated_local_identity_recovery_bundle() {
+    let profile = tempfile::tempdir().unwrap();
+    let (port, handle, _dir) =
+        start_test_server_with_profile_dir(profile.path().to_path_buf()).await;
+    let client = reqwest::Client::new();
+    let daemon_identity = handle.local_identity_address().unwrap().to_string();
+
+    let create_resp = client
+        .post(format!("{}/admin/v1/identities", base_url(port)))
+        .json(&serde_json::json!({ "label": "Work" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_resp.status(), 200);
+    let created: serde_json::Value = create_resp.json().await.unwrap();
+    let work_identity = created["address"].as_str().unwrap().to_string();
+    assert_ne!(work_identity, daemon_identity);
+
+    let export_resp = client
+        .post(format!("{}/admin/v1/identities/export", base_url(port)))
+        .json(&serde_json::json!({
+            "identity": work_identity,
+            "passphrase": "",
+            "label": "Work laptop"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(export_resp.status(), 200);
+    let exported: serde_json::Value = export_resp.json().await.unwrap();
+    assert_eq!(exported["identity"], work_identity);
+    assert_eq!(exported["bundle"]["identity"], work_identity);
+    assert_eq!(exported["encryption_key_count"], 0);
+
+    let daemon_export_resp = client
+        .post(format!("{}/admin/v1/identities/export", base_url(port)))
+        .json(&serde_json::json!({
+            "identity": daemon_identity,
+            "passphrase": "",
+            "label": "Default laptop"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(daemon_export_resp.status(), 200);
+    let daemon_exported: serde_json::Value = daemon_export_resp.json().await.unwrap();
+    assert_eq!(daemon_exported["identity"], daemon_identity);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_imports_identity_recovery_bundle_as_local_identity_without_replacing_daemon() {
+    let source_profile = tempfile::tempdir().unwrap();
+    let target_profile = tempfile::tempdir().unwrap();
+    let (source_port, source_handle, _source_holder) =
+        start_test_server_with_profile_dir(source_profile.path().to_path_buf()).await;
+    let client = reqwest::Client::new();
+    let source_identity = source_handle.local_identity_address().unwrap().to_string();
+    source_handle
+        .ensure_local_identity_encryption_key()
+        .await
+        .unwrap();
+
+    let export_resp = client
+        .post(format!(
+            "{}/admin/v1/identities/export",
+            base_url(source_port)
+        ))
+        .json(&serde_json::json!({
+            "passphrase": "",
+            "label": "Recovered"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(export_resp.status(), 200);
+    let exported: serde_json::Value = export_resp.json().await.unwrap();
+    let bundle = exported["bundle"].clone();
+
+    let (target_port, target_handle, _target_holder) =
+        start_test_server_with_profile_dir(target_profile.path().to_path_buf()).await;
+    let target_identity = target_handle.local_identity_address().unwrap().to_string();
+    assert_ne!(target_identity, source_identity);
+
+    let import_resp = client
+        .post(format!(
+            "{}/admin/v1/identities/import",
+            base_url(target_port)
+        ))
+        .json(&serde_json::json!({
+            "passphrase": "",
+            "bundle": bundle,
+            "as_local_identity": true
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(import_resp.status(), 200);
+    let imported: serde_json::Value = import_resp.json().await.unwrap();
+    assert_eq!(imported["identity"], source_identity);
+    assert_eq!(imported["imported"], true);
+    assert_eq!(imported["restart_required"], false);
+    assert_eq!(imported["app_sessions_imported"], false);
+
+    assert_eq!(
+        target_handle.status().await.unwrap().identity_address,
+        target_identity
+    );
+
+    let identities_resp = client
+        .get(format!("{}/admin/v1/identities", base_url(target_port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(identities_resp.status(), 200);
+    let identities: serde_json::Value = identities_resp.json().await.unwrap();
+    assert_eq!(identities["active_identity"], target_identity);
+    let identities = identities["identities"].as_array().unwrap();
+    assert_eq!(identities.len(), 2);
+    assert!(identities
+        .iter()
+        .any(|identity| identity["address"] == target_identity));
+    assert!(identities.iter().any(|identity| {
+        identity["address"] == source_identity && identity["label"] == "Recovered"
+    }));
+
+    target_handle.shutdown().await.ok();
+
+    let (restarted_port, restarted_handle, _restarted_holder) =
+        start_test_server_with_profile_dir(target_profile.path().to_path_buf()).await;
+    let identities_resp = client
+        .get(format!("{}/admin/v1/identities", base_url(restarted_port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(identities_resp.status(), 200);
+    let identities: serde_json::Value = identities_resp.json().await.unwrap();
+    assert!(identities["identities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|identity| identity["address"] == source_identity));
+
+    let reexport_resp = client
+        .post(format!(
+            "{}/admin/v1/identities/export",
+            base_url(restarted_port)
+        ))
+        .json(&serde_json::json!({
+            "identity": source_identity,
+            "passphrase": "recovered-again"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reexport_resp.status(), 200);
+    let reexported: serde_json::Value = reexport_resp.json().await.unwrap();
+    assert_eq!(reexported["encryption_key_count"], 1);
+
+    source_handle.shutdown().await.ok();
+    restarted_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_can_export_and_import_identity_recovery_bundle() {
+    let source_root = tempfile::tempdir().unwrap();
+    let target_root = tempfile::tempdir().unwrap();
+    let source_profile = source_root.path().join("source-profile");
+    let target_profile = target_root.path().join("target-profile");
+
+    let (source_port, source_handle, _source_holder) =
+        start_test_server_with_profile_dir(source_profile.clone()).await;
+    let client = reqwest::Client::new();
+    let source_identity = source_handle.status().await.unwrap().identity_address;
+    source_handle
+        .ensure_local_identity_encryption_key()
+        .await
+        .unwrap();
+
+    let source_token = approve_app_session(
+        &client,
+        source_port,
+        &source_identity,
+        &["resolve:public", "fetch:public"],
+    )
+    .await;
+    assert!(!source_token.is_empty());
+
+    let export_resp = client
+        .post(format!(
+            "{}/admin/v1/identities/export",
+            base_url(source_port)
+        ))
+        .json(&serde_json::json!({
+            "passphrase": "correct horse battery staple",
+            "label": "integration export"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(export_resp.status(), 200);
+    let exported: serde_json::Value = export_resp.json().await.unwrap();
+    assert_eq!(exported["identity"], source_identity);
+    assert_eq!(exported["encryption_key_count"], 1);
+    let bundle = exported["bundle"].clone();
+
+    let app_export_attempt = client
+        .post(format!(
+            "{}/app/v1/identities/export",
+            base_url(source_port)
+        ))
+        .bearer_auth(&source_token)
+        .json(&serde_json::json!({ "passphrase": "correct horse battery staple" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(app_export_attempt.status(), 404);
+
+    let (target_port, target_handle, _target_holder) =
+        start_test_server_with_profile_dir(target_profile.clone()).await;
+    let original_target_identity = target_handle.status().await.unwrap().identity_address;
+    assert_ne!(original_target_identity, source_identity);
+
+    let refused = client
+        .post(format!(
+            "{}/admin/v1/identities/import",
+            base_url(target_port)
+        ))
+        .json(&serde_json::json!({
+            "passphrase": "correct horse battery staple",
+            "bundle": bundle
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), 409);
+
+    let import_resp = client
+        .post(format!(
+            "{}/admin/v1/identities/import",
+            base_url(target_port)
+        ))
+        .json(&serde_json::json!({
+            "passphrase": "correct horse battery staple",
+            "bundle": bundle,
+            "allow_overwrite": true
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(import_resp.status(), 200);
+    let imported: serde_json::Value = import_resp.json().await.unwrap();
+    assert_eq!(imported["identity"], source_identity);
+    assert_eq!(imported["imported"], true);
+    assert_eq!(imported["restart_required"], true);
+    assert_eq!(imported["encryption_key_count"], 1);
+    assert_eq!(imported["app_sessions_imported"], false);
+
+    let target_sessions_before_restart = client
+        .get(format!("{}/admin/v1/app-sessions", base_url(target_port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(target_sessions_before_restart.status(), 200);
+    let target_sessions: serde_json::Value = target_sessions_before_restart.json().await.unwrap();
+    assert_eq!(target_sessions.as_array().unwrap().len(), 0);
+
+    target_handle.shutdown().await.ok();
+
+    let (restarted_port, restarted_handle, _restarted_holder) =
+        start_test_server_with_profile_dir(target_profile).await;
+    let restarted_identity = restarted_handle.status().await.unwrap().identity_address;
+    assert_eq!(restarted_identity, source_identity);
+
+    let sessions_after_restart = client
+        .get(format!(
+            "{}/admin/v1/app-sessions",
+            base_url(restarted_port)
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sessions_after_restart.status(), 200);
+    let sessions: serde_json::Value = sessions_after_restart.json().await.unwrap();
+    assert_eq!(sessions.as_array().unwrap().len(), 0);
+
+    let imported_token = approve_app_session(
+        &client,
+        restarted_port,
+        &source_identity,
+        &["publish:/app/*", "enumerate:self:/app/*", "fetch:public"],
+    )
+    .await;
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(br#"{"title":"portable identity"}"#.to_vec())
+                .file_name("record.json"),
+        )
+        .text("path", "/app/items/imported".to_string());
+    let appended = client
+        .post(format!("{}/app/v1/append", base_url(restarted_port)))
+        .bearer_auth(&imported_token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(appended.status(), 200);
+    let appended: serde_json::Value = appended.json().await.unwrap();
+    assert_eq!(
+        appended["address"],
+        format!("{source_identity}/app/items/imported")
+    );
+
+    let enumerated = client
+        .post(format!("{}/app/v1/enumerate", base_url(restarted_port)))
+        .bearer_auth(&imported_token)
+        .json(&serde_json::json!({
+            "identity": source_identity,
+            "path_prefix": "/app/items/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(enumerated.status(), 200);
+    let records: serde_json::Value = enumerated.json().await.unwrap();
+    let records = records.as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["path"], "/app/items/imported");
+
+    source_handle.shutdown().await.ok();
+    restarted_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_can_authorize_and_revoke_local_device() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let daemon_identity = handle.status().await.unwrap().identity_address;
+
+    let initial_resp = client
+        .get(format!("{}/admin/v1/device-authority", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(initial_resp.status(), 200);
+    let initial: serde_json::Value = initial_resp.json().await.unwrap();
+    assert_eq!(initial["identity"], daemon_identity);
+    assert_eq!(initial["latest_sequence"], 0);
+    assert_eq!(initial["devices"].as_array().unwrap().len(), 1);
+    assert_eq!(initial["devices"][0]["device_id"], "dev_legacy_root");
+    assert_eq!(initial["devices"][0]["status"], "active");
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Laptop" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+    let authorized: serde_json::Value = authorize_resp.json().await.unwrap();
+    assert_eq!(authorized["identity"], daemon_identity);
+    assert_eq!(authorized["latest_sequence"], 1);
+    let generated_device_id = authorized["device"]["device_id"].as_str().unwrap();
+    assert_ne!(generated_device_id, "dev_legacy_root");
+    assert_eq!(authorized["device"]["label"], "Laptop");
+    assert_eq!(authorized["device"]["status"], "active");
+    assert_eq!(
+        authorized["device"]["encryption_keys"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let revoke_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/{generated_device_id}/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 3,
+            "reason": "lost_device"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoke_resp.status(), 200);
+    let revoked: serde_json::Value = revoke_resp.json().await.unwrap();
+    assert_eq!(revoked["latest_sequence"], 2);
+    assert_eq!(revoked["device"]["device_id"], generated_device_id);
+    assert_eq!(revoked["device"]["status"], "revoked");
+    assert_eq!(revoked["device"]["accepted_through_device_sequence"], 3);
+
+    let resolve_resp = client
+        .post(format!("{}/api/v1/resolve", base_url(port)))
+        .json(&serde_json::json!({
+            "address": format!("{daemon_identity}{IDENTITY_AUTHORITY_PATH}")
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resolve_resp.status(), 200);
+    let resolved: serde_json::Value = resolve_resp.json().await.unwrap();
+    assert_eq!(resolved["path"], IDENTITY_AUTHORITY_PATH);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_encrypted_publish_excludes_revoked_authorized_devices() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+
+    let revoked_device_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Lost phone" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoked_device_resp.status(), 200);
+    let revoked_device: serde_json::Value = revoked_device_resp.json().await.unwrap();
+    let revoked_device_id = revoked_device["device"]["device_id"].as_str().unwrap();
+
+    let active_device_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Replacement phone" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(active_device_resp.status(), 200);
+
+    let revoke_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/{revoked_device_id}/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 0,
+            "reason": "lost_device"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoke_resp.status(), 200);
+
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/pastes/*",
+            "decrypt:/pastes/*",
+            "publish:encrypted:/pastes/*",
+        ],
+    )
+    .await;
+
+    let publish_resp = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/pastes/revoked-excluded",
+            "plaintext": b"not for revoked devices".to_vec(),
+            "content_type": "text/plain",
+            "recipients": []
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    assert_eq!(published["recipient_count"], 2);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_list_is_idempotent() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let daemon_identity = handle.status().await.unwrap().identity_address;
+
+    let first_resp = client
+        .get(format!("{}/admin/v1/device-authority", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first_resp.status(), 200);
+    let first: serde_json::Value = first_resp.json().await.unwrap();
+    assert_eq!(first["identity"], daemon_identity);
+    assert_eq!(first["latest_sequence"], 0);
+    assert_eq!(first["devices"].as_array().unwrap().len(), 1);
+
+    let second_resp = client
+        .get(format!("{}/admin/v1/device-authority", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second_resp.status(), 200);
+    let second: serde_json::Value = second_resp.json().await.unwrap();
+    assert_eq!(second["identity"], first["identity"]);
+    assert_eq!(second["latest_sequence"], first["latest_sequence"]);
+    assert_eq!(second["devices"], first["devices"]);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_rejects_unknown_device_revocation() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let revoke_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/dev_missing/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 3,
+            "reason": "not_authorized"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(revoke_resp.status(), 400);
+    let body: serde_json::Value = revoke_resp.json().await.unwrap();
+    assert_eq!(body["code"], "device_authority_invalid");
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("cannot revoke unknown device dev_missing"));
+
+    let authority_resp = client
+        .get(format!("{}/admin/v1/device-authority", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authority_resp.status(), 200);
+    let authority: serde_json::Value = authority_resp.json().await.unwrap();
+    assert_eq!(authority["latest_sequence"], 0);
+    assert_eq!(authority["devices"].as_array().unwrap().len(), 1);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_can_continue_after_rejected_revocation() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let rejected_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/dev_missing/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 3,
+            "reason": "not_authorized"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejected_resp.status(), 400);
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Recovered laptop" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+    let authorized: serde_json::Value = authorize_resp.json().await.unwrap();
+    assert_eq!(authorized["latest_sequence"], 1);
+    assert_eq!(authorized["devices"].as_array().unwrap().len(), 2);
+    let generated_device_id = authorized["device"]["device_id"].as_str().unwrap();
+
+    let revoke_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/{generated_device_id}/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 4,
+            "reason": "rotated"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoke_resp.status(), 200);
+    let revoked: serde_json::Value = revoke_resp.json().await.unwrap();
+    assert_eq!(revoked["latest_sequence"], 2);
+    assert_eq!(revoked["device"]["status"], "revoked");
+    assert_eq!(revoked["device"]["accepted_through_device_sequence"], 4);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_cannot_grant_publish_capability_to_non_daemon_identity() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
+    let client = reqwest::Client::new();
+
+    let create_resp = client
+        .post(format!("{}/admin/v1/identities", base_url(port)))
+        .json(&serde_json::json!({ "label": "Work" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_resp.status(), 200);
+    let created: serde_json::Value = create_resp.json().await.unwrap();
+    let work_identity = created["address"].as_str().unwrap().to_string();
+
+    let select_resp = client
+        .post(format!("{}/admin/v1/identities/active", base_url(port)))
+        .json(&serde_json::json!({ "identity": work_identity }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(select_resp.status(), 200);
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": null,
+            "requested_capabilities": ["publish:/pastes/*"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": null,
+            "capabilities": [],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(approve_resp.status(), 400);
+    let body: serde_json::Value = approve_resp.json().await.unwrap();
+    assert_eq!(body["code"], "app_session_identity_not_signable");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_cannot_grant_publish_capability_to_unknown_identity() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
+    let client = reqwest::Client::new();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": "wrongidentity.jolt",
+            "requested_capabilities": ["publish:/pastes/*"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": "wrongidentity.jolt",
+            "capabilities": ["publish:/pastes/*"],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(approve_resp.status(), 400);
+    let body: serde_json::Value = approve_resp.json().await.unwrap();
+    assert_eq!(body["code"], "app_session_identity_not_signable");
 
     handle.shutdown().await.ok();
 }
@@ -654,13 +1825,14 @@ async fn test_admin_cannot_approve_forbidden_app_session_capabilities() {
 async fn test_admin_cannot_approve_capabilities_beyond_app_request() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
 
     let request_resp = client
         .post(format!("{}/app/v1/sessions/request", base_url(port)))
         .json(&serde_json::json!({
             "app_id": "pastey.local",
             "app_name": "Pastey",
-            "requested_identity": "alice-public.jolt",
+            "requested_identity": identity,
             "requested_capabilities": [
                 "publish:/pastes/*"
             ]
@@ -678,7 +1850,7 @@ async fn test_admin_cannot_approve_capabilities_beyond_app_request() {
             base_url(port)
         ))
         .json(&serde_json::json!({
-            "identity": "alice-public.jolt",
+            "identity": identity,
             "capabilities": [
                 "publish:/drops/*"
             ],
@@ -703,13 +1875,14 @@ async fn test_admin_cannot_approve_capabilities_beyond_app_request() {
 async fn test_admin_can_approve_narrower_path_scope_than_app_requested() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
 
     let request_resp = client
         .post(format!("{}/app/v1/sessions/request", base_url(port)))
         .json(&serde_json::json!({
             "app_id": "pastey.local",
             "app_name": "Pastey",
-            "requested_identity": "alice-public.jolt",
+            "requested_identity": identity,
             "requested_capabilities": [
                 "publish:/pastes/*"
             ]
@@ -727,7 +1900,7 @@ async fn test_admin_can_approve_narrower_path_scope_than_app_requested() {
             base_url(port)
         ))
         .json(&serde_json::json!({
-            "identity": "alice-public.jolt",
+            "identity": identity,
             "capabilities": [
                 "publish:/pastes/public"
             ],
@@ -748,13 +1921,14 @@ async fn test_admin_can_approve_narrower_path_scope_than_app_requested() {
 async fn test_admin_cannot_approve_malformed_path_scope_capabilities() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
 
     let request_resp = client
         .post(format!("{}/app/v1/sessions/request", base_url(port)))
         .json(&serde_json::json!({
             "app_id": "pastey.local",
             "app_name": "Pastey",
-            "requested_identity": "alice-public.jolt",
+            "requested_identity": identity,
             "requested_capabilities": [
                 "publish:/pastes*"
             ]
@@ -772,7 +1946,7 @@ async fn test_admin_cannot_approve_malformed_path_scope_capabilities() {
             base_url(port)
         ))
         .json(&serde_json::json!({
-            "identity": "alice-public.jolt",
+            "identity": identity,
             "capabilities": [
                 "publish:/pastes*"
             ],
@@ -864,7 +2038,9 @@ async fn test_app_can_poll_approved_session_request() {
 
 #[tokio::test]
 async fn test_admin_can_reject_app_session_request() {
-    let (port, handle, _dir) = start_test_server().await;
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
     let client = reqwest::Client::new();
 
     let request_resp = client
@@ -895,29 +2071,34 @@ async fn test_admin_can_reject_app_session_request() {
     assert_eq!(rejected["request_id"], request_id);
     assert_eq!(rejected["status"], "rejected");
 
-    let pending_resp = client
+    let requests_resp = client
         .get(format!("{}/admin/v1/app-requests", base_url(port)))
         .send()
         .await
         .unwrap();
-    assert_eq!(pending_resp.status(), 200);
-    let pending: serde_json::Value = pending_resp.json().await.unwrap();
-    assert_eq!(pending.as_array().unwrap().len(), 0);
+    assert_eq!(requests_resp.status(), 200);
+    let requests: serde_json::Value = requests_resp.json().await.unwrap();
+    assert_eq!(requests.as_array().unwrap().len(), 1);
+    assert_eq!(requests[0]["request_id"], request_id);
+    assert_eq!(requests[0]["status"], "rejected");
 
     handle.shutdown().await.ok();
 }
 
 #[tokio::test]
 async fn test_admin_can_revoke_active_app_session() {
-    let (port, handle, _dir) = start_test_server().await;
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
     let client = reqwest::Client::new();
+    let local_identity = handle.local_identity_address().unwrap().to_string();
 
     let request_resp = client
         .post(format!("{}/app/v1/sessions/request", base_url(port)))
         .json(&serde_json::json!({
             "app_id": "pastey.local",
             "app_name": "Pastey",
-            "requested_identity": "alice-public.jolt",
+            "requested_identity": local_identity,
             "requested_capabilities": ["resolve:public"]
         }))
         .send()
@@ -933,7 +2114,7 @@ async fn test_admin_can_revoke_active_app_session() {
             base_url(port)
         ))
         .json(&serde_json::json!({
-            "identity": "alice-public.jolt",
+            "identity": local_identity,
             "capabilities": ["resolve:public"],
             "expires_at": null
         }))
@@ -974,15 +2155,18 @@ async fn test_admin_can_revoke_active_app_session() {
 
 #[tokio::test]
 async fn test_revoked_app_session_token_is_rejected() {
-    let (port, handle, _dir) = start_test_server().await;
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
     let client = reqwest::Client::new();
+    let local_identity = handle.local_identity_address().unwrap().to_string();
 
     let request_resp = client
         .post(format!("{}/app/v1/sessions/request", base_url(port)))
         .json(&serde_json::json!({
             "app_id": "pastey.local",
             "app_name": "Pastey",
-            "requested_identity": "alice-public.jolt",
+            "requested_identity": local_identity,
             "requested_capabilities": ["resolve:public"]
         }))
         .send()
@@ -998,7 +2182,7 @@ async fn test_revoked_app_session_token_is_rejected() {
             base_url(port)
         ))
         .json(&serde_json::json!({
-            "identity": "alice-public.jolt",
+            "identity": local_identity,
             "capabilities": ["resolve:public"],
             "expires_at": null
         }))
@@ -1055,6 +2239,80 @@ async fn test_revoked_app_session_token_is_rejected() {
 }
 
 #[tokio::test]
+async fn test_revoking_local_device_revokes_its_app_sessions() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let session_path = session_dir.path().join("app-sessions.json");
+    let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
+    let client = reqwest::Client::new();
+    let local_identity = handle.local_identity_address().unwrap().to_string();
+
+    let request_resp = client
+        .post(format!("{}/app/v1/sessions/request", base_url(port)))
+        .json(&serde_json::json!({
+            "app_id": "pastey.local",
+            "app_name": "Pastey",
+            "requested_identity": local_identity,
+            "requested_capabilities": ["resolve:public"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request_resp.status(), 200);
+    let requested: serde_json::Value = request_resp.json().await.unwrap();
+    let request_id = requested["request_id"].as_str().unwrap();
+
+    let approve_resp = client
+        .post(format!(
+            "{}/admin/v1/app-requests/{request_id}/approve",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "identity": local_identity,
+            "capabilities": ["resolve:public"],
+            "expires_at": null
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(approve_resp.status(), 200);
+    let approved: serde_json::Value = approve_resp.json().await.unwrap();
+    let session_token = approved["session_token"].as_str().unwrap();
+    assert_eq!(approved["device_id"], "dev_legacy_root");
+
+    let current_resp = client
+        .get(format!("{}/app/v1/session", base_url(port)))
+        .bearer_auth(session_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(current_resp.status(), 200);
+
+    let revoke_device_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/dev_legacy_root/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 0,
+            "reason": "test_device_revocation"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoke_device_resp.status(), 200);
+
+    let revoked_current_resp = client
+        .get(format!("{}/app/v1/session", base_url(port)))
+        .bearer_auth(session_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoked_current_resp.status(), 401);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_publish_requires_session_and_path_capability() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
@@ -1066,8 +2324,6 @@ async fn test_app_publish_requires_session_and_path_capability() {
         &["publish:/pastes/*", "inventory:/pastes/*"],
     )
     .await;
-    let wrong_identity_token =
-        approve_app_session(&client, port, "wrongidentity.jolt", &["publish:/pastes/*"]).await;
 
     let unauthorized_form = reqwest::multipart::Form::new()
         .part(
@@ -1113,21 +2369,6 @@ async fn test_app_publish_requires_session_and_path_capability() {
         .unwrap();
     assert_eq!(escaped.status(), 400);
 
-    let wrong_identity_form = reqwest::multipart::Form::new()
-        .part(
-            "file",
-            reqwest::multipart::Part::bytes(b"wrong identity".to_vec()).file_name("wrong.txt"),
-        )
-        .text("path", "/pastes/wrong");
-    let wrong_identity = client
-        .post(format!("{}/app/v1/publish", base_url(port)))
-        .bearer_auth(&wrong_identity_token)
-        .multipart(wrong_identity_form)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(wrong_identity.status(), 403);
-
     let allowed_form = reqwest::multipart::Form::new()
         .part(
             "file",
@@ -1145,6 +2386,266 @@ async fn test_app_publish_requires_session_and_path_capability() {
     let published: serde_json::Value = allowed.json().await.unwrap();
     assert_eq!(published["path"], "/pastes/one");
     assert_eq!(published["address"], format!("{identity}/pastes/one"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_can_append_and_enumerate_records_by_prefix() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &["publish:/app/*", "enumerate:self:/app/*"],
+    )
+    .await;
+
+    for (path, body) in [
+        ("/app/items/1", b"record one".as_slice()),
+        ("/app/items/2", b"record two".as_slice()),
+        ("/app/other/x", b"unrelated".as_slice()),
+    ] {
+        let form = reqwest::multipart::Form::new()
+            .part(
+                "file",
+                reqwest::multipart::Part::bytes(body.to_vec()).file_name("record.json"),
+            )
+            .text("path", path.to_string());
+        let appended = client
+            .post(format!("{}/app/v1/append", base_url(port)))
+            .bearer_auth(&token)
+            .multipart(form)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(appended.status(), 200);
+        let value: serde_json::Value = appended.json().await.unwrap();
+        assert_eq!(value["path"], path);
+    }
+
+    let enumerated = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "identity": identity,
+            "path_prefix": "/app/items/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(enumerated.status(), 200);
+    let records: serde_json::Value = enumerated.json().await.unwrap();
+    let records = records.as_array().unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["path"], "/app/items/1");
+    assert_eq!(records[1]["path"], "/app/items/2");
+    assert!(!records[0]["content_id"].as_str().unwrap().is_empty());
+
+    let outside_path = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "identity": identity,
+            "path_prefix": "/spoke/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(outside_path.status(), 403);
+
+    // Generic public resolution does not imply append-record enumeration.
+    let no_read_token = approve_app_session(&client, port, &identity, &["resolve:public"]).await;
+    let denied = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&no_read_token)
+        .json(&serde_json::json!({
+            "identity": identity,
+            "path_prefix": "/app/items/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 403);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_any_enumeration_is_path_scoped_across_identities() {
+    let (port, handle, _dir) = start_test_server().await;
+    let session_identity = handle.status().await.unwrap().identity_address;
+    let remote_root = NodeIdentity::generate();
+    let remote_device = NodeIdentity::generate();
+    let remote_identity = remote_root.identity_id();
+    let content_id = ContentId::from_bytes(b"remote spoke record");
+    let remote_log = vec![DeviceWriterLogEntry::genesis(
+        remote_identity.clone(),
+        "dev_remote",
+        DeviceWriterOperation::set_path(
+            "/spoke/posts/one",
+            content_id,
+            DeviceWriterPathMode::Append,
+        ),
+        100,
+        |bytes| remote_device.sign(bytes),
+    )
+    .unwrap()];
+    handle
+        .store_device_writer_logs(
+            remote_identity.clone(),
+            vec![device_authority_record(
+                &remote_root,
+                &remote_device,
+                "dev_remote",
+            )],
+            vec![remote_log],
+        )
+        .await
+        .unwrap();
+
+    let client = reqwest::Client::new();
+    let any_token = approve_app_session(
+        &client,
+        port,
+        &session_identity,
+        &["enumerate:any:/spoke/*"],
+    )
+    .await;
+    let allowed = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&any_token)
+        .json(&serde_json::json!({
+            "identity": remote_identity.to_string(),
+            "path_prefix": "/spoke/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(allowed.status(), 200);
+    assert_eq!(
+        allowed
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let self_token = approve_app_session(
+        &client,
+        port,
+        &session_identity,
+        &["enumerate:self:/spoke/*"],
+    )
+    .await;
+    let denied = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&self_token)
+        .json(&serde_json::json!({
+            "identity": remote_identity.to_string(),
+            "path_prefix": "/spoke/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 403);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_can_encrypt_append_and_enumerate_records_by_prefix() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Tablet" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/app/private/*",
+            "decrypt:/app/private/*",
+            "publish:encrypted:/app/private/*",
+            "enumerate:self:/app/private/*",
+        ],
+    )
+    .await;
+
+    let append_resp = client
+        .post(format!("{}/app/v1/encrypted/append", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/app/private/items/1",
+            "plaintext": b"private record one".to_vec(),
+            "content_type": "application/json",
+            "recipients": [identity]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(append_resp.status(), 200);
+    let appended: serde_json::Value = append_resp.json().await.unwrap();
+    assert_eq!(appended["path"], "/app/private/items/1");
+    assert!(appended["content_id"].as_str().unwrap().len() > 0);
+    assert_eq!(appended["recipient_count"], 2);
+
+    let enumerated = client
+        .post(format!("{}/app/v1/enumerate", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "identity": identity,
+            "path_prefix": "/app/private/items/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(enumerated.status(), 200);
+    let records: serde_json::Value = enumerated.json().await.unwrap();
+    let records = records.as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["path"], "/app/private/items/1");
+    assert_eq!(records[0]["content_id"], appended["content_id"]);
+
+    let open_resp = client
+        .post(format!("{}/app/v1/encrypted/open", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "target": appended["content_id"],
+            "path": records[0]["path"],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(open_resp.status(), 200);
+    let opened: serde_json::Value = open_resp.json().await.unwrap();
+    assert_eq!(opened["status"], "decrypted");
+    assert_eq!(opened["content_id"], appended["content_id"]);
+    assert_eq!(opened["path"], "/app/private/items/1");
+    assert_eq!(opened["content_type"], "application/json");
+    let plaintext: Vec<u8> = opened["plaintext"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(plaintext, b"private record one");
 
     handle.shutdown().await.ok();
 }
@@ -1402,6 +2903,238 @@ async fn test_app_can_encrypt_publish_self_only_private_content() {
 }
 
 #[tokio::test]
+async fn test_app_encrypts_self_private_content_for_active_authorized_devices() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Phone" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/pastes/*",
+            "decrypt:/pastes/*",
+            "publish:encrypted:/pastes/*",
+        ],
+    )
+    .await;
+
+    let publish_resp = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/pastes/device-wrapped",
+            "plaintext": b"follows future devices".to_vec(),
+            "content_type": "text/plain",
+            "recipients": []
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    assert_eq!(published["recipient_count"], 2);
+
+    let fetch_resp = client
+        .post(format!("{}/api/v1/fetch", base_url(port)))
+        .json(&serde_json::json!({ "target": published["content_id"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(fetch_resp.status(), 200);
+    let fetched: serde_json::Value = fetch_resp.json().await.unwrap();
+    let envelope_bytes: Vec<u8> = fetched["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    let envelope = EncryptedObjectEnvelope::from_bytes(&envelope_bytes).unwrap();
+    assert_eq!(envelope.body.recipients.len(), 2);
+    let recipient_identity = JoltAddress::from_str(&identity).unwrap().identity().clone();
+    assert!(envelope
+        .body
+        .recipients
+        .iter()
+        .all(|recipient| recipient.recipient_identity == recipient_identity));
+
+    let decrypt_resp = client
+        .post(format!("{}/app/v1/encrypted/decrypt", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "target": published["address"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(decrypt_resp.status(), 200);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_open_reports_historical_private_content_needs_rewrap() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/pastes/*",
+            "decrypt:/pastes/*",
+            "publish:encrypted:/pastes/*",
+        ],
+    )
+    .await;
+
+    let publish_resp = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/pastes/historical",
+            "plaintext": b"before phone auth".to_vec(),
+            "content_type": "text/plain",
+            "recipients": []
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let published: serde_json::Value = publish_resp.json().await.unwrap();
+    assert_eq!(published["recipient_count"], 1);
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Phone" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+
+    let open_resp = client
+        .post(format!("{}/app/v1/encrypted/open", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "target": published["content_id"],
+            "path": "/pastes/historical"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(open_resp.status(), 200);
+    let opened: serde_json::Value = open_resp.json().await.unwrap();
+    assert_eq!(opened["status"], "decrypted");
+    assert_eq!(opened["access_status"], "needs_rewrap");
+    let plaintext: Vec<u8> = opened["plaintext"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(plaintext, b"before phone auth");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_can_rewrap_historical_private_content_for_authorized_devices() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &[
+            "encrypt:/pastes/*",
+            "decrypt:/pastes/*",
+            "publish:encrypted:/pastes/*",
+        ],
+    )
+    .await;
+
+    let publish_resp = client
+        .post(format!("{}/app/v1/encrypted/publish", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": "/pastes/rewrap-me",
+            "plaintext": b"rewrap this private paste".to_vec(),
+            "content_type": "text/plain",
+            "recipients": []
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish_resp.status(), 200);
+    let original: serde_json::Value = publish_resp.json().await.unwrap();
+    assert_eq!(original["recipient_count"], 1);
+
+    let authorize_resp = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Phone" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorize_resp.status(), 200);
+
+    let rewrap_resp = client
+        .post(format!("{}/app/v1/encrypted/rewrap", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "target": original["content_id"],
+            "path": "/pastes/rewrap-me"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rewrap_resp.status(), 200);
+    let rewrapped: serde_json::Value = rewrap_resp.json().await.unwrap();
+    assert_eq!(rewrapped["path"], "/pastes/rewrap-me");
+    assert_ne!(rewrapped["content_id"], original["content_id"]);
+    assert_eq!(rewrapped["recipient_count"], 2);
+
+    let open_resp = client
+        .post(format!("{}/app/v1/encrypted/open", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "target": rewrapped["address"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(open_resp.status(), 200);
+    let opened: serde_json::Value = open_resp.json().await.unwrap();
+    assert_eq!(opened["status"], "decrypted");
+    assert_eq!(opened["access_status"], "available");
+    let plaintext: Vec<u8> = opened["plaintext"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    assert_eq!(plaintext, b"rewrap this private paste");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_can_open_encrypted_content_with_one_daemon_call() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
@@ -1517,6 +3250,7 @@ async fn test_app_open_encrypted_content_returns_ciphertext_for_non_recipient() 
     assert_eq!(open_resp.status(), 200);
     let opened: serde_json::Value = open_resp.json().await.unwrap();
     assert_eq!(opened["status"], "ciphertext");
+    assert_eq!(opened["access_status"], "not_accessible");
     assert_eq!(opened["content_id"], published["content_id"]);
     assert_eq!(opened["path"], "/pastes/not-for-me");
     assert!(opened["plaintext"].is_null());
@@ -1817,8 +3551,18 @@ async fn test_app_pin_requires_own_published_content_in_granted_prefix() {
 async fn test_app_sessions_persist_across_server_restart() {
     let session_dir = tempfile::tempdir().unwrap();
     let session_path = session_dir.path().join("app-sessions.json");
-    let (first_port, first_handle, _first_dir) =
-        start_test_server_with_session_path(session_path.clone()).await;
+    let identity_dir = tempfile::tempdir().unwrap();
+    let identity = NodeIdentity::generate();
+    identity.save(identity_dir.path()).unwrap();
+    let first_identity = NodeIdentity::load(identity_dir.path()).unwrap();
+    let local_identity = first_identity.jolt_address().to_string();
+    let first_store_dir = tempfile::tempdir().unwrap();
+    let (first_port, first_handle, _first_dir) = start_test_server_with_identity_and_session_path(
+        first_identity,
+        session_path.clone(),
+        first_store_dir,
+    )
+    .await;
     let client = reqwest::Client::new();
 
     let request_resp = client
@@ -1826,7 +3570,7 @@ async fn test_app_sessions_persist_across_server_restart() {
         .json(&serde_json::json!({
             "app_id": "pastey.local",
             "app_name": "Pastey",
-            "requested_identity": "alice-public.jolt",
+            "requested_identity": local_identity,
             "requested_capabilities": ["resolve:public"]
         }))
         .send()
@@ -1842,7 +3586,7 @@ async fn test_app_sessions_persist_across_server_restart() {
             base_url(first_port)
         ))
         .json(&serde_json::json!({
-            "identity": "alice-public.jolt",
+            "identity": local_identity,
             "capabilities": ["resolve:public"],
             "expires_at": null
         }))
@@ -1856,8 +3600,15 @@ async fn test_app_sessions_persist_across_server_restart() {
 
     first_handle.shutdown().await.ok();
 
+    let second_identity = NodeIdentity::load(identity_dir.path()).unwrap();
+    let second_store_dir = tempfile::tempdir().unwrap();
     let (second_port, second_handle, _second_dir) =
-        start_test_server_with_session_path(session_path).await;
+        start_test_server_with_identity_and_session_path(
+            second_identity,
+            session_path,
+            second_store_dir,
+        )
+        .await;
     let sessions_resp = client
         .get(format!("{}/admin/v1/app-sessions", base_url(second_port)))
         .send()
@@ -1870,7 +3621,7 @@ async fn test_app_sessions_persist_across_server_restart() {
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0]["session_id"], session_id);
     assert_eq!(sessions[0]["status"], "active");
-    assert_eq!(sessions[0]["identity"], "alice-public.jolt");
+    assert_eq!(sessions[0]["identity"], local_identity);
     assert!(sessions[0].get("session_token").is_none());
     assert!(sessions[0].get("token_hash").is_none());
 
@@ -2313,6 +4064,55 @@ async fn test_resolve_endpoint_uses_verified_update_log_cache() {
     assert_eq!(body["content_id"], content_id.to_string());
     assert_eq!(body["reachability_hints"].as_array().unwrap().len(), 0);
     assert_eq!(body["source"], "cache");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_resolve_endpoint_uses_verified_device_writer_cache() {
+    let (port, handle, _dir) = start_test_server().await;
+    let root = NodeIdentity::generate();
+    let laptop = NodeIdentity::generate();
+    let identity = root.identity_id();
+    let device_id = "dev_laptop";
+    let authority = vec![device_authority_record(&root, &laptop, device_id)];
+    let content_id = ContentId::from_bytes(b"device writer profile via api");
+    let device_log = vec![DeviceWriterLogEntry::genesis(
+        identity.clone(),
+        device_id,
+        DeviceWriterOperation::set_path(
+            "/profile",
+            content_id.clone(),
+            DeviceWriterPathMode::Singleton,
+        ),
+        100,
+        |bytes| laptop.sign(bytes),
+    )
+    .unwrap()];
+    let address = JoltAddress::new(identity.clone(), "/profile").unwrap();
+
+    handle
+        .store_device_writer_logs(identity.clone(), authority, vec![device_log])
+        .await
+        .unwrap();
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/api/v1/resolve", base_url(port)))
+        .json(&serde_json::json!({ "address": address.to_string() }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["address"], address.to_string());
+    assert_eq!(body["identity"], identity.to_string());
+    assert_eq!(body["path"], "/profile");
+    assert_eq!(body["latest_sequence"], 0);
+    assert_eq!(body["content_id"], content_id.to_string());
+    assert_eq!(body["reachability_hints"].as_array().unwrap().len(), 0);
+    assert_eq!(body["source"], "device_writer_cache");
 
     handle.shutdown().await.ok();
 }
@@ -3924,7 +5724,7 @@ async fn test_publish_endpoint_can_bind_content_to_jolt_path() {
     assert_eq!(resolved["path"], path);
     assert_eq!(resolved["content_id"], content_id.to_string());
     assert_eq!(resolved["latest_sequence"], 0);
-    assert_eq!(resolved["source"], "cache");
+    assert_eq!(resolved["source"], "device_writer_cache");
 
     handle.shutdown().await.ok();
 }

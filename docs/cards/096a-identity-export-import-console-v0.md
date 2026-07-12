@@ -1,0 +1,190 @@
+# 096a: Identity Export/Import and Console Recovery v0
+
+**Type:** AFK after design  
+**Milestone:** Identity and Device Sprint  
+**Status:** Implemented in PR
+**Blocked by:** 048, 096
+
+## Why
+
+Card 096 makes app indexes follow an identity, but users still need an honest way
+to carry that identity to another daemon or recover it on another machine.
+
+For v0, Jolt should support deliberate, admin-only identity recovery:
+
+```text
+export identity from Console or CLI;
+optionally protect the export with a passphrase;
+import it into another daemon profile;
+approve apps again on that device;
+see identity-scoped app data resolve through the normal app/index path.
+```
+
+This is not the final multi-device security model. Copying the root identity key
+means every imported daemon can fully act as that identity. The product must say
+that plainly while still giving users a usable recovery path.
+
+## What to Build
+
+Implement the card 048 design as a user-facing recovery flow:
+
+- encrypted identity export bundle format;
+- CLI export/import commands;
+- admin-only daemon API for export/import;
+- Console export/import UX with native save/open file dialogs;
+- import validation against public key, derived identity ID, and encryption key
+  material;
+- storage through the normal local identity/key paths, not ad hoc file copying;
+- no app-session export/import;
+- no automatic app approval after import;
+- smoke verification that an imported identity can approve an app and resolve
+  identity-scoped app data.
+
+## Acceptance Criteria
+
+- [x] `jolt identity export --out <file>` writes an identity recovery bundle;
+      the passphrase is optional, so a no-passphrase file must be treated like
+      an unencrypted private SSH key.
+- [x] `jolt identity import --from <file>` imports the bundle into a daemon
+      profile after validating the decrypted identity material.
+- [x] The admin API exposes export/import routes that are unavailable to normal
+      app sessions.
+- [x] Console can export the active identity through a native save dialog
+      instead of a text box or browser download workaround.
+- [x] Console can import an identity bundle through a native open dialog as a
+      local identity without replacing the daemon/default identity.
+- [x] The export includes signing key material and local identity encryption
+      private keys needed for existing private objects.
+- [x] Imported identities do not import app sessions and do not auto-approve
+      apps.
+- [x] A two-profile smoke path proves an imported identity can approve a test app
+      after daemon restart and publish/enumerate the same identity-scoped app
+      index path.
+- [x] Docs explain that v0 export/import is recovery/shared-key portability, not
+      revocable delegated device authorization.
+
+## Non-Goals
+
+- Cloud backup.
+- Normal app capability to export keys.
+- Silent background identity sync.
+- Solving per-device root-key revocation.
+- Historical private-content rewrap for newly authorized devices; that remains
+  card 097.
+
+## Notes
+
+This card should preserve the safety language from
+[Identity Import and Export v0](../18-identity-import-export.md):
+
+```text
+Anyone with the export file can become this identity unless you add a passphrase.
+```
+
+For the current SSH-key-style UX, the passphrase is optional. If no passphrase
+is set, the export file alone is enough to become the identity.
+
+The safer long-term model is delegated device authorization, where a new device
+gets its own revocable writer/decrypt authority instead of receiving the root
+identity key. This card is the pragmatic recovery bridge needed before app data
+following can feel real to users.
+
+## Verification
+
+- Red: `cargo test -p jolt-identity export_bundle -- --nocapture` failed before
+  `NodeIdentity` exposed signing-key import/export helpers.
+- Red: `cargo test -p jolt-server test_admin_can_export_and_import_identity_recovery_bundle --test api_integration -- --nocapture`
+  failed before the identity recovery API was re-exported and wired.
+- Green: `cargo test -p jolt-identity export_bundle -- --nocapture`
+- Green: `cargo test -p jolt-node parse_identity_export_import_commands --bin jolt -- --nocapture`
+- Green: `cargo test -p jolt-server test_admin_can_export_and_import_identity_recovery_bundle --test api_integration -- --nocapture`
+- Green: `npx vitest run src/daemon/client.test.ts src/sections/sections.test.tsx`
+  from `apps/jolt-console`
+- Green: `npm run build` from `apps/jolt-console`
+- Green: `./scripts/test-local.sh`
+
+Follow-up adjustment in PR #162:
+
+- Green: `npx vitest run src/daemon/client.test.ts src/sections/sections.test.tsx`
+  from `apps/jolt-console`
+- Green: `cargo test -p jolt-identity export_bundle -- --nocapture`
+- Green: `cargo test -p jolt-node parse_identity_export_import_commands --bin jolt -- --nocapture`
+- Green: `cargo test -p jolt-server test_admin_can_export_and_import_identity_recovery_bundle --test api_integration -- --nocapture`
+- Green: `npm run build` from `apps/jolt-console`
+
+Follow-up adjustment in PR #163:
+
+- Red: `npx vitest run src/sections/sections.test.tsx -t "imports an identity bundle through the native open dialog"`
+  from `apps/jolt-console` failed while the Console still showed the overwrite
+  checkbox and did not restart after import.
+- Red: `cargo test -p jolt-server test_admin_imports_identity_recovery_bundle_as_local_identity_without_replacing_daemon --test api_integration -- --nocapture`
+  failed while the admin import route still treated Console import as daemon
+  identity replacement.
+- Green: `npx vitest run src/sections/sections.test.tsx` from
+  `apps/jolt-console`
+- Green: `cargo test -p jolt-server test_admin_imports_identity_recovery_bundle_as_local_identity_without_replacing_daemon --test api_integration -- --nocapture`
+- Green: `npm run test -- --runInBand` from `apps/jolt-console`
+- Green: `npm run build` from `apps/jolt-console`
+- Green: `./scripts/test-local.sh`
+- Red: `npx vitest run src/sections/sections.test.tsx -t "asks for an import passphrase"`
+  from `apps/jolt-console` failed while the import form always showed the
+  passphrase field and surfaced the raw daemon decrypt error.
+- Green: `npx vitest run src/sections/sections.test.tsx -t "import"` from
+  `apps/jolt-console`
+- Green: `npm run test -- --runInBand` from `apps/jolt-console`
+- Green: `npm run build` from `apps/jolt-console`
+- Red: `npx vitest run src/sections/sections.test.tsx -t "exports the selected local identity"`
+  from `apps/jolt-console` failed while Console export had no identity
+  selector.
+- Red: `npx vitest run src/daemon/client.test.ts -t "routes identity export"`
+  from `apps/jolt-console` failed while the export helper omitted the requested
+  identity.
+- Red: `cargo test -p jolt-server --test api_integration test_admin_exports_selected_generated_local_identity_recovery_bundle -- --nocapture`
+  failed while the admin export route ignored requested generated local
+  identities and returned the daemon identity.
+- Green: `npx vitest run src/sections/sections.test.tsx -t "exports the selected local identity"`
+  from `apps/jolt-console`
+- Green: `npx vitest run src/daemon/client.test.ts -t "routes identity export"`
+  from `apps/jolt-console`
+- Green: `cargo test -p jolt-server --test api_integration test_admin_exports_selected_generated_local_identity_recovery_bundle -- --nocapture`
+- Green: `cargo test -p jolt-server --test api_integration identity -- --nocapture`
+- Green: `npm run test -- --runInBand` from `apps/jolt-console`
+- Green: `npm run build` from `apps/jolt-console`
+- Green: `./scripts/test-local.sh`
+
+The integration smoke uses two daemon profiles: the source exports an encrypted
+bundle, the target refuses overwrite without explicit permission, imports with
+overwrite, restarts, proves app sessions were not imported, approves a fresh app
+session, and publishes/enumerates an app append record under the imported
+identity. It does not assert that two concurrently running cloned root-key
+daemons sync with each other, because this v0 recovery model intentionally
+copies the root peer/identity key.
+
+Release hardening in the admin loopback-boundary PR:
+
+- Red: `cargo test -p jolt-server admin_routes_reject_non_loopback_clients --lib`
+  failed before the shared HTTP router rejected remote `/admin/*` requests.
+- Green: the same focused test proves remote admin requests receive `403` while
+  non-admin API requests remain reachable; the server now supplies peer socket
+  information to that boundary on every listener.
+
+Release hardening in the durable local-identity recovery PR:
+
+- Red: `cargo test -p jolt-server test_admin_imports_identity_recovery_bundle_as_local_identity_without_replacing_daemon --test api_integration -- --nocapture`
+  failed after restarting the target profile because the Console import existed
+  only in `LocalIdentityStore` memory.
+- Green: the same integration test now restarts the target profile, finds the
+  recovered signing identity, and re-exports it with the imported identity
+  encryption keypair still present.
+
+Release hardening for recovery bundles:
+
+- CLI and Console exports now use the same owner-only file writer. On Unix it
+  creates new files as `0600` and also tightens an existing destination before
+  writing recovery material.
+- Bundle import rejects Argon2 parameters above the v1 export profile before
+  running the KDF, bounding attacker-controlled memory, iteration, and
+  parallelism costs.
+- Red: the owner-only overwrite test failed before the shared writer existed;
+  the excessive-KDF test previously continued into derivation/authentication.
+- Green: `cargo test -p jolt-identity identity_export --lib -- --nocapture`.

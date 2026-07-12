@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 use jolt_core::{
-    ContentId, ContentManifest, IdentityEncryptionKey, IdentityEncryptionPrivateKey, IdentityId,
-    RelayRecord, UpdateLogEntry,
+    ContentId, ContentManifest, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+    IdentityEncryptionKey, IdentityEncryptionPrivateKey, IdentityId, RelayRecord, UpdateLogEntry,
 };
 
 use crate::cache_entry::{CacheEntry, CacheIndex, CacheStats, ContentData};
@@ -18,6 +18,7 @@ pub struct ContentStore {
     published_dir: PathBuf,
     cache_dir: PathBuf,
     update_logs_dir: PathBuf,
+    device_writer_logs_dir: PathBuf,
     home_relay_pins_path: PathBuf,
     local_identity_encryption_keypair_path: PathBuf,
     discovered_peer_hints_path: PathBuf,
@@ -38,6 +39,16 @@ pub struct PublishedContentEntry {
     pub content_id: String,
     pub size: u64,
     pub content_type: String,
+}
+
+/// This node's own persisted device-writer state for one local identity: the
+/// verified device-authority chain plus the local device's append-record log.
+/// Persisted so append records survive a daemon restart and can be rebuilt into
+/// the in-memory device-writer state and re-served to peers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PersistedDeviceWriterLog {
+    pub authority_records: Vec<DeviceAuthorizationRecord>,
+    pub device_log: Vec<DeviceWriterLogEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +96,7 @@ impl ContentStore {
         let published_dir = base_dir.join("published");
         let cache_dir = base_dir.join("cache");
         let update_logs_dir = base_dir.join("update_logs");
+        let device_writer_logs_dir = base_dir.join("device_writer_logs");
         let home_relay_pins_path = base_dir.join("home_relay_pins.json");
         let local_identity_encryption_keypair_path =
             base_dir.join("local_identity_encryption_keypair.json");
@@ -94,6 +106,7 @@ impl ContentStore {
         std::fs::create_dir_all(&published_dir)?;
         std::fs::create_dir_all(&cache_dir)?;
         std::fs::create_dir_all(&update_logs_dir)?;
+        std::fs::create_dir_all(&device_writer_logs_dir)?;
 
         let cache_index = Self::load_index(&cache_dir)?;
         let published_content = Self::scan_published(&published_dir)?;
@@ -108,6 +121,7 @@ impl ContentStore {
             published_dir,
             cache_dir,
             update_logs_dir,
+            device_writer_logs_dir,
             home_relay_pins_path,
             local_identity_encryption_keypair_path,
             discovered_peer_hints_path,
@@ -296,6 +310,43 @@ impl ContentStore {
         let entries =
             serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))?;
         Ok(Some(entries))
+    }
+
+    /// Persist this node's own device-writer log for a local identity: the
+    /// device-authority chain plus the local device's append-record log. Append
+    /// records (e.g. Spoke posts and accepted-reply refs) live only in the
+    /// device-writer log, never the last-writer-wins update log, so without this
+    /// they would not survive a daemon restart. Writes atomically via a temp
+    /// file, mirroring `save_update_log`.
+    pub fn save_device_writer_log(
+        &self,
+        identity: &IdentityId,
+        record: &PersistedDeviceWriterLog,
+    ) -> Result<(), StoreError> {
+        let path = self.device_writer_log_path(identity);
+        let tmp_path = path.with_extension("json.tmp");
+        let json = serde_json::to_string_pretty(record)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        std::fs::write(&tmp_path, json)?;
+        std::fs::rename(tmp_path, path)?;
+        Ok(())
+    }
+
+    /// Load this node's own persisted device-writer log for a local identity, if
+    /// one exists.
+    pub fn load_device_writer_log(
+        &self,
+        identity: &IdentityId,
+    ) -> Result<Option<PersistedDeviceWriterLog>, StoreError> {
+        let path = self.device_writer_log_path(identity);
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let json = std::fs::read_to_string(path)?;
+        let record =
+            serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))?;
+        Ok(Some(record))
     }
 
     /// Persist a successful owner-directed home relay pin.
@@ -708,6 +759,10 @@ impl ContentStore {
 
     fn update_log_path(&self, identity: &IdentityId) -> PathBuf {
         self.update_logs_dir.join(format!("{identity}.json"))
+    }
+
+    fn device_writer_log_path(&self, identity: &IdentityId) -> PathBuf {
+        self.device_writer_logs_dir.join(format!("{identity}.json"))
     }
 
     fn scan_published(published_dir: &Path) -> Result<HashMap<String, PathBuf>, StoreError> {

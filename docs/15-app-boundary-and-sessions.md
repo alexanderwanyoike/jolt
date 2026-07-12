@@ -205,6 +205,7 @@ Capabilities are deliberately coarse. They should model workflows, not every ind
 ```text
 resolve:public
 fetch:public
+enumerate:self:/pastes/*
 publish:/pastes/*
 inventory:/pastes/*
 pin:own:/pastes/*
@@ -214,9 +215,16 @@ Meaning:
 
 - `resolve:public`: app may resolve public `.jolt` addresses.
 - `fetch:public`: app may fetch public content by CID or `.jolt` target.
+- `enumerate:self:/pastes/*`: app may enumerate append records under
+  `/pastes/*` only for the identity attached to its session.
+- `enumerate:any:/spoke/*`: a social/discovery app may explicitly request
+  cross-identity enumeration, still restricted to its approved path namespace.
 - `publish:/pastes/*`: app may publish signed path updates under `/pastes/*` using the granted identity.
 - `inventory:/pastes/*`: app may list local published content under `/pastes/*`.
 - `pin:own:/pastes/*`: app may ask the home relay to pin content it published under `/pastes/*`.
+
+`resolve:public` does not imply append-record enumeration. Existing sessions
+must be reapproved with an explicit `enumerate:self:` or `enumerate:any:` scope.
 
 ### Private Content Capabilities
 

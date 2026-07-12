@@ -10,8 +10,11 @@ use crate::state::AppState;
 
 pub async fn request_session(
     State(state): State<AppState>,
-    Json(request): Json<AppSessionRequest>,
+    Json(mut request): Json<AppSessionRequest>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
+    if request.requested_identity.is_none() {
+        request.requested_identity = state.local_identities.active_identity().await;
+    }
     let response = state.sessions.create_request(request).await?;
     Ok(Json(response))
 }
@@ -36,7 +39,14 @@ pub async fn current_session(
 pub async fn list_requests(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
-    Ok(Json(state.sessions.list_requests().await))
+    let identity = state
+        .local_identities
+        .active_identity()
+        .await
+        .ok_or(AppSessionStoreError::MissingIdentity)?;
+    Ok(Json(
+        state.sessions.list_requests_for_identity(&identity).await,
+    ))
 }
 
 pub async fn approve_request(
@@ -45,7 +55,25 @@ pub async fn approve_request(
     Json(mut request): Json<ApproveAppSessionRequest>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
     if request.identity.is_none() {
-        request.identity = state.daemon.local_identity_address().map(ToOwned::to_owned);
+        request.identity = state.local_identities.active_identity().await;
+    }
+    let effective_capabilities = if request.capabilities.is_empty() {
+        state.sessions.requested_capabilities(&request_id).await?
+    } else {
+        request.capabilities.clone()
+    };
+    if capabilities_require_daemon_identity(&effective_capabilities) {
+        let identity = request
+            .identity
+            .as_deref()
+            .ok_or(AppSessionApiError::Store(
+                AppSessionStoreError::MissingIdentity,
+            ))?;
+        if !identity_can_receive_daemon_capabilities(&state, identity).await? {
+            return Err(AppSessionApiError::LocalIdentityCapability {
+                identity: identity.to_string(),
+            });
+        }
     }
     let response = state.sessions.approve_request(&request_id, request).await?;
     if grants_private_content_authority(&response.capabilities) {
@@ -65,20 +93,36 @@ pub async fn reject_request(
 pub async fn list_sessions(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
-    Ok(Json(state.sessions.list_sessions().await))
+    let identity = state
+        .local_identities
+        .active_identity()
+        .await
+        .ok_or(AppSessionStoreError::MissingIdentity)?;
+    Ok(Json(
+        state.sessions.list_sessions_for_identity(&identity).await,
+    ))
 }
 
 pub async fn revoke_session(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
 ) -> Result<impl IntoResponse, AppSessionApiError> {
-    let response = state.sessions.revoke_session(&session_id).await?;
+    let identity = state
+        .local_identities
+        .active_identity()
+        .await
+        .ok_or(AppSessionStoreError::MissingIdentity)?;
+    let response = state
+        .sessions
+        .revoke_session_for_identity(&session_id, &identity)
+        .await?;
     Ok(Json(response))
 }
 
 pub enum AppSessionApiError {
     Store(AppSessionStoreError),
     Network(NetworkError),
+    LocalIdentityCapability { identity: String },
 }
 
 impl IntoResponse for AppSessionApiError {
@@ -91,6 +135,16 @@ impl IntoResponse for AppSessionApiError {
                     Json(json!({
                         "code": "app_session_daemon_error",
                         "error": err.to_string()
+                    })),
+                )
+                    .into_response();
+            }
+            Self::LocalIdentityCapability { identity } => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "code": "app_session_identity_not_signable",
+                        "error": format!("identity {identity} cannot receive local publish, inventory, encryption, or decrypt capabilities yet")
                     })),
                 )
                     .into_response();
@@ -143,6 +197,26 @@ fn grants_private_content_authority(capabilities: &[String]) -> bool {
             || capability.starts_with("decrypt:")
             || capability.starts_with("publish:encrypted:")
     })
+}
+
+fn capabilities_require_daemon_identity(capabilities: &[String]) -> bool {
+    capabilities.iter().any(|capability| {
+        capability.starts_with("publish:")
+            || capability.starts_with("inventory:")
+            || capability.starts_with("pin:own:")
+            || capability.starts_with("encrypt:")
+            || capability.starts_with("decrypt:")
+    })
+}
+
+async fn identity_can_receive_daemon_capabilities(
+    state: &AppState,
+    identity: &str,
+) -> Result<bool, AppSessionApiError> {
+    if state.local_identities.is_daemon_identity(identity).await {
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 fn bearer_token(headers: &HeaderMap) -> Result<&str, AppSessionStoreError> {

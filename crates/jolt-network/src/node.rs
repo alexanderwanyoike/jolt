@@ -24,8 +24,9 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::info;
 
 use jolt_core::{
-    verify_update_log_for_identity, ContentId, EncryptedObjectEnvelope, IdentityEncryptionKey,
-    IdentityEncryptionPrivateKey, IdentityId, JoltAddress, ResolvedJoltTarget, UpdateLogEntry,
+    verify_update_log_for_identity, ContentId, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+    EncryptedObjectEnvelope, IdentityEncryptionKey, IdentityEncryptionPrivateKey, IdentityId,
+    JoltAddress, MergedDeviceIdentityState, ResolvedJoltTarget, UpdateLogEntry,
 };
 #[cfg(test)]
 use jolt_core::{EncryptedObjectRecipient, IdentityHeadHint, RelayRecord, RelayRecordCapability};
@@ -55,6 +56,18 @@ use crate::protocol::{
 struct PendingUpdateLogPin {
     identity: IdentityId,
     response_tx: oneshot::Sender<Result<u64, NetworkError>>,
+}
+
+struct CachedDeviceWriterState {
+    authority_sequence: u64,
+    merged: MergedDeviceIdentityState,
+    /// The raw verified authority chain, retained so this node can re-serve the
+    /// device-writer state to other nodes over the network and re-merge it when
+    /// additional device logs arrive.
+    authority_records: Vec<DeviceAuthorizationRecord>,
+    /// The raw per-device writer logs, keyed by device id so a re-sync can
+    /// merge newly discovered devices with already-known ones deterministically.
+    device_logs: HashMap<String, Vec<DeviceWriterLogEntry>>,
 }
 
 struct PendingIdentityProviderForwardGroup {
@@ -152,10 +165,23 @@ pub struct NetworkNode {
     >,
     pending_daemon_resolutions: HashMap<OutboundRequestId, resolution::PendingDaemonResolve>,
     pending_resolves: HashMap<IdentityId, Vec<resolution::PendingResolve>>,
+    /// In-flight device-writer sync requests sent to providers, keyed by the
+    /// outbound request id, so a response/failure can be routed back to the
+    /// waiters that triggered the discovery.
+    pending_device_writer_syncs: HashMap<OutboundRequestId, resolution::PendingDeviceWriterSync>,
+    /// Device-writer sync waiters parked until a provider is discovered for an
+    /// identity, keyed by identity.
+    pending_device_writer_waiters: HashMap<IdentityId, Vec<resolution::DeviceWriterSyncWaiter>>,
     /// Providers discovered via DHT: content_id string -> provider PeerIds
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
     /// Verified update logs by owner identity.
     update_logs: HashMap<IdentityId, Vec<UpdateLogEntry>>,
+    /// Verified merged device-writer state by owner identity.
+    device_writer_states: HashMap<IdentityId, CachedDeviceWriterState>,
+    /// Local per-device writer logs by owner identity.
+    local_device_writer_logs: HashMap<IdentityId, Vec<DeviceWriterLogEntry>>,
+    /// Local device authority records by owner identity.
+    local_device_authority_records: HashMap<IdentityId, Vec<DeviceAuthorizationRecord>>,
     /// Signed, expiring identity-head hints learned through relay gossip.
     identity_head_hints: IdentityHeadHintBook,
     /// Connection quality tracking: peer -> connection info
@@ -451,6 +477,7 @@ impl NetworkNode {
                 _ = timeout_interval.tick() => {
                     self.fetch_manager.check_timeouts();
                     self.check_resolve_timeouts();
+                    self.check_device_writer_sync_timeouts();
                     self.check_identity_provider_forward_timeouts();
                     self.check_identity_diagnosis_timeouts();
 

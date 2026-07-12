@@ -21,7 +21,11 @@ type CapabilityInfo = {
 
 const EMPTY_PERMISSIONS: AppPermissionsPayload = {
   requests: [],
-  sessions: []
+  sessions: [],
+  localIdentities: {
+    active_identity: null,
+    identities: []
+  }
 };
 
 export function AppsPage({ client = tauriDaemonClient, refreshIntervalMs = 5000 }: AppsPageProps) {
@@ -101,10 +105,10 @@ export function AppsPage({ client = tauriDaemonClient, refreshIntervalMs = 5000 
     }
   }
 
-  const pending = useMemo(
+  const requests = useMemo(
     () =>
       permissions.requests
-        .filter((request) => request.status === "pending")
+        .filter((request) => request.status === "pending" || request.status === "rejected")
         .sort(compareGrantRecency),
     [permissions.requests]
   );
@@ -136,13 +140,14 @@ export function AppsPage({ client = tauriDaemonClient, refreshIntervalMs = 5000 
       </div>
       {error ? <div className="permission-error">Permission API error: {error}</div> : null}
       <div className="permission-layout">
-        <PermissionColumn title="Pending requests">
-          {loading && pending.length === 0 ? <EmptyState label="Loading app requests..." /> : null}
-          {!loading && pending.length === 0 ? <EmptyState label="No pending app requests." /> : null}
-          {pending.map((request) => (
+        <PermissionColumn title="Requests">
+          {loading && requests.length === 0 ? <EmptyState label="Loading app requests..." /> : null}
+          {!loading && requests.length === 0 ? <EmptyState label="No app requests yet." /> : null}
+          {requests.map((request) => (
             <PermissionRequestCard
               key={request.request_id}
               request={request}
+              activeIdentity={permissions.localIdentities.active_identity ?? null}
               busy={action !== null}
               expanded={expandedRows.has(rowKey("request", request))}
               onToggle={() => toggleRow(rowKey("request", request))}
@@ -195,6 +200,7 @@ function PermissionColumn({ title, children }: { title: string; children: ReactN
 
 function PermissionRequestCard({
   request,
+  activeIdentity,
   busy,
   expanded,
   onToggle,
@@ -202,6 +208,7 @@ function PermissionRequestCard({
   onReject
 }: {
   request: AppSessionGrant;
+  activeIdentity: string | null;
   busy: boolean;
   expanded: boolean;
   onToggle: () => void;
@@ -213,7 +220,8 @@ function PermissionRequestCard({
     [request.requested_capabilities]
   );
   const blocked = capabilities.some((capability) => !capability.grantable);
-  const identity = request.requested_identity ?? "a selected identity";
+  const actionable = request.status === "pending";
+  const identity = request.requested_identity ?? activeIdentity ?? "a selected identity";
 
   return (
     <article className={`permission-row pending ${expanded ? "expanded" : ""}`}>
@@ -230,7 +238,7 @@ function PermissionRequestCard({
           type="button"
           aria-label={`Approve ${request.app_name}`}
           onClick={onApprove}
-          disabled={busy || blocked}
+          disabled={busy || blocked || !actionable}
         >
           Approve
         </button>
@@ -239,7 +247,7 @@ function PermissionRequestCard({
           className="danger-button"
           aria-label={`Reject ${request.app_name}`}
           onClick={onReject}
-          disabled={busy}
+          disabled={busy || !actionable}
         >
           Reject
         </button>
@@ -494,6 +502,18 @@ function capabilityInfo(capability: string): CapabilityInfo {
       broadPath: isBroadPathScope(scope)
     };
   }
+  for (const prefix of ["enumerate:self:", "enumerate:any:"]) {
+    if (capability.startsWith(prefix)) {
+      const scope = capability.slice(prefix.length);
+      const identityScope = prefix === "enumerate:self:" ? "this identity" : "any identity";
+      return {
+        label: `enumerate public records under ${scope} for ${identityScope}`,
+        kind: "read",
+        grantable: isGrantablePathCapability(prefix, capability),
+        broadPath: isBroadPathScope(scope)
+      };
+    }
+  }
 
   return {
     label: capability,
@@ -516,6 +536,8 @@ function isGrantableCapability(capability: string) {
     isGrantablePathCapability("pin:own:", capability) ||
     isGrantablePathCapability("encrypt:", capability) ||
     isGrantablePathCapability("decrypt:", capability)
+    || isGrantablePathCapability("enumerate:self:", capability)
+    || isGrantablePathCapability("enumerate:any:", capability)
   );
 }
 

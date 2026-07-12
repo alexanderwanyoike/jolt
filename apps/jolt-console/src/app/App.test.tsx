@@ -47,6 +47,7 @@ describe("ConsoleApp", () => {
           return [
             {
               content_id: "bafkexamplecid000000000000000001",
+              address: "alice.jolt/demo/post",
               path: "/demo/post",
               size: 42,
               pin_state: "pinned"
@@ -65,7 +66,7 @@ describe("ConsoleApp", () => {
     expect(screen.getByText("3")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("link", { name: "Identity" }));
-    expect(await screen.findByText("alice.jolt")).toBeInTheDocument();
+    expect(await screen.findAllByText("alice.jolt")).not.toHaveLength(0);
 
     await userEvent.click(screen.getByRole("link", { name: "Published" }));
     expect(await screen.findByText("/demo/post")).toBeInTheDocument();
@@ -137,17 +138,17 @@ describe("ConsoleApp", () => {
     );
 
     await act(async () => {});
-    expect(client.get).toHaveBeenCalledTimes(5);
+    expect(client.get).toHaveBeenCalledTimes(6);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(client.get).toHaveBeenCalledTimes(5);
+    expect(client.get).toHaveBeenCalledTimes(6);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(client.get).toHaveBeenCalledTimes(10);
+    expect(client.get).toHaveBeenCalledTimes(12);
   });
 
   it("starts the local daemon automatically when Console opens and no daemon is running", async () => {
@@ -275,5 +276,11 @@ function healthyDaemonClient(statusOverrides: Record<string, unknown> = {}): Dae
 function defaultInventoryEndpoint(path: string) {
   if (path === "/api/v1/peers") return [];
   if (path === "/api/v1/cache/entries") return [];
+  if (path === "/admin/v1/identities") {
+    return {
+      active_identity: "alice.jolt",
+      identities: [{ address: "alice.jolt", label: "Default", active: true }]
+    };
+  }
   return undefined;
 }

@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
+const DEFAULT_LOCAL_DEVICE_ID: &str = "dev_legacy_root";
+
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AppSessionStatus {
@@ -27,6 +29,8 @@ pub struct AppSessionRecord {
     pub app_origin: Option<String>,
     pub requested_identity: Option<String>,
     pub identity: Option<String>,
+    #[serde(default)]
+    pub device_id: Option<String>,
     pub requested_capabilities: Vec<String>,
     pub granted_capabilities: Vec<String>,
     pub status: AppSessionStatus,
@@ -48,6 +52,7 @@ pub struct AppSessionView {
     pub app_origin: Option<String>,
     pub requested_identity: Option<String>,
     pub identity: Option<String>,
+    pub device_id: Option<String>,
     pub requested_capabilities: Vec<String>,
     pub granted_capabilities: Vec<String>,
     pub status: AppSessionStatus,
@@ -69,6 +74,7 @@ impl From<&AppSessionRecord> for AppSessionView {
             app_origin: record.app_origin.clone(),
             requested_identity: record.requested_identity.clone(),
             identity: record.identity.clone(),
+            device_id: record.device_id.clone(),
             requested_capabilities: record.requested_capabilities.clone(),
             granted_capabilities: record.granted_capabilities.clone(),
             status: record.status.clone(),
@@ -114,6 +120,7 @@ pub struct ApproveAppSessionResponse {
     pub app_id: String,
     pub app_name: String,
     pub identity: String,
+    pub device_id: String,
     pub capabilities: Vec<String>,
     pub status: AppSessionStatus,
     pub expires_at: Option<u64>,
@@ -192,6 +199,7 @@ impl AppSessionStore {
             app_origin: request.app_origin,
             requested_identity: request.requested_identity,
             identity: None,
+            device_id: None,
             requested_capabilities: request.requested_capabilities,
             granted_capabilities: Vec::new(),
             status: AppSessionStatus::Pending,
@@ -220,6 +228,40 @@ impl AppSessionStore {
             .filter(|record| record.status == AppSessionStatus::Pending)
             .map(AppSessionView::from)
             .collect()
+    }
+
+    pub async fn list_requests_for_identity(&self, identity: &str) -> Vec<AppSessionView> {
+        let state = self.state.lock().await;
+        state
+            .records
+            .iter()
+            .filter(|record| {
+                matches!(
+                    record.status,
+                    AppSessionStatus::Pending | AppSessionStatus::Rejected
+                )
+            })
+            .filter(|record| record.requested_identity.as_deref() == Some(identity))
+            .map(AppSessionView::from)
+            .collect()
+    }
+
+    pub async fn requested_capabilities(
+        &self,
+        request_id: &str,
+    ) -> Result<Vec<String>, AppSessionStoreError> {
+        let state = self.state.lock().await;
+        let record = state
+            .records
+            .iter()
+            .find(|record| record.request_id == request_id)
+            .ok_or_else(|| AppSessionStoreError::RequestNotFound(request_id.to_string()))?;
+        if record.status != AppSessionStatus::Pending {
+            return Err(AppSessionStoreError::RequestNotPending(
+                request_id.to_string(),
+            ));
+        }
+        Ok(record.requested_capabilities.clone())
     }
 
     pub async fn approve_request(
@@ -266,6 +308,7 @@ impl AppSessionStore {
 
         record.session_id = Some(session_id.clone());
         record.identity = Some(identity.clone());
+        record.device_id = Some(DEFAULT_LOCAL_DEVICE_ID.to_string());
         record.granted_capabilities = capabilities.clone();
         record.status = AppSessionStatus::Active;
         record.approved_at = Some(now_secs());
@@ -279,6 +322,7 @@ impl AppSessionStore {
             app_id: record.app_id.clone(),
             app_name: record.app_name.clone(),
             identity,
+            device_id: DEFAULT_LOCAL_DEVICE_ID.to_string(),
             capabilities,
             status: record.status.clone(),
             expires_at: record.expires_at,
@@ -328,6 +372,17 @@ impl AppSessionStore {
             .collect()
     }
 
+    pub async fn list_sessions_for_identity(&self, identity: &str) -> Vec<AppSessionView> {
+        let state = self.state.lock().await;
+        state
+            .records
+            .iter()
+            .filter(|record| record.session_id.is_some())
+            .filter(|record| record.identity.as_deref() == Some(identity))
+            .map(AppSessionView::from)
+            .collect()
+    }
+
     pub async fn reject_request(
         &self,
         request_id: &str,
@@ -368,6 +423,50 @@ impl AppSessionStore {
         let response = AppSessionView::from(&*record);
         save_state(&self.path, &state)?;
         Ok(response)
+    }
+
+    pub async fn revoke_session_for_identity(
+        &self,
+        session_id: &str,
+        identity: &str,
+    ) -> Result<AppSessionView, AppSessionStoreError> {
+        let mut state = self.state.lock().await;
+        let record = state
+            .records
+            .iter_mut()
+            .find(|record| {
+                record.session_id.as_deref() == Some(session_id)
+                    && record.identity.as_deref() == Some(identity)
+            })
+            .ok_or_else(|| AppSessionStoreError::SessionNotFound(session_id.to_string()))?;
+
+        record.status = AppSessionStatus::Revoked;
+        record.revoked_at = Some(now_secs());
+        let response = AppSessionView::from(&*record);
+        save_state(&self.path, &state)?;
+        Ok(response)
+    }
+
+    pub async fn revoke_sessions_for_device(
+        &self,
+        device_id: &str,
+    ) -> Result<Vec<AppSessionView>, AppSessionStoreError> {
+        let mut state = self.state.lock().await;
+        let now = now_secs();
+        let mut revoked = Vec::new();
+        for record in state.records.iter_mut().filter(|record| {
+            record.session_id.is_some()
+                && record.device_id.as_deref() == Some(device_id)
+                && record.status == AppSessionStatus::Active
+        }) {
+            record.status = AppSessionStatus::Revoked;
+            record.revoked_at = Some(now);
+            revoked.push(AppSessionView::from(&*record));
+        }
+        if !revoked.is_empty() {
+            save_state(&self.path, &state)?;
+        }
+        Ok(revoked)
     }
 
     pub async fn session_for_token(
@@ -418,10 +517,20 @@ enum AppCapability {
     IngressSend,
     IngressRead,
     IngressDecide,
+    Enumerate {
+        identity_scope: EnumerateIdentityScope,
+        scope: PathScope,
+    },
     Path {
         action: PathCapabilityAction,
         scope: PathScope,
     },
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum EnumerateIdentityScope {
+    SelfIdentity,
+    AnyIdentity,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -448,6 +557,14 @@ impl AppCapability {
             "ingress:send" => Some(Self::IngressSend),
             "ingress:read" => Some(Self::IngressRead),
             "ingress:decide" => Some(Self::IngressDecide),
+            _ if raw.starts_with("enumerate:self:") => Some(Self::Enumerate {
+                identity_scope: EnumerateIdentityScope::SelfIdentity,
+                scope: PathScope::parse(raw.strip_prefix("enumerate:self:")?)?,
+            }),
+            _ if raw.starts_with("enumerate:any:") => Some(Self::Enumerate {
+                identity_scope: EnumerateIdentityScope::AnyIdentity,
+                scope: PathScope::parse(raw.strip_prefix("enumerate:any:")?)?,
+            }),
             _ => parse_path_capability(raw),
         }
     }
@@ -459,6 +576,20 @@ impl AppCapability {
             | (Self::IngressSend, Self::IngressSend)
             | (Self::IngressRead, Self::IngressRead)
             | (Self::IngressDecide, Self::IngressDecide) => true,
+            (
+                Self::Enumerate {
+                    identity_scope: requested_identity_scope,
+                    scope: requested_scope,
+                },
+                Self::Enumerate {
+                    identity_scope: granted_identity_scope,
+                    scope: granted_scope,
+                },
+            ) if requested_identity_scope == granted_identity_scope
+                || *requested_identity_scope == EnumerateIdentityScope::AnyIdentity =>
+            {
+                requested_scope.contains(granted_scope)
+            }
             (
                 Self::Path {
                     action: requested_action,

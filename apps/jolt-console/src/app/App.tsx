@@ -91,7 +91,7 @@ export function ConsoleApp({
       >
         <Routes>
           <Route index element={<OverviewPage snapshot={snapshot} />} />
-          <Route path="/identity" element={<IdentityPage snapshot={snapshot} />} />
+          <Route path="/identity" element={<IdentityPage client={client} snapshot={snapshot} />} />
           <Route
             path="/apps"
             element={<AppsPage client={client} refreshIntervalMs={refreshIntervalMs} />}

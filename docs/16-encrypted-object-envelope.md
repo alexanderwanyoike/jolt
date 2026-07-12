@@ -292,13 +292,22 @@ Implemented v0 app APIs:
 
 ```text
 POST /app/v1/encrypted/publish
+POST /app/v1/encrypted/append
 POST /app/v1/encrypted/decrypt
+POST /app/v1/encrypted/open
 ```
 
 The daemon chooses the suite from local policy and supported recipient keys. Apps
 may request a visibility mode such as `public` or `private`, but they do not
 select `X25519`, `ML-KEM`, `ChaCha20-Poly1305`, nonce formats, or signature
 algorithms.
+
+`/app/v1/encrypted/publish` writes a singleton `.jolt` path. `/app/v1/encrypted/append`
+writes an encrypted append record under an app-owned identity path so private
+app indexes can be enumerated without Jolt knowing the app schema. Decrypt/open
+requests may target either a `.jolt` address or a raw content ID. Raw content ID
+targets must include the app path context, and the daemon checks
+`decrypt:<path>` before fetching and opening the object.
 
 Capabilities:
 

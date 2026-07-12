@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DaemonClient } from "./client";
 import { loadDaemonPayload } from "./client";
-import type { CacheEntry, CacheStats, DaemonStatus, PeerInfo, PublishedContent } from "./types";
+import type {
+  CacheEntry,
+  CacheStats,
+  DaemonStatus,
+  LocalIdentitiesPayload,
+  PeerInfo,
+  PublishedContent
+} from "./types";
 
 export type DaemonSnapshot = {
   daemonUrl: string;
@@ -11,6 +18,7 @@ export type DaemonSnapshot = {
   cacheStats: CacheStats | null;
   cacheEntries: CacheEntry[];
   published: PublishedContent[];
+  localIdentities: LocalIdentitiesPayload | null;
   lastError: string | null;
   lastRefresh: Date | null;
   refresh(): Promise<boolean>;
@@ -30,14 +38,18 @@ export function useDaemonSnapshot(
     cacheStats: null,
     cacheEntries: [],
     published: [],
+    localIdentities: null,
     lastError: null,
     lastRefresh: null
   });
   const failureCount = useRef(0);
+  const refreshGeneration = useRef(0);
 
   const refresh = useCallback(async () => {
+    const generation = ++refreshGeneration.current;
     try {
       const payload = await loadDaemonPayload(client);
+      if (generation !== refreshGeneration.current) return true;
       failureCount.current = 0;
       setState({
         daemonUrl: client.daemonUrl,
@@ -47,11 +59,13 @@ export function useDaemonSnapshot(
         cacheStats: payload.cacheStats,
         cacheEntries: payload.cacheEntries,
         published: payload.published,
+        localIdentities: payload.localIdentities,
         lastError: null,
         lastRefresh: new Date()
       });
       return true;
     } catch (error) {
+      if (generation !== refreshGeneration.current) return false;
       failureCount.current += 1;
       setState((previous) => ({
         ...previous,

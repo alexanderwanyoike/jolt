@@ -56,15 +56,63 @@ export type PublishedContent = {
   relay?: { peer_id?: string } | null;
 };
 
+export type LocalIdentity = {
+  address: string;
+  label?: string | null;
+  active: boolean;
+};
+
+export type LocalIdentitiesPayload = {
+  active_identity?: string | null;
+  identities: LocalIdentity[];
+};
+
+export type IdentityExportBundle = {
+  magic: string;
+  version: number;
+  identity: string;
+  created_at: number;
+  kdf: {
+    name: string;
+    params?: unknown;
+    salt: string;
+  };
+  cipher: {
+    name: string;
+    nonce: string;
+  };
+  ciphertext: string;
+};
+
+export type IdentityExportResponse = {
+  identity: string;
+  encryption_key_count: number;
+  bundle: IdentityExportBundle;
+};
+
+export type IdentityImportResponse = {
+  identity: string;
+  imported: boolean;
+  restart_required: boolean;
+  encryption_key_count: number;
+  app_sessions_imported: boolean;
+};
+
 export type DaemonPayload = {
   status: DaemonStatus;
   peers: PeerInfo[];
   cacheStats: CacheStats;
   cacheEntries: CacheEntry[];
   published: PublishedContent[];
+  localIdentities: LocalIdentitiesPayload;
 };
 
-export type AppSessionStatus = "pending" | "active" | "rejected" | "revoked" | "expired";
+export type AppSessionStatus =
+  | "pending"
+  | "active"
+  | "rejected"
+  | "revoked"
+  | "expired";
 
 export type AppSessionGrant = {
   request_id: string;
@@ -88,6 +136,7 @@ export type AppSessionGrant = {
 export type AppPermissionsPayload = {
   requests: AppSessionGrant[];
   sessions: AppSessionGrant[];
+  localIdentities: LocalIdentitiesPayload;
 };
 
 export type HomeRelayConfig = {

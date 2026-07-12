@@ -81,6 +81,64 @@ impl DaemonClient {
         Ok(resp.json().await?)
     }
 
+    pub async fn export_identity(
+        &self,
+        passphrase: Option<&str>,
+        label: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let resp = self
+            .client
+            .post(format!("{}/admin/v1/identities/export", self.base_url))
+            .json(&serde_json::json!({
+                "passphrase": passphrase,
+                "label": label
+            }))
+            .send()
+            .await
+            .context("Failed to connect to daemon")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Identity export failed ({status}): {}",
+                format_error_body(&body)
+            );
+        }
+
+        Ok(resp.json().await?)
+    }
+
+    pub async fn import_identity(
+        &self,
+        bundle: serde_json::Value,
+        passphrase: Option<&str>,
+        allow_overwrite: bool,
+    ) -> Result<serde_json::Value> {
+        let resp = self
+            .client
+            .post(format!("{}/admin/v1/identities/import", self.base_url))
+            .json(&serde_json::json!({
+                "passphrase": passphrase,
+                "bundle": bundle,
+                "allow_overwrite": allow_overwrite
+            }))
+            .send()
+            .await
+            .context("Failed to connect to daemon")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Identity import failed ({status}): {}",
+                format_error_body(&body)
+            );
+        }
+
+        Ok(resp.json().await?)
+    }
+
     pub async fn publish(&self, file_path: &Path, path: Option<&str>) -> Result<serde_json::Value> {
         let data = std::fs::read(file_path)
             .with_context(|| format!("Failed to read file: {}", file_path.display()))?;

@@ -47,6 +47,52 @@ impl NetworkNode {
                 };
                 let _ = response_tx.send(result);
             }
+            DaemonCommand::PublishAppend {
+                file_path,
+                path,
+                response_tx,
+            } => {
+                let size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
+                let result = self.publish_file_appending_path(&file_path, &path).map(
+                    |(content_id, address, device_sequence)| PublishResponse {
+                        content_id: content_id.to_string(),
+                        size,
+                        path: Some(address.path().to_string()),
+                        address: Some(address.to_string()),
+                        latest_sequence: Some(device_sequence),
+                    },
+                );
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::EnumerateAppendRecords {
+                identity,
+                path_prefix,
+                response_tx,
+            } => {
+                // For a remote identity, discover providers and sync the
+                // identity's authorized device-writer logs before answering, so
+                // the reader sees the remote identity's live merged append
+                // records. This refreshes even when state is already cached: the
+                // author may have appended new records (e.g. Spoke accepted-reply
+                // refs) since the reader's last sync, and answering only from the
+                // cache would hide them. begin_device_writer_sync falls back to
+                // the cached answer when no provider is reachable, so a stale
+                // cache is still served rather than an error. Local identities
+                // own their authoritative state and answer immediately.
+                let is_local = identity == self.identity.identity_id();
+                if is_local {
+                    let result = self.enumerate_append_records(&identity, &path_prefix);
+                    let _ = response_tx.send(result);
+                } else {
+                    self.begin_device_writer_sync(
+                        super::resolution::DeviceWriterSyncWaiter::Enumerate {
+                            identity,
+                            path_prefix,
+                            response_tx,
+                        },
+                    );
+                }
+            }
             DaemonCommand::Fetch {
                 content_id,
                 response_tx,
@@ -100,10 +146,32 @@ impl NetworkNode {
                     }
                 };
 
+                if let Ok(response) =
+                    self.resolve_device_writer_response_from_cache(&address, "device_writer_cache")
+                {
+                    let _ = response_tx.send(Ok(response));
+                    return;
+                }
+
                 let fallback_response = self
                     .resolve_response_from_cache(&address, None, "cache")
                     .ok();
                 let identity = address.identity().clone();
+
+                // Kick off a background device-writer sync for remote identities
+                // with no cached device-writer state. This populates the
+                // device-writer cache (append records and merged singletons) so
+                // subsequent resolves/enumerations see live remote state, while
+                // the legacy update-log path below answers this request now.
+                if identity != self.identity.identity_id()
+                    && !self.has_device_writer_state(&identity)
+                {
+                    self.begin_device_writer_sync(
+                        super::resolution::DeviceWriterSyncWaiter::Refresh {
+                            identity: identity.clone(),
+                        },
+                    );
+                }
 
                 if let Some(response) = fallback_response.clone() {
                     let _ = response_tx.send(Ok(response));
@@ -223,6 +291,12 @@ impl NetworkNode {
             }
             DaemonCommand::GetStatus { response_tx } => {
                 let _ = response_tx.send(self.build_status());
+            }
+            DaemonCommand::SignLocalIdentity {
+                payload,
+                response_tx,
+            } => {
+                let _ = response_tx.send(self.identity.sign(&payload));
             }
             DaemonCommand::GetPeers { response_tx } => {
                 let peers = self
@@ -398,6 +472,19 @@ impl NetworkNode {
                         self.announce_update_log_provider(&identity)?;
                         Ok(sequence)
                     });
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::StoreDeviceWriterLogs {
+                identity,
+                authority_records,
+                device_logs,
+                response_tx,
+            } => {
+                let result = self.store_verified_device_writer_logs(
+                    identity,
+                    authority_records,
+                    device_logs,
+                );
                 let _ = response_tx.send(result);
             }
             DaemonCommand::Unpin {

@@ -9,7 +9,7 @@ pub mod node;
 pub mod protocol;
 
 pub use command::{
-    CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
+    AppendRecordInfo, CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
     EncryptedObjectResponse, FetchResult, IngressRecord, IngressStatus, NodeStatus,
     PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
     PublishedContentInfo, PublishedRelayInfo, RelayDiagnoseIdentityResponse, ResolveResponse,

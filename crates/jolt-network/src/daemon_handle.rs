@@ -3,12 +3,13 @@ use std::{path::PathBuf, time::Duration};
 use tokio::sync::{mpsc, oneshot};
 
 use jolt_core::{
-    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
-    OfflineIngressEndpoint, PinRequest, UpdateLogEntry,
+    DeviceAuthorizationRecord, DeviceWriterLogEntry, EncryptedObjectRecipient,
+    IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint, OfflineIngressEndpoint,
+    PinRequest, UpdateLogEntry,
 };
 
 use crate::command::{
-    CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
+    AppendRecordInfo, CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
     EncryptedObjectResponse, FetchResult, IngressRecord, NodeStatus, PeerConnectResponse, PeerInfo,
     PublishReachabilityResponse, PublishResponse, PublishedContentInfo,
     RelayDiagnoseIdentityResponse, ResolveResponse,
@@ -113,6 +114,44 @@ impl DaemonHandle {
         self.cmd_tx
             .send(DaemonCommand::Fetch {
                 content_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    /// Publish a file as an append record bound to a path. Returns the content
+    /// ID and address. Append records coexist; this never rewrites a singleton.
+    pub async fn publish_append(
+        &self,
+        file_path: PathBuf,
+        path: String,
+    ) -> Result<PublishResponse, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::PublishAppend {
+                file_path,
+                path,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    /// Enumerate an identity's cached append records whose path starts with the
+    /// given prefix. This is how a Collection is read.
+    pub async fn enumerate_append_records(
+        &self,
+        identity: IdentityId,
+        path_prefix: String,
+    ) -> Result<Vec<AppendRecordInfo>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::EnumerateAppendRecords {
+                identity,
+                path_prefix,
                 response_tx: tx,
             })
             .await
@@ -317,6 +356,19 @@ impl DaemonHandle {
         receive_plain(rx).await
     }
 
+    /// Ask the daemon's local identity key to sign protocol authority bytes.
+    pub async fn sign_local_identity(&self, payload: Vec<u8>) -> Result<Vec<u8>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::SignLocalIdentity {
+                payload,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_plain(rx).await
+    }
+
     /// Get the list of connected peers.
     pub async fn peers(&self) -> Result<Vec<PeerInfo>, NetworkError> {
         let (tx, rx) = oneshot::channel();
@@ -449,6 +501,26 @@ impl DaemonHandle {
             .send(DaemonCommand::StoreUpdateLog {
                 identity,
                 entries,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    /// Store verified device-authority records plus per-device writer logs.
+    pub async fn store_device_writer_logs(
+        &self,
+        identity: IdentityId,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    ) -> Result<u64, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::StoreDeviceWriterLogs {
+                identity,
+                authority_records,
+                device_logs,
                 response_tx: tx,
             })
             .await

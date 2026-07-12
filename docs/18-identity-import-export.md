@@ -2,7 +2,18 @@
 
 ## Status
 
-Design proposal for card `048`.
+Implemented as the v0 recovery bridge in card `096a`.
+
+The shipped v0 exposes admin-only daemon API routes, CLI commands, and Console
+controls for encrypted identity export/import. It protects the export bundle
+with an optional passphrase-derived Argon2id/XChaCha20-Poly1305 key and stores
+imported material through the normal daemon identity and local identity
+encryption-key paths. If no passphrase is set, the export file itself is the
+bearer secret and must be handled like an unencrypted private SSH key.
+
+This remains shared-key portability, not delegated multi-device authorization:
+an imported daemon has the same root identity and peer key as the source daemon,
+app sessions are not imported, and users must approve apps again after import.
 
 ## Problem
 
@@ -137,22 +148,21 @@ bundle where those values disagree.
 
 ## Protection
 
-Export must require an export passphrase. It must not silently reuse an app
-session token, daemon admin token, or OS username.
+Export may use an optional passphrase. It must not silently reuse an app session
+token, daemon admin token, or OS username.
 
 The KDF and cipher choices should match the at-rest key storage direction:
 
-- Argon2id for deriving an export key from the passphrase.
+- Argon2id for deriving an export key from the passphrase, or from an empty
+  passphrase when the user chooses a no-passphrase export.
 - XChaCha20-Poly1305 for authenticated encryption.
 - Random salt and nonce per export.
 - Associated data should include `magic`, `version`, `identity`, KDF name, and
   cipher name so header tampering is detected.
 
-The export command should refuse weak or empty passphrases in normal builds. A
-test/dev override can exist only behind an explicit flag.
-
-The export file is still a bearer secret. Anyone with the file and passphrase can
-become that identity.
+Passphrases are SSH-key-style optional in v0. A no-passphrase export is still an
+encrypted bundle format, but anyone with the file can become that identity. A
+passphrase adds protection if the file is copied or leaked.
 
 ## Admin Surface
 
@@ -181,7 +191,7 @@ Console UX should require an explicit confirmation step that says:
 
 ```text
 This exports the private keys for this .jolt identity. Anyone who imports this
-file and knows its passphrase can act as this identity. Jolt v0 cannot revoke
+file can act as this identity unless you set a passphrase. Jolt v0 cannot revoke
 one copied device without rotating away from this identity.
 ```
 

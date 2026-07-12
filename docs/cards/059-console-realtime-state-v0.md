@@ -67,6 +67,10 @@ reachable WebSocket or unauthenticated event API for this card.
 - Green: `npm run build` in `apps/jolt-console`.
 - Green: `cargo check -p jolt-console`.
 - Green: `./scripts/test-local.sh`.
+- Red: `npx vitest run src/daemon/useDaemonSnapshot.test.ts` showed an older
+  in-flight poll replacing the newer post-identity-switch snapshot.
+- Green: snapshot refreshes now carry a monotonic generation and only the
+  newest completion may update state or polling backoff.
 
 ## Notes
 
