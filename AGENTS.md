@@ -12,11 +12,11 @@
 ## PR Closeout and Context Handoff
 
 - Treat the repository as the durable project memory; do not rely on chat history surviving context resets.
-- At the end of each PR, update the relevant `docs/cards/*.md` status and verification notes.
+- At the end of each PR, update the relevant `.notes/cards/*.md` status and verification notes, and push the `.notes` repo (jolt-development-docs).
 - Keep PR descriptions descriptive: explain what changed, why it matters, how it was tested, and any known follow-up debt.
 - Maintain `.notes/current-context.md` as gitignored working memory for the next session. Include the active branch/PR, recent verification commands, local process state, blockers, and the next intended task.
 - When a context reset is expected, make sure project changes are committed and pushed, then refresh `.notes/current-context.md` before stopping.
-- On a fresh session, read `AGENTS.md`, the active/relevant cards under `docs/cards`, and `.notes/current-context.md` before continuing work.
+- On a fresh session, read `AGENTS.md`, the active/relevant cards under `.notes/cards`, and `.notes/current-context.md` before continuing work. `.notes` is a gitignored checkout of the private jolt-development-docs repo.
 
 ## Protocol Boundary
 
