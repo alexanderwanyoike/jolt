@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
+use jolt_identity::ExportedIdentityEncryptionKeypair;
 use jolt_identity::NodeIdentity;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct LocalIdentityStore {
     state: Arc<Mutex<LocalIdentityState>>,
+    storage_dir: PathBuf,
 }
 
 struct LocalIdentityState {
@@ -23,7 +26,14 @@ enum LocalIdentityRecord {
     Generated {
         identity: NodeIdentity,
         label: Option<String>,
+        encryption_keypairs: Vec<ExportedIdentityEncryptionKeypair>,
     },
+}
+
+#[derive(Serialize, Deserialize)]
+struct PersistedLocalIdentity {
+    label: Option<String>,
+    encryption_keypairs: Vec<ExportedIdentityEncryptionKeypair>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -57,23 +67,30 @@ pub enum LocalIdentityError {
     MissingIdentity,
     #[error("cannot delete daemon signing identity: {0}")]
     ProtectedIdentity(String),
+    #[error("local identity storage error: {0}")]
+    Storage(String),
 }
 
 impl LocalIdentityStore {
-    pub fn new(default_identity: Option<String>) -> Self {
-        let records = default_identity
+    pub fn open(
+        default_identity: Option<String>,
+        storage_dir: PathBuf,
+    ) -> Result<Self, LocalIdentityError> {
+        let mut records: Vec<_> = default_identity
             .iter()
             .map(|address| LocalIdentityRecord::Daemon {
                 address: address.clone(),
                 label: Some("Default".to_string()),
             })
             .collect();
-        Self {
+        records.extend(load_generated_identities(&storage_dir)?);
+        Ok(Self {
             state: Arc::new(Mutex::new(LocalIdentityState {
                 records,
                 active_identity: default_identity,
             })),
-        }
+            storage_dir,
+        })
     }
 
     pub async fn list(&self) -> LocalIdentitiesResponse {
@@ -132,6 +149,7 @@ impl LocalIdentityStore {
         state.records.push(LocalIdentityRecord::Generated {
             identity,
             label: request.label,
+            encryption_keypairs: Vec::new(),
         });
         if state.active_identity.is_none() {
             state.active_identity = Some(address.clone());
@@ -143,20 +161,48 @@ impl LocalIdentityStore {
         &self,
         identity: NodeIdentity,
         label: Option<String>,
-    ) -> LocalIdentityView {
+        encryption_keypairs: Vec<ExportedIdentityEncryptionKeypair>,
+    ) -> Result<LocalIdentityView, LocalIdentityError> {
         let mut state = self.state.lock().await;
         let address = identity.jolt_address().to_string();
         if let Some(existing) = view_for_address(&state, &address) {
-            return existing;
+            return Ok(existing);
         }
 
-        state
-            .records
-            .push(LocalIdentityRecord::Generated { identity, label });
+        persist_generated_identity(
+            &self.storage_dir,
+            &identity,
+            label.clone(),
+            &encryption_keypairs,
+        )?;
+        state.records.push(LocalIdentityRecord::Generated {
+            identity,
+            label,
+            encryption_keypairs,
+        });
         if state.active_identity.is_none() {
             state.active_identity = Some(address.clone());
         }
-        view_for_address(&state, &address).expect("imported identity exists")
+        Ok(view_for_address(&state, &address).expect("imported identity exists"))
+    }
+
+    pub async fn generated_identity_encryption_keypairs(
+        &self,
+        identity: &str,
+    ) -> Result<Vec<ExportedIdentityEncryptionKeypair>, LocalIdentityError> {
+        let state = self.state.lock().await;
+        let record = state
+            .records
+            .iter()
+            .find(|record| record.address() == identity)
+            .ok_or_else(|| LocalIdentityError::UnknownIdentity(identity.to_string()))?;
+        Ok(match record {
+            LocalIdentityRecord::Daemon { .. } => Vec::new(),
+            LocalIdentityRecord::Generated {
+                encryption_keypairs,
+                ..
+            } => encryption_keypairs.clone(),
+        })
     }
 
     pub async fn select(
@@ -206,6 +252,65 @@ impl LocalIdentityStore {
         }
         Ok(response_from_state(&state))
     }
+}
+
+fn persist_generated_identity(
+    storage_dir: &Path,
+    identity: &NodeIdentity,
+    label: Option<String>,
+    encryption_keypairs: &[ExportedIdentityEncryptionKeypair],
+) -> Result<(), LocalIdentityError> {
+    let identity_dir = storage_dir.join(identity.identity_id().to_string());
+    identity
+        .save(&identity_dir)
+        .map_err(|error| LocalIdentityError::Storage(error.to_string()))?;
+    let metadata = serde_json::to_vec_pretty(&PersistedLocalIdentity {
+        label,
+        encryption_keypairs: encryption_keypairs.to_vec(),
+    })
+    .map_err(|error| LocalIdentityError::Storage(error.to_string()))?;
+    let metadata_path = identity_dir.join("recovery.json");
+    std::fs::write(&metadata_path, metadata)
+        .map_err(|error| LocalIdentityError::Storage(error.to_string()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&metadata_path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|error| LocalIdentityError::Storage(error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn load_generated_identities(
+    storage_dir: &Path,
+) -> Result<Vec<LocalIdentityRecord>, LocalIdentityError> {
+    if !storage_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut records = Vec::new();
+    for entry in std::fs::read_dir(storage_dir)
+        .map_err(|error| LocalIdentityError::Storage(error.to_string()))?
+    {
+        let path = entry
+            .map_err(|error| LocalIdentityError::Storage(error.to_string()))?
+            .path();
+        if !path.is_dir() {
+            continue;
+        }
+        let identity = NodeIdentity::load(&path)
+            .map_err(|error| LocalIdentityError::Storage(error.to_string()))?;
+        let metadata: PersistedLocalIdentity = serde_json::from_slice(
+            &std::fs::read(path.join("recovery.json"))
+                .map_err(|error| LocalIdentityError::Storage(error.to_string()))?,
+        )
+        .map_err(|error| LocalIdentityError::Storage(error.to_string()))?;
+        records.push(LocalIdentityRecord::Generated {
+            identity,
+            label: metadata.label,
+            encryption_keypairs: metadata.encryption_keypairs,
+        });
+    }
+    Ok(records)
 }
 
 impl LocalIdentityRecord {

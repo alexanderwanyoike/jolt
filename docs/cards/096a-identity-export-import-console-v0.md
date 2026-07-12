@@ -160,6 +160,23 @@ identity. It does not assert that two concurrently running cloned root-key
 daemons sync with each other, because this v0 recovery model intentionally
 copies the root peer/identity key.
 
+Release hardening in the admin loopback-boundary PR:
+
+- Red: `cargo test -p jolt-server admin_routes_reject_non_loopback_clients --lib`
+  failed before the shared HTTP router rejected remote `/admin/*` requests.
+- Green: the same focused test proves remote admin requests receive `403` while
+  non-admin API requests remain reachable; the server now supplies peer socket
+  information to that boundary on every listener.
+
+Release hardening in the durable local-identity recovery PR:
+
+- Red: `cargo test -p jolt-server test_admin_imports_identity_recovery_bundle_as_local_identity_without_replacing_daemon --test api_integration -- --nocapture`
+  failed after restarting the target profile because the Console import existed
+  only in `LocalIdentityStore` memory.
+- Green: the same integration test now restarts the target profile, finds the
+  recovered signing identity, and re-exports it with the imported identity
+  encryption keypair still present.
+
 Release hardening for recovery bundles:
 
 - CLI and Console exports now use the same owner-only file writer. On Unix it

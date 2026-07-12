@@ -55,6 +55,7 @@ pub struct ImportIdentityResponse {
 pub struct LocalIdentityImport {
     pub identity: NodeIdentity,
     pub label: Option<String>,
+    pub encryption_keypairs: Vec<ExportedIdentityEncryptionKeypair>,
     pub encryption_key_count: usize,
 }
 
@@ -109,9 +110,17 @@ impl IdentityRecoveryStore {
     pub fn export_local_identity(
         &self,
         identity: NodeIdentity,
+        encryption_keys: Vec<ExportedIdentityEncryptionKeypair>,
         request: ExportIdentityRequest,
     ) -> Result<ExportIdentityResponse, IdentityRecoveryError> {
-        self.export_node_identity(identity, Vec::new(), request)
+        self.export_node_identity(identity, encryption_keys, request)
+    }
+
+    pub fn local_identities_dir(&self) -> PathBuf {
+        self.identity_dir
+            .parent()
+            .unwrap_or(&self.identity_dir)
+            .join("local-identities")
     }
 
     fn export_node_identity(
@@ -178,6 +187,7 @@ impl IdentityRecoveryStore {
         Ok(LocalIdentityImport {
             identity,
             label: plaintext.source.label,
+            encryption_keypairs: plaintext.identity_encryption_keys.clone(),
             encryption_key_count: plaintext.identity_encryption_keys.len(),
         })
     }

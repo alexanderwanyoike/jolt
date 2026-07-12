@@ -20,11 +20,15 @@ pub async fn export_identity(
             .generated_identity(requested_identity)
             .await?
         {
-            return Ok(Json(
-                state
-                    .identity_recovery
-                    .export_local_identity(identity, request)?,
-            ));
+            let encryption_keypairs = state
+                .local_identities
+                .generated_identity_encryption_keypairs(requested_identity)
+                .await?;
+            return Ok(Json(state.identity_recovery.export_local_identity(
+                identity,
+                encryption_keypairs,
+                request,
+            )?));
         }
     }
 
@@ -40,8 +44,12 @@ pub async fn import_identity(
         let encryption_key_count = imported.encryption_key_count;
         let imported_view = state
             .local_identities
-            .import_recovered(imported.identity, imported.label)
-            .await;
+            .import_recovered(
+                imported.identity,
+                imported.label,
+                imported.encryption_keypairs,
+            )
+            .await?;
         return Ok(Json(ImportIdentityResponse {
             identity: imported_view.address,
             imported: true,
@@ -84,6 +92,9 @@ impl IntoResponse for IdentityRecoveryApiError {
                     }
                     LocalIdentityError::ProtectedIdentity(_) => {
                         (StatusCode::BAD_REQUEST, "local_identity_protected")
+                    }
+                    LocalIdentityError::Storage(_) => {
+                        (StatusCode::INTERNAL_SERVER_ERROR, "local_identity_storage")
                     }
                 };
                 (status, code, error.to_string())
