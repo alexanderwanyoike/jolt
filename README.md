@@ -508,8 +508,8 @@ npm run build --prefix apps/jolt-console
 
 ## Documentation
 
-Design notes and implementation cards live in [`docs/`](docs/). Current planning
-cards are in [`docs/cards/`](docs/cards/).
+Protocol design notes live in [`docs/`](docs/). Implementation planning and
+milestone tracking happen in a separate development repository.
 
 ## License
 
