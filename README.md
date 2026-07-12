@@ -15,6 +15,16 @@ ingress, Linux packaging, and a first public bootstrap relay. The system is
 still eventually consistent, developer-oriented, and not yet ready for normal
 users.
 
+![Jolt Console overview: a local daemon connected to the public bootstrap relay](docs/assets/console-overview.png)
+
+*Jolt Console with a local daemon running: connected to the public bootstrap
+relay, publishing signed content.*
+
+![Jolt Console apps page: approving, inspecting, and revoking app sessions](docs/assets/console-apps.png)
+
+*The app trust surface: external apps like Spoke request scoped capabilities,
+and the user approves, inspects, and revokes them from Console.*
+
 ## Why Jolt Exists
 
 On X, Instagram, Facebook, and similar platforms, distribution is owned by the
