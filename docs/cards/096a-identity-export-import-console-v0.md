@@ -160,6 +160,14 @@ identity. It does not assert that two concurrently running cloned root-key
 daemons sync with each other, because this v0 recovery model intentionally
 copies the root peer/identity key.
 
+Release hardening in the admin loopback-boundary PR:
+
+- Red: `cargo test -p jolt-server admin_routes_reject_non_loopback_clients --lib`
+  failed before the shared HTTP router rejected remote `/admin/*` requests.
+- Green: the same focused test proves remote admin requests receive `403` while
+  non-admin API requests remain reachable; the server now supplies peer socket
+  information to that boundary on every listener.
+
 Release hardening in the durable local-identity recovery PR:
 
 - Red: `cargo test -p jolt-server test_admin_imports_identity_recovery_bundle_as_local_identity_without_replacing_daemon --test api_integration -- --nocapture`
