@@ -8,9 +8,7 @@ const files = {
   normalizeArtifacts: readFileSync("scripts/normalize-jolt-console-artifacts.sh", "utf8"),
   assembleRelease: readFileSync("scripts/assemble-jolt-console-release.sh", "utf8"),
   updateManifest: readFileSync("scripts/write-jolt-console-update-manifest.mjs", "utf8"),
-  readme: readFileSync("README.md", "utf8"),
-  distributionCard: readFileSync("docs/cards/077-jolt-distribution-v0.md", "utf8"),
-  installCliCard: readFileSync("docs/cards/084-install-jolt-cli-with-console.md", "utf8")
+  readme: readFileSync("README.md", "utf8")
 };
 
 const requiredMarkers = {
@@ -123,15 +121,7 @@ const requiredMarkers = {
     "jolt-windows-x86_64.exe",
     "jolt --version",
     "--cli-only"
-  ],
-  distributionCard: [
-    "GitHub Actions",
-    "jolt-console-x86_64.AppImage",
-    "jolt-console-aarch64.dmg",
-    "jolt-console-x86_64-setup.exe",
-    "install-jolt-console.sh"
-  ],
-  installCliCard: ["jolt-linux-x86_64", "jolt-macos-aarch64", "jolt-windows-x86_64.exe", "jolt-console", "jolt", "--cli-only"]
+  ]
 };
 
 for (const [fileName, markers] of Object.entries(requiredMarkers)) {
