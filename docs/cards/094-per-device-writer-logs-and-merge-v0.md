@@ -244,3 +244,12 @@ Release hardening for append enumeration capabilities:
   failed because the new capability vocabulary was not grantable.
 - Green: focused API tests cover self-identity/path enforcement, rejection of
   `resolve:public` alone, and explicitly scoped cross-identity enumeration.
+
+Release hardening for equal-length device-log forks:
+
+- Red: `cargo test -p jolt-network equal_length_device_log_forks_converge_regardless_of_arrival_order --lib -- --nocapture`
+  produced different append state when two valid same-device forks arrived in
+  opposite orders.
+- Green: the network cache now selects equal-length forks by the core merge
+  tuple `(created_at, device_sequence, device_id, entry_hash)`, so both arrival
+  orders converge before merge.
