@@ -6,8 +6,8 @@ pub mod signing;
 pub use error::IdentityError;
 pub use export_bundle::{
     decrypt_identity_export, encrypt_identity_export, identity_from_export,
-    ExportedIdentityEncryptionKeypair, IdentityExportBundle, IdentityExportError,
-    IdentityExportPlaintext, IdentityExportSource,
+    write_identity_export_file, ExportedIdentityEncryptionKeypair, IdentityExportBundle,
+    IdentityExportError, IdentityExportPlaintext, IdentityExportSource,
 };
 pub use keypair::NodeIdentity;
 pub use signing::verify_signature;

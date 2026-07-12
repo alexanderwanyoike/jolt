@@ -176,3 +176,15 @@ Release hardening in the durable local-identity recovery PR:
 - Green: the same integration test now restarts the target profile, finds the
   recovered signing identity, and re-exports it with the imported identity
   encryption keypair still present.
+
+Release hardening for recovery bundles:
+
+- CLI and Console exports now use the same owner-only file writer. On Unix it
+  creates new files as `0600` and also tightens an existing destination before
+  writing recovery material.
+- Bundle import rejects Argon2 parameters above the v1 export profile before
+  running the KDF, bounding attacker-controlled memory, iteration, and
+  parallelism costs.
+- Red: the owner-only overwrite test failed before the shared writer existed;
+  the excessive-KDF test previously continued into derivation/authentication.
+- Green: `cargo test -p jolt-identity identity_export --lib -- --nocapture`.
