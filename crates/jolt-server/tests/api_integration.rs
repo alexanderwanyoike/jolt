@@ -1038,6 +1038,10 @@ async fn test_admin_imports_identity_recovery_bundle_as_local_identity_without_r
         start_test_server_with_profile_dir(source_profile.path().to_path_buf()).await;
     let client = reqwest::Client::new();
     let source_identity = source_handle.local_identity_address().unwrap().to_string();
+    source_handle
+        .ensure_local_identity_encryption_key()
+        .await
+        .unwrap();
 
     let export_resp = client
         .post(format!(
@@ -1102,8 +1106,41 @@ async fn test_admin_imports_identity_recovery_bundle_as_local_identity_without_r
         identity["address"] == source_identity && identity["label"] == "Recovered"
     }));
 
-    source_handle.shutdown().await.ok();
     target_handle.shutdown().await.ok();
+
+    let (restarted_port, restarted_handle, _restarted_holder) =
+        start_test_server_with_profile_dir(target_profile.path().to_path_buf()).await;
+    let identities_resp = client
+        .get(format!("{}/admin/v1/identities", base_url(restarted_port)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(identities_resp.status(), 200);
+    let identities: serde_json::Value = identities_resp.json().await.unwrap();
+    assert!(identities["identities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|identity| identity["address"] == source_identity));
+
+    let reexport_resp = client
+        .post(format!(
+            "{}/admin/v1/identities/export",
+            base_url(restarted_port)
+        ))
+        .json(&serde_json::json!({
+            "identity": source_identity,
+            "passphrase": "recovered-again"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reexport_resp.status(), 200);
+    let reexported: serde_json::Value = reexport_resp.json().await.unwrap();
+    assert_eq!(reexported["encryption_key_count"], 1);
+
+    source_handle.shutdown().await.ok();
+    restarted_handle.shutdown().await.ok();
 }
 
 #[tokio::test]

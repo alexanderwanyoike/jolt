@@ -36,8 +36,11 @@ pub fn build_router_with_stores(
     network_settings: NetworkSettingsStore,
     identity_recovery: IdentityRecoveryStore,
 ) -> Router {
-    let local_identities =
-        LocalIdentityStore::new(daemon.local_identity_address().map(ToOwned::to_owned));
+    let local_identities = LocalIdentityStore::open(
+        daemon.local_identity_address().map(ToOwned::to_owned),
+        identity_recovery.local_identities_dir(),
+    )
+    .unwrap_or_else(|err| panic!("failed to open local identity store: {err}"));
     let device_authority = DeviceAuthorityStore::new();
     let state = AppState {
         daemon,

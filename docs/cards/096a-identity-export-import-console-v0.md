@@ -159,3 +159,12 @@ session, and publishes/enumerates an app append record under the imported
 identity. It does not assert that two concurrently running cloned root-key
 daemons sync with each other, because this v0 recovery model intentionally
 copies the root peer/identity key.
+
+Release hardening in the durable local-identity recovery PR:
+
+- Red: `cargo test -p jolt-server test_admin_imports_identity_recovery_bundle_as_local_identity_without_replacing_daemon --test api_integration -- --nocapture`
+  failed after restarting the target profile because the Console import existed
+  only in `LocalIdentityStore` memory.
+- Green: the same integration test now restarts the target profile, finds the
+  recovered signing identity, and re-exports it with the imported identity
+  encryption keypair still present.
