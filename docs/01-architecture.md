@@ -87,7 +87,6 @@ graph TD
     net --> store
     net --> id
 
-    store --> id
     store --> core[jolt-core]
     id --> core
 ```
@@ -108,7 +107,7 @@ All crates depend on jolt-core; only the interesting edges are drawn.
 | `blake3` | Content and log-entry hashing |
 | `cid` / `multihash` | Content addressing (IPFS-compatible CIDs) |
 | `data-encoding` | Base32 identity addresses |
-| `serde` + `ciborium` | CBOR on the network wire; local persistence is JSON files |
+| `serde` + `serde_json` | Local persistence is JSON files; the network wire uses libp2p's CBOR request-response codec |
 | `tokio` | Async runtime |
 | `tracing` | Structured logging |
 
@@ -167,7 +166,7 @@ HTTP interface for the console UI and apps.
 
 - REST API for node management (identity, content, peers, publishing)
 - Capability-scoped app sessions (see [doc 15](15-app-boundary-and-sessions.md))
-- Localhost-only binding (security)
+- Binds to localhost by default (`--api-bind` can open other interfaces; admin routes stay loopback-only regardless)
 - Resolve `<identity>.jolt` addresses to content (see below)
 
 ### jolt-node
