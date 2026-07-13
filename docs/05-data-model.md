@@ -11,32 +11,7 @@
 
 ## Data Categories
 
-### 1. App Data (Private by Default)
-
-Data created by an app during use. Stored in a per-app isolated namespace on the user's node.
-
-```
-~/.jolt/data/
-  apps/
-    <app-content-id>/
-      kv/           # key-value store (sled/sqlite)
-      blobs/        # larger binary objects
-      meta.json     # app metadata, permissions granted
-```
-
-Examples:
-- Chat messages in a messaging app
-- Notes in a notes app
-- Settings and preferences
-- Draft content
-
-This data:
-- Is only accessible to the app that created it
-- Never leaves the node unless the user explicitly shares it
-- Persists across app updates
-- Can be exported or deleted by the user at any time
-
-### 2. Published Content (Public)
+### 1. Published Content (Public)
 
 Content the user has explicitly published to the network. Content-addressed and signed.
 
@@ -44,8 +19,8 @@ Content the user has explicitly published to the network. Content-addressed and 
 ~/.jolt/data/
   published/
     <content-id>/
-      content       # the actual bytes
-      manifest      # metadata (type, size, signature)
+      content         # the actual bytes
+      manifest.json   # metadata (type, size, publisher key, signature)
 ```
 
 Examples:
@@ -61,7 +36,7 @@ This content:
 - Is served to the network via the content fetch protocol
 - Can be pinned by a home relay at the owner's request
 
-### 3. Cached Content (From Other Nodes)
+### 2. Cached Content (From Other Nodes)
 
 Content fetched from other nodes and cached locally for performance and availability.
 
@@ -70,9 +45,8 @@ Content fetched from other nodes and cached locally for performance and availabi
   cache/
     <content-id>/
       content
-      manifest
-      fetched_at    # timestamp
-      last_accessed # for LRU eviction
+      manifest.json
+    cache_index.json  # per-entry cached_at, last_accessed, pinned, size (for LRU eviction)
 ```
 
 This content:
@@ -81,38 +55,15 @@ This content:
 - Can be pinned to prevent eviction
 - Is served to other nodes who request it (helping availability)
 
-### 4. Installed Apps
-
-WASM binaries and assets for installed applications.
-
-```
-~/.jolt/data/
-  installed_apps/
-    <app-content-id>/
-      app.wasm          # the WASM binary
-      assets/           # HTML, CSS, JS, images
-      manifest.toml     # app manifest
-      permissions.toml  # granted permissions
-      version           # installed version
-```
-
 ## Content Addressing
 
 Every piece of published content has a unique identifier derived from its hash.
 
 ```rust
-struct ContentId {
-    hash: [u8; 32],          // BLAKE3 hash of content bytes
-    codec: Codec,            // how to interpret the content
-}
-
-enum Codec {
-    Raw,        // raw bytes
-    DagCbor,    // structured data (CBOR-encoded DAG)
-    Html,       // HTML document
-    Wasm,       // WASM binary
-}
+struct ContentId(Cid);   // CIDv1 wrapping a BLAKE3-256 multihash of the content bytes
 ```
+
+The codec is always RAW (`0x55`); content type lives in the manifest, not the identifier. A ContentId serializes as its CID string (e.g. `bafk...`).
 
 Content is immutable at a given ContentId. Updating content means publishing new content with a new ContentId and updating the user's update log to point to it.
 
@@ -127,43 +78,46 @@ Each user maintains a signed append-only log that tracks changes to their publis
 
 ```rust
 struct UpdateLogEntry {
-    sequence: u64,              // monotonically increasing
-    timestamp: u64,             // unix timestamp
-    action: Action,
-    previous: Option<ContentId>,// hash of previous entry (chain integrity)
-    signature: Signature,       // signed by the user's key
+    body: UpdateLogEntryBody,
+    signature: Vec<u8>,         // signature over the body, by the user's key
 }
 
-enum Action {
+struct UpdateLogEntryBody {
+    owner_public_key: Vec<u8>,
+    sequence: u64,              // monotonically increasing
+    previous_entry_hash: Option<UpdateLogEntryHash>, // BLAKE3 hash of previous entry body
+    action: UpdateAction,
+}
+
+enum UpdateAction {
     // Site / content management
     PublishContent {
+        content_id: ContentId,
+    },
+    UpdateRoot {
+        content_id: ContentId,  // new root for user's published content
+    },
+    SetPath {
         path: String,           // logical path, e.g. "/blog/hello-world"
         content_id: ContentId,
     },
-    RemoveContent {
+    RemovePath {
         path: String,
-    },
-    UpdateRoot {
-        content_id: ContentId,  // new root manifest for user's published content
-    },
-
-    // App-related
-    PublishApp {
-        app_manifest: ContentId,
-    },
-    UpdateApp {
-        app_id: ContentId,      // original app ID
-        new_version: ContentId, // new version's content ID
     },
 
     // Profile
     UpdateProfile {
-        display_name: Option<String>,
-        bio: Option<String>,
-        avatar: Option<ContentId>,
+        profile: UpdateProfile, // display_name, bio, avatar
+    },
+
+    // Reachability
+    SetReachability {
+        relays: Vec<RelayHint>,
     },
 }
 ```
+
+Entries carry no timestamp; ordering comes from the sequence number and hash chain.
 
 ### Resolving Mutable Content
 
@@ -206,56 +160,20 @@ graph LR
 
 Tampering with entry 1 would change h1, which would invalidate entry 2's chain.
 
-## Per-App Data Isolation
+## Device-Writer Logs and Append Records
 
-The data store enforces strict isolation between apps:
+Alongside the last-writer-wins update log, each device keeps its own signed, hash-chained device-writer log. Its operations are `DeviceWriterOperation::SetPath { path, content_id, mode }`, where the mode is:
 
-```rust
-struct AppDataStore {
-    app_id: ContentId,     // which app this store belongs to
-    db: Database,          // isolated database instance
-}
+- `Singleton` -- the path holds one value; later entries replace earlier ones (conflicts across devices are surfaced, not silently merged)
+- `Append` -- every entry is retained; readers enumerate all append records under a path prefix (e.g. all posts under `/feed/`)
 
-impl AppDataStore {
-    // All operations are scoped to this app's namespace
-    fn get(&self, key: &[u8]) -> Option<Vec<u8>>;
-    fn set(&self, key: &[u8], value: &[u8]);
-    fn delete(&self, key: &[u8]);
-    fn list_keys(&self, prefix: &[u8]) -> Vec<Vec<u8>>;
-}
-```
+Device logs from all of an identity's authorized devices merge deterministically into a `MergedDeviceIdentityState`. Append records live only in device-writer logs; they are never written to the last-writer-wins update log. On disk they persist separately, in `device_writer_logs/`, as the verified device-authority records plus the local device's log, and peers sync and enumerate them over the device-writer protocol.
 
-The runtime enforces that WASM app A can never obtain a handle to app B's data store.
-
-## Data Export and Portability
-
-Users can export their data at any time:
-
-```
-jolt export --app jolt-chat --format json > my-chat-history.json
-jolt export --all --format tar > my-jolt-data.tar
-```
-
-This is a core principle: your data is never trapped. You can:
-- Export any app's data in standard formats
-- Back up your entire node
-- Migrate to a new machine
-- Delete everything
+See [True Multi-Writer Identity and Devices](20-true-multi-writer-identity-and-devices.md) for the full model.
 
 ## Storage Quotas
 
-```toml
-[storage]
-total_limit = "10GB"          # total disk usage for jolt
-cache_limit = "2GB"           # max cached content from other nodes
-per_app_limit = "500MB"       # max data per installed app
-published_limit = "5GB"       # max published content
-```
-
-When limits are reached:
-- Cache: LRU eviction (least recently accessed content is removed first)
-- App data: app receives a storage error, user is notified
-- Published content: user must remove content before publishing more
+The only implemented limit is the cache size: `CacheConfig.max_size_bytes`, defaulting to 2 GB. When the cache is full, LRU eviction removes the least recently accessed non-pinned content first.
 
 ## Redundancy and Backup
 
@@ -280,34 +198,3 @@ jolt pin request --peer <peer-id> --content <content-id>
 ```
 
 The pinning peer stores a copy and serves it to the network. Mutual pinning arrangements ("I pin yours, you pin mine") improve availability for both parties.
-
-### Redundancy Groups
-
-A group of nodes that agree to keep each other's content available.
-
-```rust
-struct RedundancyGroup {
-    members: Vec<PeerId>,
-    policy: RedundancyPolicy,
-}
-
-struct RedundancyPolicy {
-    replicas: usize,          // how many copies to maintain
-    content_types: Vec<Codec>,// what to replicate (all, or specific types)
-    max_storage: u64,         // per-member storage contribution
-}
-```
-
-### Encrypted Backup
-
-Users can opt into encrypted backup of private app data to their redundancy group:
-
-```
-1. User enables encrypted backup for an app
-2. App data is encrypted with user's key
-3. Encrypted blob is distributed to redundancy group members
-4. Members store but cannot read the encrypted data
-5. User can restore from any member if their node is lost
-```
-
-This is strictly opt-in. By default, private data never leaves the user's node.

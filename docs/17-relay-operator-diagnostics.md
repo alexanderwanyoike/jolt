@@ -35,13 +35,10 @@ Relay diagnostics v0 should answer:
 Keep the CLI usable over SSH and scriptable. The v0 commands should call the
 local daemon API unless the command explicitly accepts a remote admin URL.
 
-Recommended commands:
+Implemented commands:
 
 ```text
 jolt relay status [--json]
-jolt relay peers [--json]
-jolt relay records [--json]
-jolt relay pins [--json]
 jolt relay diagnose identity <identity> [--json]
 ```
 
@@ -62,6 +59,8 @@ Pins: 14 items / 42.1 MB
 Identity-head hints: 37 identities
 Last error: none
 ```
+
+Note: the field labels above are illustrative and differ slightly from the shipped output, which uses labels such as `Peer ID:`, `Jolt:`, `API port:`, `Peers: N connected (X direct / Y relayed)`, `Bootstrap: connected (a connected / b effective / c configured)`, plus `Cache:`, `Relay record:`, `Home relay:`, and `Listening:` lines, and does not include `Identity-head hints` or `Last error` lines.
 
 `--json` should return the same data as typed JSON for scripts and future
 operator tooling.
@@ -113,15 +112,11 @@ The existing `/api/v1/status`, `/api/v1/peers`, `/api/v1/cache/*`, and
 should add relay-specific admin endpoints rather than teaching operators to
 scrape product/user APIs.
 
-Recommended endpoints:
+Implemented endpoints:
 
 ```text
 GET  /admin/v1/relay/status
-GET  /admin/v1/relay/peers
-GET  /admin/v1/relay/records
-GET  /admin/v1/relay/pins
 POST /admin/v1/relay/diagnose/identity
-GET  /admin/v1/relay/metrics
 ```
 
 The endpoints should be read-only for v0. Mutating relay operations already
@@ -156,62 +151,6 @@ curl http://127.0.0.1:9862/admin/v1/relay/status
 
 Do not document public unauthenticated admin endpoints as acceptable.
 
-## Structured Logs
-
-Relay logs should use stable event names and fields so operators can grep them
-and future metrics can be derived without parsing prose.
-
-Minimum event families:
-
-| Event | Important Fields |
-|---|---|
-| `relay.started` | `peer_id`, `identity`, `listen_addrs`, `bootstrap_relay` |
-| `relay.bootstrap.connected` | `peer_id`, `multiaddr`, `duration_ms` |
-| `relay.bootstrap.failed` | `multiaddr`, `error_code`, `error` |
-| `relay.record.published` | `relay_id`, `expires_at`, `capabilities` |
-| `relay.record.learned` | `relay_id`, `source_peer`, `expires_at` |
-| `relay.record.rejected` | `relay_id`, `source_peer`, `reason` |
-| `relay.exchange.completed` | `peer_id`, `records_sent`, `records_received` |
-| `identity_provider.query.received` | `identity`, `source_peer` |
-| `identity_provider.query.forwarded` | `identity`, `target_relay` |
-| `identity_provider.query.result` | `identity`, `candidate_count`, `outcome` |
-| `identity_head.gossip.sent` | `target_relay`, `hint_count` |
-| `identity_head.gossip.received` | `source_peer`, `accepted`, `rejected` |
-| `relay.pin.accepted` | `owner_identity`, `content_id`, `size` |
-| `relay.pin.rejected` | `owner_identity`, `content_id`, `reason` |
-| `relay.pin.served` | `content_id`, `requester_peer` |
-
-Logs must not include private plaintext content, private keys, session tokens,
-or decrypted payloads.
-
-## Counters And Metrics
-
-V0 can expose simple JSON counters through `GET /admin/v1/relay/metrics`.
-Prometheus text format can come later without changing the internal metric
-names.
-
-Recommended counters/gauges:
-
-```text
-jolt_relay_connected_peers
-jolt_relay_known_relays
-jolt_relay_bootstrap_connected_peers
-jolt_relay_pinned_items
-jolt_relay_pinned_bytes
-jolt_relay_identity_head_hints
-jolt_relay_provider_queries_received_total
-jolt_relay_provider_queries_forwarded_total
-jolt_relay_provider_queries_failed_total{code}
-jolt_relay_relay_records_accepted_total
-jolt_relay_relay_records_rejected_total{reason}
-jolt_relay_pins_accepted_total
-jolt_relay_pins_rejected_total{reason}
-jolt_relay_content_requests_served_total
-```
-
-Counters should be best-effort observability, not consensus state. Restarting a
-process may reset in-memory counters in v0.
-
 ## Failure Outcomes
 
 Relay diagnostics should reuse existing structured failure vocabulary where it
@@ -236,20 +175,20 @@ Relay-specific diagnostics may add operator-only reasons, such as:
 
 ## Implementation Slices
 
-1. **Relay CLI/Admin Status v0**
+1. **Relay CLI/Admin Status v0** (delivered)
    Add `jolt relay status --json` and `GET /admin/v1/relay/status` using
    existing daemon status, peer, cache, relay-record, and pin information.
 
-2. **Relay Diagnose Identity v0**
+2. **Relay Diagnose Identity v0** (delivered)
    Add `jolt relay diagnose identity <identity>` and
    `POST /admin/v1/relay/diagnose/identity` to trace local cache/hint/provider
    lookup and relay forwarding outcomes.
 
-3. **Relay Structured Logs v0**
+3. **Relay Structured Logs v0** (not started)
    Normalize tracing event names and fields for bootstrap, relay exchange,
    identity provider forwarding, identity-head gossip, and pins.
 
-4. **Relay Metrics v0**
+4. **Relay Metrics v0** (not started)
    Add lightweight relay counters and expose them as JSON at
    `GET /admin/v1/relay/metrics`.
 

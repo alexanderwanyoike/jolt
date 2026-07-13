@@ -167,9 +167,9 @@ Relays are not platforms. They do not define truth for a space.
 
 Apps are optional interfaces for spaces.
 
-A Jolt app can render or edit a particular kind of space: a game community, research workspace, creator feed, legal document graph, or private group. WASM is useful here, but it is not the core product. The core product is owned identity, signed state, access, and distribution.
+A Jolt app can render or edit a particular kind of space: a game community, research workspace, creator feed, legal document graph, or private group. Apps are external clients that request capability-scoped sessions from the local daemon; they never hold the user's keys. The app is not the core product. The core product is owned identity, signed state, access, and distribution.
 
-The protocol should not know what those interfaces mean. It should expose verifiable identity-owned state, generic paths, content references, access grants, and relay policies. Profiles, feeds, galleries, timelines, games, and future lenses are higher-layer interpretations of signed content.
+The protocol should not know what those interfaces mean. It should expose verifiable identity-owned state, generic paths, content references, access grants, and relay policies. Profiles, feeds, galleries, timelines, and games are higher-layer interpretations of signed content.
 
 ### HTML Views
 
@@ -222,4 +222,4 @@ If that works, Jolt has proved the core: creator-owned/community-owned distribut
 - Not a public web replacement. It does not compete with browsers and search engines first.
 - Not a storage marketplace. Payments and relay economics can wait.
 - Not just file sharing. Content matters because it is part of signed community state.
-- Not just a WASM runtime. Apps are interfaces over spaces, not the reason the network exists.
+- Not an application runtime. Apps are interfaces over spaces, not the reason the network exists.
