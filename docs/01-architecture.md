@@ -205,15 +205,3 @@ When the node receives a jolt address, it:
 3. Fetches the content by ContentId from the network and verifies it against the hash
 
 See [Global Jolt Resolution](12-global-jolt-resolution.md) for the authoritative description of the address format and resolution pipeline.
-
-### OS protocol handler
-
-> Future design, not implemented in v0.
-
-A custom OS-level protocol handler would let jolt links work anywhere -- browsers, email clients, chat apps, terminals -- without a browser extension, using the same mechanism as Zoom (`zoommtg://`), Spotify (`spotify://`), and Steam (`steam://`):
-
-| Platform | Method |
-|---|---|
-| Linux | `.desktop` file in `~/.local/share/applications/` with an `x-scheme-handler` MimeType |
-| macOS | `CFBundleURLTypes` in the app's `Info.plist` |
-| Windows | Registry key under `HKEY_CLASSES_ROOT` |

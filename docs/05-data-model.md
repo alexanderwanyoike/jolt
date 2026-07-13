@@ -11,34 +11,7 @@
 
 ## Data Categories
 
-### 1. App Data (Private by Default)
-
-> Future design, not implemented in v0. The store creates only `published/`, `cache/`, `update_logs/`, and `device_writer_logs/`; there is no per-app namespace. Apps today run outside the daemon and access it through capability-scoped sessions (see [App Boundary and Sessions](15-app-boundary-and-sessions.md)).
-
-Data created by an app during use would be stored in a per-app isolated namespace on the user's node:
-
-```
-~/.jolt/data/
-  apps/
-    <app-content-id>/
-      kv/           # key-value store
-      blobs/        # larger binary objects
-      meta.json     # app metadata, permissions granted
-```
-
-Examples:
-- Chat messages in a messaging app
-- Notes in a notes app
-- Settings and preferences
-- Draft content
-
-This data would:
-- Be accessible only to the app that created it
-- Never leave the node unless the user explicitly shares it
-- Persist across app updates
-- Be exportable and deletable by the user at any time
-
-### 2. Published Content (Public)
+### 1. Published Content (Public)
 
 Content the user has explicitly published to the network. Content-addressed and signed.
 
@@ -63,7 +36,7 @@ This content:
 - Is served to the network via the content fetch protocol
 - Can be pinned by a home relay at the owner's request
 
-### 3. Cached Content (From Other Nodes)
+### 2. Cached Content (From Other Nodes)
 
 Content fetched from other nodes and cached locally for performance and availability.
 
@@ -81,23 +54,6 @@ This content:
 - Is evicted under LRU policy when cache is full
 - Can be pinned to prevent eviction
 - Is served to other nodes who request it (helping availability)
-
-### 4. Installed Apps
-
-> Abandoned direction. The in-process WASM app model was never built; apps run outside the daemon and connect through capability-scoped sessions. See [App Boundary and Sessions](15-app-boundary-and-sessions.md).
-
-The abandoned design stored WASM binaries and assets for installed applications:
-
-```
-~/.jolt/data/
-  installed_apps/
-    <app-content-id>/
-      app.wasm          # the WASM binary
-      assets/           # HTML, CSS, JS, images
-      manifest.toml     # app manifest
-      permissions.toml  # granted permissions
-      version           # installed version
-```
 
 ## Content Addressing
 
@@ -215,62 +171,9 @@ Device logs from all of an identity's authorized devices merge deterministically
 
 See [True Multi-Writer Identity and Devices](20-true-multi-writer-identity-and-devices.md) for the full model.
 
-## Per-App Data Isolation
-
-> Abandoned direction. The in-process WASM app model was never built; isolation between apps is enforced at the session boundary instead. See [App Boundary and Sessions](15-app-boundary-and-sessions.md).
-
-The abandoned design had the data store enforce strict isolation between apps:
-
-```rust
-struct AppDataStore {
-    app_id: ContentId,     // which app this store belongs to
-    db: Database,          // isolated database instance
-}
-
-impl AppDataStore {
-    // All operations are scoped to this app's namespace
-    fn get(&self, key: &[u8]) -> Option<Vec<u8>>;
-    fn set(&self, key: &[u8], value: &[u8]);
-    fn delete(&self, key: &[u8]);
-    fn list_keys(&self, prefix: &[u8]) -> Vec<Vec<u8>>;
-}
-```
-
-The runtime would enforce that app A can never obtain a handle to app B's data store.
-
-## Data Export and Portability
-
-> Future design, not implemented in v0. Today only `jolt identity export` exists, which produces an identity recovery bundle (see [Identity Import and Export](18-identity-import-export.md)); there is no general data export command.
-
-The intended export CLI:
-
-```
-jolt export --app jolt-chat --format json > my-chat-history.json
-jolt export --all --format tar > my-jolt-data.tar
-```
-
-This is a core principle: your data is never trapped. You would be able to:
-- Export any app's data in standard formats
-- Back up your entire node
-- Migrate to a new machine
-- Delete everything
-
 ## Storage Quotas
 
 The only implemented limit is the cache size: `CacheConfig.max_size_bytes`, defaulting to 2 GB. When the cache is full, LRU eviction removes the least recently accessed non-pinned content first.
-
-> Future design, not implemented in v0: broader quotas.
-
-```toml
-[storage]
-total_limit = "10GB"          # total disk usage for jolt
-per_app_limit = "500MB"       # max data per installed app
-published_limit = "5GB"       # max published content
-```
-
-When these limits were reached:
-- App data: app receives a storage error, user is notified
-- Published content: user must remove content before publishing more
 
 ## Redundancy and Backup
 
@@ -295,38 +198,3 @@ jolt pin request --peer <peer-id> --content <content-id>
 ```
 
 The pinning peer stores a copy and serves it to the network. Mutual pinning arrangements ("I pin yours, you pin mine") improve availability for both parties.
-
-### Redundancy Groups
-
-> Future design, not implemented in v0.
-
-A group of nodes that agree to keep each other's content available.
-
-```rust
-struct RedundancyGroup {
-    members: Vec<PeerId>,
-    policy: RedundancyPolicy,
-}
-
-struct RedundancyPolicy {
-    replicas: usize,          // how many copies to maintain
-    content_types: Vec<String>, // what to replicate (all, or specific types)
-    max_storage: u64,         // per-member storage contribution
-}
-```
-
-### Encrypted Backup
-
-> Future design, not implemented in v0.
-
-Users could opt into encrypted backup of private app data to their redundancy group:
-
-```
-1. User enables encrypted backup for an app
-2. App data is encrypted with user's key
-3. Encrypted blob is distributed to redundancy group members
-4. Members store but cannot read the encrypted data
-5. User can restore from any member if their node is lost
-```
-
-This is strictly opt-in. By default, private data never leaves the user's node.

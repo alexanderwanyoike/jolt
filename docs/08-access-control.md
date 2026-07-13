@@ -59,55 +59,6 @@ content key is wrapped once per recipient identity (and per authorized device
 key), so a set of identities can all decrypt the same object without a shared
 group key.
 
-### Private (Group) -- design sketch, not implemented
-
-A dedicated group model with a shared rotating `group_key` was an early design
-direction and is kept here as a sketch. It is not what v0 implements; v0 uses
-per-recipient content-key wraps as above. Community identity and membership
-(doc 21) is the current direction for group semantics.
-
-```mermaid
-sequenceDiagram
-    participant Owner as Group Owner
-    participant M1 as Member 1
-    participant M2 as Member 2
-    participant Net as Network
-
-    Note over Owner: Creating group
-    Owner->>Owner: Generate random group_key (256-bit)
-    Owner->>M1: Encrypt group_key to M1's public key
-    Owner->>M2: Encrypt group_key to M2's public key
-
-    Note over Owner: Publishing to group
-    Owner->>Owner: Encrypt content with group_key
-    Owner->>Net: Publish encrypted content + group_id
-
-    Note over M1: Reading
-    M1->>Net: Fetch encrypted content
-    M1->>M1: Look up encrypted_group_key for own pubkey
-    M1->>M1: Decrypt group_key with private key
-    M1->>M1: Decrypt content with group_key
-```
-
-### Group Membership Changes
-
-**Adding a member:**
-```
-1. Group owner encrypts group_key to new member's public key
-2. Publishes updated member list
-3. New member can now decrypt all existing and future group content
-```
-
-**Removing a member:**
-```
-1. Generate new group_key
-2. Encrypt new group_key to all remaining members
-3. All future content uses the new group_key
-4. Revoked member is immediately locked out of new content
-```
-
-The revoked member may still have copies of old content they previously downloaded and decrypted -- this is a physical reality, not a jolt limitation. The same is true of email, Slack, or any other system. Once bytes are on someone's device, no protocol can force deletion. What matters is that revocation is **immediate and forward-secure**: from the moment of revocation, the removed member cannot decrypt anything new.
-
 ## Access Control in Apps
 
 App access to encryption and decryption is itself capability-checked. An app
@@ -121,26 +72,30 @@ Apps can use the access control system to implement features:
 ### Private Messaging
 
 ```
-App: jolt-chat
+Example: Spoke encrypted replies
 
-Sending a DM:
-  1. Encrypt message for recipient using crypto host API
-  2. Publish encrypted message to network
-  3. Recipient's node detects message addressed to them
-  4. Decrypts and stores in app data
+Sending a private reply:
+  1. App asks the daemon to encrypt the reply to the recipient identity
+     (encrypt:<path>)
+  2. Publishes the encrypted envelope under its own path
+     (publish:encrypted:<path>)
+  3. Submits the encrypted bytes to the recipient's ingress endpoint
+  4. Recipient app lists pending ingress; the user accepts; the app opens
+     it with decrypt:<path>
 ```
 
 ### Private Communities
 
 ```
-App: jolt-forum
+Example: a forum app
 
 Creating a private forum:
-  1. Forum creator generates group key
-  2. Invites members (encrypts group key to each)
-  3. All posts encrypted with group key
-  4. Only members can read posts
-  5. New members get group key, can read history
+  1. Forum app encrypts each post to the member identities
+     (per-recipient content-key wraps, see doc 16)
+  2. Inviting a member means including their identity as a recipient
+  3. Only members can decrypt posts
+  4. Community identity and membership records are the planned
+     protocol-level direction (doc 21)
 ```
 
 ### Deferred: Paid Content
@@ -198,9 +153,8 @@ Receiving shared content:
   opening ingress items requires ingress:read
 
 Group membership:
-  User must accept invitation to join a group
-  User can leave a group at any time
-  Leaving deletes the group key from the node
+  Community identity and membership are not implemented yet;
+  the design direction is doc 21
 ```
 
 ## Threat Model

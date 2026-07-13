@@ -45,42 +45,6 @@ flowchart TD
     Announce --> Fetch["Other nodes can resolve and fetch while publisher is offline"]
 ```
 
-### Chunking
-
-> Future design, not implemented in v0. Content is transferred and cached as whole blobs.
-
-Large files would be split into fixed-size chunks for efficient transfer and caching.
-
-```
-File: video.mp4 (500MB)
-
-Chunk size: 256KB
-
-Chunks:
-  chunk_0: bytes[0..256KB]        -> ContentId: abc...
-  chunk_1: bytes[256KB..512KB]    -> ContentId: def...
-  chunk_2: bytes[512KB..768KB]    -> ContentId: ghi...
-  ...
-  chunk_n: bytes[last segment]    -> ContentId: xyz...
-
-Manifest:
-  {
-    name: "video.mp4",
-    total_size: 500_000_000,
-    chunk_size: 262_144,
-    chunks: [abc..., def..., ghi..., ..., xyz...],
-    content_type: "video/mp4",
-  }
-  -> ManifestId: mno...
-```
-
-Intended benefits of chunking:
-- **Parallel downloads** from multiple peers simultaneously
-- **Partial caching** -- nodes cache individual chunks, not whole files
-- **Resume** -- interrupted downloads continue from the last chunk
-- **Deduplication** -- identical chunks across files are stored once
-- **Streaming** -- video/audio can start playing before full download
-
 ## Content Fetching
 
 Fetching is coordinated by the `FetchManager` in jolt-network. It asks every currently connected peer for the whole blob in parallel, while a DHT provider query runs alongside. If no connected peer has the content, the node dials a provider found via the DHT and requests the blob from it. The first successful whole-blob response wins; the fetch moves through the states `TryingPeers -> QueryingDht -> WaitingForProvider -> FetchingFromProvider`.
@@ -121,34 +85,6 @@ Priority:
   3. Providers discovered via the DHT
 ```
 
-### Swarming
-
-> Future design, not implemented in v0. Without chunking, each fetch is a whole-blob transfer from a single peer.
-
-For popular content, downloading would resemble BitTorrent:
-
-```mermaid
-graph TD
-    subgraph before["10 nodes have cached the video"]
-        A["Peer A"] & B["Peer B"] & C["Peer C"] & D["...7 more"]
-    end
-
-    New["New Viewer"] -->|chunk 0| A
-    New -->|chunk 1| B
-    New -->|chunk 2| C
-
-    subgraph after["After download: 11 providers"]
-        A2["Peer A"] & B2["Peer B"] & C2["Peer C"] & D2["...7 more"] & New2["New Viewer"]
-    end
-
-    before --> after
-
-    style New fill:#e94560,stroke:#fff,color:#fff
-    style New2 fill:#e94560,stroke:#fff,color:#fff
-```
-
-The more popular content is, the faster it would download. This is the opposite of centralized hosting where popularity = more server load = slower. (Nodes that cache content do already serve it to others, so popular content gains providers; the parallel chunk downloads above are the future part.)
-
 ## Caching
 
 ### Cache Policy
@@ -183,60 +119,6 @@ There is no publisher no-cache flag. Caching app binaries on install belonged to
 ### Cache Contribution
 
 Nodes serve cached content to any peer that requests it over the content fetch protocol, contributing bandwidth to the network. There is currently no gating: serving is always on.
-
-> Future design, not implemented in v0: making cache sharing opt-in and configurable.
-
-```toml
-[cache.sharing]
-enabled = true
-max_upload_bandwidth = "5MB/s"    # bandwidth allocated to serving cache
-serve_while_on_battery = false    # pause when on battery power
-serve_on_metered = false          # pause on metered connections
-```
-
-## Streaming
-
-> Future design, not implemented in v0. Streaming depends on chunking and range handling, neither of which exists yet; content is fetched as a whole blob before it can be served.
-
-### Video Streaming
-
-Video files would use a specialized chunking strategy for streaming:
-
-```
-Video file split into:
-  - Manifest with byte-range-to-chunk mapping
-  - Sequential chunks (for linear playback)
-  - Optional: multiple quality levels (adaptive bitrate)
-
-Playback:
-  1. Browser requests video via localhost HTTP
-  2. Node serves chunks as HTTP range responses
-  3. Chunks fetched from network on-demand (prefetch ahead of playback)
-  4. Browser plays via standard <video> tag
-  5. Buffering strategy: prefetch next N chunks while playing current
-
-Seeking:
-  1. User seeks to timestamp T
-  2. Map T to byte offset to chunk index
-  3. Fetch that chunk (and following chunks) from network
-  4. Continue playback from new position
-```
-
-### Audio Streaming
-
-Same model as video. Chunks are smaller (64KB) for faster start time.
-
-### Live Streaming (Future)
-
-Live content uses a different model since content isn't pre-chunked:
-
-```
-1. Streamer's node encodes live video into chunks in real-time
-2. Each chunk is published immediately (no full-file hash)
-3. Viewers subscribe to the streamer's chunk stream
-4. Chunks propagate through the viewer swarm
-5. Latency target: 5-15 seconds (similar to HLS/DASH)
-```
 
 ## Content Availability
 
@@ -287,7 +169,7 @@ graph TD
 jolt has no built-in token or payment system for bandwidth. For the core protocol, payment is out of scope. Participation relies on:
 
 1. **Reciprocity** -- nodes that download also upload (cache sharing)
-2. **Social incentive** -- redundancy groups are mutual arrangements
+2. **Social incentive** -- home relays and pinning are mutual arrangements
 3. **Self-interest** -- caching popular content means faster access for yourself too
 
 This avoids the complexity of token economics in the core protocol. The network functions like BitTorrent: most users contribute by default because the protocol is designed that way.

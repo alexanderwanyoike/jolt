@@ -42,14 +42,6 @@ jolt relay status [--json]
 jolt relay diagnose identity <identity> [--json]
 ```
 
-Future commands, not implemented in v0:
-
-```text
-jolt relay peers [--json]
-jolt relay records [--json]
-jolt relay pins [--json]
-```
-
 ### `jolt relay status`
 
 Human output should be compact and stable:
@@ -127,15 +119,6 @@ GET  /admin/v1/relay/status
 POST /admin/v1/relay/diagnose/identity
 ```
 
-Future endpoints, not implemented in v0:
-
-```text
-GET  /admin/v1/relay/peers
-GET  /admin/v1/relay/records
-GET  /admin/v1/relay/pins
-GET  /admin/v1/relay/metrics
-```
-
 The endpoints should be read-only for v0. Mutating relay operations already
 exist for pins and config elsewhere and should not be duplicated until there is
 a clear operator workflow.
@@ -167,66 +150,6 @@ curl http://127.0.0.1:9862/admin/v1/relay/status
 ```
 
 Do not document public unauthenticated admin endpoints as acceptable.
-
-## Structured Logs
-
-> Future design, not implemented in v0. Relay logging today is ad-hoc `tracing` output; none of the stable event names below exist yet.
-
-Relay logs should use stable event names and fields so operators can grep them
-and future metrics can be derived without parsing prose.
-
-Minimum event families:
-
-| Event | Important Fields |
-|---|---|
-| `relay.started` | `peer_id`, `identity`, `listen_addrs`, `bootstrap_relay` |
-| `relay.bootstrap.connected` | `peer_id`, `multiaddr`, `duration_ms` |
-| `relay.bootstrap.failed` | `multiaddr`, `error_code`, `error` |
-| `relay.record.published` | `relay_id`, `expires_at`, `capabilities` |
-| `relay.record.learned` | `relay_id`, `source_peer`, `expires_at` |
-| `relay.record.rejected` | `relay_id`, `source_peer`, `reason` |
-| `relay.exchange.completed` | `peer_id`, `records_sent`, `records_received` |
-| `identity_provider.query.received` | `identity`, `source_peer` |
-| `identity_provider.query.forwarded` | `identity`, `target_relay` |
-| `identity_provider.query.result` | `identity`, `candidate_count`, `outcome` |
-| `identity_head.gossip.sent` | `target_relay`, `hint_count` |
-| `identity_head.gossip.received` | `source_peer`, `accepted`, `rejected` |
-| `relay.pin.accepted` | `owner_identity`, `content_id`, `size` |
-| `relay.pin.rejected` | `owner_identity`, `content_id`, `reason` |
-| `relay.pin.served` | `content_id`, `requester_peer` |
-
-Logs must not include private plaintext content, private keys, session tokens,
-or decrypted payloads.
-
-## Counters And Metrics
-
-> Future design, not implemented in v0. No `jolt_relay_*` counters or metrics endpoint exist yet.
-
-V0 can expose simple JSON counters through `GET /admin/v1/relay/metrics`.
-Prometheus text format can come later without changing the internal metric
-names.
-
-Recommended counters/gauges:
-
-```text
-jolt_relay_connected_peers
-jolt_relay_known_relays
-jolt_relay_bootstrap_connected_peers
-jolt_relay_pinned_items
-jolt_relay_pinned_bytes
-jolt_relay_identity_head_hints
-jolt_relay_provider_queries_received_total
-jolt_relay_provider_queries_forwarded_total
-jolt_relay_provider_queries_failed_total{code}
-jolt_relay_relay_records_accepted_total
-jolt_relay_relay_records_rejected_total{reason}
-jolt_relay_pins_accepted_total
-jolt_relay_pins_rejected_total{reason}
-jolt_relay_content_requests_served_total
-```
-
-Counters should be best-effort observability, not consensus state. Restarting a
-process may reset in-memory counters in v0.
 
 ## Failure Outcomes
 

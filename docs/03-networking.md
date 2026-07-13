@@ -82,14 +82,6 @@ This is how a new node's relay address book grows beyond the built-in
 bootstrap relay, and how relays learn which identities have fresh update-log
 heads. See the `/jolt/relays/1.0.0` protocol section below.
 
-### General Peer Exchange (PEX)
-
-> Future design, not implemented in v0.
-
-A general PEX mechanism (all peers exchanging lists of all known peers, not
-just relay records) would further reduce reliance on bootstrap nodes. Today
-only the relay gossip above exists.
-
 ## NAT Traversal
 
 Most home and mobile networks use NAT, which prevents inbound connections. jolt still does QUIC hole punching; it is provided by iroh rather than by libp2p. Every node registers with a DERP relay server, dials go through the relay first, and iroh automatically attempts UDP hole punching to upgrade to a direct QUIC path. If hole punching fails, traffic continues to flow through the DERP relay.
@@ -185,47 +177,6 @@ used by the diagnostics in doc 17). Exchanges run on connection to bootstrap
 and relay-mesh peers and during the relay mesh walk (see Relay Gossip above).
 Batches are bounded, records are signature-verified before storage, and
 expired records age out of the relay address book.
-
-### Deferred App Protocols
-
-Earlier app-platform sketches used names such as `/jolt/appsync/1.0.0` and
-`/jolt/message/1.0.0` for app data sync and direct messaging:
-
-```
-Request:  { app_id: ContentId, sync_type: SyncType, payload: Vec<u8> }
-Response: { payload: Vec<u8> }
-
-SyncType:
-  - FullSync: exchange all state
-  - Delta: exchange changes since last sync
-  - Custom: app-defined protocol
-```
-
-```
-Request:  { to: PeerId, encrypted_payload: Vec<u8> }
-Response: { status: Ack | Queued | Error }
-```
-
-Those are not current core protocol commitments. The current direction is in
-[Bidirectional Communication and Signed Reachability](19-signed-reachability-endpoints.md):
-Jolt should first provide signed reachability metadata and, if needed, generic
-app-authorized opaque streams or bounded object ingress. App sync, inboxes,
-messages, contacts, and conversation semantics stay above the protocol layer.
-
-## Bandwidth Management
-
-> Future design, not implemented in v0. The only shipped connection management today is an idle-connection timeout; the `[network]` config block below does not exist yet.
-
-Nodes would have configurable limits to prevent abuse:
-
-```toml
-[network]
-max_connections = 100
-max_upload_bandwidth = "10MB/s"    # total upload cap
-max_download_bandwidth = "50MB/s"  # total download cap
-relay_bandwidth_limit = "1MB/s"    # if acting as relay
-cache_serve_limit = "5MB/s"        # bandwidth for serving cached content
-```
 
 ## Network Resilience
 
