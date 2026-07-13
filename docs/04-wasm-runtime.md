@@ -1,5 +1,14 @@
 # WASM Runtime
 
+> **Status: abandoned.** This document describes an early design direction
+> that Jolt no longer pursues. Nothing in it is implemented, and none of it is
+> planned. The application model that was actually built is external apps
+> talking to the local daemon through capability-scoped sessions; see
+> [App Boundary and Sessions](15-app-boundary-and-sessions.md). The capability
+> vocabulary below (`storage`, `network`, `crypto`, ...) is incompatible with
+> and superseded by the implemented grammar in doc 15. The document is
+> retained for historical context only.
+
 ## Overview
 
 jolt runs applications as WebAssembly (WASM) modules in a sandboxed environment powered by wasmtime. Apps have zero access to the host system by default and interact with jolt exclusively through a capability-gated host API.

@@ -1,8 +1,24 @@
 # Example Applications
 
+> **Status: illustrative concepts.** None of the applications below are built,
+> and this document predates the implemented app model. It is kept as a
+> sketchbook of what the primitives could support, not a roadmap.
+>
+> The real example application is
+> [Spoke](https://github.com/alexanderwanyoike/spoke), an external social app
+> (profiles, posts, feed, encrypted replies) that runs against the local
+> daemon through a capability-scoped session and never holds keys. The
+> implemented app boundary and capability vocabulary are defined in
+> [App Boundary and Sessions](15-app-boundary-and-sessions.md).
+>
+> The `Permissions:` lines below use an old capability sketch (`storage`,
+> `network`, ...). A real app requests path-scoped capabilities instead, e.g.
+> a video app would request `publish:/video/*`, `inventory:/video/*`,
+> `enumerate:any:/video/*`, and `fetch:public`.
+
 ## Overview
 
-These are example applications that demonstrate what can be built on jolt. Each follows the same model: installed locally, data owned by the user, communication via P2P.
+These are example application concepts that illustrate what could be built on jolt. Each follows the same model: an app the user runs locally, data owned by the user's identity, communication via P2P.
 
 ---
 
@@ -267,7 +283,8 @@ sequenceDiagram
 
 All the above apps share common patterns:
 
-1. **Client-side first** -- UI and logic run in the browser, not on a server
+1. **Local-first clients** -- UI and logic run in an app the user controls,
+   talking to the local daemon through a scoped session, not to a server
 2. **Local data** -- all user data stored on the user's node
 3. **P2P communication** -- users interact directly, no intermediary
 4. **Content-addressed publishing** -- published content is immutable and verifiable
