@@ -43,11 +43,11 @@ Content hashes answer: "these bytes match this content ID."
 
 Alice's update log remains the source of mutable truth for her Jolt address.
 
-The resolver should treat the latest verified update-log state as:
+The resolver should treat the latest verified update-log state as (in code this struct is named `ResolvedLatestRecord` and is keyed by `owner_public_key` rather than an identity ID; same concept):
 
 ```text
-ResolvedIdentityState {
-  identity: IdentityId,
+ResolvedLatestRecord {
+  owner_public_key: PublicKey,
   latest_sequence: u64,
   paths: Map<String, ContentId>,
   profile: Option<Profile>,

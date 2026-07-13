@@ -13,13 +13,15 @@
 
 ### 1. App Data (Private by Default)
 
-Data created by an app during use. Stored in a per-app isolated namespace on the user's node.
+> Future design, not implemented in v0. The store creates only `published/`, `cache/`, `update_logs/`, and `device_writer_logs/`; there is no per-app namespace. Apps today run outside the daemon and access it through capability-scoped sessions (see [App Boundary and Sessions](15-app-boundary-and-sessions.md)).
+
+Data created by an app during use would be stored in a per-app isolated namespace on the user's node:
 
 ```
 ~/.jolt/data/
   apps/
     <app-content-id>/
-      kv/           # key-value store (sled/sqlite)
+      kv/           # key-value store
       blobs/        # larger binary objects
       meta.json     # app metadata, permissions granted
 ```
@@ -30,11 +32,11 @@ Examples:
 - Settings and preferences
 - Draft content
 
-This data:
-- Is only accessible to the app that created it
-- Never leaves the node unless the user explicitly shares it
-- Persists across app updates
-- Can be exported or deleted by the user at any time
+This data would:
+- Be accessible only to the app that created it
+- Never leave the node unless the user explicitly shares it
+- Persist across app updates
+- Be exportable and deletable by the user at any time
 
 ### 2. Published Content (Public)
 
@@ -44,8 +46,8 @@ Content the user has explicitly published to the network. Content-addressed and 
 ~/.jolt/data/
   published/
     <content-id>/
-      content       # the actual bytes
-      manifest      # metadata (type, size, signature)
+      content         # the actual bytes
+      manifest.json   # metadata (type, size, publisher key, signature)
 ```
 
 Examples:
@@ -70,9 +72,8 @@ Content fetched from other nodes and cached locally for performance and availabi
   cache/
     <content-id>/
       content
-      manifest
-      fetched_at    # timestamp
-      last_accessed # for LRU eviction
+      manifest.json
+    cache_index.json  # per-entry cached_at, last_accessed, pinned, size (for LRU eviction)
 ```
 
 This content:
@@ -83,7 +84,9 @@ This content:
 
 ### 4. Installed Apps
 
-WASM binaries and assets for installed applications.
+> Abandoned direction. The in-process WASM app model was never built; apps run outside the daemon and connect through capability-scoped sessions. See [App Boundary and Sessions](15-app-boundary-and-sessions.md).
+
+The abandoned design stored WASM binaries and assets for installed applications:
 
 ```
 ~/.jolt/data/
@@ -101,18 +104,10 @@ WASM binaries and assets for installed applications.
 Every piece of published content has a unique identifier derived from its hash.
 
 ```rust
-struct ContentId {
-    hash: [u8; 32],          // BLAKE3 hash of content bytes
-    codec: Codec,            // how to interpret the content
-}
-
-enum Codec {
-    Raw,        // raw bytes
-    DagCbor,    // structured data (CBOR-encoded DAG)
-    Html,       // HTML document
-    Wasm,       // WASM binary
-}
+struct ContentId(Cid);   // CIDv1 wrapping a BLAKE3-256 multihash of the content bytes
 ```
+
+The codec is always RAW (`0x55`); content type lives in the manifest, not the identifier. A ContentId serializes as its CID string (e.g. `bafk...`).
 
 Content is immutable at a given ContentId. Updating content means publishing new content with a new ContentId and updating the user's update log to point to it.
 
@@ -127,43 +122,46 @@ Each user maintains a signed append-only log that tracks changes to their publis
 
 ```rust
 struct UpdateLogEntry {
-    sequence: u64,              // monotonically increasing
-    timestamp: u64,             // unix timestamp
-    action: Action,
-    previous: Option<ContentId>,// hash of previous entry (chain integrity)
-    signature: Signature,       // signed by the user's key
+    body: UpdateLogEntryBody,
+    signature: Vec<u8>,         // signature over the body, by the user's key
 }
 
-enum Action {
+struct UpdateLogEntryBody {
+    owner_public_key: Vec<u8>,
+    sequence: u64,              // monotonically increasing
+    previous_entry_hash: Option<UpdateLogEntryHash>, // BLAKE3 hash of previous entry body
+    action: UpdateAction,
+}
+
+enum UpdateAction {
     // Site / content management
     PublishContent {
+        content_id: ContentId,
+    },
+    UpdateRoot {
+        content_id: ContentId,  // new root for user's published content
+    },
+    SetPath {
         path: String,           // logical path, e.g. "/blog/hello-world"
         content_id: ContentId,
     },
-    RemoveContent {
+    RemovePath {
         path: String,
-    },
-    UpdateRoot {
-        content_id: ContentId,  // new root manifest for user's published content
-    },
-
-    // App-related
-    PublishApp {
-        app_manifest: ContentId,
-    },
-    UpdateApp {
-        app_id: ContentId,      // original app ID
-        new_version: ContentId, // new version's content ID
     },
 
     // Profile
     UpdateProfile {
-        display_name: Option<String>,
-        bio: Option<String>,
-        avatar: Option<ContentId>,
+        profile: UpdateProfile, // display_name, bio, avatar
+    },
+
+    // Reachability
+    SetReachability {
+        relays: Vec<RelayHint>,
     },
 }
 ```
+
+Entries carry no timestamp; ordering comes from the sequence number and hash chain.
 
 ### Resolving Mutable Content
 
@@ -206,9 +204,22 @@ graph LR
 
 Tampering with entry 1 would change h1, which would invalidate entry 2's chain.
 
+## Device-Writer Logs and Append Records
+
+Alongside the last-writer-wins update log, each device keeps its own signed, hash-chained device-writer log. Its operations are `DeviceWriterOperation::SetPath { path, content_id, mode }`, where the mode is:
+
+- `Singleton` -- the path holds one value; later entries replace earlier ones (conflicts across devices are surfaced, not silently merged)
+- `Append` -- every entry is retained; readers enumerate all append records under a path prefix (e.g. all posts under `/feed/`)
+
+Device logs from all of an identity's authorized devices merge deterministically into a `MergedDeviceIdentityState`. Append records live only in device-writer logs; they are never written to the last-writer-wins update log. On disk they persist separately, in `device_writer_logs/`, as the verified device-authority records plus the local device's log, and peers sync and enumerate them over the device-writer protocol.
+
+See [True Multi-Writer Identity and Devices](20-true-multi-writer-identity-and-devices.md) for the full model.
+
 ## Per-App Data Isolation
 
-The data store enforces strict isolation between apps:
+> Abandoned direction. The in-process WASM app model was never built; isolation between apps is enforced at the session boundary instead. See [App Boundary and Sessions](15-app-boundary-and-sessions.md).
+
+The abandoned design had the data store enforce strict isolation between apps:
 
 ```rust
 struct AppDataStore {
@@ -225,18 +236,20 @@ impl AppDataStore {
 }
 ```
 
-The runtime enforces that WASM app A can never obtain a handle to app B's data store.
+The runtime would enforce that app A can never obtain a handle to app B's data store.
 
 ## Data Export and Portability
 
-Users can export their data at any time:
+> Future design, not implemented in v0. Today only `jolt identity export` exists, which produces an identity recovery bundle (see [Identity Import and Export](18-identity-import-export.md)); there is no general data export command.
+
+The intended export CLI:
 
 ```
 jolt export --app jolt-chat --format json > my-chat-history.json
 jolt export --all --format tar > my-jolt-data.tar
 ```
 
-This is a core principle: your data is never trapped. You can:
+This is a core principle: your data is never trapped. You would be able to:
 - Export any app's data in standard formats
 - Back up your entire node
 - Migrate to a new machine
@@ -244,16 +257,18 @@ This is a core principle: your data is never trapped. You can:
 
 ## Storage Quotas
 
+The only implemented limit is the cache size: `CacheConfig.max_size_bytes`, defaulting to 2 GB. When the cache is full, LRU eviction removes the least recently accessed non-pinned content first.
+
+> Future design, not implemented in v0: broader quotas.
+
 ```toml
 [storage]
 total_limit = "10GB"          # total disk usage for jolt
-cache_limit = "2GB"           # max cached content from other nodes
 per_app_limit = "500MB"       # max data per installed app
 published_limit = "5GB"       # max published content
 ```
 
-When limits are reached:
-- Cache: LRU eviction (least recently accessed content is removed first)
+When these limits were reached:
 - App data: app receives a storage error, user is notified
 - Published content: user must remove content before publishing more
 
@@ -283,6 +298,8 @@ The pinning peer stores a copy and serves it to the network. Mutual pinning arra
 
 ### Redundancy Groups
 
+> Future design, not implemented in v0.
+
 A group of nodes that agree to keep each other's content available.
 
 ```rust
@@ -293,14 +310,16 @@ struct RedundancyGroup {
 
 struct RedundancyPolicy {
     replicas: usize,          // how many copies to maintain
-    content_types: Vec<Codec>,// what to replicate (all, or specific types)
+    content_types: Vec<String>, // what to replicate (all, or specific types)
     max_storage: u64,         // per-member storage contribution
 }
 ```
 
 ### Encrypted Backup
 
-Users can opt into encrypted backup of private app data to their redundancy group:
+> Future design, not implemented in v0.
+
+Users could opt into encrypted backup of private app data to their redundancy group:
 
 ```
 1. User enables encrypted backup for an app

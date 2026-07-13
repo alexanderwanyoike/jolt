@@ -35,14 +35,19 @@ Relay diagnostics v0 should answer:
 Keep the CLI usable over SSH and scriptable. The v0 commands should call the
 local daemon API unless the command explicitly accepts a remote admin URL.
 
-Recommended commands:
+Implemented commands:
 
 ```text
 jolt relay status [--json]
+jolt relay diagnose identity <identity> [--json]
+```
+
+Future commands, not implemented in v0:
+
+```text
 jolt relay peers [--json]
 jolt relay records [--json]
 jolt relay pins [--json]
-jolt relay diagnose identity <identity> [--json]
 ```
 
 ### `jolt relay status`
@@ -62,6 +67,8 @@ Pins: 14 items / 42.1 MB
 Identity-head hints: 37 identities
 Last error: none
 ```
+
+Note: the field labels above are illustrative and differ slightly from the shipped output, which uses labels such as `Peer ID:`, `Jolt:`, `API port:`, `Peers: N connected (X direct / Y relayed)`, `Bootstrap: connected (a connected / b effective / c configured)`, plus `Cache:`, `Relay record:`, `Home relay:`, and `Listening:` lines, and does not include `Identity-head hints` or `Last error` lines.
 
 `--json` should return the same data as typed JSON for scripts and future
 operator tooling.
@@ -113,14 +120,19 @@ The existing `/api/v1/status`, `/api/v1/peers`, `/api/v1/cache/*`, and
 should add relay-specific admin endpoints rather than teaching operators to
 scrape product/user APIs.
 
-Recommended endpoints:
+Implemented endpoints:
 
 ```text
 GET  /admin/v1/relay/status
+POST /admin/v1/relay/diagnose/identity
+```
+
+Future endpoints, not implemented in v0:
+
+```text
 GET  /admin/v1/relay/peers
 GET  /admin/v1/relay/records
 GET  /admin/v1/relay/pins
-POST /admin/v1/relay/diagnose/identity
 GET  /admin/v1/relay/metrics
 ```
 
@@ -158,6 +170,8 @@ Do not document public unauthenticated admin endpoints as acceptable.
 
 ## Structured Logs
 
+> Future design, not implemented in v0. Relay logging today is ad-hoc `tracing` output; none of the stable event names below exist yet.
+
 Relay logs should use stable event names and fields so operators can grep them
 and future metrics can be derived without parsing prose.
 
@@ -185,6 +199,8 @@ Logs must not include private plaintext content, private keys, session tokens,
 or decrypted payloads.
 
 ## Counters And Metrics
+
+> Future design, not implemented in v0. No `jolt_relay_*` counters or metrics endpoint exist yet.
 
 V0 can expose simple JSON counters through `GET /admin/v1/relay/metrics`.
 Prometheus text format can come later without changing the internal metric
@@ -236,20 +252,20 @@ Relay-specific diagnostics may add operator-only reasons, such as:
 
 ## Implementation Slices
 
-1. **Relay CLI/Admin Status v0**
+1. **Relay CLI/Admin Status v0** (delivered)
    Add `jolt relay status --json` and `GET /admin/v1/relay/status` using
    existing daemon status, peer, cache, relay-record, and pin information.
 
-2. **Relay Diagnose Identity v0**
+2. **Relay Diagnose Identity v0** (delivered)
    Add `jolt relay diagnose identity <identity>` and
    `POST /admin/v1/relay/diagnose/identity` to trace local cache/hint/provider
    lookup and relay forwarding outcomes.
 
-3. **Relay Structured Logs v0**
+3. **Relay Structured Logs v0** (not started)
    Normalize tracing event names and fields for bootstrap, relay exchange,
    identity provider forwarding, identity-head gossip, and pins.
 
-4. **Relay Metrics v0**
+4. **Relay Metrics v0** (not started)
    Add lightweight relay counters and expose them as JSON at
    `GET /admin/v1/relay/metrics`.
 

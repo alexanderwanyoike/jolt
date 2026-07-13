@@ -16,13 +16,23 @@ When a user publishes content:
 
 ```mermaid
 flowchart TD
-    File["Original File"] --> Chunk["Split into chunks"]
-    Chunk --> Hash["Hash each chunk -> ContentId"]
-    Hash --> Manifest["Create manifest listing all chunks"]
-    Manifest --> ManifestHash["Hash manifest -> root ContentId"]
-    ManifestHash --> Sign["Sign everything with publisher's key"]
-    Sign --> DHT["Announce provider records to DHT"]
+    File["Original File"] --> Hash["Hash whole file (BLAKE3) -> ContentId"]
+    Hash --> Manifest["Create signed ContentManifest"]
+    Manifest --> Store["Store blob + manifest in published/"]
+    Store --> DHT["Announce provider record to DHT"]
     DHT --> Log["Add update log entry"]
+```
+
+Content moves as whole blobs; there is no chunking. The manifest describes a single blob:
+
+```rust
+struct ContentManifest {
+    content_id: ContentId,
+    size: u64,
+    content_type: String,
+    publisher_key: Vec<u8>,
+    signature: Vec<u8>,
+}
 ```
 
 If the user has a home relay, publishing also asks that relay to pin the content and the signed update record:
@@ -37,7 +47,9 @@ flowchart TD
 
 ### Chunking
 
-Large files are split into fixed-size chunks for efficient transfer and caching.
+> Future design, not implemented in v0. Content is transferred and cached as whole blobs.
+
+Large files would be split into fixed-size chunks for efficient transfer and caching.
 
 ```
 File: video.mp4 (500MB)
@@ -62,7 +74,7 @@ Manifest:
   -> ManifestId: mno...
 ```
 
-Benefits of chunking:
+Intended benefits of chunking:
 - **Parallel downloads** from multiple peers simultaneously
 - **Partial caching** -- nodes cache individual chunks, not whole files
 - **Resume** -- interrupted downloads continue from the last chunk
@@ -71,49 +83,49 @@ Benefits of chunking:
 
 ## Content Fetching
 
-When a user requests content:
+Fetching is coordinated by the `FetchManager` in jolt-network. It asks every currently connected peer for the whole blob in parallel, while a DHT provider query runs alongside. If no connected peer has the content, the node dials a provider found via the DHT and requests the blob from it. The first successful whole-blob response wins; the fetch moves through the states `TryingPeers -> QueryingDht -> WaitingForProvider -> FetchingFromProvider`.
 
 ```mermaid
 sequenceDiagram
     participant Node as Requester
+    participant P1 as Connected Peer A
+    participant P2 as Connected Peer B
     participant DHT as DHT
-    participant P1 as Provider A
-    participant P2 as Provider B
     participant P3 as Provider C
 
-    Node->>DHT: "Who has ContentId X?"
-    DHT-->>Node: Provider list [A, B, C]
-
-    par Parallel chunk downloads
-        Node->>P1: Request chunk 0
-        P1-->>Node: chunk 0
-        Node->>P2: Request chunk 1
-        P2-->>Node: chunk 1
-        Node->>P3: Request chunk 2
-        P3-->>Node: chunk 2
+    par Try connected peers (whole blob each)
+        Node->>P1: Request ContentId X
+        Node->>P2: Request ContentId X
+    and DHT query in parallel
+        Node->>DHT: "Who provides ContentId X?"
     end
 
-    Node->>Node: Verify each chunk hash
-    Node->>Node: Reassemble complete content
+    P1--xNode: Not found
+    P2--xNode: Not found
+    DHT-->>Node: Provider C
+    Node->>P3: Dial, then request ContentId X
+    P3-->>Node: Whole content blob
+
+    Node->>Node: Verify blob against ContentId
     Node->>Node: Cache locally
 ```
 
 ### Provider Selection
 
-When multiple providers are available, the node selects based on:
+There is no latency or bandwidth ranking. The lookup order is:
 
 ```
 Priority:
-  1. Local cache (instant, no network)
-  2. LAN peers (fast, free bandwidth)
-  3. Peers with low latency
-  4. Peers with high bandwidth
-  5. Relay peers (last resort)
+  1. Local store (published content, then cache)
+  2. Currently connected peers (tried in parallel)
+  3. Providers discovered via the DHT
 ```
 
 ### Swarming
 
-For popular content, downloading resembles BitTorrent:
+> Future design, not implemented in v0. Without chunking, each fetch is a whole-blob transfer from a single peer.
+
+For popular content, downloading would resemble BitTorrent:
 
 ```mermaid
 graph TD
@@ -135,32 +147,27 @@ graph TD
     style New2 fill:#e94560,stroke:#fff,color:#fff
 ```
 
-The more popular content is, the faster it downloads. This is the opposite of centralized hosting where popularity = more server load = slower.
+The more popular content is, the faster it would download. This is the opposite of centralized hosting where popularity = more server load = slower. (Nodes that cache content do already serve it to others, so popular content gains providers; the parallel chunk downloads above are the future part.)
 
 ## Caching
 
 ### Cache Policy
 
-Every node maintains a content cache with LRU (Least Recently Used) eviction.
+Every node maintains a content cache with LRU (Least Recently Used) eviction. The only configurable knob is the cache size:
 
-```toml
-[cache]
-max_size = "2GB"              # total cache size
-min_free_disk = "1GB"         # stop caching if disk gets too low
-eviction_policy = "lru"       # least recently used
-pin_limit = "500MB"           # max explicitly pinned content
+```rust
+struct CacheConfig {
+    max_size_bytes: u64,   // default 2 GB
+}
 ```
+
+Eviction removes non-pinned entries in ascending last-accessed order until the new content fits. Pinned content is never evicted; if pinned content alone fills the cache, further caching fails with a cache-full error. The LRU policy is hard-coded, and there are no `min_free_disk` or pin-size limits.
 
 ### What Gets Cached
 
 ```
 Automatically cached:
   - Any content fetched from the network (on access)
-  - App WASM binaries and assets (on install)
-  - Frequently accessed public content from subscribed peers
-
-Not cached:
-  - Content explicitly marked no-cache by publisher
 
 May be cached but unreadable:
   - Private/encrypted content from other users
@@ -169,12 +176,15 @@ May be cached but unreadable:
 Pinned (cached permanently until unpinned):
   - Content the user explicitly pins
   - Content the owner asked this relay to pin
-  - Installed app binaries
 ```
+
+There is no publisher no-cache flag. Caching app binaries on install belonged to the abandoned in-process app model (see [App Boundary and Sessions](15-app-boundary-and-sessions.md)).
 
 ### Cache Contribution
 
-Nodes serve cached content to other peers, contributing bandwidth to the network. This is opt-in and configurable:
+Nodes serve cached content to any peer that requests it over the content fetch protocol, contributing bandwidth to the network. There is currently no gating: serving is always on.
+
+> Future design, not implemented in v0: making cache sharing opt-in and configurable.
 
 ```toml
 [cache.sharing]
@@ -186,9 +196,11 @@ serve_on_metered = false          # pause on metered connections
 
 ## Streaming
 
+> Future design, not implemented in v0. Streaming depends on chunking and range handling, neither of which exists yet; content is fetched as a whole blob before it can be served.
+
 ### Video Streaming
 
-Video files use a specialized chunking strategy for streaming:
+Video files would use a specialized chunking strategy for streaming:
 
 ```
 Video file split into:

@@ -31,11 +31,11 @@ On first launch, the node generates an Ed25519 keypair and stores it in the loca
 ```
 ~/.jolt/
   identity/
-    keypair.enc        # encrypted with a user passphrase
+    keypair.bin        # raw Ed25519 signing key bytes (unencrypted in v0)
     public_key.pub     # shareable public key
 ```
 
-The private key is encrypted at rest using a passphrase-derived key (Argon2id for key derivation, ChaCha20-Poly1305 for encryption).
+In v0 the private key is stored unencrypted as raw signing-key bytes, protected only by file permissions (`0600`). Encryption at rest (a passphrase-derived key, e.g. Argon2id key derivation with ChaCha20-Poly1305) is planned but not yet implemented. See [Identity Import and Export v0](18-identity-import-export.md), which documents the same limitation.
 
 ### Canonical Identity Addresses
 
@@ -56,7 +56,9 @@ Peer IDs remain visible for transport, debugging, and manual peer connections. T
 
 ### Human-Readable Names
 
-Identity addresses are still not user-friendly. Jolt supports a petname system where users assign local nicknames to identities they interact with.
+> Future design, not implemented in v0. There is no petname or nickname code today; local identities only carry a self-assigned label.
+
+Identity addresses are still not user-friendly. The plan is a petname system where users assign local nicknames to identities they interact with.
 
 ```
 Your local petnames (stored on YOUR node only):
@@ -65,9 +67,9 @@ Your local petnames (stored on YOUR node only):
   "mom"     -> {identity}.jolt
 ```
 
-Petnames are local. Alice might call Bob "bob" while Carol calls him "robert." There is no global username registry, which avoids squatting and governance problems.
+Petnames would be local. Alice might call Bob "bob" while Carol calls him "robert." There would be no global username registry, which avoids squatting and governance problems.
 
-Users can also set a **display name** in their profile that other nodes can read, but it's not unique or verified -- just a hint.
+Users would also be able to set a **display name** in their profile that other nodes can read, but it would not be unique or verified -- just a hint.
 
 ### Identity Backup and Recovery
 
@@ -100,12 +102,14 @@ All published content is signed by the publisher's Ed25519 key.
 ```
 Signed content:
   payload:    the content bytes
-  signature:  Ed25519 sign(private_key, hash(payload))
+  signature:  Ed25519 sign(private_key, payload)
   public_key: publisher's public key
 
 Verification:
-  Ed25519 verify(public_key, hash(payload), signature) -> bool
+  Ed25519 verify(public_key, payload, signature) -> bool
 ```
+
+The message bytes are signed directly with pure Ed25519, which hashes internally; there is no separate pre-hash step.
 
 Signatures provide:
 - **Authenticity** -- proof that the content came from the claimed author
