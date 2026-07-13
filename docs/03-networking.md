@@ -179,8 +179,10 @@ Synchronize per-device append-only writer logs for multi-writer identities. Each
 Request/response exchange of signed relay records (relay identity,
 capabilities, expiry) and identity-head hints. The messages are
 `AnnounceRelays`, `AnnounceIdentityHeads`, `GetRelays { limit, capabilities }`,
-and `GetIdentityHeads { limit }`. Exchanges run on connection to bootstrap and
-relay-mesh peers and during the relay mesh walk (see Relay Gossip above).
+`GetIdentityHeads { limit }`, and `FindIdentityProviders { query_id, identity,
+limit, ttl, deadline_unix_ms }` (relay-forwarded identity provider queries,
+used by the diagnostics in doc 17). Exchanges run on connection to bootstrap
+and relay-mesh peers and during the relay mesh walk (see Relay Gossip above).
 Batches are bounded, records are signature-verified before storage, and
 expired records age out of the relay address book.
 

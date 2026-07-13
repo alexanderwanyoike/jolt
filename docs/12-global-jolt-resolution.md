@@ -49,9 +49,10 @@ The resolver should treat the latest verified update-log state as (in code this 
 ResolvedLatestRecord {
   owner_public_key: PublicKey,
   latest_sequence: u64,
+  latest_root: Option<ContentId>,
   paths: Map<String, ContentId>,
   profile: Option<Profile>,
-  reachability: ReachabilitySet,
+  reachability: Vec<RelayHint>,
 }
 ```
 

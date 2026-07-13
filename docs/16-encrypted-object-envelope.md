@@ -2,10 +2,11 @@
 
 ## Status
 
-Design proposal for card `049`.
+Implemented. Originally the design proposal for card `049`; the envelope and
+its app APIs (publish, append, decrypt, open, rewrap) are built.
 
-This document defines the encrypted object envelope that later cards will
-implement for private Pastey and future private Jolt apps. It is deliberately
+This document defines the encrypted object envelope implemented for private
+Pastey and future private Jolt apps. It is deliberately
 protocol-level and app-agnostic: it talks about encrypted objects, identities,
 recipients, keys, and signed paths, not pastes, posts, feeds, or app-specific
 schemas.

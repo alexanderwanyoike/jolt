@@ -193,7 +193,10 @@ Using BLAKE3 for hashing (fast, secure, parallelizable). The CID format is compa
 
 ### Wire Protocol Encryption
 
-All P2P connections are encrypted using the libp2p Noise protocol (Noise_XX handshake with Ed25519 keys). This provides:
+All P2P connections are encrypted at the transport layer. On the default iroh
+transport, encryption comes from iroh's QUIC handshake (TLS-based); on the
+manual `--transport tcp` demo mode, connections use the libp2p Noise protocol
+(Noise_XX with Ed25519 keys). Either way this provides:
 
 - Encrypted transport (no eavesdropping)
 - Mutual authentication (both peers verify each other's identity)

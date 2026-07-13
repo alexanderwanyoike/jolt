@@ -151,17 +151,19 @@ Paid content is intentionally outside the core protocol for now. The access-cont
 
 ### Key Storage
 
+What exists on disk in v0:
+
 ```
-~/.jolt/
+<data-dir>/jolt/
   identity/
-    keypair.enc               # master Ed25519 keypair (encrypted at rest)
-    encryption_keys.enc       # private encryption keys for signed key records
-  keys/
-    groups/
-      <group-id>.enc          # group keys (encrypted with master key)
-    app_keys/
-      <app-id>.enc            # per-app derived keys
+    keypair.bin        # Ed25519 signing key (raw bytes, unencrypted, 0600)
+    public_key.pub     # shareable public key
 ```
+
+Identity encryption keys (for the envelope model in doc 16) are stored by the
+daemon alongside identity state; there are no encrypted `.enc` key files, no
+group-key store, and no per-app derived keys. Encryption at rest for the
+signing key is planned but not implemented (see docs 02 and 18).
 
 ### Key Authority
 
@@ -205,7 +207,7 @@ Group membership:
 
 ### What jolt Protects Against
 
-- **Eavesdropping:** all P2P connections are encrypted (Noise protocol). Private content is end-to-end encrypted.
+- **Eavesdropping:** all P2P connections are encrypted at the transport layer (QUIC/TLS on the default iroh transport, Noise on the TCP demo transport). Private content is end-to-end encrypted.
 - **Data theft from servers:** there are no servers. Data is on user nodes, encrypted at rest.
 - **Platform data mining:** no platform has access to user data.
 - **Unauthorized access:** private content is cryptographically locked to authorized keys.
