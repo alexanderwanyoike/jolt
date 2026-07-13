@@ -56,20 +56,22 @@ Peer IDs remain visible for transport, debugging, and manual peer connections. T
 
 ### Human-Readable Names
 
-> Future design, not implemented in v0. There is no petname or nickname code today; local identities only carry a self-assigned label.
+Identity addresses are not user-friendly, and Jolt deliberately does not
+solve naming at the protocol level. There is no global username registry,
+which avoids squatting and governance problems.
 
-Identity addresses are still not user-friendly. The plan is a petname system where users assign local nicknames to identities they interact with.
+What the protocol provides:
 
-```
-Your local petnames (stored on YOUR node only):
-  "alice"   -> {identity}.jolt
-  "bob"     -> {identity}.jolt
-  "mom"     -> {identity}.jolt
-```
+- the canonical `{identity}.jolt` address;
+- an optional self-declared `display_name` in the identity's published
+  profile (`UpdateProfile`), which other nodes can read but which is not
+  unique or verified -- just a hint;
+- a local self-assigned label on the user's own identities.
 
-Petnames would be local. Alice might call Bob "bob" while Carol calls him "robert." There would be no global username registry, which avoids squatting and governance problems.
-
-Users would also be able to set a **display name** in their profile that other nodes can read, but it would not be unique or verified -- just a hint.
+Local nicknames for other identities (petname-style naming) are an app-level
+concern, not a daemon or protocol feature. Spoke, for example, stores a
+user-chosen display name on each contact record it keeps. Different apps can
+make different naming choices over the same identities.
 
 ### Identity Backup and Recovery
 
