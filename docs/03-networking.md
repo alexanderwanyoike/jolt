@@ -64,15 +64,35 @@ sequenceDiagram
 
 The mDNS behaviour is enabled by default, so nodes on the same LAN learn about each other via multicast DNS. However, on the default iroh transport this does not yet yield working LAN-only connectivity: mDNS advertises raw IP multiaddrs, and iroh nodes cannot dial those directly, so two local daemons on the default transport will not connect through mDNS alone. For local two-node demos, run both daemons with `--transport tcp` (optionally with `--no-bootstrap`), where mDNS discovery does work. Zero-configuration, offline LAN operation on the default transport remains a goal, not a shipped behavior.
 
-### Peer Exchange (PEX)
+### Relay Gossip
+
+Implemented. Nodes gossip signed relay records and identity-head hints over
+`/jolt/relays/1.0.0`:
+
+- On connecting to a bootstrap or relay-mesh peer, a node announces the relay
+  records it knows (bounded to 32 per exchange) and its fresh identity-head
+  hints (bounded to 32), then requests the peer's records and hints back.
+- Relay nodes additionally walk the relay mesh continuously: a periodic tick
+  picks the next known relay round-robin, dials it if needed, and runs the
+  same exchange, so the mesh converges without a coordinator.
+- Records are signed by the relay identity, carry capabilities and an expiry
+  (1 hour TTL), and invalid or oversized batches are rejected.
+
+This is how a new node's relay address book grows beyond the built-in
+bootstrap relay, and how relays learn which identities have fresh update-log
+heads. See the `/jolt/relays/1.0.0` protocol section below.
+
+### General Peer Exchange (PEX)
 
 > Future design, not implemented in v0.
 
-Connected peers would periodically exchange lists of known peers, helping the network grow organically and reducing reliance on bootstrap nodes. What exists today is narrower: relays gossip relay records and identity-head hints to each other over `/jolt/relays/1.0.0` (see Protocols below).
+A general PEX mechanism (all peers exchanging lists of all known peers, not
+just relay records) would further reduce reliance on bootstrap nodes. Today
+only the relay gossip above exists.
 
 ## NAT Traversal
 
-Most home and mobile networks use NAT, which prevents inbound connections. jolt delegates NAT traversal entirely to iroh: every node registers with a DERP relay server, dials go through the relay first, and iroh automatically attempts UDP hole punching to upgrade to a direct QUIC path. If hole punching fails, traffic continues to flow through the DERP relay.
+Most home and mobile networks use NAT, which prevents inbound connections. jolt still does QUIC hole punching; it is provided by iroh rather than by libp2p. Every node registers with a DERP relay server, dials go through the relay first, and iroh automatically attempts UDP hole punching to upgrade to a direct QUIC path. If hole punching fails, traffic continues to flow through the DERP relay.
 
 ```mermaid
 sequenceDiagram
@@ -92,7 +112,7 @@ Relayed connections are:
 - Slower (extra hop)
 - Still end-to-end encrypted (the DERP relay cannot read content)
 
-The libp2p-native mechanisms sometimes assumed here (AutoNAT, Circuit Relay v2, DCUtR hole punching, UPnP/NAT-PMP port mapping) are NOT used: none of those libp2p features are compiled in, and the `enable_upnp` config flag is currently dead. They could return later if jolt ever needs NAT traversal outside iroh.
+Earlier versions of jolt ran on a plain libp2p QUIC transport with the libp2p NAT stack (AutoNAT detection, DCUtR hole punching, Circuit Relay v2). That stack was removed when the transport moved to iroh, which provides the same capabilities internally. None of those libp2p features are compiled in today, and the `enable_upnp` config flag is currently dead.
 
 In addition to traffic relay, jolt uses the term relay for delegated availability. A user's home relay can pin that user's signed/encrypted content and announce provider records so the content remains reachable when the user's personal device is offline.
 
@@ -154,9 +174,15 @@ sequenceDiagram
 
 Synchronize per-device append-only writer logs for multi-writer identities. Each authorized device publishes its own signed append records; peers exchange and deterministically merge them. See [True Multi-Writer Identity and Devices](20-true-multi-writer-identity-and-devices.md).
 
-### `/jolt/relays/1.0.0` -- Relay Exchange
+### `/jolt/relays/1.0.0` -- Relay Gossip
 
-Relays exchange signed relay records (relay identity, capabilities, expiry) and identity-head hints with each other. This is how the relay mesh learns about other relays and about which identities have recent update-log heads.
+Request/response exchange of signed relay records (relay identity,
+capabilities, expiry) and identity-head hints. The messages are
+`AnnounceRelays`, `AnnounceIdentityHeads`, `GetRelays { limit, capabilities }`,
+and `GetIdentityHeads { limit }`. Exchanges run on connection to bootstrap and
+relay-mesh peers and during the relay mesh walk (see Relay Gossip above).
+Batches are bounded, records are signature-verified before storage, and
+expired records age out of the relay address book.
 
 ### Deferred App Protocols
 

@@ -38,7 +38,7 @@ block-beta
         columns 4
         Discovery["Discovery\nDHT + mDNS"]
         Transport["Transport\niroh (QUIC) + TCP fallback"]
-        NAT["NAT Traversal\niroh DERP relays"]
+        NAT["NAT Traversal\niroh hole punching + DERP"]
         Protocols["Protocols\nfetch / log sync / relays"]
     end
 
@@ -99,7 +99,7 @@ All crates depend on jolt-core; only the interesting edges are drawn.
 | Crate | Purpose |
 |---|---|
 | `rust-libp2p` | P2P networking: DHT, mDNS, request-response protocols |
-| `iroh` + `libp2p-iroh` | Primary QUIC transport; DERP relays for NAT traversal |
+| `iroh` + `libp2p-iroh` | Primary QUIC transport; NAT traversal via hole punching with DERP relay fallback |
 | `axum` | HTTP server for the REST API |
 | `ed25519-dalek` | Identity keypair, signing, verification |
 | `hpke` (x25519 feature) | Public-key encryption envelopes for encrypted objects |
@@ -146,7 +146,7 @@ P2P networking layer built on libp2p.
 - Content fetching via `FetchManager` (request content by ContentId from peers and DHT providers)
 - Update-log and device-writer-log sync between peers
 - Transports: iroh (QUIC) as primary, TCP + noise + yamux as fallback
-- NAT traversal handled by iroh's DERP relays
+- NAT traversal handled by iroh (QUIC hole punching, DERP relay fallback)
 
 There is no peer-to-peer messaging protocol; direct messaging is not implemented.
 
