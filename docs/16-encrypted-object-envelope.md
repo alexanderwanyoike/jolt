@@ -2,10 +2,11 @@
 
 ## Status
 
-Design proposal for card `049`.
+Implemented. Originally the design proposal for card `049`; the envelope and
+its app APIs (publish, append, decrypt, open, rewrap) are built.
 
-This document defines the encrypted object envelope that later cards will
-implement for private Pastey and future private Jolt apps. It is deliberately
+This document defines the encrypted object envelope implemented for private
+Pastey and future private Jolt apps. It is deliberately
 protocol-level and app-agnostic: it talks about encrypted objects, identities,
 recipients, keys, and signed paths, not pastes, posts, feeds, or app-specific
 schemas.
@@ -295,6 +296,7 @@ POST /app/v1/encrypted/publish
 POST /app/v1/encrypted/append
 POST /app/v1/encrypted/decrypt
 POST /app/v1/encrypted/open
+POST /app/v1/encrypted/rewrap
 ```
 
 The daemon chooses the suite from local policy and supported recipient keys. Apps
@@ -309,13 +311,21 @@ requests may target either a `.jolt` address or a raw content ID. Raw content ID
 targets must include the app path context, and the daemon checks
 `decrypt:<path>` before fetching and opening the object.
 
+`/app/v1/encrypted/rewrap` re-encrypts an existing object to its current
+recipient set. Recipients are enumerated per identity and include the active
+authorized device keys for each recipient identity (doc 20), so a device
+added after the original publish can gain access without republishing
+plaintext. Decrypt/open responses report an access status; `needs_rewrap`
+signals that the local identity is a recipient but the object predates one of
+its current device keys, and the app should call rewrap. Rewrap requires
+`decrypt:<path>`, `encrypt:<path>`, and `publish:encrypted:<path>` together.
+
 Capabilities:
 
 ```text
 encrypt:/pastes/*
 decrypt:/pastes/*
 publish:encrypted:/pastes/*
-share:/pastes/*
 ```
 
 Meaning:
@@ -326,8 +336,9 @@ Meaning:
   path scope when the local identity is a recipient.
 - `publish:encrypted:<path>`: app may publish encrypted object bytes under that
   path scope.
-- `share:<path>`: app may ask the daemon to add or rotate recipient access
-  metadata for that path scope. Full sharing semantics come after v0.
+
+A `share:<path>` capability (adding or rotating recipient access metadata) is
+planned for after v0. It is not implemented and cannot be granted today.
 
 ## Relays and Caches
 

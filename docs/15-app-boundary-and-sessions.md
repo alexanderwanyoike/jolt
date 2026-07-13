@@ -2,7 +2,9 @@
 
 ## Status
 
-Design proposal for card `042`.
+Implemented. Originally the design proposal for card `042`; updated to describe
+the v0 surface as built, including append records, enumeration, encrypted
+object APIs (see doc 16), and recipient ingress.
 
 This document defines the near-term daemon/app boundary for external Jolt apps such as Pastey and Drops. It does not define the future WASM lens/runtime model.
 
@@ -111,10 +113,14 @@ They cannot mutate a `.jolt` identity unless they produce a valid signature from
 ## Session Lifecycle
 
 ```text
-requested -> pending -> approved -> active -> revoked
-                      -> rejected
-                      -> expired
+requested -> pending -> active -> revoked
+                     -> rejected
+                     -> expired
 ```
+
+The stored session states are `pending`, `active`, `rejected`, `revoked`, and
+`expired`. Approval moves a session directly from `pending` to `active`; there
+is no separate `approved` state.
 
 ### Requested
 
@@ -151,7 +157,7 @@ The daemon stores the request and returns:
 
 The app can poll request status. Jolt Console shows the pending request.
 
-### Approved
+### Active
 
 The user approves through Jolt Console. Approval selects:
 
@@ -200,6 +206,29 @@ Sessions may expire if the grant has an expiry. v0 can support non-expiring loca
 
 Capabilities are deliberately coarse. They should model workflows, not every individual operation.
 
+### Implemented Capability Grammar
+
+The full set of grantable capabilities as implemented:
+
+```text
+resolve:public
+fetch:public
+ingress:send
+ingress:read
+ingress:decide
+enumerate:self:<path>
+enumerate:any:<path>
+publish:<path>
+publish:encrypted:<path>
+inventory:<path>
+pin:own:<path>
+encrypt:<path>
+decrypt:<path>
+```
+
+`<path>` is either an exact path like `/pastes/note` or a single trailing
+wildcard prefix like `/pastes/*`.
+
 ### v0 Pastey Capabilities
 
 ```text
@@ -232,7 +261,6 @@ must be reapproved with an explicit `enumerate:self:` or `enumerate:any:` scope.
 encrypt:/pastes/*
 decrypt:/pastes/*
 publish:encrypted:/pastes/*
-share:/pastes/*
 ```
 
 Meaning:
@@ -240,9 +268,29 @@ Meaning:
 - `encrypt:/pastes/*`: app may ask the daemon to encrypt objects under `/pastes/*`.
 - `decrypt:/pastes/*`: app may ask the daemon to decrypt fetched objects under `/pastes/*` when the local identity is an authorized recipient.
 - `publish:encrypted:/pastes/*`: app may publish encrypted object bytes under `/pastes/*`.
-- `share:/pastes/*`: app may update recipient/access metadata for objects under `/pastes/*`.
 
-Sharing and access-grant mutation require later cards.
+These are implemented; the encrypted object envelope and its app APIs are
+specified in doc 16.
+
+A `share:<path>` capability (updating recipient/access metadata) is a planned
+future grant. It is not part of the implemented capability grammar and cannot
+be approved today.
+
+### Ingress Capabilities
+
+```text
+ingress:send
+ingress:read
+ingress:decide
+```
+
+Meaning:
+
+- `ingress:send`: app may send app-level objects to another identity's ingress.
+- `ingress:read`: app may list pending ingress items and open accepted ones.
+- `ingress:decide`: app may accept or reject pending ingress items.
+
+Ingress capabilities are global to the session identity, not path-scoped.
 
 ### Future Drops Capabilities
 
@@ -306,20 +354,45 @@ Private operations must not be added to this legacy trusted surface. Encryption,
 decryption, and sharing authority should go through capability-checked
 `/app/v1/*` APIs or explicit Console/admin APIs.
 
+One deliberate exception lives on the legacy surface: `POST /api/v1/ingress`
+is the unauthenticated network-facing submission endpoint for recipient
+ingress. Delivery into the pending queue is open by design; recipient-side
+authority (listing, opening, accepting, rejecting) is capability-checked under
+`/app/v1/ingress/*`.
+
 ### App API
 
-New external app endpoints should live under `/app/v1/*` and require a session token:
+External app endpoints live under `/app/v1/*` and require a session token,
+except the two session bootstrap endpoints. The implemented surface, with the
+capability each endpoint requires:
 
 ```text
-POST /app/v1/sessions/request
-GET  /app/v1/sessions/{request_id}
+POST /app/v1/sessions/request          (no token)
+GET  /app/v1/sessions/{request_id}     (no token; returns the session token
+                                        once, when the session becomes active)
 GET  /app/v1/session
-POST /app/v1/resolve
-POST /app/v1/fetch
-POST /app/v1/publish
-GET  /app/v1/published
-POST /app/v1/home-relay/pins
+POST /app/v1/resolve                   resolve:public
+POST /app/v1/fetch                     fetch:public
+POST /app/v1/publish                   publish:<path>
+POST /app/v1/append                    publish:<path>
+POST /app/v1/enumerate                 enumerate:self:<path> or enumerate:any:<path>
+POST /app/v1/encrypted/publish         encrypt:<path> + publish:encrypted:<path>
+POST /app/v1/encrypted/append          encrypt:<path> + publish:encrypted:<path>
+POST /app/v1/encrypted/decrypt         decrypt:<path>
+POST /app/v1/encrypted/open            decrypt:<path>
+POST /app/v1/encrypted/rewrap          decrypt:<path> + encrypt:<path> + publish:encrypted:<path>
+GET  /app/v1/published                 inventory:<path>
+GET  /app/v1/ingress/pending           ingress:read
+POST /app/v1/ingress/send              ingress:send
+POST /app/v1/ingress/{id}/accept       ingress:decide
+POST /app/v1/ingress/{id}/reject       ingress:decide
+POST /app/v1/ingress/{id}/open         ingress:read
+POST /app/v1/home-relay/pins           pin:own:<path>
 ```
+
+Append reuses the `publish:<path>` capability; there is no separate `append:`
+grant. Session tokens have the form `jolt_app_<64 hex>` and are stored as a
+`blake3` hash, never in plaintext.
 
 Every endpoint checks:
 
@@ -332,7 +405,7 @@ Every endpoint checks:
 
 ### Admin / Console API
 
-Console/admin endpoints should live under `/admin/v1/*`:
+Console/admin endpoints live under `/admin/v1/*`:
 
 ```text
 GET  /admin/v1/app-requests
@@ -341,10 +414,28 @@ POST /admin/v1/app-requests/{request_id}/reject
 GET  /admin/v1/app-sessions
 POST /admin/v1/app-sessions/{session_id}/revoke
 GET  /admin/v1/identities
+POST /admin/v1/identities
+DELETE /admin/v1/identities/{identity}
+POST /admin/v1/identities/export
 POST /admin/v1/identities/import
+POST /admin/v1/identities/active
+GET  /admin/v1/device-authority
+POST /admin/v1/device-authority/devices
+POST /admin/v1/device-authority/devices/{device_id}/revoke
 ```
 
-In v0, the Console is served by the daemon on localhost and can use these admin endpoints without a separate auth mechanism. Before remote admin access exists, this must remain localhost-first.
+plus network-settings, home-relay, relay status/diagnose, and reachability
+endpoints.
+
+App-request and app-session listing, approval, and revocation are scoped to
+the daemon's active identity: `GET /admin/v1/app-requests` and
+`GET /admin/v1/app-sessions` return entries for the currently active identity,
+not a global list across identities.
+
+In v0, admin endpoints are loopback-only, enforced by middleware that rejects
+non-local requests. The Console is served by the daemon on localhost and uses
+these admin endpoints without a separate auth mechanism. Before remote admin
+access exists, this must remain localhost-first.
 
 ## Session Storage
 
@@ -375,23 +466,28 @@ Session tokens should not be stored in plaintext if avoidable. Store a token has
 
 ## Identity Selection
 
-An app session is pinned to one identity.
+An app session is pinned to one identity, and in the implemented v0 that
+identity must be the daemon's active identity.
 
-The daemon may have a default identity for convenience, but apps should not silently follow a mutable global current identity. If the user changes the daemon default identity later:
+At approval time, any write-authority grant (`publish:`, `inventory:`,
+`pin:own:`, `encrypt:`, `decrypt:`) is refused unless the session's identity
+is the daemon's active identity. At request time, write, encrypted, and
+ingress calls re-check that the session identity still matches the active
+identity.
 
-```text
-existing app sessions keep their granted identity
-new session requests may default to the new identity
-```
-
-Apps that need multiple identities should create multiple sessions.
-
-Example:
+Consequences:
 
 ```text
-Pastey session A -> alice-public.jolt -> /pastes/*
-Pastey session B -> alice-private.jolt -> /pastes/*
+changing the daemon's active identity breaks existing write sessions (403)
+apps must request a new session after an identity switch
+only resolve:public / fetch:public sessions are identity-independent
 ```
+
+Concurrent write sessions against different local identities are not
+supported in v0. The original design goal, sessions that keep their granted
+identity independently of a mutable global current identity, remains the
+long-term direction; the multi-writer identity and device model (doc 20) is
+the path there.
 
 ## Pastey v0 Grant
 
@@ -465,7 +561,6 @@ v0 can implement `Always until revoked` first. The data model should allow short
 - Browser origin spoofing for manually run local dev apps.
 - A malicious app that misuses already-granted capabilities.
 - A user approving a malicious app.
-- Private content leakage; encrypted objects are not implemented yet.
 
 ## Non-Goals
 
@@ -473,17 +568,22 @@ v0 can implement `Always until revoked` first. The data model should allow short
 - App marketplace.
 - Remote admin access.
 - Payment or entitlements.
-- Encrypted content implementation.
-- Device-key delegation.
 - Perfect installed-app identity.
+
+Encrypted content and device-key delegation were non-goals of the original
+card and have since been implemented; see doc 16 (encrypted object envelope)
+and doc 20 (multi-writer identity and devices).
 
 ## Implementation Order
 
-1. Implement session store and approval API.
-2. Add capability-checked `/app/v1` endpoints.
-3. Add Jolt Console UI for pending requests and active sessions.
-4. Move Pastey to app sessions.
-5. Design encrypted objects before private Pastey.
+All delivered:
+
+1. Session store and approval API.
+2. Capability-checked `/app/v1` endpoints.
+3. Jolt Console UI for pending requests and active sessions.
+4. Pastey moved to app sessions.
+5. Encrypted objects (doc 16), append records and enumeration, and recipient
+   ingress added behind the same capability model.
 
 ## Open Questions
 
@@ -494,8 +594,8 @@ v0 can implement `Always until revoked` first. The data model should allow short
 - Console/admin endpoints remain localhost-first. Binding admin APIs away from
   localhost requires a separate admin-channel design.
 - Path-scoped capabilities keep operation separation: `publish`, `inventory`,
-  and `pin:own` are distinct grants. Future private grants should be distinct
-  too: `encrypt`, `decrypt`, and `share`.
+  `pin:own`, `encrypt`, and `decrypt` are distinct grants. A future `share`
+  grant (recipient/access mutation) should be distinct too.
 - Capability names remain strings on the wire for v0, but the daemon parses
   them into strict internal capability values before approval and enforcement.
   Approval may grant exactly what the app requested or a narrower path scope,

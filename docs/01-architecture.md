@@ -2,49 +2,44 @@
 
 ## Overview
 
-A jolt node is a single binary that runs on a user's machine. It combines a P2P networking layer, a WASM application runtime, a local data store, and an HTTP server that serves a browser-based UI.
+A jolt node is a single binary that runs on a user's machine. It combines a P2P networking layer, a local content store, and an HTTP server that exposes a REST API. The desktop UI is a separate Tauri app (jolt-console) that talks to the local daemon over that API. Apps run outside the daemon and connect through capability-scoped sessions (see [App Boundary and Sessions](15-app-boundary-and-sessions.md)).
 
 ```mermaid
 block-beta
     columns 1
 
-    block:ui["Browser UI (localhost)"]
-        columns 4
-        Launcher["App Launcher"]
-        NetBrowser["Network Browser"]
+    block:ui["jolt-console (Tauri desktop app)"]
+        columns 3
+        Browse["Browse Content"]
+        IdentityUI["Identity Management"]
         Settings["Settings"]
-        Apps["Installed Apps"]
     end
 
     space
 
-    block:http["HTTP Server (axum)"]
-        columns 3
-        ServeUI["Serve UI"]
-        Proxy["Proxy App Requests"]
+    block:http["HTTP Server (axum, jolt-server)"]
+        columns 2
         API["REST API"]
+        Sessions["App Sessions"]
     end
 
     space
 
     block:runtime["Node Runtime"]
         columns 3
-        AppMgr["App Manager\ninstall / update / remove"]
         Identity["Identity\nkeypair / signing / verify"]
-        ContentMgr["Content Manager\npublish / fetch / cache"]
-        WASM["WASM Runtime\nwasmtime sandbox / host API"]
-        DataStore["Data Store\nper-app isolated storage"]
-        Crypto["Crypto\nencryption / key exchange"]
+        Store["Content Store\npublish / cache / logs"]
+        Crypto["Encryption\nHPKE encrypted objects"]
     end
 
     space
 
-    block:network["P2P Network (libp2p)"]
+    block:network["P2P Network (libp2p, jolt-network)"]
         columns 4
         Discovery["Discovery\nDHT + mDNS"]
-        Transport["Transport\nQUIC + TCP + WS"]
-        NAT["NAT Traversal\nrelay + hole punching"]
-        Protocols["Protocols\ncontent / sync / msg"]
+        Transport["Transport\niroh (QUIC) + TCP fallback"]
+        NAT["NAT Traversal\niroh hole punching + DERP"]
+        Protocols["Protocols\nfetch / log sync / relays"]
     end
 
     ui --> http
@@ -62,56 +57,57 @@ block-beta
 ```
 jolt/
   crates/
-    jolt-core/        # shared types, content addressing, manifests
+    jolt-core/        # shared types: content addressing, update logs, manifests, encryption
     jolt-identity/    # keypair management, signing, verification
-    jolt-crypto/      # encryption, key exchange, access control
-    jolt-network/     # libp2p setup, protocols, peer discovery
-    jolt-store/       # embedded database, per-app data isolation
-    jolt-runtime/     # wasmtime WASM sandbox, host API
-    jolt-apps/        # app lifecycle: install, update, remove, permissions
-    jolt-content/     # content publishing, fetching, caching
-    jolt-server/      # axum HTTP server, REST API, browser UI proxy
+    jolt-network/     # libp2p + iroh setup, protocols, peer discovery, fetching
+    jolt-store/       # filesystem content store, cache, log persistence
+    jolt-server/      # axum HTTP server, REST API, app sessions
     jolt-node/        # CLI entry point, node configuration, orchestration
-  web/                # browser UI (HTML/CSS/JS frontend)
+  apps/
+    jolt-console/     # Tauri desktop app (UI over the REST API)
 ```
+
+An earlier design also had `jolt-crypto`, `jolt-runtime`, `jolt-apps`, and `jolt-content` crates. They were never built: encryption lives in jolt-core (`encrypted_object`, an HPKE envelope), the content store and cache live in jolt-store, fetching and resolution live in jolt-network, and the in-process app runtime was abandoned in favor of external apps with capability-scoped sessions (see [App Boundary and Sessions](15-app-boundary-and-sessions.md)).
 
 ## Crate Dependency Graph
 
 ```mermaid
 graph TD
-    node[jolt-node] --> server[jolt-server]
-    node --> net2[jolt-network]
+    console[apps/jolt-console] -.HTTP.-> server[jolt-server]
 
-    server --> apps[jolt-apps]
-    server --> id1[jolt-identity]
+    node[jolt-node] --> server
+    node --> net[jolt-network]
+    node --> store[jolt-store]
+    node --> id[jolt-identity]
 
-    apps --> rt[jolt-runtime]
-    apps --> content[jolt-content]
+    server --> net
+    server --> store
+    server --> id
 
-    rt --> store[jolt-store]
-    rt --> core1[jolt-core]
+    net --> store
+    net --> id
 
-    content --> net1[jolt-network]
-    content --> crypto[jolt-crypto]
-    content --> core2[jolt-core]
-
-    net2 --> id2[jolt-identity]
-    id2 --> core3[jolt-core]
+    store --> core[jolt-core]
+    id --> core
 ```
+
+All crates depend on jolt-core; only the interesting edges are drawn.
 
 ## Key Dependencies
 
 | Crate | Purpose |
 |---|---|
-| `rust-libp2p` | P2P networking, DHT, mDNS, relay, NAT traversal |
-| `axum` | HTTP server for browser UI and REST API |
-| `wasmtime` | WASM runtime with sandboxing |
-| `sled` or `rusqlite` | Embedded local database |
+| `rust-libp2p` | P2P networking: DHT, mDNS, request-response protocols |
+| `iroh` + `libp2p-iroh` | Primary QUIC transport; NAT traversal via hole punching with DERP relay fallback |
+| `axum` | HTTP server for the REST API |
 | `ed25519-dalek` | Identity keypair, signing, verification |
-| `x25519-dalek` | Key exchange for encryption |
-| `chacha20poly1305` | Symmetric encryption for content |
-| `cid` / `multihash` | Content addressing (IPFS-compatible) |
-| `serde` + `ciborium` | Serialization (CBOR for wire format) |
+| `hpke` (x25519 feature) | Public-key encryption envelopes for encrypted objects |
+| `chacha20poly1305` | Symmetric encryption |
+| `argon2` | Key derivation for identity export/recovery |
+| `blake3` | Content and log-entry hashing |
+| `cid` / `multihash` | Content addressing (IPFS-compatible CIDs) |
+| `data-encoding` | Base32 identity addresses |
+| `serde` + `serde_json` | Local persistence is JSON files; the network wire uses libp2p's CBOR request-response codec |
 | `tokio` | Async runtime |
 | `tracing` | Structured logging |
 
@@ -121,11 +117,14 @@ graph TD
 
 Shared types used across all crates.
 
-- `ContentId` -- content-addressed identifier (multihash of content bytes)
-- `PeerId` -- identity of a node on the network (derived from public key)
-- `AppManifest` -- metadata describing a published app
+- `ContentId` -- content-addressed identifier (CID wrapping a BLAKE3-256 multihash)
+- `IdentityId` -- identity of a user on the network (lowercase base32 of an ed25519 public key)
+- `ContentManifest` -- signed metadata describing published content (content_id, size, content_type, publisher_key, signature)
 - `UpdateLog` -- append-only signed log of changes to a user's published content
-- Serialization formats
+- `device_writer_log` -- per-device writer logs and merged identity state (see [doc 20](20-true-multi-writer-identity-and-devices.md))
+- `encrypted_object` -- HPKE encryption envelope for private content (see [doc 16](16-encrypted-object-envelope.md))
+- `identity_authority`, `identity_encryption_key`, `identity_head_hint` -- device authorization and identity key records
+- `pin_request`, `reachability`, `relay_record` -- relay pinning and signed reachability records
 
 ### jolt-identity
 
@@ -137,76 +136,38 @@ Manages the user's cryptographic identity.
 - Publish and verify signed identity encryption key records
 - Identity export/import for backup
 
-### jolt-crypto
-
-Encryption and access control.
-
-- Encrypt content for specific recipients (public key encryption)
-- Group key management (create, distribute, rotate)
-- Encrypt/decrypt content at rest
-- Key derivation for per-app secrets
-
 ### jolt-network
 
 P2P networking layer built on libp2p.
 
-- Node bootstrap and peer discovery (DHT + mDNS)
-- Content fetching protocol (request content by ContentId)
-- App sync protocol (exchange update logs between peers)
-- Messaging protocol (direct peer-to-peer messages)
-- NAT traversal via relay nodes and hole punching
-- Bandwidth management and connection limits
+- Node bootstrap and peer discovery (Kademlia DHT + mDNS)
+- Request-response protocols (CBOR over libp2p): `content_fetch`, `update_log_sync`, `device_writer_sync`, `relay_exchange`, plus `kademlia` and `identify` behaviours
+- Content fetching via `FetchManager` (request content by ContentId from peers and DHT providers)
+- Update-log and device-writer-log sync between peers
+- Transports: iroh (QUIC) as primary, TCP + noise + yamux as fallback
+- NAT traversal handled by iroh (QUIC hole punching, DERP relay fallback)
+
+There is no peer-to-peer messaging protocol; direct messaging is not implemented.
 
 ### jolt-store
 
-Local data persistence.
+Local data persistence, filesystem-based with JSON sidecar files.
 
-- Embedded database (sled or SQLite)
-- Per-app isolated namespaces (app A cannot read app B's data)
-- Content-addressed blob storage for cached content
-- KV store API exposed to WASM apps via host functions
-- Storage quotas and garbage collection
+- Directory layout: `published/`, `cache/`, `update_logs/`, `device_writer_logs/`, plus JSON index files
+- Content-addressed blob storage for published and cached content
+- Cache management (LRU eviction, configurable max size, pinning)
+- Update log and device-writer log persistence
 
-### jolt-runtime
-
-WASM application execution environment.
-
-- Load and execute WASM binaries via wasmtime
-- Host API functions exposed to WASM apps (see 04-wasm-runtime.md)
-- Capability-based permission enforcement
-- Resource limits (CPU time, memory, storage)
-- App isolation (each app runs in its own sandbox)
-
-### jolt-apps
-
-Application lifecycle management.
-
-- Install app from network (download WASM + assets by ContentId)
-- Update app (check developer's update log, prompt user)
-- Remove app (delete binary, optionally delete data)
-- App registry (list installed apps, metadata)
-- Permission management (grant/revoke capabilities per app)
-
-### jolt-content
-
-Content publishing and distribution.
-
-- Publish local files/directories to the network
-- Content-addressed storage and retrieval
-- Cache management (LRU eviction, size limits)
-- Update log management (append entries, resolve latest)
-- Pinning (explicitly cache and serve specific content)
+There is no embedded database and no per-app storage; the abandoned in-process app model's storage duties never materialized (see [doc 15](15-app-boundary-and-sessions.md)).
 
 ### jolt-server
 
-HTTP interface for the browser UI and apps.
+HTTP interface for the console UI and apps.
 
-- Serve the browser UI (app launcher, network browser, settings)
-- REST API for node management (identity, apps, content, peers)
-- Proxy requests from browser to installed WASM apps
-- WebSocket support for real-time updates
-- Localhost-only binding (security)
-- Resolve `jolt://` URIs to local content (see below)
+- REST API for node management (identity, content, peers, publishing)
+- Capability-scoped app sessions (see [doc 15](15-app-boundary-and-sessions.md))
+- Binds to localhost by default (`--api-bind` can open other interfaces; admin routes stay loopback-only regardless)
+- Resolve `<identity>.jolt` addresses to content (see below)
 
 ### jolt-node
 
@@ -217,49 +178,30 @@ The entry point that ties everything together.
 - Bootstrap and initialization sequence
 - Graceful shutdown
 - Logging and diagnostics
-- Register `jolt://` protocol handler with the OS on install
 
-## Protocol Handler (`jolt://` links)
+## Jolt Addresses (`<identity>.jolt`)
 
-jolt registers a custom protocol handler with the operating system on install. This allows `jolt://` links to work anywhere -- browsers, email clients, chat apps, terminals -- without a browser extension.
-
-### How it works
-
-1. On install, the node registers as the OS handler for the `jolt://` protocol
-2. User clicks a `jolt://` link anywhere on their system
-3. The OS routes it to the jolt node process
-4. The node resolves the link and opens it in the user's default browser via localhost
-
-### URI format
+Content on the network is addressed by identity and path:
 
 ```
-jolt://<peer-public-key>/<path>
-jolt://<content-id>
+<base32-identity>.jolt/<path>
 ```
 
 Examples:
 
 ```
-jolt://ed25519:a1b2c3d4/blog/hello-world    -> a user's published content
-jolt://ed25519:a1b2c3d4/apps/chat            -> a user's published app
-jolt://bafk...xyz                            -> content by hash (any provider)
+mfrggzdfmztwq2lk...abc.jolt/blog/hello-world   -> a user's published content
+mfrggzdfmztwq2lk...abc.jolt                    -> a user's root (path defaults to /)
 ```
+
+The identity label is the lowercase base32 (no padding) encoding of the user's ed25519 public key, fitting in a single DNS label. Addresses must end with the `.jolt` suffix and may carry a path; query strings and fragments are rejected.
 
 ### Resolution
 
-When the node receives a `jolt://` URI, it:
+When the node receives a jolt address, it:
 
-1. Parses the URI into either a peer key + path, or a raw ContentId
-2. For peer URIs: resolves the peer's update log to find the content at that path
-3. For content URIs: fetches directly by ContentId from the network
-4. Redirects the browser to `http://localhost:<port>/view/<resolved-content>` to display it
+1. Parses the address into an `IdentityId` and normalized path
+2. Resolves the identity's update log (and device-writer logs) to find the ContentId at that path
+3. Fetches the content by ContentId from the network and verifies it against the hash
 
-### OS registration
-
-| Platform | Method |
-|---|---|
-| Linux | `.desktop` file in `~/.local/share/applications/` with `MimeType=x-scheme-handler/jolt` |
-| macOS | `CFBundleURLTypes` in the app's `Info.plist` |
-| Windows | Registry key under `HKEY_CLASSES_ROOT\jolt` |
-
-This is the same mechanism used by Zoom (`zoommtg://`), Spotify (`spotify://`), and Steam (`steam://`).
+See [Global Jolt Resolution](12-global-jolt-resolution.md) for the authoritative description of the address format and resolution pipeline.

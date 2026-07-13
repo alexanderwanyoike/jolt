@@ -1,5 +1,12 @@
 # Community Identity and Membership Model
 
+## Status
+
+Design proposal, not implemented. No community records or community code exist
+yet. The device-authority foundation this design builds on
+([True Multi-Writer Identity and Devices](20-true-multi-writer-identity-and-devices.md))
+is implemented.
+
 ## Goal
 
 Communities are Jolt identities. They are not a separate protocol namespace and

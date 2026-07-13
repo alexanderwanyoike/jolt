@@ -2,11 +2,23 @@
 
 ## Status
 
-Design proposal for card `091`.
+Implemented (cards `092`/`093`/`094` delivered). Originally a design proposal
+for card `091`.
 
 This document updates Jolt's identity model from a single long-lived signing key
-to a user identity with authorized, revocable device writers. It is a design
-document, not an implementation record.
+to a user identity with authorized, revocable device writers. The core is now
+in the codebase:
+
+- identity authority records with an authorize/revoke chain
+  (`jolt-core` `identity_authority.rs`), published at
+  `/.well-known/jolt/device-authority`;
+- per-device append-only writer logs with deterministic merge
+  (`device_writer_log.rs`);
+- admin routes `/admin/v1/device-authority` (list/authorize/revoke);
+- the `/jolt/device-writer/1.0.0` sync protocol;
+- legacy-root migration (`dev_legacy_root`).
+
+Sections marked as future below (such as tombstones) are not yet implemented.
 
 ## Problem
 
@@ -235,6 +247,11 @@ records have the same entry hash, in which case they are the same record.
 Lamport-style counter, not trusted as a wall-clock security boundary. Wall-clock
 timestamps are useful for display, not authority.
 
+> Note: the v0 implementation deviates from this guidance. It currently orders
+> singleton conflicts by `(created_at, device_sequence, device_id, entry_hash)`,
+> where `created_at` is a wall-clock timestamp rather than a logical clock. This
+> is a known gap.
+
 ### Append Records
 
 Append-style operations represent independent app records:
@@ -253,9 +270,13 @@ whether they are posts, replies, pastes, messages, or something else.
 
 ### Tombstones
 
-Remove operations are tombstones. A tombstone should name the target entry or
-path and the device entry that created it when known. Resolvers preserve enough
-history to avoid reintroducing deleted records from a stale device log.
+> Future design, not implemented in v0. `DeviceWriterPathMode` currently only
+> has `Singleton` and `Append` variants; there is no remove operation yet.
+
+Remove operations would be tombstones. A tombstone should name the target entry
+or path and the device entry that created it when known. Resolvers would
+preserve enough history to avoid reintroducing deleted records from a stale
+device log.
 
 ## Merged Identity State
 

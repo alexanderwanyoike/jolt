@@ -26,6 +26,8 @@ Relays can provide one or more capabilities:
 | Serving | Serve content to requesters. |
 | Caching | Keep fetched content opportunistically. |
 
+> Note: the implemented capability enums are narrower than this table. Reachability hints use `RelayCapability` (Discovery, Pinning, Serving), relay records use `RelayRecordCapability` (which adds Bootstrap), and home-relay config uses `HomeRelayCapability` (DiscoveryOnly, Pinning). "NAT assistance" is not a capability variant (it comes from iroh's DERP relays) and "Caching" is opportunistic node behavior, not an advertised capability.
+
 A relay is not a platform account, not a source of truth, and not the owner of the content it carries.
 
 ## User Experience
