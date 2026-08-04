@@ -128,6 +128,17 @@ impl NetworkNode {
                 // Fall back to legacy pending_fetches (for non-daemon operations)
                 if let Some((content_id_str, tx)) = self.pending_fetches.remove(&request_id) {
                     if !response.data.is_empty() {
+                        let digest_ok = content_id_str
+                            .parse::<jolt_core::ContentId>()
+                            .map(|id| id.verify(&response.data))
+                            .unwrap_or(false);
+                        if !digest_ok {
+                            warn!(
+                                "Content response for {content_id_str} failed digest verification, rejecting"
+                            );
+                            let _ = tx.send(Err(crate::error::NetworkError::VerificationFailed));
+                            return;
+                        }
                         if let Err(e) = self.store.cache_content(
                             &content_id_str,
                             &response.data,
