@@ -47,15 +47,15 @@
 
         <figure class="hero-visual jolt-hero-visual reveal">
           <svg viewBox="0 0 760 560" role="img" aria-labelledby="jolt-hero-title jolt-hero-desc">
-            <title id="jolt-hero-title">Jolt nodes exchanging signed JSON records</title>
-            <desc id="jolt-hero-desc">A low-level network of Jolt nodes sends signed JSON records directly and through relay nodes. The records name identities, paths, content identifiers, and sequences.</desc>
+            <title id="jolt-hero-title">Jolt nodes exchanging signed path records</title>
+            <desc id="jolt-hero-desc">A peer network of Jolt nodes exchanges signed path records directly or over relay-supported connections. Each record binds an owner's public key and sequence to a path action and content identifier.</desc>
             <defs>
               <filter id="hero-cyan-glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
               <filter id="hero-soft-shadow" x="-30%" y="-50%" width="160%" height="200%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity=".5"/></filter>
             </defs>
 
-            <text x="28" y="32" class="graph-kicker">SIGNED DATA · MOVING BETWEEN NODES</text>
-            <g class="graph-live" transform="translate(704 28)"><circle r="4"/><text x="-12" y="4" text-anchor="end">NETWORK LIVE</text></g>
+            <text x="28" y="32" class="graph-kicker">SIGNED PATH RECORDS · MOVING BETWEEN NODES</text>
+            <g class="graph-live" transform="translate(704 28)"><circle r="4"/><text x="-12" y="4" text-anchor="end">JOLT NETWORK</text></g>
 
             <g class="graph-links">
               <path id="json-route-a" class="network-link direct" d="M112 275C146 218 187 163 230 128"/>
@@ -66,34 +66,34 @@
               <path id="json-route-f" class="network-link direct faint" d="M217 440C151 405 108 355 100 314"/>
               <path id="json-route-relay-a" class="network-link via-relay" d="M118 292C210 326 298 308 365 269"/>
               <path id="json-route-relay-b" class="network-link via-relay" d="M397 245C445 204 496 163 545 130"/>
-              <path id="json-route-relays" class="network-link via-relay" d="M390 280C410 323 420 359 426 397"/>
+              <path id="json-route-relays" class="network-link via-relay" d="M269 454C326 449 379 430 410 417"/>
               <path id="json-route-relay-c" class="network-link via-relay" d="M449 425C487 440 514 447 531 454"/>
               <path id="json-route-cross" class="network-link direct faint" d="M251 139C275 232 274 351 239 434"/>
             </g>
 
             <g class="protocol-node node-a" transform="translate(90 291)">
               <circle class="protocol-orbit" r="47"/><circle class="protocol-core" r="34"/><rect x="-17" y="-14" width="34" height="28" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="35" cy="-34" r="5"/>
-              <text y="65" text-anchor="middle" class="protocol-node-name">ALICE.JOLT</text><text y="80" text-anchor="middle" class="protocol-node-note">NODE 01</text>
+              <text y="65" text-anchor="middle" class="protocol-node-name">ID · k3m7…p2q</text><text y="80" text-anchor="middle" class="protocol-node-note">NODE 01</text>
             </g>
             <g class="protocol-node node-b" transform="translate(250 113)">
               <circle class="protocol-orbit" r="45"/><circle class="protocol-core" r="33"/><rect x="-17" y="-14" width="34" height="28" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="33" cy="-32" r="5"/>
-              <text y="63" text-anchor="middle" class="protocol-node-name">MAYA.JOLT</text><text y="78" text-anchor="middle" class="protocol-node-note">NODE 02</text>
+              <text y="63" text-anchor="middle" class="protocol-node-name">ID · m7q2…x5r</text><text y="78" text-anchor="middle" class="protocol-node-note">NODE 02</text>
             </g>
             <g class="protocol-node node-c" transform="translate(555 119)">
               <circle class="protocol-orbit" r="46"/><circle class="protocol-core" r="34"/><rect x="-17" y="-14" width="34" height="28" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="34" cy="-33" r="5"/>
-              <text y="64" text-anchor="middle" class="protocol-node-name">BOB.JOLT</text><text y="79" text-anchor="middle" class="protocol-node-note">NODE 03</text>
+              <text y="64" text-anchor="middle" class="protocol-node-name">ID · b4n6…t6w</text><text y="79" text-anchor="middle" class="protocol-node-note">NODE 03</text>
             </g>
             <g class="protocol-node node-d" transform="translate(657 300)">
               <circle class="protocol-orbit" r="44"/><circle class="protocol-core" r="32"/><rect x="-16" y="-13" width="32" height="26" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="32" cy="-31" r="5"/>
-              <text y="61" text-anchor="middle" class="protocol-node-name">KAI.JOLT</text><text y="76" text-anchor="middle" class="protocol-node-note">NODE 04</text>
+              <text y="61" text-anchor="middle" class="protocol-node-name">ID · k7p3…v5d</text><text y="76" text-anchor="middle" class="protocol-node-note">NODE 04</text>
             </g>
             <g class="protocol-node node-e" transform="translate(530 461)">
               <circle class="protocol-orbit" r="44"/><circle class="protocol-core" r="32"/><rect x="-16" y="-13" width="32" height="26" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="32" cy="-31" r="5"/>
-              <text y="61" text-anchor="middle" class="protocol-node-name">IRIS.JOLT</text><text y="76" text-anchor="middle" class="protocol-node-note">NODE 05</text>
+              <text y="61" text-anchor="middle" class="protocol-node-name">ID · i2r6…c4z</text><text y="76" text-anchor="middle" class="protocol-node-note">NODE 05</text>
             </g>
             <g class="protocol-node node-f" transform="translate(236 458)">
               <circle class="protocol-orbit" r="44"/><circle class="protocol-core" r="32"/><rect x="-16" y="-13" width="32" height="26" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="32" cy="-31" r="5"/>
-              <text y="61" text-anchor="middle" class="protocol-node-name">NOAH.JOLT</text><text y="76" text-anchor="middle" class="protocol-node-note">NODE 06</text>
+              <text y="61" text-anchor="middle" class="protocol-node-name">ID · n5h7…s3y</text><text y="76" text-anchor="middle" class="protocol-node-note">NODE 06</text>
             </g>
 
             <g class="protocol-relay relay-one" transform="translate(382 258)">
@@ -104,22 +104,22 @@
             </g>
 
             <g class="json-record static-json" transform="translate(389 85)">
-              <rect x="-53" y="-26" width="106" height="52" rx="5"/><text x="-43" y="-8">{ "seq": 42,</text><text x="-43" y="8">  "cid": "bafy…" }</text>
+              <rect x="-66" y="-29" width="132" height="58" rx="5"/><text x="-56" y="-10">{ "sequence": 42,</text><text x="-56" y="8">  "action": "SetPath" }</text>
             </g>
             <g class="json-record static-json" transform="translate(595 409)">
-              <rect x="-49" y="-25" width="98" height="50" rx="5"/><text x="-39" y="-7">{ "path":</text><text x="-39" y="9">  "/posts/7" }</text>
+              <rect x="-53" y="-25" width="106" height="50" rx="5"/><text x="-43" y="-7">{ "path":</text><text x="-43" y="9">  "/objects/7" }</text>
             </g>
 
             <g class="json-record moving-json json-one" filter="url(#hero-soft-shadow)">
-              <rect x="-52" y="-27" width="104" height="54" rx="5"/><text x="-42" y="-9">{ "identity":</text><text x="-42" y="7">  "alice.jolt" }</text>
+              <rect x="-64" y="-27" width="128" height="54" rx="5"/><text x="-54" y="-9">{ "owner_public_key":</text><text x="-54" y="7">  "k3m7…p2q" }</text>
               <animateMotion dur="7.2s" repeatCount="indefinite"><mpath href="#json-route-a"/></animateMotion>
             </g>
             <g class="json-record moving-json json-two" filter="url(#hero-soft-shadow)">
-              <rect x="-50" y="-26" width="100" height="52" rx="5"/><text x="-40" y="-8">{ "cid":</text><text x="-40" y="8">  "bafy…9f" }</text>
+              <rect x="-55" y="-26" width="110" height="52" rx="5"/><text x="-45" y="-8">{ "content_id":</text><text x="-45" y="8">  "bafkr…9f" }</text>
               <animateMotion dur="8.2s" begin="-3.1s" repeatCount="indefinite"><mpath href="#json-route-b"/></animateMotion>
             </g>
             <g class="json-record moving-json json-three" filter="url(#hero-cyan-glow)">
-              <rect x="-48" y="-25" width="96" height="50" rx="5"/><text x="-38" y="-7">{ "signed":</text><text x="-38" y="9">  true }</text>
+              <rect x="-53" y="-25" width="106" height="50" rx="5"/><text x="-43" y="-7">{ "signature":</text><text x="-43" y="9">  "ed25519…" }</text>
               <animateMotion dur="9s" begin="-5.4s" repeatCount="indefinite"><mpath href="#json-route-relay-a"/></animateMotion>
             </g>
             <circle class="moving-json signal-packet" r="5"><animateMotion dur="6s" begin="-2s" repeatCount="indefinite"><mpath href="#json-route-relays"/></animateMotion></circle>
@@ -127,8 +127,8 @@
             <g class="graph-legend" transform="translate(28 540)">
               <circle cx="5" cy="-3" r="5"/><text x="18">JOLT NODE</text>
               <path d="M142-10 151-5v10l-9 5-9-5V-5Z"/><text x="165">RELAY</text>
-              <rect x="264" y="-11" width="24" height="15" rx="2"/><text x="301">SIGNED JSON RECORD</text>
-              <path class="legend-route" d="M492-3h42"/><text x="548">DIRECT OR RELAYED</text>
+              <rect x="264" y="-11" width="24" height="15" rx="2"/><text x="301">SIGNED PATH RECORD</text>
+              <path class="legend-route" d="M492-3h42"/><text x="548">DIRECT OR VIA RELAY</text>
             </g>
           </svg>
         </figure>

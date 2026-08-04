@@ -31,6 +31,32 @@ for value in "${required_download_contract[@]}"; do
   }
 done
 
+required_protocol_visual_contract=(
+  'Jolt nodes exchanging signed path records'
+  'SIGNED PATH RECORDS · MOVING BETWEEN NODES'
+  '"owner_public_key"'
+  '"content_id"'
+  '"signature"'
+  'bafkr…'
+  'JOLT NETWORK'
+  'SIGNED PATH RECORD'
+  'DIRECT OR VIA RELAY'
+)
+
+for value in "${required_protocol_visual_contract[@]}"; do
+  grep -Fq "$value" website/index.html || {
+    echo "missing protocol-accurate hero contract: $value" >&2
+    exit 1
+  }
+done
+
+for value in 'signed JSON' 'SIGNED JSON' 'alice.jolt' 'bafy…' 'NETWORK LIVE'; do
+  if grep -Fq "$value" website/index.html; then
+    echo "misleading protocol hero terminology remains: $value" >&2
+    exit 1
+  fi
+done
+
 grep -Fq "workflows: [\"Package Jolt Console\"]" .github/workflows/pages.yml || {
   echo "Pages workflow does not follow tagged Jolt Console releases" >&2
   exit 1
