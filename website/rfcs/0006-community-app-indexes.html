@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="JOLT-RFC-0006: Community-Scoped App Indexes and Local Discovery" />
+    <meta name="jolt-rfc-source-sha256" content="3b3c5f5d6a7af3ff99d275a915ebe9c2b5a189c930ded9e5e8c5d555d4d6ff21" />
+    <title>JOLT-RFC-0006 — Community-Scoped App Indexes and Local Discovery</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="rfc.css" />
+  </head>
+  <body class="rfc-page">
+    <aside class="rfc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>RFC 0006</small></span></a>
+      <dl>
+        <div><dt>Status</dt><dd>Internet-Draft</dd></div>
+        <div><dt>Category</dt><dd>Experimental</dd></div>
+        <div><dt>Published</dt><dd>August 2026</dd></div>
+      </dl>
+      <nav aria-label="Document contents"><div class="toc">
+<ul>
+<li><a href="#status-of-this-memo">Status of This Memo</a></li>
+<li><a href="#abstract">Abstract</a></li>
+<li><a href="#1-introduction">1. Introduction</a></li>
+<li><a href="#2-conventions-and-requirements-language">2. Conventions and Requirements Language</a></li>
+<li><a href="#3-scope">3. Scope</a></li>
+<li><a href="#4-terminology">4. Terminology</a></li>
+<li><a href="#5-paths-and-ownership">5. Paths and Ownership</a></li>
+<li><a href="#6-member-submission">6. Member Submission</a></li>
+<li><a href="#7-community-app-index">7. Community App Index</a></li>
+<li><a href="#8-canonical-submission-signature">8. Canonical Submission Signature</a></li>
+<li><a href="#9-submission-processing">9. Submission Processing</a></li>
+<li><a href="#10-index-publication-and-verification">10. Index Publication and Verification</a></li>
+<li><a href="#11-public-and-member-only-indexes">11. Public and Member-Only Indexes</a></li>
+<li><a href="#12-local-search">12. Local Search</a></li>
+<li><a href="#13-removal-and-refresh">13. Removal and Refresh</a></li>
+<li><a href="#14-error-conditions">14. Error Conditions</a></li>
+<li><a href="#15-compatibility-and-versioning">15. Compatibility and Versioning</a></li>
+<li><a href="#16-security-considerations">16. Security Considerations</a></li>
+<li><a href="#17-privacy-considerations">17. Privacy Considerations</a></li>
+<li><a href="#18-iana-considerations">18. IANA Considerations</a></li>
+<li><a href="#19-implementation-status">19. Implementation Status</a></li>
+<li><a href="#20-references">20. References</a><ul>
+<li><a href="#201-normative-references">20.1 Normative References</a></li>
+<li><a href="#202-informative-references">20.2 Informative References</a></li>
+</ul>
+</li>
+<li><a href="#appendix-a-end-to-end-discovery-flow">Appendix A. End-to-End Discovery Flow</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="rfc-main">
+      <article class="rfc-document">
+        <header class="rfc-title">
+          <p>JOLT REQUEST FOR COMMENTS · 0006</p>
+          <h1>Community-Scoped App Indexes and Local Discovery</h1>
+          <pre class="memo-head">Jolt Project                                                JOLT-RFC-0006
+Request for Comments: 0006                                  August 2026
+Category: Experimental
+Status: Internet-Draft
+Updates: none
+Obsoletes: none</pre>
+        </header>
+        <h2 id="status-of-this-memo">Status of This Memo</h2>
+<p>This document proposes an experimental Jolt community-index protocol. It is not
+an IETF publication. Distribution of this memo is unlimited.</p>
+<p>The protocol in this memo is not implemented. It records the agreed direction
+that discovery comes from signed community state searched by clients, not from
+relay-owned global search.</p>
+<h2 id="abstract">Abstract</h2>
+<p>This document defines application-owned indexes published under community
+identities. A member signs a generic submission that references application
+content by CID. A community curates verified submissions into a signed public
+or member-only index without becoming the author of the member payload.</p>
+<p>Clients fetch community indexes, verify community curation and original member
+signatures, interpret app schemas locally, search locally, and fetch selected
+content by CID. Relays may serve or pin the bytes but do not rank results or
+control inclusion authority.</p>
+<h2 id="1-introduction">1. Introduction</h2>
+<p>A decentralized discovery system still needs places where related material can
+be found. Making every relay answer global semantic queries would turn relay
+operators into index owners and would require the protocol to understand every
+application schema.</p>
+<p>Jolt communities instead publish signed app-index objects. The community signs
+curation: “these member-signed submissions belong in this index.” Members retain
+authorship of their individual submissions. The app decides how to interpret,
+search, filter, and render the indexed payloads.</p>
+<h2 id="2-conventions-and-requirements-language">2. Conventions and Requirements Language</h2>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>, <strong>REQUIRED</strong>, <strong>SHOULD</strong>, <strong>SHOULD NOT</strong>,
+and <strong>MAY</strong> are interpreted as BCP 14 [RFC2119] [RFC8174]. Primitive binary
+encodings use JOLT-RFC-0002 Section 5.</p>
+<h2 id="3-scope">3. Scope</h2>
+<p>This memo defines:</p>
+<ul>
+<li>community-owned app-index paths;</li>
+<li>generic member submission records;</li>
+<li>community index snapshots and original-member proof retention;</li>
+<li>public and member-only index verification;</li>
+<li>local search and lazy content fetch;</li>
+<li>curation, removal, and refresh semantics.</li>
+</ul>
+<p>This memo does not define:</p>
+<ul>
+<li>global search, query federation, or relay ranking;</li>
+<li>application payload schemas or ranking functions;</li>
+<li>a protocol-level feed, post, file, game, or gallery;</li>
+<li>automatic moderation;</li>
+<li>storage billing or index-size policy.</li>
+</ul>
+<h2 id="4-terminology">4. Terminology</h2>
+<dl>
+<dt><strong>Submission</strong></dt>
+<dd>A member-signed generic record referencing an application payload CID.</dd>
+<dt><strong>Curation</strong></dt>
+<dd>A community-authorized decision to include or remove a verified submission.</dd>
+<dt><strong>Index snapshot</strong></dt>
+<dd>The current community-signed collection of included submission proofs for one
+  application and visibility class.</dd>
+<dt><strong>Local discovery</strong></dt>
+<dd>Fetching signed indexes and running app-specific search/ranking on the client.</dd>
+</dl>
+<h2 id="5-paths-and-ownership">5. Paths and Ownership</h2>
+<p>For an <code>app_id</code>, a community uses:</p>
+<pre><code class="language-text">/apps/{app_id}/public-index
+/apps/{app_id}/member-index
+/apps/{app_id}/submissions
+</code></pre>
+<p><code>app_id</code> is an application namespace label and MUST be a non-empty path segment
+without <code>/</code>, <code>.</code> or <code>..</code> traversal semantics.</p>
+<p>The public and member index paths are community-owned singleton paths. A new
+snapshot replaces the previous current CID while history remains available
+through signed writer logs. Submission transport MAY use recipient ingress or
+an append path; neither creates curation authority.</p>
+<h2 id="6-member-submission">6. Member Submission</h2>
+<p>The proposed v1 submission is:</p>
+<pre><code class="language-text">CommunityAppSubmission {
+  record_type: &quot;jolt.community_app_submission&quot;,
+  version: 1,
+  community_identity: IdentityId,
+  app_id: string,
+  submission_id: string,
+  member_identity: IdentityId,
+  member_public_key: bytes[32],
+  membership_grant_id: string,
+  payload_cid: ContentId,
+  payload_media_type: string,
+  payload_schema: optional string,
+  visibility: public | members,
+  created_at: uint64,
+  signature: bytes[64]
+}
+</code></pre>
+<p>The submission says only that one member proposes one CID for one community app
+index. It does not make the payload trustworthy, legal, safe, or semantically
+valid. Those decisions belong to the community application and curation policy.</p>
+<h2 id="7-community-app-index">7. Community App Index</h2>
+<p>The proposed snapshot is:</p>
+<pre><code class="language-text">CommunityAppIndex {
+  record_type: &quot;jolt.community_app_index&quot;,
+  version: 1,
+  community_identity: IdentityId,
+  app_id: string,
+  visibility: public | members,
+  schema: optional string,
+  previous_index_cid: optional ContentId,
+  entries: [CommunityAppIndexEntry],
+  removed_submission_ids: [string],
+  generated_at: uint64
+}
+
+CommunityAppIndexEntry {
+  submission_id: string,
+  submission_cid: ContentId,
+  member_identity: IdentityId,
+  payload_cid: ContentId,
+  accepted_at: uint64
+}
+</code></pre>
+<p>The index object is authorized by the community-signed path binding that names
+its CID. The entry repeats selected submission fields for efficient routing,
+but the client MUST fetch and verify <code>submission_cid</code> before treating the entry
+as member-authored.</p>
+<p>Entries MUST be sorted by <code>(submission_id, submission_cid)</code> byte order and
+submission IDs MUST be unique within one snapshot. Removed IDs MUST be sorted
+and MUST NOT also appear as active entries.</p>
+<h2 id="8-canonical-submission-signature">8. Canonical Submission Signature</h2>
+<p>The member signature payload begins with:</p>
+<pre><code class="language-text">&quot;jolt:community-app-submission:v1&quot; || 0x00
+</code></pre>
+<p>It then encodes every submission field except <code>signature</code>, in the order shown
+in Section 6, using JOLT-RFC-0002 primitives. <code>visibility</code> is <code>0x00</code> for public
+and <code>0x01</code> for members.</p>
+<p>The receiver MUST derive <code>member_identity</code> from <code>member_public_key</code> and verify
+the Ed25519 signature. The signed submission bytes are serialized and named by
+<code>submission_cid</code> using JOLT-RFC-0001.</p>
+<p>The index snapshot does not replace this signature. The community path proof
+attests curation; the submission signature attests member authorship.</p>
+<h2 id="9-submission-processing">9. Submission Processing</h2>
+<p>Before including a submission, a community processor MUST:</p>
+<ol>
+<li>validate type, version, path-safe app ID, content IDs, and field bounds;</li>
+<li>verify the member signature and identity binding;</li>
+<li>resolve JOLT-RFC-0005 membership at the submission's relevant state;</li>
+<li>require an active grant whose ID equals <code>membership_grant_id</code>;</li>
+<li>require the grant to permit the generic submission action;</li>
+<li>require submission app ID and visibility to match the target index;</li>
+<li>apply application-owned schema and moderation policy outside protocol code;</li>
+<li>publish a new community-authorized snapshot if accepted.</li>
+</ol>
+<p>A valid member signature does not require acceptance. Rejection MAY remain a
+local curation result; no public rejection record is required by v1.</p>
+<h2 id="10-index-publication-and-verification">10. Index Publication and Verification</h2>
+<p>To publish an index, an authorized community device serializes the snapshot,
+computes its CID, and sets the corresponding singleton path through
+JOLT-RFC-0003. The device writer signature is the community curation proof.</p>
+<p>To verify an index, a client MUST:</p>
+<ol>
+<li>resolve and verify the community identity and writer authority;</li>
+<li>resolve the expected app-index path;</li>
+<li>fetch bytes whose hash matches the resolved CID;</li>
+<li>parse and validate the snapshot identities, app ID, visibility, ordering,
+   uniqueness, and size limits;</li>
+<li>for each used entry, fetch the submission CID and verify Section 8;</li>
+<li>verify the referenced membership grant and payload CID as needed;</li>
+<li>treat invalid entries as rejected diagnostics, not silently trusted data.</li>
+</ol>
+<p>The snapshot MAY be processed incrementally, but partial processing MUST NOT be
+reported as a completely verified index.</p>
+<h2 id="11-public-and-member-only-indexes">11. Public and Member-Only Indexes</h2>
+<p>A public index is plaintext content. Anyone may fetch, cache, pin, verify, and
+search it. Public visibility does not imply unrestricted submission.</p>
+<p>A member index MUST be a JOLT-RFC-0004 encrypted object whose plaintext is the
+snapshot in Section 7. Its recipient wraps target currently active community
+members' authorized device encryption keys.</p>
+<p>The outer signed path and envelope metadata may reveal that a member index
+exists. Membership revocation excludes a device from future snapshots but
+cannot retract snapshots or plaintext already obtained.</p>
+<h2 id="12-local-search">12. Local Search</h2>
+<p>The protocol search algorithm is intentionally small:</p>
+<ol>
+<li>discover a community identity from user choice or a replaceable local hint;</li>
+<li>watch or join according to JOLT-RFC-0005;</li>
+<li>resolve and verify one or more app-index snapshots;</li>
+<li>fetch member submissions and any app-owned metadata needed for search;</li>
+<li>run application-specific query, ranking, and filtering locally;</li>
+<li>fetch selected payload CIDs lazily.</li>
+</ol>
+<p>Relays MAY host community bytes and provider records. They MUST NOT be treated
+as the authority for inclusion, membership, ranking, or freshness.</p>
+<h2 id="13-removal-and-refresh">13. Removal and Refresh</h2>
+<p>Removal publishes a new snapshot that omits the active entry and records its
+submission ID in <code>removed_submission_ids</code>. A client following the latest valid
+singleton path MUST stop presenting the removed entry as currently curated.</p>
+<p>Historical snapshots and payload CIDs remain immutable and may remain cached.
+Removal is a curation change, not network erasure.</p>
+<p>Clients SHOULD refresh indexes on explicit user action, app policy, or signed
+head change. They SHOULD retain the last verified snapshot when a refresh is
+temporarily unavailable and clearly identify it as stale.</p>
+<h2 id="14-error-conditions">14. Error Conditions</h2>
+<p>Implementations SHOULD distinguish malformed submission/index, unsupported
+version, invalid member signature, inactive membership, grant mismatch,
+community/app/visibility mismatch, duplicate entry, invalid ordering, removed-
+and-active conflict, invalid community path proof, encrypted-index access
+failure, and payload unavailable.</p>
+<h2 id="15-compatibility-and-versioning">15. Compatibility and Versioning</h2>
+<p>Application payload schemas evolve independently through <code>payload_schema</code>.
+Changing generic submission fields, signature encoding, snapshot ordering, or
+curation proof requires a new record version.</p>
+<p>Clients MAY support several app schemas while sharing the same generic Jolt
+submission and index verification layer.</p>
+<h2 id="16-security-considerations">16. Security Considerations</h2>
+<p>Index verification MUST retain the distinction between member authorship and
+community curation. A malicious community can curate misleading material but
+cannot forge a member signature. A malicious member can submit harmful bytes;
+signature validity is not content safety.</p>
+<p>Processors require size, count, fetch, and recursion limits. Submission IDs
+must be deduplicated to resist retry amplification. Member-only submission
+endpoints require verified membership and abuse controls.</p>
+<h2 id="17-privacy-considerations">17. Privacy Considerations</h2>
+<p>Public indexes reveal community interests, member identities, payload CIDs,
+schemas, timing, and removals. Member-only encryption hides snapshot plaintext
+from non-recipients but still leaks outer CID, size, timing, and recipient
+metadata through the envelope.</p>
+<p>Local search avoids sending semantic queries to a relay, but providers can
+still observe content fetch patterns.</p>
+<h2 id="18-iana-considerations">18. IANA Considerations</h2>
+<p>This document requests no IANA actions. Record names and paths are project-local
+experimental identifiers.</p>
+<h2 id="19-implementation-status">19. Implementation Status</h2>
+<p>No community app submission, community index snapshot, curation processor, or
+local-index discovery API is implemented. Existing signed paths, membership
+design, encrypted envelopes, CIDs, and local application code provide the
+foundation.</p>
+<p>The exact snapshot representation and rejection reporting remain open to
+review. Implementation is tracked by card 100; community membership card 099 is
+a prerequisite.</p>
+<h2 id="20-references">20. References</h2>
+<h3 id="201-normative-references">20.1 Normative References</h3>
+<ul>
+<li>JOLT-RFC-0001, “Signed Path Records and Resolution.”</li>
+<li>JOLT-RFC-0002, “Device Authorization and Revocation.”</li>
+<li>JOLT-RFC-0003, “Per-Device Writer Logs and Deterministic Merge.”</li>
+<li>JOLT-RFC-0004, “Encrypted Objects and Private Device Access.”</li>
+<li>JOLT-RFC-0005, “Community Identities and Membership.”</li>
+</ul>
+<h3 id="202-informative-references">20.2 Informative References</h3>
+<ul>
+<li>Jolt card 100, “Community-Scoped App Indexes v0.”</li>
+<li>Jolt document 21, “Community Identity and Membership Model.”</li>
+</ul>
+<h2 id="appendix-a-end-to-end-discovery-flow">Appendix A. End-to-End Discovery Flow</h2>
+<p>Bob signs an app submission referencing payload CID <code>P</code> and his active grant.
+The community verifies Bob and curates the submission into snapshot CID <code>I</code>.
+Its authorized device binds <code>/apps/example/public-index</code> to <code>I</code>. Alice watches
+the community, resolves that path, verifies the community writer and Bob's
+submission, searches the app metadata locally, and fetches <code>P</code> only when she
+opens the result. A relay may serve <code>I</code> and <code>P</code>; it decides none of the trust or
+ranking outcomes.</p>
+        <footer class="document-footer">
+          <a href="./">← RFC index</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/rfcs/0006-community-app-indexes.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>

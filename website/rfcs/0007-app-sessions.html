@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="JOLT-RFC-0007: Capability-Scoped Local App Sessions" />
+    <meta name="jolt-rfc-source-sha256" content="0fc6cc34eb708c9b1cf8cc46f4932616bcff232f3055db9766eda1054f65170a" />
+    <title>JOLT-RFC-0007 — Capability-Scoped Local App Sessions</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="rfc.css" />
+  </head>
+  <body class="rfc-page">
+    <aside class="rfc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>RFC 0007</small></span></a>
+      <dl>
+        <div><dt>Status</dt><dd>Internet-Draft</dd></div>
+        <div><dt>Category</dt><dd>Experimental</dd></div>
+        <div><dt>Published</dt><dd>August 2026</dd></div>
+      </dl>
+      <nav aria-label="Document contents"><div class="toc">
+<ul>
+<li><a href="#status-of-this-memo">Status of This Memo</a></li>
+<li><a href="#abstract">Abstract</a></li>
+<li><a href="#1-introduction">1. Introduction</a></li>
+<li><a href="#2-conventions-and-requirements-language">2. Conventions and Requirements Language</a></li>
+<li><a href="#3-scope">3. Scope</a></li>
+<li><a href="#4-trust-classes-and-terminology">4. Trust Classes and Terminology</a></li>
+<li><a href="#5-session-data-model">5. Session Data Model</a></li>
+<li><a href="#6-session-lifecycle">6. Session Lifecycle</a></li>
+<li><a href="#7-capability-grammar">7. Capability Grammar</a></li>
+<li><a href="#8-path-and-identity-scope">8. Path and Identity Scope</a></li>
+<li><a href="#9-http-api-contract">9. HTTP API Contract</a><ul>
+<li><a href="#91-session-bootstrap">9.1 Session Bootstrap</a></li>
+<li><a href="#92-capability-checked-app-api">9.2 Capability-Checked App API</a></li>
+<li><a href="#93-admin-api">9.3 Admin API</a></li>
+</ul>
+</li>
+<li><a href="#10-request-authorization">10. Request Authorization</a></li>
+<li><a href="#11-token-generation-and-storage">11. Token Generation and Storage</a></li>
+<li><a href="#12-identity-and-device-binding">12. Identity and Device Binding</a></li>
+<li><a href="#13-revocation-and-expiry">13. Revocation and Expiry</a></li>
+<li><a href="#14-error-conditions">14. Error Conditions</a></li>
+<li><a href="#15-compatibility-and-versioning">15. Compatibility and Versioning</a></li>
+<li><a href="#16-security-considerations">16. Security Considerations</a></li>
+<li><a href="#17-privacy-considerations">17. Privacy Considerations</a></li>
+<li><a href="#18-iana-considerations">18. IANA Considerations</a></li>
+<li><a href="#19-implementation-status">19. Implementation Status</a></li>
+<li><a href="#20-references">20. References</a><ul>
+<li><a href="#201-normative-references">20.1 Normative References</a></li>
+<li><a href="#202-informative-references">20.2 Informative References</a></li>
+</ul>
+</li>
+<li><a href="#appendix-a-spoke-grant-example">Appendix A. Spoke Grant Example</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="rfc-main">
+      <article class="rfc-document">
+        <header class="rfc-title">
+          <p>JOLT REQUEST FOR COMMENTS · 0007</p>
+          <h1>Capability-Scoped Local App Sessions</h1>
+          <pre class="memo-head">Jolt Project                                                JOLT-RFC-0007
+Request for Comments: 0007                                  August 2026
+Category: Experimental
+Status: Internet-Draft
+Updates: none
+Obsoletes: none</pre>
+        </header>
+        <h2 id="status-of-this-memo">Status of This Memo</h2>
+<p>This document specifies an experimental local authorization contract between
+Jolt applications and a Jolt daemon. It is not an IETF publication.
+Distribution of this memo is unlimited.</p>
+<p>The v0 session store, capability parser, and HTTP surface are implemented. This
+memo remains a draft because app identity and device binding are transitional.</p>
+<h2 id="abstract">Abstract</h2>
+<p>This document defines capability-scoped sessions for untrusted local Jolt
+applications. An app requests authority for one Jolt identity. The trusted Jolt
+Console approves an equal or narrower set of capabilities. The daemon returns a
+bearer token and checks its status, expiry, identity, operation, and path scope
+before performing any action involving keys, signed state, storage, encryption,
+ingress, or the network.</p>
+<p>Applications never receive long-term identity or device private keys. Localhost
+reachability alone grants no app authority.</p>
+<h2 id="1-introduction">1. Introduction</h2>
+<p>The Jolt daemon owns identities, signing keys, encryption keys, signed state,
+content storage, cache policy, and network access. A desktop or web application
+that can reach the daemon must not inherit all that authority merely because it
+runs on the same machine.</p>
+<p>Jolt therefore separates three local trust classes:</p>
+<ul>
+<li>Console is the privileged, loopback-only control surface;</li>
+<li>normal apps are untrusted clients with explicit grants;</li>
+<li>network peers and relays are untrusted data and transport sources.</li>
+</ul>
+<p>Session checks occur before daemon operations. The protocol networking layer
+does not know app names, UI concepts, or session prompts.</p>
+<h2 id="2-conventions-and-requirements-language">2. Conventions and Requirements Language</h2>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>, <strong>REQUIRED</strong>, <strong>SHOULD</strong>, <strong>SHOULD NOT</strong>,
+and <strong>MAY</strong> are interpreted as BCP 14 [RFC2119] [RFC8174]. HTTP method and
+status semantics follow [RFC9110]. JSON member names use <code>snake_case</code>.</p>
+<h2 id="3-scope">3. Scope</h2>
+<p>This memo defines:</p>
+<ul>
+<li>app session requests, approval, rejection, expiry, and revocation;</li>
+<li>identity/device/app binding;</li>
+<li>bearer-token creation and hashed persistence;</li>
+<li>the v0 capability vocabulary and strict path scopes;</li>
+<li>app, admin, and legacy API separation;</li>
+<li>operation-by-operation authorization checks.</li>
+</ul>
+<p>This memo does not define:</p>
+<ul>
+<li>app installation, app stores, or cryptographic app packages;</li>
+<li>browser-origin authentication;</li>
+<li>remote Console administration;</li>
+<li>network peer authentication beyond the underlying Jolt protocol;</li>
+<li>application schemas or application-specific permissions.</li>
+</ul>
+<h2 id="4-trust-classes-and-terminology">4. Trust Classes and Terminology</h2>
+<dl>
+<dt><strong>App session</strong></dt>
+<dd>A local grant binding an app ID, user identity, local device, capabilities,
+  status, and optional expiry to a bearer token.</dd>
+<dt><strong>App ID</strong></dt>
+<dd>A caller-declared local identifier. In v0 it is not cryptographic proof of
+  an installed application.</dd>
+<dt><strong>Requested capability</strong></dt>
+<dd>Authority proposed by the app for user review.</dd>
+<dt><strong>Granted capability</strong></dt>
+<dd>Authority approved by Console. It MUST be equal to or narrower than a
+  requested capability.</dd>
+<dt><strong>Admin API</strong></dt>
+<dd>The privileged loopback-only <code>/admin/v1/*</code> surface used by Console.</dd>
+<dt><strong>App API</strong></dt>
+<dd>The capability-checked <code>/app/v1/*</code> surface used by normal apps.</dd>
+</dl>
+<h2 id="5-session-data-model">5. Session Data Model</h2>
+<p>The persistent v0 record contains:</p>
+<pre><code class="language-text">AppSessionRecord {
+  request_id: string,
+  session_id: optional string,
+  app_id: string,
+  app_name: string,
+  app_origin: optional string,
+  requested_identity: optional IdentityId,
+  identity: optional IdentityId,
+  device_id: optional string,
+  requested_capabilities: [string],
+  granted_capabilities: [string],
+  status: pending | active | rejected | revoked | expired,
+  created_at: uint64,
+  approved_at: optional uint64,
+  rejected_at: optional uint64,
+  revoked_at: optional uint64,
+  expires_at: optional uint64,
+  last_used_at: optional uint64,
+  token_hash: optional hex(BLAKE3-256(token))
+}
+</code></pre>
+<p>Secret bearer tokens MUST NOT appear in list or view representations. App name,
+origin, and app ID are display and policy inputs, not proof of code identity.</p>
+<h2 id="6-session-lifecycle">6. Session Lifecycle</h2>
+<p>The state machine is:</p>
+<pre><code class="language-text">pending -&gt; active -&gt; revoked
+        -&gt; rejected
+active  -&gt; expired
+</code></pre>
+<p>An app creates a pending request. If no identity is supplied, the daemon binds
+the request to the currently selected local identity at request time.</p>
+<p>Console may reject a pending request or approve it for one identity, an equal
+or narrower capability set, and an optional expiry. Approval creates a session
+ID and token and moves directly to <code>active</code>; there is no separate <code>approved</code>
+state.</p>
+<p>Only <code>active</code>, unexpired sessions authenticate. Rejected, revoked, and expired
+records remain useful for identity-scoped history and diagnostics.</p>
+<h2 id="7-capability-grammar">7. Capability Grammar</h2>
+<p>The v0 grantable grammar is:</p>
+<pre><code class="language-text">resolve:public
+fetch:public
+ingress:send
+ingress:read
+ingress:decide
+enumerate:self:&lt;path-scope&gt;
+enumerate:any:&lt;path-scope&gt;
+publish:&lt;path-scope&gt;
+publish:encrypted:&lt;path-scope&gt;
+inventory:&lt;path-scope&gt;
+pin:own:&lt;path-scope&gt;
+encrypt:&lt;path-scope&gt;
+decrypt:&lt;path-scope&gt;
+</code></pre>
+<p>No other capability string is grantable. In particular, apps cannot receive
+private-key export, identity deletion, root/device rotation, arbitrary signing,
+grant approval, relay administration, security settings, or store-wipe
+authority.</p>
+<p>Capability meanings are:</p>
+<ul>
+<li><code>resolve:public</code>: resolve public <code>.jolt</code> addresses;</li>
+<li><code>fetch:public</code>: fetch public CID-addressed content;</li>
+<li><code>enumerate:self</code>: enumerate append records only for the session identity;</li>
+<li><code>enumerate:any</code>: enumerate any identity within the granted path namespace;</li>
+<li><code>publish</code>: publish singleton or append state under the path scope;</li>
+<li><code>publish:encrypted</code>: publish daemon-created encrypted envelopes;</li>
+<li><code>inventory</code>: list locally published items under the path scope;</li>
+<li><code>pin:own</code>: ask the configured home relay to pin session-owned publications;</li>
+<li><code>encrypt</code> and <code>decrypt</code>: use daemon-owned cryptographic authority under the
+  path scope;</li>
+<li>ingress capabilities send, inspect/open, or decide pending recipient ingress.</li>
+</ul>
+<h2 id="8-path-and-identity-scope">8. Path and Identity Scope</h2>
+<p>A path scope is either an exact absolute path or one trailing wildcard prefix:</p>
+<pre><code class="language-text">/spoke/profile
+/spoke/*
+</code></pre>
+<p>Scopes MUST begin with <code>/</code>, MUST NOT be <code>/</code>, contain whitespace, query,
+fragment, <code>.</code> or <code>..</code> segments, and MAY contain at most one <code>*</code> only as the
+final <code>/*</code> suffix.</p>
+<p><code>/spoke/*</code> contains <code>/spoke/posts/1</code> but not <code>/spoke</code>, <code>/spoke-evil/x</code>, or
+<code>/profile</code>. An approved scope must be contained by one requested scope of the
+same action. A requested prefix can be narrowed to an exact path or a narrower
+prefix; an exact request can only grant that exact path.</p>
+<p>A requested <code>enumerate:any</code> may be narrowed to <code>enumerate:self</code>. A requested
+<code>enumerate:self</code> MUST NOT be broadened to <code>enumerate:any</code>.</p>
+<p>Signing, inventory, pinning, encryption, and decryption operations use the
+session identity. An app MUST NOT substitute a different local identity in an
+operation body.</p>
+<h2 id="9-http-api-contract">9. HTTP API Contract</h2>
+<h3 id="91-session-bootstrap">9.1 Session Bootstrap</h3>
+<p>The following routes do not require an existing bearer token:</p>
+<pre><code class="language-text">POST /app/v1/sessions/request
+GET  /app/v1/sessions/{request_id}
+</code></pre>
+<p>The request body contains app ID, app name, optional origin, requested identity,
+and requested capabilities. Status polling returns state and, while locally
+available after approval, the newly issued token. Apps SHOULD store the token
+securely when first received.</p>
+<h3 id="92-capability-checked-app-api">9.2 Capability-Checked App API</h3>
+<pre><code class="language-text">GET  /app/v1/session                     active token
+POST /app/v1/resolve                     resolve:public
+POST /app/v1/fetch                       fetch:public
+POST /app/v1/publish                     publish:&lt;path&gt;
+POST /app/v1/append                      publish:&lt;path&gt;
+POST /app/v1/enumerate                   enumerate:self|any:&lt;path&gt;
+POST /app/v1/encrypted/publish           encrypt + publish:encrypted
+POST /app/v1/encrypted/append            encrypt + publish:encrypted
+POST /app/v1/encrypted/decrypt           decrypt:&lt;path&gt;
+POST /app/v1/encrypted/open              decrypt:&lt;path&gt;
+POST /app/v1/encrypted/rewrap            decrypt + encrypt + publish:encrypted
+GET  /app/v1/published                   inventory:&lt;path&gt;
+GET  /app/v1/ingress/pending             ingress:read
+POST /app/v1/ingress/send                ingress:send
+POST /app/v1/ingress/{id}/accept         ingress:decide
+POST /app/v1/ingress/{id}/reject         ingress:decide
+POST /app/v1/ingress/{id}/open           ingress:read
+POST /app/v1/home-relay/pins             pin:own:&lt;path&gt;
+</code></pre>
+<p>When several capabilities are listed, every listed authority is required.</p>
+<h3 id="93-admin-api">9.3 Admin API</h3>
+<p>Console lists, approves, rejects, and revokes sessions through
+<code>/admin/v1/app-requests</code> and <code>/admin/v1/app-sessions</code>. Listings and revocation
+are scoped to the currently selected local identity. Admin routes MUST remain
+loopback-only unless a future authenticated remote-admin RFC replaces that
+assumption.</p>
+<h2 id="10-request-authorization">10. Request Authorization</h2>
+<p>For every protected call, the daemon MUST:</p>
+<ol>
+<li>parse exactly one <code>Authorization: Bearer &lt;token&gt;</code> value;</li>
+<li>hash the token and find the matching persistent session record;</li>
+<li>require status <code>active</code>;</li>
+<li>expire the record if <code>expires_at &lt;= now</code>;</li>
+<li>parse the required operation capability;</li>
+<li>require a matching granted action and containing scope;</li>
+<li>enforce <code>self</code> identity where applicable;</li>
+<li>require the session identity to be locally signable for local-authority
+   operations;</li>
+<li>update <code>last_used_at</code> only after successful token authentication;</li>
+<li>perform the daemon operation without returning private key material.</li>
+</ol>
+<p>An endpoint MUST NOT rely on UI behavior or app-supplied labels as an
+authorization check.</p>
+<h2 id="11-token-generation-and-storage">11. Token Generation and Storage</h2>
+<p>Request and session IDs contain 16 random octets rendered as lowercase hex with
+<code>req_</code> and <code>sess_</code> prefixes. Tokens contain 32 random octets rendered as:</p>
+<pre><code class="language-text">jolt_app_&lt;64 lowercase hexadecimal characters&gt;
+</code></pre>
+<p>Randomness MUST come from a cryptographically secure operating-system source.
+The persistent store contains BLAKE3-256 of the full token string, never the
+plaintext token. Token comparison SHOULD avoid avoidable timing leakage.</p>
+<p>The current daemon retains newly issued plaintext tokens only in process memory
+for status polling. Restarting does not invalidate a token already saved by an
+app, because its hash remains persistent, but may prevent the app from
+retrieving an uncollected plaintext token.</p>
+<h2 id="12-identity-and-device-binding">12. Identity and Device Binding</h2>
+<p>Every active session is bound to exactly one identity and one local device
+identifier. The same app requires distinct grants for different identities.</p>
+<p>Capabilities involving signing, local inventory, owner pinning, encryption, or
+decryption may be approved only for an identity the daemon can currently act
+for. Public resolve/fetch authority does not imply local signing authority.</p>
+<p>Device revocation MUST revoke active sessions bound to that device for future
+writes. The v0 implementation binds sessions to <code>dev_legacy_root</code>; binding to
+separately generated local device writers remains incomplete and is called out
+in Section 19.</p>
+<h2 id="13-revocation-and-expiry">13. Revocation and Expiry</h2>
+<p>Console revocation changes a matching active session to <code>revoked</code> and records
+the time. It applies only to the selected identity's session.</p>
+<p>Device revocation invokes session revocation for records with the same device
+ID. Expiry is evaluated during token authentication; an expired token changes
+the persistent state to <code>expired</code> and is rejected.</p>
+<p>Revocation stops later daemon authorization. It cannot undo already published
+signed state, remove cached content, or erase plaintext previously returned to
+an app.</p>
+<h2 id="14-error-conditions">14. Error Conditions</h2>
+<p>The HTTP surface SHOULD distinguish missing/invalid bearer token (<code>401</code>),
+unknown request/session (<code>404</code>), malformed or ungrantable request (<code>400</code>),
+identity not locally signable (<code>400</code>), capability/path denial (<code>403</code>), and
+daemon/network failure (<code>5xx</code>).</p>
+<p>Authentication errors SHOULD avoid revealing whether a guessed token hash
+exists in another non-active state.</p>
+<h2 id="15-compatibility-and-versioning">15. Compatibility and Versioning</h2>
+<p>Adding a new capability does not grant it to existing sessions. Apps MUST
+request it and users MUST approve it. Broadening the meaning of an existing
+capability is a compatibility and security change requiring RFC review.</p>
+<p>Existing sessions do not silently inherit newly introduced enumeration or
+encryption authority. Path parsing changes MUST preserve strict containment or
+require reapproval.</p>
+<h2 id="16-security-considerations">16. Security Considerations</h2>
+<p>Bearer tokens are secrets with the authority of their grant. Apps and daemon
+logs MUST avoid exposing them. Local malware running as the user remains a
+threat; localhost is not a complete sandbox boundary.</p>
+<p>The v0 app ID and origin are self-declared. Users SHOULD evaluate the visible
+capability request, not treat the app name as authenticated provenance.</p>
+<p>Admin routes have no independent bearer authentication and therefore MUST be
+unreachable from non-loopback clients. Public ingress is intentionally separate
+and requires rate, size, and abuse controls.</p>
+<h2 id="17-privacy-considerations">17. Privacy Considerations</h2>
+<p>Session records reveal installed/used app names, origins, identity association,
+capability scopes, and activity timing to anyone who can read the local store or
+admin API. The store SHOULD use restrictive filesystem permissions.</p>
+<p>Capability scoping reduces accidental cross-app and cross-identity disclosure
+but does not prevent an authorized app from retaining data it legitimately
+received.</p>
+<h2 id="18-iana-considerations">18. IANA Considerations</h2>
+<p>This document requests no IANA actions. HTTP paths, token prefixes, and
+capability strings are project-local experimental identifiers.</p>
+<h2 id="19-implementation-status">19. Implementation Status</h2>
+<p>The persistent session state, lifecycle, identity-scoped Console listings,
+random bearer tokens, hashed storage, expiry, strict path capability parser,
+endpoint checks, encryption/ingress capabilities, and selected-identity
+isolation are implemented in <code>jolt-server</code>; Spoke exercises the app boundary.</p>
+<p>Known gaps include self-declared app identity, no browser-origin proof, no
+remote-admin authentication, in-memory delivery of newly issued tokens, and
+transitional <code>dev_legacy_root</code> binding. In particular, generated device IDs and
+session device IDs are not yet universally aligned, so device revocation must
+be audited before this memo advances beyond Draft. Work was tracked by cards
+042, 052, and 095 and architecture document 15.</p>
+<h2 id="20-references">20. References</h2>
+<h3 id="201-normative-references">20.1 Normative References</h3>
+<ul>
+<li>JOLT-RFC-0001, “Signed Path Records and Resolution.”</li>
+<li>JOLT-RFC-0002, “Device Authorization and Revocation.”</li>
+<li>JOLT-RFC-0004, “Encrypted Objects and Private Device Access.”</li>
+<li>[RFC9110] Fielding, R., et al., “HTTP Semantics.”</li>
+<li>[RFC2119] Bradner, S., RFC 2119.</li>
+<li>[RFC8174] Leiba, B., RFC 8174.</li>
+</ul>
+<h3 id="202-informative-references">20.2 Informative References</h3>
+<ul>
+<li>Jolt document 15, “App Boundary and Sessions.”</li>
+<li>Jolt card 095, “Identity-Scoped App Grants v0.”</li>
+</ul>
+<h2 id="appendix-a-spoke-grant-example">Appendix A. Spoke Grant Example</h2>
+<p>A Spoke session requests public resolve/fetch, <code>/spoke/*</code> publish, encrypted
+publish, inventory, pinning, encryption/decryption, self/any enumeration, and
+recipient ingress capabilities. Console may approve all or a narrower subset
+for one selected identity. Spoke receives only a bearer token. Signing and
+private keys remain inside the local daemon, and every later request is checked
+against that identity and capability set.</p>
+        <footer class="document-footer">
+          <a href="./">← RFC index</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/rfcs/0007-app-sessions.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>

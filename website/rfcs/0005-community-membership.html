@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="JOLT-RFC-0005: Community Identities and Membership" />
+    <meta name="jolt-rfc-source-sha256" content="cf1f8b0d42c1299911cd058972ffd5bcb12c777749bb65a96caaf98b7575c809" />
+    <title>JOLT-RFC-0005 — Community Identities and Membership</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="rfc.css" />
+  </head>
+  <body class="rfc-page">
+    <aside class="rfc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>RFC 0005</small></span></a>
+      <dl>
+        <div><dt>Status</dt><dd>Internet-Draft</dd></div>
+        <div><dt>Category</dt><dd>Experimental</dd></div>
+        <div><dt>Published</dt><dd>August 2026</dd></div>
+      </dl>
+      <nav aria-label="Document contents"><div class="toc">
+<ul>
+<li><a href="#status-of-this-memo">Status of This Memo</a></li>
+<li><a href="#abstract">Abstract</a></li>
+<li><a href="#1-introduction">1. Introduction</a></li>
+<li><a href="#2-conventions-and-requirements-language">2. Conventions and Requirements Language</a></li>
+<li><a href="#3-scope">3. Scope</a></li>
+<li><a href="#4-terminology">4. Terminology</a></li>
+<li><a href="#5-community-identity-and-paths">5. Community Identity and Paths</a></li>
+<li><a href="#6-record-model">6. Record Model</a><ul>
+<li><a href="#61-community-policy">6.1 Community Policy</a></li>
+<li><a href="#62-join-request">6.2 Join Request</a></li>
+<li><a href="#63-invite">6.3 Invite</a></li>
+<li><a href="#64-membership-grant">6.4 Membership Grant</a></li>
+<li><a href="#65-membership-revocation">6.5 Membership Revocation</a></li>
+</ul>
+</li>
+<li><a href="#7-canonical-record-encoding">7. Canonical Record Encoding</a></li>
+<li><a href="#8-watch-and-join">8. Watch and Join</a></li>
+<li><a href="#9-join-policy-processing">9. Join Policy Processing</a></li>
+<li><a href="#10-membership-materialization">10. Membership Materialization</a></li>
+<li><a href="#11-member-only-state">11. Member-Only State</a></li>
+<li><a href="#12-recipient-ingress">12. Recipient Ingress</a></li>
+<li><a href="#13-error-conditions">13. Error Conditions</a></li>
+<li><a href="#14-compatibility-and-versioning">14. Compatibility and Versioning</a></li>
+<li><a href="#15-security-considerations">15. Security Considerations</a></li>
+<li><a href="#16-privacy-considerations">16. Privacy Considerations</a></li>
+<li><a href="#17-iana-considerations">17. IANA Considerations</a></li>
+<li><a href="#18-implementation-status">18. Implementation Status</a></li>
+<li><a href="#19-references">19. References</a><ul>
+<li><a href="#191-normative-references">19.1 Normative References</a></li>
+<li><a href="#192-informative-references">19.2 Informative References</a></li>
+</ul>
+</li>
+<li><a href="#appendix-a-request-policy-flow">Appendix A. Request-Policy Flow</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="rfc-main">
+      <article class="rfc-document">
+        <header class="rfc-title">
+          <p>JOLT REQUEST FOR COMMENTS · 0005</p>
+          <h1>Community Identities and Membership</h1>
+          <pre class="memo-head">Jolt Project                                                JOLT-RFC-0005
+Request for Comments: 0005                                  August 2026
+Category: Experimental
+Status: Internet-Draft
+Updates: none
+Obsoletes: none</pre>
+        </header>
+        <h2 id="status-of-this-memo">Status of This Memo</h2>
+<p>This document proposes an experimental Jolt community and membership protocol.
+It is not an IETF publication. Distribution of this memo is unlimited.</p>
+<p>Unlike RFCs 0002 through 0004, the community records in this memo are not
+implemented. Every wire shape and processing rule remains subject to review.</p>
+<h2 id="abstract">Abstract</h2>
+<p>This document defines a community as an ordinary Jolt identity that publishes
+policy, membership, revocation, and app-index references through generic signed
+paths. It separates local interest in a community (“watch”) from a signed
+membership relationship (“join”), defines open, request, invite, and closed
+join policies, and specifies the verification of community-signed grants and
+revocations.</p>
+<p>Communities provide a discovery and authority boundary without making relays
+owners of membership, search, or application data. Application concepts remain
+above the Jolt protocol layer.</p>
+<h2 id="1-introduction">1. Introduction</h2>
+<p>Jolt needs discovery structures richer than a global list of identity
+addresses, but a relay-owned index would recreate the platform authority the
+protocol is designed to avoid. Communities provide a signed, portable scope for
+discovery and participation.</p>
+<p>A community is not a new identity type. It is a normal <code>.jolt</code> identity whose
+authorized devices publish community records. The protocol verifies identities,
+device authority, generic records, CIDs, and encrypted envelopes. Applications
+interpret the purpose and content of a community.</p>
+<p>The governing split is:</p>
+<pre><code class="language-text">identity      owns the namespace
+community     signs policy and membership
+application   interprets indexes and interactions
+relay         helps discovery and availability without authority
+</code></pre>
+<h2 id="2-conventions-and-requirements-language">2. Conventions and Requirements Language</h2>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>, <strong>REQUIRED</strong>, <strong>SHOULD</strong>, <strong>SHOULD NOT</strong>,
+and <strong>MAY</strong> are interpreted as BCP 14 [RFC2119] [RFC8174]. Primitive binary
+encodings use JOLT-RFC-0002 Section 5.</p>
+<h2 id="3-scope">3. Scope</h2>
+<p>This memo defines:</p>
+<ul>
+<li>community identities and well-known paths;</li>
+<li>local watch versus signed membership;</li>
+<li>open, request, invite, and closed join policies;</li>
+<li>policy, join-request, invite, membership-grant, and revocation records;</li>
+<li>deterministic membership state materialization;</li>
+<li>member-only encrypted state and prospective revocation;</li>
+<li>the use of recipient ingress for requests.</li>
+</ul>
+<p>This memo does not define:</p>
+<ul>
+<li>global search or relay-owned indexes;</li>
+<li>application concepts such as posts, feeds, games, files, or moderation UI;</li>
+<li>ranking algorithms;</li>
+<li>group-key optimization;</li>
+<li>automatic joining of default communities;</li>
+<li>community-name uniqueness.</li>
+</ul>
+<h2 id="4-terminology">4. Terminology</h2>
+<dl>
+<dt><strong>Community identity</strong></dt>
+<dd>A normal Jolt identity whose signed namespace carries community records.</dd>
+<dt><strong>Watch</strong></dt>
+<dd>A local preference to retain and refresh public community state. It creates
+  no protocol authority.</dd>
+<dt><strong>Join</strong></dt>
+<dd>A request/decision flow ending in a valid community-signed membership grant.</dd>
+<dt><strong>Grant</strong></dt>
+<dd>A community-authorized statement naming a member identity, role,
+  capabilities, validity, and provenance.</dd>
+<dt><strong>Member view</strong></dt>
+<dd>The materialized current membership state for one identity.</dd>
+</dl>
+<h2 id="5-community-identity-and-paths">5. Community Identity and Paths</h2>
+<p>A community MUST use the identity, device authority, signed state, and content
+rules of RFCs 0001 through 0003. No flag in an identity identifier marks it as
+a community.</p>
+<p>The following well-known paths are reserved by this draft:</p>
+<pre><code class="language-text">/.well-known/jolt/community/profile
+/.well-known/jolt/community/policy
+/.well-known/jolt/community/members
+/.well-known/jolt/community/revocations
+/.well-known/jolt/community/invites
+</code></pre>
+<p>Policy and profile are singleton state. Grants, revocations, and invites SHOULD
+use append records so independent authorized community devices can publish
+without overwriting one another.</p>
+<p>Application-owned community state belongs under:</p>
+<pre><code class="language-text">/apps/{app_id}/public-index
+/apps/{app_id}/member-index
+/apps/{app_id}/submissions
+</code></pre>
+<p>Those paths are specified further by JOLT-RFC-0006. Core protocol code MUST NOT
+interpret their payload schemas.</p>
+<h2 id="6-record-model">6. Record Model</h2>
+<h3 id="61-community-policy">6.1 Community Policy</h3>
+<pre><code class="language-text">CommunityPolicy {
+  record_type: &quot;jolt.community_policy&quot;,
+  version: 1,
+  community_identity: IdentityId,
+  join_policy: open | request | invite | closed,
+  public_state_prefixes: [string],
+  member_state_prefixes: [string],
+  default_member_role: string,
+  published_at: uint64
+}
+</code></pre>
+<p>The policy object is referenced by a community-signed singleton path. Prefixes
+MUST be canonical absolute Jolt paths and MUST NOT overlap in a way that labels
+the same path both public and member-only.</p>
+<h3 id="62-join-request">6.2 Join Request</h3>
+<pre><code class="language-text">CommunityJoinRequest {
+  record_type: &quot;jolt.community_join_request&quot;,
+  version: 1,
+  community_identity: IdentityId,
+  requester_identity: IdentityId,
+  requested_role: string,
+  request_id: string,
+  message_cid: optional ContentId,
+  created_at: uint64,
+  requester_public_key: bytes[32],
+  requester_signature: bytes[64]
+}
+</code></pre>
+<p>The request ID MUST be stable for retry deduplication. A request is a claim,
+not membership.</p>
+<h3 id="63-invite">6.3 Invite</h3>
+<pre><code class="language-text">CommunityInvite {
+  record_type: &quot;jolt.community_invite&quot;,
+  version: 1,
+  community_identity: IdentityId,
+  invite_id: string,
+  invited_identity: optional IdentityId,
+  role: string,
+  expires_at: optional uint64,
+  created_at: uint64
+}
+</code></pre>
+<p>An invite is valid only when referenced by community-signed state. Acceptance
+still requires a grant.</p>
+<h3 id="64-membership-grant">6.4 Membership Grant</h3>
+<pre><code class="language-text">CommunityMembershipGrant {
+  record_type: &quot;jolt.community_membership_grant&quot;,
+  version: 1,
+  community_identity: IdentityId,
+  member_identity: IdentityId,
+  grant_id: string,
+  role: string,
+  capabilities: [string],
+  accepted_request_id: optional string,
+  invite_id: optional string,
+  granted_at: uint64,
+  expires_at: optional uint64
+}
+</code></pre>
+<p>The community signature proves curation and authority to grant. It does not
+make the community the author of later member-submitted application objects.</p>
+<h3 id="65-membership-revocation">6.5 Membership Revocation</h3>
+<pre><code class="language-text">CommunityMembershipRevocation {
+  record_type: &quot;jolt.community_membership_revocation&quot;,
+  version: 1,
+  community_identity: IdentityId,
+  grant_id: optional string,
+  member_identity: IdentityId,
+  reason: optional string,
+  revoked_at: uint64
+}
+</code></pre>
+<p>A revocation MAY target one grant or all current grants for the named member.
+This choice MUST be explicit during review before the RFC can be accepted.</p>
+<h2 id="7-canonical-record-encoding">7. Canonical Record Encoding</h2>
+<p>Each record body begins with its record-type-specific ASCII domain followed by
+NUL, then encodes fields in the order shown in Section 6 using the binary
+primitives from JOLT-RFC-0002.</p>
+<pre><code class="language-text">jolt:community-policy:v1\0
+jolt:community-join-request:v1\0
+jolt:community-invite:v1\0
+jolt:community-membership-grant:v1\0
+jolt:community-membership-revocation:v1\0
+</code></pre>
+<p>Enum values are encoded as one octet in the order listed, beginning at zero.
+Roles and capability labels are signed strings and are compared byte-for-byte.</p>
+<p>Join requests are signed by <code>requester_public_key</code>, which MUST derive
+<code>requester_identity</code>. Policy, invite, grant, and revocation authority is
+provided by the community's verified device-writer entry that binds the object
+CID. A later revision may add portable inner community-device signatures if
+objects must verify without their path proof.</p>
+<p>This canonical encoding is a draft compatibility proposal and has no current
+implementation.</p>
+<h2 id="8-watch-and-join">8. Watch and Join</h2>
+<p>Watching is stored locally. It MUST NOT be published as a membership claim,
+grant access to member paths, or cause a user to be silently joined.</p>
+<p>Joining has the state progression:</p>
+<pre><code class="language-text">none -&gt; pending -&gt; active -&gt; revoked
+                -&gt; rejected
+                -&gt; expired
+</code></pre>
+<p>Only a verified, unexpired grant produces <code>active</code>. A pending request, valid
+invite, local watch, or cached member index does not.</p>
+<h2 id="9-join-policy-processing">9. Join Policy Processing</h2>
+<p>For <code>open</code>, a community service MAY automatically validate a request and
+publish a grant. The resulting grant remains the source of truth.</p>
+<p>For <code>request</code>, an authorized community device decides whether to publish a
+grant. Rejection MAY be local or published as a future response record; no
+rejection wire record is fixed by v1.</p>
+<p>For <code>invite</code>, a grant MUST reference a valid, unexpired invite that either names
+the requester or is valid under a future opaque-token rule. Opaque bearer invite
+tokens remain unresolved in this draft.</p>
+<p>For <code>closed</code>, unsolicited requests MUST NOT produce automatic grants.</p>
+<h2 id="10-membership-materialization">10. Membership Materialization</h2>
+<p>To compute membership, a resolver MUST:</p>
+<ol>
+<li>verify community identity authority under JOLT-RFC-0002;</li>
+<li>resolve and verify policy, grant, invite, and revocation path state;</li>
+<li>verify each record type/version and identity binding;</li>
+<li>require the publishing community device to have been authorized at the
+   corresponding writer sequence;</li>
+<li>select grants whose member identity equals the subject identity;</li>
+<li>reject grants inconsistent with the policy under which they were created;</li>
+<li>remove expired grants;</li>
+<li>apply valid revocations after their target grants;</li>
+<li>return state, role, generic capabilities, grant ID, and diagnostics.</li>
+</ol>
+<p>Discovery order MUST NOT change the materialized result. If conflicting valid
+grants assign different roles, v1 SHOULD select the greatest grant writer tuple
+from JOLT-RFC-0003 while retaining other grants as diagnostics. This rule is
+open for review.</p>
+<h2 id="11-member-only-state">11. Member-Only State</h2>
+<p>Public community state is ordinary signed content that any node may fetch and
+cache. Member-only state MUST be an encrypted object or encrypted index under
+JOLT-RFC-0004.</p>
+<p>For new member-only objects, recipient wraps are formed from current active
+members' authorized device encryption keys. A new grant affects future wraps.
+A revocation excludes the member from future wraps. Historical access requires
+rewrap and cannot revoke plaintext already learned.</p>
+<h2 id="12-recipient-ingress">12. Recipient Ingress</h2>
+<p>Join requests are delivered to the community identity using generic recipient
+ingress. Ingress provides transport and pending-queue semantics only. The
+receiver MUST verify the requester signature and policy before acting. An
+ingress acceptance action is not a membership grant.</p>
+<h2 id="13-error-conditions">13. Error Conditions</h2>
+<p>Implementations SHOULD distinguish malformed record, unsupported version,
+identity mismatch, invalid requester signature, invalid community path proof,
+unknown policy, disallowed request, expired invite, invite subject mismatch,
+expired grant, unknown revocation target, and conflicting grant.</p>
+<p>Malformed or unavailable community records MUST fail closed for member-only
+authority while still allowing public watch behavior.</p>
+<h2 id="14-compatibility-and-versioning">14. Compatibility and Versioning</h2>
+<p>Community records are versioned independently of core signed paths. Unknown
+record versions MUST NOT be interpreted as v1. Application indexes may evolve
+without changing this RFC because their schemas remain application-owned.</p>
+<p>A future group-key mechanism must preserve the v1 prospective revocation truth
+and requires its own compatibility specification.</p>
+<h2 id="15-security-considerations">15. Security Considerations</h2>
+<p>Relays, caches, and ingress senders are untrusted. Community authority comes
+from verified identity/device signatures and grants, never from where bytes
+were found.</p>
+<p>Open auto-join endpoints require abuse controls, deduplication, size limits,
+and rate limits. Role and capability labels MUST NOT grant daemon authority
+outside explicitly defined community operations.</p>
+<p>Community device compromise permits fraudulent grants until that device is
+revoked. Resolvers MUST apply device authority at the relevant writer sequence.</p>
+<h2 id="16-privacy-considerations">16. Privacy Considerations</h2>
+<p>Public grants reveal community association, roles, timing, and revocations.
+Private communities SHOULD encrypt membership collections when public
+membership is undesirable, but outer path/CID and traffic metadata remain.</p>
+<p>Join messages SHOULD avoid unnecessary personal data. Watching remains local
+specifically so interest in public communities need not be published.</p>
+<h2 id="17-iana-considerations">17. IANA Considerations</h2>
+<p>This memo requests no IANA actions. Paths, domains, and record names are
+project-local experimental identifiers.</p>
+<h2 id="18-implementation-status">18. Implementation Status</h2>
+<p>No community policy, membership, invite, grant, revocation, watch, or join
+record is implemented. The identity authority, writer-log, encryption, and
+ingress foundations exist. This design is derived from architecture document 21
+and cards 098 and 099.</p>
+<p>Unresolved questions include opaque invites, grant-target revocation semantics,
+conflicting role selection, published rejection records, and portable inner
+community signatures. The RFC MUST NOT advance to Accepted until those
+questions are decided.</p>
+<h2 id="19-references">19. References</h2>
+<h3 id="191-normative-references">19.1 Normative References</h3>
+<ul>
+<li>JOLT-RFC-0001, “Signed Path Records and Resolution.”</li>
+<li>JOLT-RFC-0002, “Device Authorization and Revocation.”</li>
+<li>JOLT-RFC-0003, “Per-Device Writer Logs and Deterministic Merge.”</li>
+<li>JOLT-RFC-0004, “Encrypted Objects and Private Device Access.”</li>
+</ul>
+<h3 id="192-informative-references">19.2 Informative References</h3>
+<ul>
+<li>Jolt document 21, “Community Identity and Membership Model.”</li>
+<li>Jolt card 098, “Community Identity and Membership Model.”</li>
+</ul>
+<h2 id="appendix-a-request-policy-flow">Appendix A. Request-Policy Flow</h2>
+<p>For a <code>request</code> community, Alice signs a join request and sends it through
+recipient ingress. A community admin verifies Alice, current policy, and request
+deduplication. Acceptance publishes a community-signed grant append record.
+Alice is not active until her resolver obtains and verifies that grant. Later
+revocation publishes a separate community-signed record and excludes Alice from
+future member-only encryption wraps.</p>
+        <footer class="document-footer">
+          <a href="./">← RFC index</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/rfcs/0005-community-membership.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>

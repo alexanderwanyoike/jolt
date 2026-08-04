@@ -81,7 +81,28 @@ for source in rfcs/[0-9][0-9][0-9][0-9]-*.md; do
   rfc_count=$((rfc_count + 1))
 done
 
-test "$rfc_count" -ge 1 || { echo "no RFC sources found" >&2; exit 1; }
+test "$rfc_count" -eq 7 || {
+  echo "expected 7 published RFC sources, found $rfc_count" >&2
+  exit 1
+}
+
+required_rfc_library_contract=(
+  'Protocol series · seven Internet-Drafts'
+  '0001—0007'
+  '0002-device-authority.html'
+  '0003-device-writer-logs.html'
+  '0004-encrypted-device-access.html'
+  '0005-community-membership.html'
+  '0006-community-app-indexes.html'
+  '0007-app-sessions.html'
+)
+
+for value in "${required_rfc_library_contract[@]}"; do
+  grep -Fq "$value" website/index.html website/rfcs/index.html || {
+    echo "missing complete RFC library contract: $value" >&2
+    exit 1
+  }
+done
 
 python3 - <<'PY'
 from html.parser import HTMLParser

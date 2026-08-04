@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="JOLT-RFC-0003: Per-Device Writer Logs and Deterministic Merge" />
+    <meta name="jolt-rfc-source-sha256" content="60343f8f6069aec8f0aa62db535a9e759c4a3e08a55fdb3cd65261648d6be3f9" />
+    <title>JOLT-RFC-0003 — Per-Device Writer Logs and Deterministic Merge</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="rfc.css" />
+  </head>
+  <body class="rfc-page">
+    <aside class="rfc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>RFC 0003</small></span></a>
+      <dl>
+        <div><dt>Status</dt><dd>Internet-Draft</dd></div>
+        <div><dt>Category</dt><dd>Experimental</dd></div>
+        <div><dt>Published</dt><dd>August 2026</dd></div>
+      </dl>
+      <nav aria-label="Document contents"><div class="toc">
+<ul>
+<li><a href="#status-of-this-memo">Status of This Memo</a></li>
+<li><a href="#abstract">Abstract</a></li>
+<li><a href="#1-introduction">1. Introduction</a></li>
+<li><a href="#2-conventions-and-requirements-language">2. Conventions and Requirements Language</a></li>
+<li><a href="#3-scope">3. Scope</a></li>
+<li><a href="#4-terminology">4. Terminology</a></li>
+<li><a href="#5-device-writer-entry">5. Device Writer Entry</a></li>
+<li><a href="#6-canonical-signature-encoding">6. Canonical Signature Encoding</a></li>
+<li><a href="#7-per-device-log-validation">7. Per-Device Log Validation</a></li>
+<li><a href="#8-authority-filtering">8. Authority Filtering</a></li>
+<li><a href="#9-deterministic-merge">9. Deterministic Merge</a></li>
+<li><a href="#10-singleton-resolution">10. Singleton Resolution</a></li>
+<li><a href="#11-append-enumeration">11. Append Enumeration</a></li>
+<li><a href="#12-network-synchronization">12. Network Synchronization</a></li>
+<li><a href="#13-error-conditions">13. Error Conditions</a></li>
+<li><a href="#14-compatibility-and-versioning">14. Compatibility and Versioning</a></li>
+<li><a href="#15-security-considerations">15. Security Considerations</a></li>
+<li><a href="#16-privacy-considerations">16. Privacy Considerations</a></li>
+<li><a href="#17-iana-considerations">17. IANA Considerations</a></li>
+<li><a href="#18-implementation-status">18. Implementation Status</a></li>
+<li><a href="#19-references">19. References</a><ul>
+<li><a href="#191-normative-references">19.1 Normative References</a></li>
+<li><a href="#192-informative-references">19.2 Informative References</a></li>
+</ul>
+</li>
+<li><a href="#appendix-a-concurrent-publish-example">Appendix A. Concurrent Publish Example</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="rfc-main">
+      <article class="rfc-document">
+        <header class="rfc-title">
+          <p>JOLT REQUEST FOR COMMENTS · 0003</p>
+          <h1>Per-Device Writer Logs and Deterministic Merge</h1>
+          <pre class="memo-head">Jolt Project                                                JOLT-RFC-0003
+Request for Comments: 0003                                  August 2026
+Category: Experimental
+Status: Internet-Draft
+Updates: JOLT-RFC-0001
+Obsoletes: none</pre>
+        </header>
+        <h2 id="status-of-this-memo">Status of This Memo</h2>
+<p>This document specifies an experimental Jolt multi-writer protocol. It is not
+an IETF publication. Distribution of this memo is unlimited.</p>
+<p>The v1 structures and merge described here are implemented, but the memo
+remains a draft because singleton ordering uses wall-clock time and the long-
+term logical-clock rule is unresolved.</p>
+<h2 id="abstract">Abstract</h2>
+<p>This document defines per-device append-only writer logs for a Jolt identity.
+Each device authorized by JOLT-RFC-0002 writes an independent hash chain. A
+resolver verifies those logs against current device authority and materializes
+one deterministic identity state independent of provider or discovery order.</p>
+<p>The protocol distinguishes singleton path bindings, for which one deterministic
+winner is selected, from append path records, which coexist. Jolt merges only
+generic signed path operations; applications remain responsible for interpreting
+the referenced content.</p>
+<h2 id="1-introduction">1. Introduction</h2>
+<p>One global sequence counter cannot safely serve several devices that publish
+while disconnected. Requiring every device to coordinate before writing would
+restore a single-writer bottleneck. Allowing independent devices to extend the
+same chain would create forks whose arrival order could change resolved state.</p>
+<p>Jolt instead gives each authorized device one independent writer chain. A
+resolver first verifies identity authority, then verifies each discovered
+device log and merges the resulting generic operations with a deterministic
+total order.</p>
+<p>This memo supplements the legacy single-writer record in JOLT-RFC-0001. The
+user-facing <code>.jolt</code> identity remains unchanged.</p>
+<h2 id="2-conventions-and-requirements-language">2. Conventions and Requirements Language</h2>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>, <strong>REQUIRED</strong>, <strong>SHOULD</strong>, <strong>SHOULD NOT</strong>,
+and <strong>MAY</strong> are interpreted as BCP 14 [RFC2119] [RFC8174]. Primitive <code>string</code>,
+<code>bytes</code>, <code>uint16be</code>, <code>uint64be</code>, lists, and optionals use the encoding defined
+by JOLT-RFC-0002 Section 5.</p>
+<h2 id="3-scope">3. Scope</h2>
+<p>This memo defines:</p>
+<ul>
+<li>signed per-device writer entries and hash chains;</li>
+<li>singleton and append path modes;</li>
+<li>verification against device authority;</li>
+<li>revoked and unknown device handling;</li>
+<li>deterministic singleton selection and append ordering;</li>
+<li>network exchange of authority records and device logs;</li>
+<li>interaction with legacy signed-path resolution.</li>
+</ul>
+<p>This memo does not define:</p>
+<ul>
+<li>application-specific document merging or CRDT semantics;</li>
+<li>tombstones or removal operations;</li>
+<li>a global total order across identities;</li>
+<li>the content schemas referenced by path records;</li>
+<li>durable storage policy for remote identity caches.</li>
+</ul>
+<h2 id="4-terminology">4. Terminology</h2>
+<dl>
+<dt><strong>Device writer log</strong></dt>
+<dd>One append-only chain whose entries all name one identity and one device.</dd>
+<dt><strong>Singleton path</strong></dt>
+<dd>A path for which the merged identity state exposes one current content ID.</dd>
+<dt><strong>Append path</strong></dt>
+<dd>A path whose independently signed records coexist and are enumerated.</dd>
+<dt><strong>Entry hash</strong></dt>
+<dd>BLAKE3-256 over the canonical entry body, excluding the signature.</dd>
+<dt><strong>Merged identity state</strong></dt>
+<dd>The deterministic singleton map, append-record map, conflict history, and
+  rejected-entry diagnostics produced from verified authority and device logs.</dd>
+</dl>
+<h2 id="5-device-writer-entry">5. Device Writer Entry</h2>
+<p>The v1 logical structure is:</p>
+<pre><code class="language-text">DeviceWriterLogEntry {
+  body: DeviceWriterLogEntryBody,
+  signature: bytes[64]
+}
+
+DeviceWriterLogEntryBody {
+  record_type: &quot;jolt.device_writer_log_entry&quot;,
+  version: 1,
+  identity: IdentityId,
+  device_id: string,
+  device_sequence: uint64,
+  previous_entry_hash: optional bytes[32],
+  operation: SetPath,
+  created_at: uint64
+}
+
+SetPath {
+  path: string,
+  content_id: ContentId,
+  mode: singleton | append
+}
+</code></pre>
+<p><code>path</code> MUST be a canonical absolute Jolt path beginning with <code>/</code>. Address
+normalization MUST NOT silently rewrite a signed path. <code>content_id</code> uses the
+CID rules from JOLT-RFC-0001.</p>
+<p><code>created_at</code> is signed metadata and participates in the implemented v1 merge
+order. It is not an authority timestamp and receivers MUST NOT use it to bypass
+device authorization or hash continuity.</p>
+<h2 id="6-canonical-signature-encoding">6. Canonical Signature Encoding</h2>
+<p>The signature payload starts with:</p>
+<pre><code class="language-text">&quot;jolt:device-writer-log-entry:v1&quot; || 0x00
+</code></pre>
+<p>The remaining fields are encoded exactly as:</p>
+<pre><code class="language-text">string(record_type)
+uint16be(version)
+string(identity)
+string(device_id)
+uint64be(device_sequence)
+optional(previous_entry_hash)       ; present value is raw 32 bytes
+operation
+uint64be(created_at)
+</code></pre>
+<p><code>SetPath</code> has discriminator <code>0x00</code> followed by:</p>
+<pre><code class="language-text">string(path)
+string(content_id_text)
+mode                                  ; 0x00 singleton, 0x01 append
+</code></pre>
+<p>The entry signature is Ed25519 over the canonical body bytes using the device
+signing key from verified authority state. The entry hash is BLAKE3-256 over
+those same body bytes and excludes the signature.</p>
+<h2 id="7-per-device-log-validation">7. Per-Device Log Validation</h2>
+<p>For each non-empty candidate device log, a receiver MUST:</p>
+<ol>
+<li>Validate every entry type, version, device identifier, path, content ID,
+   and signature length.</li>
+<li>Require every entry to name the requested identity.</li>
+<li>Require every entry to carry the same device identifier as the first entry.</li>
+<li>Require genesis sequence zero and no previous hash.</li>
+<li>For each later entry, require its sequence to equal the previous sequence
+   plus one.</li>
+<li>Require its previous hash to equal the preceding entry hash.</li>
+<li>Find the device in a verified JOLT-RFC-0002 authority state.</li>
+<li>Verify every signature using that device's authorized signing public key.</li>
+</ol>
+<p>A broken chain MUST NOT be truncated and treated as valid. A receiver MAY keep
+the bytes for diagnostics, but MUST NOT apply operations from a structurally or
+cryptographically invalid log.</p>
+<h2 id="8-authority-filtering">8. Authority Filtering</h2>
+<p>An otherwise valid entry from an unknown device is excluded from merged path
+state and recorded as rejected with reason <code>unknown_device</code>.</p>
+<p>For a revoked device, the resolver calls the authority cutoff rule:</p>
+<pre><code class="language-text">active device  -&gt; all valid sequences eligible
+revoked device with cutoff N -&gt; sequences &lt;= N eligible
+revoked device without cutoff -&gt; no sequence eligible
+</code></pre>
+<p>Entries beyond the cutoff are excluded and recorded as rejected with reason
+<code>revoked_device</code>. Historical entries within the cutoff continue to verify with
+the retained device signing key.</p>
+<h2 id="9-deterministic-merge">9. Deterministic Merge</h2>
+<p>After verification and authority filtering, a receiver partitions <code>SetPath</code>
+operations by path and mode.</p>
+<p>The implemented v1 total ordering key is ascending:</p>
+<pre><code class="language-text">(created_at, device_sequence, device_id, entry_hash)
+</code></pre>
+<p><code>created_at</code> and <code>device_sequence</code> are unsigned integers, <code>device_id</code> is
+compared by UTF-8 byte order, and <code>entry_hash</code> is compared as 32 raw bytes.</p>
+<p>For each singleton path, the greatest tuple is the current winner. Every other
+valid candidate is retained as conflict history in ascending tuple order.</p>
+<p>For each append path, every valid entry is retained in ascending tuple order.
+Discovery order, provider order, map iteration order, and response arrival order
+MUST NOT affect the result.</p>
+<p>The use of wall-clock <code>created_at</code> is an implemented compatibility fact, not a
+recommended final design. A future revision SHOULD replace it with a logical
+clock while defining an explicit migration and cross-version comparison rule.</p>
+<h2 id="10-singleton-resolution">10. Singleton Resolution</h2>
+<p>To resolve a <code>.jolt</code> address from merged device state, a resolver MUST:</p>
+<ol>
+<li>require the address identity to equal the merged state identity;</li>
+<li>normalize the requested address according to JOLT-RFC-0001;</li>
+<li>look up the normalized path in the singleton winner map;</li>
+<li>return the winner's content ID and identity/path context;</li>
+<li>report <code>path_not_found</code> if no singleton winner exists.</li>
+</ol>
+<p>Append records do not become singleton resolution results merely because their
+paths match.</p>
+<h2 id="11-append-enumeration">11. Append Enumeration</h2>
+<p>Enumeration accepts an identity and canonical path prefix. A receiver returns
+all append records whose signed path begins with that prefix, ordered first by
+path byte order and then by the Section 9 entry order.</p>
+<p>Enumeration exposes references, not application objects. Each result includes
+at least path, content ID, device identifier, device sequence, creation time,
+and entry hash. The application fetches and interprets the CID-addressed bytes.</p>
+<p>Protocol code MUST NOT infer that append records are posts, replies, messages,
+files, or any other app concept.</p>
+<h2 id="12-network-synchronization">12. Network Synchronization</h2>
+<p>Device writer state is exchanged over the project-local request/response
+protocol <code>/jolt/device-writer/1.0.0</code>:</p>
+<pre><code class="language-text">DeviceWriterSyncRequest {
+  identity: IdentityId
+}
+
+DeviceWriterSyncResponse {
+  authority_records: [DeviceAuthorityRecord],
+  device_logs: [[DeviceWriterLogEntry]]
+}
+</code></pre>
+<p>The response is an untrusted candidate. The requester MUST re-verify the
+authority chain, every log, and the deterministic merge locally.</p>
+<p>Provider discovery reuses the identity update-log provider key. A responder
+MAY return partial knowledge. Requesters MAY accumulate different device logs
+from several providers, but MUST choose same-device forks deterministically.
+The implemented cache chooses equal-length forks by the greatest final entry
+order tuple before merging.</p>
+<h2 id="13-error-conditions">13. Error Conditions</h2>
+<p>Implementations SHOULD distinguish:</p>
+<ul>
+<li>unsupported entry type or version;</li>
+<li>identity or device change within a log;</li>
+<li>invalid genesis, sequence, or previous hash;</li>
+<li>empty device identifier or invalid path;</li>
+<li>invalid signature or signature length;</li>
+<li>requested/merged identity mismatch;</li>
+<li>singleton path not found.</li>
+</ul>
+<p>Unknown and revoked devices are valid diagnostic rejection outcomes, not a
+reason to accept their operations.</p>
+<h2 id="14-compatibility-and-versioning">14. Compatibility and Versioning</h2>
+<p>Legacy JOLT-RFC-0001 update logs remain readable during migration. A local
+legacy identity is represented by the authority device <code>dev_legacy_root</code>.
+New writes SHOULD populate device-writer state. Resolvers MAY answer from legacy
+state while asynchronously warming device-writer state, but MUST identify the
+source when diagnostics expose it.</p>
+<p>Adding tombstones, new operation classes, or a logical-clock merge key changes
+compatibility semantics and requires a versioned update.</p>
+<h2 id="15-security-considerations">15. Security Considerations</h2>
+<p>Resolvers MUST verify authority before writer signatures. A valid Ed25519
+signature from an unauthorized device has no identity authority.</p>
+<p>Deterministic merge prevents a provider from changing the winner merely by
+reordering valid entries. It does not stop withholding attacks: a provider can
+omit a newer entry or an entire device log. Implementations SHOULD query more
+than one candidate source where freshness matters.</p>
+<p>Wall-clock manipulation can influence the v1 singleton winner because
+<code>created_at</code> is the first ordering element. This is a known protocol weakness
+and a primary reason this memo remains a draft.</p>
+<h2 id="16-privacy-considerations">16. Privacy Considerations</h2>
+<p>Writer logs expose device identifiers, path names, content identifiers,
+publication timing, and activity volume even when referenced objects are
+encrypted. Applications requiring private indexes SHOULD bind paths to
+encrypted objects as described in JOLT-RFC-0004.</p>
+<h2 id="17-iana-considerations">17. IANA Considerations</h2>
+<p>This document requests no IANA actions. The protocol name and record strings
+are project-local experimental identifiers.</p>
+<h2 id="18-implementation-status">18. Implementation Status</h2>
+<p>The record, canonical encoding, per-device verification, revocation filtering,
+singleton conflicts, append coexistence, deterministic merge, local
+persistence, remote synchronization, enumeration, and merged-state resolution
+are implemented across <code>jolt-core</code>, <code>jolt-network</code>, <code>jolt-store</code>, and
+<code>jolt-server</code>.</p>
+<p>Known gaps are the wall-clock merge key, no tombstone operation, inline rather
+than CID-pinned remote log snapshots, and no periodic background synchronization
+independent of resolve/enumerate calls. Delivery and verification are recorded
+in cards 091 and 094.</p>
+<h2 id="19-references">19. References</h2>
+<h3 id="191-normative-references">19.1 Normative References</h3>
+<ul>
+<li>JOLT-RFC-0001, “Signed Path Records and Resolution.”</li>
+<li>JOLT-RFC-0002, “Device Authorization and Revocation.”</li>
+<li>[RFC2119] Bradner, S., RFC 2119.</li>
+<li>[RFC8174] Leiba, B., RFC 8174.</li>
+<li>[Ed25519] RFC 8032.</li>
+</ul>
+<h3 id="192-informative-references">19.2 Informative References</h3>
+<ul>
+<li>Jolt card 094, “Per-Device Writer Logs and Deterministic Merge v0.”</li>
+<li>Jolt architecture document 20, “True Multi-Writer Identity and Devices.”</li>
+</ul>
+<h2 id="appendix-a-concurrent-publish-example">Appendix A. Concurrent Publish Example</h2>
+<p>Laptop <code>dev_a</code> and phone <code>dev_b</code> are both authorized. Offline, each appends an
+entry under <code>/spoke/posts/</code> and sets singleton <code>/profile</code>.</p>
+<p>After synchronization, both append records remain. For <code>/profile</code>, every
+conforming resolver compares the same four-part tuple and returns the same
+winner. The losing profile binding remains available as conflict diagnostics;
+Jolt does not attempt to merge the profile payloads.</p>
+        <footer class="document-footer">
+          <a href="./">← RFC index</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/rfcs/0003-device-writer-logs.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>
