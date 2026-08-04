@@ -230,6 +230,10 @@ const IDENTITY_PROVIDER_QUERY_TTL: u8 = 3;
 const IDENTITY_PROVIDER_QUERY_TIMEOUT: Duration = Duration::from_secs(8);
 const SEEN_IDENTITY_PROVIDER_QUERY_TTL: Duration = Duration::from_secs(30);
 
+/// A daemon loop iteration slower than this starves queued API commands and is
+/// worth naming in the logs (issue #187).
+const SLOW_LOOP_BRANCH_THRESHOLD: Duration = Duration::from_millis(200);
+
 impl NetworkNode {
     fn submit_ingress(
         &mut self,
@@ -461,7 +465,10 @@ impl NetworkNode {
                 cmd = cmd_rx.recv() => {
                     match cmd {
                         Some(command) => {
-                            if self.handle_daemon_loop_command(command) {
+                            let started = Instant::now();
+                            let shutdown = self.handle_daemon_loop_command(command);
+                            Self::warn_slow_loop_branch(started, "command", None);
+                            if shutdown {
                                 return;
                             }
                         }
@@ -472,9 +479,13 @@ impl NetworkNode {
                     }
                 }
                 event = self.swarm.select_next_some() => {
+                    let summary = format!("{event:?}");
+                    let started = Instant::now();
                     self.handle_swarm_event(event);
+                    Self::warn_slow_loop_branch(started, "swarm", Some(&summary));
                 }
                 _ = timeout_interval.tick() => {
+                    let started = Instant::now();
                     self.fetch_manager.check_timeouts();
                     self.check_resolve_timeouts();
                     self.check_device_writer_sync_timeouts();
@@ -495,11 +506,39 @@ impl NetworkNode {
                             .send_request(&provider, request);
                         self.fetch_manager.mark_request_sent(&content_id, req_id);
                     }
+                    Self::warn_slow_loop_branch(started, "timeout_tick", None);
                 }
                 _ = relay_mesh_interval.tick() => {
+                    let started = Instant::now();
                     self.check_identity_provider_forward_timeouts();
                     self.check_identity_diagnosis_timeouts();
                     self.explore_relay_mesh();
+                    Self::warn_slow_loop_branch(started, "relay_mesh_tick", None);
+                }
+            }
+        }
+    }
+
+    /// Every daemon command waits behind the current loop iteration, so a
+    /// handler that stalls for seconds starves the whole API (issue #187).
+    /// Name the offending branch when that happens.
+    fn warn_slow_loop_branch(started: Instant, branch: &str, detail: Option<&str>) {
+        let elapsed = started.elapsed();
+        if elapsed >= SLOW_LOOP_BRANCH_THRESHOLD {
+            match detail {
+                Some(detail) => {
+                    let cut = detail.len().min(220);
+                    tracing::warn!(
+                        "Slow daemon loop branch: {branch} took {}ms handling {}",
+                        elapsed.as_millis(),
+                        &detail[..cut]
+                    );
+                }
+                None => {
+                    tracing::warn!(
+                        "Slow daemon loop branch: {branch} took {}ms",
+                        elapsed.as_millis()
+                    );
                 }
             }
         }
