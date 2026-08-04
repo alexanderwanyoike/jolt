@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="JOLT-RFC-0001: Jolt Signed Path Records and Resolution" />
+    <meta name="jolt-rfc-source-sha256" content="a83f4a4886628dff7246c5cbe680a73482a4f31debc9af44ceb64edc6123d0c3" />
+    <title>JOLT-RFC-0001 — Jolt Signed Path Records and Resolution</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="rfc.css" />
+  </head>
+  <body class="rfc-page">
+    <aside class="rfc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>RFC 0001</small></span></a>
+      <dl>
+        <div><dt>Status</dt><dd>Internet-Draft</dd></div>
+        <div><dt>Category</dt><dd>Experimental</dd></div>
+        <div><dt>Published</dt><dd>August 2026</dd></div>
+      </dl>
+      <nav aria-label="Document contents"><div class="toc">
+<ul>
+<li><a href="#status-of-this-memo">Status of This Memo</a></li>
+<li><a href="#abstract">Abstract</a></li>
+<li><a href="#1-introduction">1. Introduction</a></li>
+<li><a href="#2-conventions-and-requirements-language">2. Conventions and Requirements Language</a></li>
+<li><a href="#3-scope">3. Scope</a></li>
+<li><a href="#4-terminology">4. Terminology</a></li>
+<li><a href="#5-primitive-types-and-encoding-rules">5. Primitive Types and Encoding Rules</a><ul>
+<li><a href="#51-octet-strings">5.1 Octet Strings</a></li>
+<li><a href="#52-utf-8-strings">5.2 UTF-8 Strings</a></li>
+<li><a href="#53-optional-values">5.3 Optional Values</a></li>
+<li><a href="#54-lists">5.4 Lists</a></li>
+</ul>
+</li>
+<li><a href="#6-identity-identifiers-and-jolt-addresses">6. Identity Identifiers and Jolt Addresses</a><ul>
+<li><a href="#61-identity-identifier-construction">6.1 Identity Identifier Construction</a></li>
+<li><a href="#62-address-syntax">6.2 Address Syntax</a></li>
+<li><a href="#63-path-normalization-and-validation">6.3 Path Normalization and Validation</a></li>
+</ul>
+</li>
+<li><a href="#7-content-identifiers">7. Content Identifiers</a></li>
+<li><a href="#8-signed-path-record-format">8. Signed Path Record Format</a><ul>
+<li><a href="#81-record">8.1 Record</a></li>
+<li><a href="#82-actions">8.2 Actions</a></li>
+<li><a href="#83-setpath">8.3 SetPath</a></li>
+<li><a href="#84-removepath">8.4 RemovePath</a></li>
+<li><a href="#85-legacy-actions">8.5 Legacy Actions</a></li>
+</ul>
+</li>
+<li><a href="#9-canonical-signature-encoding">9. Canonical Signature Encoding</a><ul>
+<li><a href="#91-record-body">9.1 Record Body</a></li>
+<li><a href="#92-action-encoding">9.2 Action Encoding</a></li>
+<li><a href="#93-record-hash">9.3 Record Hash</a></li>
+<li><a href="#94-signature">9.4 Signature</a></li>
+</ul>
+</li>
+<li><a href="#10-record-construction">10. Record Construction</a><ul>
+<li><a href="#101-genesis-record">10.1 Genesis Record</a></li>
+<li><a href="#102-appended-record">10.2 Appended Record</a></li>
+</ul>
+</li>
+<li><a href="#11-record-chain-validation">11. Record-Chain Validation</a></li>
+<li><a href="#12-state-replay">12. State Replay</a></li>
+<li><a href="#13-address-resolution">13. Address Resolution</a></li>
+<li><a href="#14-candidate-selection-and-staleness">14. Candidate Selection and Staleness</a></li>
+<li><a href="#15-error-conditions">15. Error Conditions</a></li>
+<li><a href="#16-security-considerations">16. Security Considerations</a><ul>
+<li><a href="#161-key-compromise">16.1 Key Compromise</a></li>
+<li><a href="#162-signature-domain-separation">16.2 Signature Domain Separation</a></li>
+<li><a href="#163-replay-and-rollback">16.3 Replay and Rollback</a></li>
+<li><a href="#164-equivocation">16.4 Equivocation</a></li>
+<li><a href="#165-hash-and-content-verification">16.5 Hash and Content Verification</a></li>
+<li><a href="#166-resource-exhaustion">16.6 Resource Exhaustion</a></li>
+<li><a href="#167-path-confusion">16.7 Path Confusion</a></li>
+<li><a href="#168-deprecated-application-action">16.8 Deprecated Application Action</a></li>
+</ul>
+</li>
+<li><a href="#17-privacy-considerations">17. Privacy Considerations</a></li>
+<li><a href="#18-iana-considerations">18. IANA Considerations</a></li>
+<li><a href="#19-implementation-status">19. Implementation Status</a></li>
+<li><a href="#20-references">20. References</a><ul>
+<li><a href="#201-normative-references">20.1 Normative References</a></li>
+<li><a href="#202-informative-references">20.2 Informative References</a></li>
+</ul>
+</li>
+<li><a href="#appendix-a-end-to-end-protocol-operation">Appendix A. End-to-End Protocol Operation</a><ul>
+<li><a href="#a1-authority-and-data-planes">A.1 Authority and Data Planes</a></li>
+<li><a href="#a2-publication-procedure">A.2 Publication Procedure</a></li>
+<li><a href="#a3-candidate-discovery">A.3 Candidate Discovery</a></li>
+<li><a href="#a4-resolution-and-fetch-procedure">A.4 Resolution and Fetch Procedure</a></li>
+<li><a href="#a5-availability-and-relay-pinning">A.5 Availability and Relay Pinning</a></li>
+<li><a href="#a6-encrypted-objects">A.6 Encrypted Objects</a></li>
+</ul>
+</li>
+<li><a href="#appendix-b-architectural-boundaries">Appendix B. Architectural Boundaries</a><ul>
+<li><a href="#b1-local-daemon">B.1 Local Daemon</a></li>
+<li><a href="#b2-application-boundary">B.2 Application Boundary</a></li>
+<li><a href="#b3-network-boundary">B.3 Network Boundary</a></li>
+<li><a href="#b4-current-and-target-identity-models">B.4 Current and Target Identity Models</a></li>
+</ul>
+</li>
+<li><a href="#appendix-c-implementation-mapping">Appendix C. Implementation Mapping</a></li>
+<li><a href="#authors-address">Author's Address</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="rfc-main">
+      <article class="rfc-document">
+        <header class="rfc-title">
+          <p>JOLT REQUEST FOR COMMENTS · 0001</p>
+          <h1>Jolt Signed Path Records and Resolution</h1>
+          <pre class="memo-head">Jolt Project                                                JOLT-RFC-0001
+Request for Comments: 0001                                  August 2026
+Category: Experimental
+Status: Internet-Draft
+Updates: none
+Obsoletes: none</pre>
+        </header>
+        <h2 id="status-of-this-memo">Status of This Memo</h2>
+<p>This document specifies an experimental protocol for the Jolt project and
+requests discussion and implementation feedback. It is not an IETF publication
+and has not been reviewed or approved by the IETF. Distribution of this memo is
+unlimited.</p>
+<p>This document is a draft. Implementations MUST NOT treat the protocol elements
+defined here as permanently frozen until this memo reaches Accepted status.</p>
+<h2 id="abstract">Abstract</h2>
+<p>This document defines the Jolt signed-path protocol. A Jolt identity is derived
+from an Ed25519 public key. The identity controls a hash-chained sequence of
+signed records that maps application-agnostic paths to content identifiers.
+Content identifiers use CIDv1 with the raw codec and BLAKE3-256 multihashes.</p>
+<p>This document specifies identity and address syntax, path normalization,
+content identifier construction, the signed record data model, the canonical
+binary encoding covered by signatures, record-chain validation, state replay,
+address resolution, selection among untrusted candidate logs, protocol errors,
+and security requirements.</p>
+<h2 id="1-introduction">1. Introduction</h2>
+<p>Hosted applications commonly combine identity, mutable naming, object storage,
+distribution, and presentation. Jolt separates the mutable identity-owned name
+from the immutable object and from the application that interprets the object.</p>
+<p>The protocol statement defined by this memo is:</p>
+<pre><code class="language-text">identity X maps path P to content identifier C at sequence N
+</code></pre>
+<p>The statement is authorised by a signature from identity <code>X</code>. The bytes named
+by <code>C</code> are verified by the content identifier. The protocol does not define what
+the bytes mean. An application may interpret them as a profile, post, gallery,
+release, message envelope, game manifest, or another schema.</p>
+<p>The signed-path protocol is designed for operation with untrusted peers,
+caches, and relays. A provider can withhold data or return stale data, but it
+cannot create a valid newer mapping without an authorised signing key.</p>
+<h2 id="2-conventions-and-requirements-language">2. Conventions and Requirements Language</h2>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>, <strong>REQUIRED</strong>, <strong>SHALL</strong>, <strong>SHALL NOT</strong>,
+<strong>SHOULD</strong>, <strong>SHOULD NOT</strong>, <strong>RECOMMENDED</strong>, <strong>NOT RECOMMENDED</strong>, <strong>MAY</strong>, and
+<strong>OPTIONAL</strong> in this document are to be interpreted as described in BCP 14
+[RFC2119] [RFC8174] when, and only when, they appear in all capitals.</p>
+<p>Unsigned integers are written as <code>uintN</code>, where <code>N</code> is the width in bits.
+<code>uint64be</code> is an unsigned 64-bit integer encoded in network byte order.</p>
+<p>Hexadecimal octets are written using the notation <code>0xNN</code>. Literal byte strings
+are enclosed in double quotes. <code>NUL</code> means the single octet <code>0x00</code>.</p>
+<h2 id="3-scope">3. Scope</h2>
+<p>This memo defines:</p>
+<ul>
+<li>Ed25519-rooted Jolt identity identifiers;</li>
+<li>textual <code>.jolt</code> addresses;</li>
+<li>path validation and normalization;</li>
+<li>CIDv1 raw/BLAKE3-256 content identifiers;</li>
+<li>legacy single-writer signed path records;</li>
+<li>the exact byte sequence covered by an Ed25519 signature;</li>
+<li>record hash chaining, validation, replay, and resolution;</li>
+<li>deterministic selection among candidate single-writer logs.</li>
+</ul>
+<p>This memo does not define:</p>
+<ul>
+<li>discovery of candidate providers;</li>
+<li>libp2p, iroh, relay, or cache transport messages;</li>
+<li>multi-device authority or per-device writer-log merging;</li>
+<li>encrypted object envelopes or access grants;</li>
+<li>app-session capabilities or daemon HTTP APIs;</li>
+<li>application schemas or media types.</li>
+</ul>
+<p>Those surfaces require separate specifications. In particular, the
+single-writer log in this memo is the implemented v0 compatibility surface and
+is expected to be supplemented or superseded by the multi-device writer
+protocol.</p>
+<h2 id="4-terminology">4. Terminology</h2>
+<dl>
+<dt><strong>Identity public key</strong></dt>
+<dd>A 32-octet Ed25519 public verification key.</dd>
+<dt><strong>Identity identifier</strong></dt>
+<dd>The lowercase, unpadded Base32 encoding of an identity public key.</dd>
+<dt><strong>Jolt address</strong></dt>
+<dd>An identity identifier followed by <code>.jolt</code> and an optional normalized path.</dd>
+<dt><strong>Content identifier</strong> or <strong>CID</strong></dt>
+<dd>A CIDv1 value using multicodec <code>raw</code> and a BLAKE3-256 multihash.</dd>
+<dt><strong>Record</strong></dt>
+<dd>A <code>SignedPathRecord</code> containing a record body and an Ed25519 signature.</dd>
+<dt><strong>Record body</strong></dt>
+<dd>The identity public key, sequence, previous-record hash, and action covered by
+  the record signature.</dd>
+<dt><strong>Genesis record</strong></dt>
+<dd>The first record in a log. Its sequence is zero and it has no previous-record
+  hash.</dd>
+<dt><strong>Record hash</strong></dt>
+<dd>BLAKE3-256 over the canonical signature encoding of a record body. The
+  signature itself is not included.</dd>
+<dt><strong>Verified log</strong></dt>
+<dd>A non-empty ordered record sequence satisfying every requirement in Section
+  11.</dd>
+<dt><strong>Resolved state</strong></dt>
+<dd>The path map produced by applying all actions in a verified log in sequence.</dd>
+<dt><strong>Provider</strong></dt>
+<dd>Any peer, cache, or relay that supplies records or content. A provider is not
+  an authority merely because it supplies data.</dd>
+</dl>
+<h2 id="5-primitive-types-and-encoding-rules">5. Primitive Types and Encoding Rules</h2>
+<h3 id="51-octet-strings">5.1 Octet Strings</h3>
+<p>The canonical signed encoding uses the following length-prefixed octet-string
+form:</p>
+<pre><code class="language-text">octets = length content
+length = uint64be
+content = length octets
+</code></pre>
+<p>The length is the number of content octets and MUST be encoded as an unsigned
+64-bit big-endian integer. An implementation MUST reject a length that exceeds
+its configured resource limit before allocating storage.</p>
+<h3 id="52-utf-8-strings">5.2 UTF-8 Strings</h3>
+<p>A string is encoded as its UTF-8 octets using the <code>octets</code> form from Section
+5.1. Strings MUST contain valid UTF-8. Unless a field definition states
+otherwise, strings are compared as exact octet sequences and are not Unicode
+normalized.</p>
+<h3 id="53-optional-values">5.3 Optional Values</h3>
+<p>An optional value is encoded with a one-octet discriminator:</p>
+<pre><code class="language-text">0x00                 ; absent
+0x01 value           ; present
+</code></pre>
+<p>Any other discriminator MUST be rejected.</p>
+<h3 id="54-lists">5.4 Lists</h3>
+<p>A list is encoded as a <code>uint64be</code> item count followed by each item in order.
+An implementation MUST apply configured limits to the count before allocating.</p>
+<h2 id="6-identity-identifiers-and-jolt-addresses">6. Identity Identifiers and Jolt Addresses</h2>
+<h3 id="61-identity-identifier-construction">6.1 Identity Identifier Construction</h3>
+<p>Given a 32-octet Ed25519 public key <code>K</code>, the identity identifier is:</p>
+<pre><code class="language-text">lowercase(BASE32-NOPAD(K))
+</code></pre>
+<p>The Base32 alphabet is the alphabet from [RFC4648], Section 6. Padding MUST NOT
+be emitted or accepted. Because the input is exactly 32 octets, the resulting
+identifier is exactly 52 ASCII characters.</p>
+<p>An identity parser MUST reject a value that:</p>
+<ul>
+<li>is not exactly 52 characters;</li>
+<li>contains uppercase characters;</li>
+<li>contains characters outside the unpadded Base32 alphabet;</li>
+<li>does not decode to exactly 32 octets.</li>
+</ul>
+<h3 id="62-address-syntax">6.2 Address Syntax</h3>
+<p>The syntax is specified using ABNF [RFC5234]:</p>
+<pre><code class="language-abnf">jolt-address  = identity-label &quot;.jolt&quot; [ path ]
+identity-label = 52(base32-lower)
+base32-lower  = %x61-7A / %x32-37
+path          = &quot;/&quot; [ path-segment *( &quot;/&quot; path-segment ) ]
+path-segment  = 1*( path-char )
+path-char     = %x21-22 / %x24-2E / %x30-3E / %x40-7E / UTF8-non-ascii
+</code></pre>
+<p><code>UTF8-non-ascii</code> means a well-formed UTF-8 sequence encoding a Unicode scalar
+value above U+007F. The <code>path-char</code> production excludes ASCII whitespace, <code>#</code>,
+<code>/</code>, and <code>?</code>. Applications SHOULD use portable URI unreserved characters for
+newly created paths.</p>
+<p>The identity label MUST be the only label preceding <code>.jolt</code>. Implementations
+MUST reject names such as <code>sub.&lt;identity&gt;.jolt</code>.</p>
+<h3 id="63-path-normalization-and-validation">6.3 Path Normalization and Validation</h3>
+<p>The absent path and <code>/</code> both normalize to <code>/</code>.</p>
+<p>If a programmatic API receives a non-empty path that does not begin with <code>/</code>, it
+MAY prepend <code>/</code>. A textual address parser MUST interpret the first <code>/</code> after
+<code>.jolt</code> as the beginning of the path.</p>
+<p>A path MUST NOT contain:</p>
+<ul>
+<li>any Unicode whitespace character;</li>
+<li>a query delimiter <code>?</code>;</li>
+<li>a fragment delimiter <code>#</code>;</li>
+<li>a segment equal to <code>.</code>;</li>
+<li>a segment equal to <code>..</code>.</li>
+</ul>
+<p>Path comparison is exact and case-sensitive after the normalization above.
+Implementations MUST NOT percent-decode, Unicode-normalize, collapse repeated
+slashes, or resolve dot segments during comparison.</p>
+<h2 id="7-content-identifiers">7. Content Identifiers</h2>
+<p>For content bytes <code>B</code>, a conforming writer MUST construct the content
+identifier as:</p>
+<pre><code class="language-text">CIDv1(
+  codec = raw (0x55),
+  multihash = blake3-256(B)
+)
+</code></pre>
+<p>The text representation MUST use the normal CID string representation. A
+reader MUST parse the CID and MUST verify that:</p>
+<ul>
+<li>the CID version is 1;</li>
+<li>the multicodec is <code>raw</code> (<code>0x55</code>);</li>
+<li>the multihash algorithm is BLAKE3-256;</li>
+<li>hashing the received bytes produces the same multihash digest.</li>
+</ul>
+<p>A reader MUST NOT return or cache object bytes as a successful fetch when CID
+verification fails.</p>
+<h2 id="8-signed-path-record-format">8. Signed Path Record Format</h2>
+<h3 id="81-record">8.1 Record</h3>
+<p>The abstract record format is:</p>
+<pre><code class="language-text">SignedPathRecord {
+  body: RecordBody,
+  signature: octet[64]
+}
+
+RecordBody {
+  owner_public_key: octet[32],
+  sequence: uint64,
+  previous_record_hash: optional octet[32],
+  action: Action
+}
+</code></pre>
+<p><code>signature</code> is an Ed25519 signature over <code>CanonicalRecordBody(body)</code> as defined
+in Section 9.</p>
+<h3 id="82-actions">8.2 Actions</h3>
+<p>This memo defines the following action tags:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Tag</th>
+<th>Name</th>
+<th>Fields</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">0</td>
+<td><code>PublishContent</code></td>
+<td><code>content_id</code></td>
+<td>Legacy; no resolved-state effect</td>
+</tr>
+<tr>
+<td style="text-align: right;">1</td>
+<td><code>UpdateRoot</code></td>
+<td><code>content_id</code></td>
+<td>Legacy root pointer</td>
+</tr>
+<tr>
+<td style="text-align: right;">2</td>
+<td><code>UpdateProfile</code></td>
+<td>profile fields</td>
+<td>Deprecated application-specific action</td>
+</tr>
+<tr>
+<td style="text-align: right;">3</td>
+<td><code>SetPath</code></td>
+<td><code>path</code>, <code>content_id</code></td>
+<td>Current generic write action</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td><code>RemovePath</code></td>
+<td><code>path</code></td>
+<td>Current generic removal action</td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td><code>SetReachability</code></td>
+<td>relay hints</td>
+<td>Legacy reachability action</td>
+</tr>
+</tbody>
+</table>
+<p>New application data MUST use <code>SetPath</code> and <code>RemovePath</code>. New protocol
+specifications MUST NOT allocate application-specific actions in this record
+type. Tag 2 is retained only to describe and verify existing v0 logs.</p>
+<h3 id="83-setpath">8.3 SetPath</h3>
+<p><code>SetPath(path, content_id)</code> sets the current mapping for <code>path</code> to
+<code>content_id</code>. The path MUST satisfy Section 6.3. The content identifier MUST
+satisfy Section 7.</p>
+<h3 id="84-removepath">8.4 RemovePath</h3>
+<p><code>RemovePath(path)</code> removes the current mapping for <code>path</code>. Removing an absent
+path is valid and has no effect.</p>
+<h3 id="85-legacy-actions">8.5 Legacy Actions</h3>
+<p>Readers of v0 logs MUST be able to validate and skip <code>PublishContent</code>, apply
+<code>UpdateRoot</code> to a separate legacy root field, decode <code>UpdateProfile</code> into a
+separate legacy profile field, and replace legacy relay hints for
+<code>SetReachability</code>. Application-agnostic resolvers MUST NOT reinterpret those
+legacy fields as path mappings.</p>
+<h2 id="9-canonical-signature-encoding">9. Canonical Signature Encoding</h2>
+<h3 id="91-record-body">9.1 Record Body</h3>
+<p><code>CanonicalRecordBody(body)</code> is the concatenation below with no alignment or
+padding:</p>
+<pre><code class="language-text">&quot;jolt:update-log-entry:v1&quot; NUL
+octets(owner_public_key)
+uint64be(sequence)
+optional_previous_hash
+canonical_action
+</code></pre>
+<p><code>optional_previous_hash</code> is <code>0x00</code> when absent and <code>0x01</code> followed by 32 hash
+octets when present.</p>
+<h3 id="92-action-encoding">9.2 Action Encoding</h3>
+<p>The canonical action encodings are:</p>
+<pre><code class="language-text">PublishContent = 0x00 string(content_id)
+UpdateRoot     = 0x01 string(content_id)
+UpdateProfile  = 0x02 optional_string(display_name)
+                       optional_string(bio)
+                       optional_string(avatar_cid)
+SetPath        = 0x03 string(path) string(content_id)
+RemovePath     = 0x04 string(path)
+SetReachability = 0x05 relay_hint_list
+</code></pre>
+<p>An <code>optional_string</code> uses Section 5.3 followed by a Section 5.2 string when
+present.</p>
+<p><code>relay_hint_list</code> is encoded as a Section 5.4 list. Each relay hint is:</p>
+<pre><code class="language-text">string(relay_identity)
+string(peer_id)
+list(string(address))
+list(capability_tag)
+optional(uint64be(expires_at))
+</code></pre>
+<p>Relay capability tags are <code>0x00</code> Discovery, <code>0x01</code> Pinning, and <code>0x02</code>
+Serving. Unknown action or capability tags MUST be rejected by this protocol
+version.</p>
+<h3 id="93-record-hash">9.3 Record Hash</h3>
+<p>The record hash is:</p>
+<pre><code class="language-text">BLAKE3-256(CanonicalRecordBody(body))
+</code></pre>
+<p>The 64-octet signature is deliberately excluded. This produces a stable chain
+link for a given body independent of signature representation.</p>
+<h3 id="94-signature">9.4 Signature</h3>
+<p>The record signature is:</p>
+<pre><code class="language-text">Ed25519-Sign(owner_private_key, CanonicalRecordBody(body))
+</code></pre>
+<p>Readers MUST verify the signature against <code>owner_public_key</code>. The public key
+MUST be exactly 32 octets and the signature MUST be exactly 64 octets.</p>
+<h2 id="10-record-construction">10. Record Construction</h2>
+<h3 id="101-genesis-record">10.1 Genesis Record</h3>
+<p>A writer constructing the first record MUST set:</p>
+<pre><code class="language-text">sequence = 0
+previous_record_hash = absent
+owner_public_key = identity public key
+</code></pre>
+<p>It MUST validate the action and then sign the canonical body.</p>
+<h3 id="102-appended-record">10.2 Appended Record</h3>
+<p>Given a previous record <code>R</code>, an appended record MUST set:</p>
+<pre><code class="language-text">owner_public_key = R.body.owner_public_key
+sequence = R.body.sequence + 1
+previous_record_hash = RecordHash(R.body)
+</code></pre>
+<p>The writer MUST fail rather than wrap if the previous sequence is <code>2^64 - 1</code>.</p>
+<h2 id="11-record-chain-validation">11. Record-Chain Validation</h2>
+<p>Given an ordered sequence <code>L</code>, a reader MUST perform all of the following:</p>
+<ol>
+<li>Reject an empty sequence when resolution is requested.</li>
+<li>Check that every public key is exactly 32 octets.</li>
+<li>Check that every signature is exactly 64 octets.</li>
+<li>Verify every signature over the canonical record body.</li>
+<li>Require <code>L[0].sequence == 0</code>.</li>
+<li>Require <code>L[0].previous_record_hash</code> to be absent.</li>
+<li>Require every record to carry the same <code>owner_public_key</code> as <code>L[0]</code>.</li>
+<li>For each record <code>L[i]</code> where <code>i &gt; 0</code>, require
+   <code>L[i].sequence == L[i-1].sequence + 1</code>.</li>
+<li>For each record <code>L[i]</code> where <code>i &gt; 0</code>, require
+   <code>L[i].previous_record_hash == RecordHash(L[i-1].body)</code>.</li>
+<li>Validate the syntax and values of every action.</li>
+</ol>
+<p>Validation MUST fail closed. A reader MUST NOT replay a valid prefix and ignore
+an invalid suffix while presenting the result as the supplied log's latest
+state. A transport MAY request a known valid prefix separately.</p>
+<h2 id="12-state-replay">12. State Replay</h2>
+<p>After validation, a reader initializes:</p>
+<pre><code class="language-text">latest_sequence = 0
+paths = empty map
+legacy_root = absent
+legacy_profile = absent
+legacy_reachability = empty list
+</code></pre>
+<p>It then applies records in ascending sequence order:</p>
+<ul>
+<li><code>SetPath(P, C)</code>: set <code>paths[P] = C</code>, replacing any previous value.</li>
+<li><code>RemovePath(P)</code>: remove <code>P</code> from <code>paths</code> if present.</li>
+<li><code>UpdateRoot(C)</code>: set <code>legacy_root = C</code>.</li>
+<li><code>UpdateProfile(V)</code>: set <code>legacy_profile = V</code>.</li>
+<li><code>SetReachability(R)</code>: replace <code>legacy_reachability</code> with <code>R</code>.</li>
+<li><code>PublishContent(C)</code>: no resolved-state effect.</li>
+</ul>
+<p>After each record, <code>latest_sequence</code> becomes that record's sequence.</p>
+<h2 id="13-address-resolution">13. Address Resolution</h2>
+<p>To resolve address <code>A</code> against candidate log <code>L</code>, a resolver MUST:</p>
+<ol>
+<li>Parse and validate <code>A</code> under Section 6.</li>
+<li>Validate <code>L</code> under Section 11.</li>
+<li>Derive the identity identifier from <code>L[0].owner_public_key</code>.</li>
+<li>Require the derived identifier to equal the identity in <code>A</code>.</li>
+<li>Replay <code>L</code> under Section 12.</li>
+<li>Look up the normalized address path in <code>paths</code>.</li>
+<li>Return the content identifier and latest sequence when present.</li>
+<li>Return <code>path-not-found</code> when absent.</li>
+</ol>
+<p>Resolution does not fetch the object. A consumer that subsequently fetches the
+object MUST perform the CID checks in Section 7 before using or caching it.</p>
+<p>The root address <code>&lt;identity&gt;.jolt</code> normalizes to path <code>/</code>. It resolves only when
+the log contains a <code>SetPath</code> action for <code>/</code>. The legacy <code>UpdateRoot</code> field MUST
+NOT implicitly satisfy a generic path resolution request.</p>
+<h2 id="14-candidate-selection-and-staleness">14. Candidate Selection and Staleness</h2>
+<p>Providers are untrusted and MAY return empty, invalid, truncated, stale, or
+conflicting candidate logs.</p>
+<p>For each candidate, a resolver MUST validate the full chain and require that
+the owner matches the requested identity. Invalid candidates are discarded.</p>
+<p>Among remaining single-writer candidates, the resolver MUST select the
+candidate with the greatest final sequence number.</p>
+<p>If two valid candidates for the same identity have the same final sequence but
+different final record hashes, the resolver MUST return a <code>fork-detected</code> error
+unless local policy has an explicitly specified recovery rule. It MUST NOT pick
+one based on arrival order.</p>
+<p>A provider can suppress newer valid state. The protocol therefore provides
+integrity and monotonic comparison, not a guarantee that a resolver has found
+the globally newest state. A resolver SHOULD retain the highest verified
+sequence previously observed for each identity and SHOULD warn or reject when a
+later query attempts to downgrade it.</p>
+<h2 id="15-error-conditions">15. Error Conditions</h2>
+<p>Implementations SHOULD expose errors at least as specifically as the following
+codes:</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>invalid-identity</code></td>
+<td>Identity label is not canonical Base32 for 32 octets</td>
+</tr>
+<tr>
+<td><code>invalid-address</code></td>
+<td>Address suffix, label count, or syntax is invalid</td>
+</tr>
+<tr>
+<td><code>invalid-path</code></td>
+<td>Path violates Section 6.3</td>
+</tr>
+<tr>
+<td><code>invalid-content-id</code></td>
+<td>CID does not satisfy Section 7</td>
+</tr>
+<tr>
+<td><code>invalid-public-key</code></td>
+<td>Owner key is not a valid 32-octet Ed25519 key</td>
+</tr>
+<tr>
+<td><code>invalid-signature-length</code></td>
+<td>Signature is not 64 octets</td>
+</tr>
+<tr>
+<td><code>invalid-signature</code></td>
+<td>Ed25519 verification failed</td>
+</tr>
+<tr>
+<td><code>invalid-genesis</code></td>
+<td>Genesis sequence or previous hash is invalid</td>
+</tr>
+<tr>
+<td><code>owner-changed</code></td>
+<td>A later record changes the owner public key</td>
+</tr>
+<tr>
+<td><code>sequence-gap</code></td>
+<td>Sequence is not previous sequence plus one</td>
+</tr>
+<tr>
+<td><code>broken-chain</code></td>
+<td>Previous-record hash does not match</td>
+</tr>
+<tr>
+<td><code>unknown-action</code></td>
+<td>Action tag is not defined for this version</td>
+</tr>
+<tr>
+<td><code>identity-mismatch</code></td>
+<td>Address identity differs from log owner</td>
+</tr>
+<tr>
+<td><code>path-not-found</code></td>
+<td>No current mapping exists for the path</td>
+</tr>
+<tr>
+<td><code>fork-detected</code></td>
+<td>Equal-sequence valid candidates have different heads</td>
+</tr>
+<tr>
+<td><code>content-mismatch</code></td>
+<td>Object bytes do not match the requested CID</td>
+</tr>
+<tr>
+<td><code>resource-limit</code></td>
+<td>Length or count exceeds local safe limits</td>
+</tr>
+</tbody>
+</table>
+<p>Error strings are not protocol elements and MAY be localized.</p>
+<h2 id="16-security-considerations">16. Security Considerations</h2>
+<h3 id="161-key-compromise">16.1 Key Compromise</h3>
+<p>Possession of the Ed25519 private key permits creation of valid signed records
+for the identity. This single-writer protocol has no key-rotation or revocation
+mechanism. Implementations MUST protect private keys at rest and in use. The
+current Jolt v0 implementation has not completed independent review of its key
+storage and MUST NOT be described as production-hardened.</p>
+<h3 id="162-signature-domain-separation">16.2 Signature Domain Separation</h3>
+<p>The <code>jolt:update-log-entry:v1</code> NUL-terminated domain separator prevents a record
+signature from being interpreted as a signature over another Jolt structure.
+Implementations MUST include it exactly.</p>
+<h3 id="163-replay-and-rollback">16.3 Replay and Rollback</h3>
+<p>Valid historical logs can be replayed by a malicious provider. Retaining the
+highest previously verified sequence mitigates rollback but does not prove that
+no unseen newer state exists.</p>
+<h3 id="164-equivocation">16.4 Equivocation</h3>
+<p>An identity key can sign two different records at the same sequence with the
+same previous hash. This is detectable when both heads are observed but is not
+prevented by the single-writer format. Implementations MUST surface equal-height
+forks as specified in Section 14.</p>
+<h3 id="165-hash-and-content-verification">16.5 Hash and Content Verification</h3>
+<p>Transport security and provider identity do not replace CID verification. A
+consumer MUST hash received bytes before use. A cache MUST NOT store bytes under
+a CID they do not match.</p>
+<h3 id="166-resource-exhaustion">16.6 Resource Exhaustion</h3>
+<p>All variable-length fields carry 64-bit lengths or counts. Implementations MUST
+enforce configured upper bounds before allocation, signature verification, log
+replay, or content fetch. Implementations SHOULD cap path length, string length,
+records per response, and total candidate bytes.</p>
+<h3 id="167-path-confusion">16.7 Path Confusion</h3>
+<p>Implementations MUST apply the exact path rules in Section 6.3. They MUST NOT
+apply filesystem normalization or use an unvalidated Jolt path directly as a
+local filesystem path.</p>
+<h3 id="168-deprecated-application-action">16.8 Deprecated Application Action</h3>
+<p>The legacy <code>UpdateProfile</code> action violates the current application-agnostic
+protocol boundary. It is specified only so existing records can be validated.
+Writers MUST NOT create it in new logs.</p>
+<h2 id="17-privacy-considerations">17. Privacy Considerations</h2>
+<p>Identity identifiers are stable public-key-derived identifiers and are
+therefore linkable wherever reused. Public path names, update frequency,
+sequence numbers, object sizes, provider announcements, and access timing can
+reveal metadata even when referenced content is encrypted.</p>
+<p>This memo does not provide confidentiality. Applications requiring private data
+MUST use an encrypted-object protocol and SHOULD avoid descriptive public path
+names when those names reveal sensitive information.</p>
+<h2 id="18-iana-considerations">18. IANA Considerations</h2>
+<p>This document has no IANA actions. The <code>.jolt</code> suffix is an application-level
+identifier in this experimental protocol and is not requested as a DNS
+top-level domain by this memo.</p>
+<h2 id="19-implementation-status">19. Implementation Status</h2>
+<p>The Jolt Rust implementation contains the identity encoding, address parser,
+CID construction, canonical record encoding, Ed25519 verification, hash-chain
+validation, state replay, and highest-sequence candidate selection described by
+this memo.</p>
+<p>The following gaps are known at draft time:</p>
+<ul>
+<li>equal-height fork detection is not yet a durable public error contract;</li>
+<li>generic CID parsing and the network fetch/cache path require an audit to ensure
+  the codec and digest constraints in Section 7 are enforced before content is
+  returned or cached;</li>
+<li>resource limits are implementation policy rather than protocol constants;</li>
+<li>legacy action tags remain present in the code;</li>
+<li>the transition to per-device writer logs is specified separately and may
+  supersede parts of Sections 8 through 14;</li>
+<li>independent interoperability test vectors have not yet been published;</li>
+<li>the implementation has not received an independent security audit.</li>
+</ul>
+<p>Acceptance of this memo requires published binary test vectors for canonical
+encoding, signatures, record hashes, address parsing, replay, and failure cases.</p>
+<h2 id="20-references">20. References</h2>
+<h3 id="201-normative-references">20.1 Normative References</h3>
+<p>[RFC2119] Bradner, S., "Key words for use in RFCs to Indicate Requirement
+Levels", BCP 14, RFC 2119, March 1997.</p>
+<p>[RFC4648] Josefsson, S., "The Base16, Base32, and Base64 Data Encodings", RFC
+4648, October 2006.</p>
+<p>[RFC5234] Crocker, D. and P. Overell, "Augmented BNF for Syntax
+Specifications: ABNF", STD 68, RFC 5234, January 2008.</p>
+<p>[RFC8032] Josefsson, S. and I. Liusvaara, "Edwards-Curve Digital Signature
+Algorithm (EdDSA)", RFC 8032, January 2017.</p>
+<p>[RFC8174] Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key
+Words", BCP 14, RFC 8174, May 2017.</p>
+<p>[CID] Multiformats, "Content Identifiers", current CID specification.</p>
+<p>[BLAKE3] O'Connor, J., Aumasson, J., Neves, S., and Z. Wilcox-O'Hearn,
+"BLAKE3: one function, fast everywhere", current specification.</p>
+<h3 id="202-informative-references">20.2 Informative References</h3>
+<p>[JOLT-ARCH] Jolt project, <code>docs/01-architecture.md</code>.</p>
+<p>[JOLT-IDENTITY] Jolt project, <code>docs/02-identity-and-crypto.md</code>.</p>
+<p>[JOLT-DATA] Jolt project, <code>docs/05-data-model.md</code>.</p>
+<p>[JOLT-RESOLUTION] Jolt project, <code>docs/12-global-jolt-resolution.md</code>.</p>
+<h2 id="appendix-a-end-to-end-protocol-operation">Appendix A. End-to-End Protocol Operation</h2>
+<p>This appendix is informative. It places the normative signed-path protocol in
+the complete publish, resolve, fetch, and availability loop described by the
+Jolt architecture and content-distribution documents.</p>
+<h3 id="a1-authority-and-data-planes">A.1 Authority and Data Planes</h3>
+<p>A Jolt node separates three kinds of state:</p>
+<dl>
+<dt><strong>Control-plane state</strong></dt>
+<dd>Identity keys, signed update records, current path bindings, sequence
+  information, and reachability hints. This state is small, mutable, and
+  security-sensitive. It determines which immutable objects an identity
+  currently names.</dd>
+<dt><strong>Content-plane state</strong></dt>
+<dd>Immutable bytes addressed by CID. Content bytes may be held by the author,
+  another peer, a cache, or a relay. Their storage location does not change
+  their identity or authorisation.</dd>
+<dt><strong>Application state</strong></dt>
+<dd>Schemas and records whose meaning belongs to an application. A Jolt record
+  can prove that an identity mapped “/spoke/posts/abc” to a CID. The meaning of
+  “post”, its fields, and its presentation remain Spoke concerns.</dd>
+</dl>
+<p>The separation is deliberate. A provider can carry control-plane and
+content-plane bytes without becoming an identity authority. An application can
+interpret and create application state without receiving the identity's
+private key.</p>
+<h3 id="a2-publication-procedure">A.2 Publication Procedure</h3>
+<p>An end-to-end publisher performs the following procedure when assigning new
+bytes B to path P:</p>
+<ol>
+<li>Validate and normalize P according to Section 6.3.</li>
+<li>Store B in the local content store.</li>
+<li>Construct C = CIDv1(raw, BLAKE3-256(B)) according to Section 7.</li>
+<li>Read the current valid local head for the publishing identity.</li>
+<li>Construct SetPath(P, C) as the next record according to Section 10.</li>
+<li>Sign the canonical record body according to Section 9.4.</li>
+<li>Verify the newly constructed record using the same validation path used for
+   received records. Writers SHOULD NOT maintain a less strict local-only
+   validation path.</li>
+<li>Durably append the record before announcing it to other nodes.</li>
+<li>Announce or upload the content and signed record through the configured
+   provider mechanisms.</li>
+<li>If an owner-selected relay is configured, request that it pin both the
+    referenced content and enough signed log state to answer resolution while
+    the publisher is offline.</li>
+</ol>
+<p>Steps 8 through 10 are operational requirements rather than signed-record wire
+format. A failure after the durable local append does not invalidate the
+record. It means the new state is valid but may not yet be discoverable or
+available from another node.</p>
+<p>Publishing a replacement for P does not mutate the old object. It creates a new
+CID and a new signed path record. The old bytes may remain cached or pinned
+according to local policy.</p>
+<h3 id="a3-candidate-discovery">A.3 Candidate Discovery</h3>
+<p>Discovery answers only:</p>
+<pre><code>which nodes might have records for identity X?
+</code></pre>
+<p>It does not answer:</p>
+<pre><code>which record is valid for identity X?
+</code></pre>
+<p>A resolver can obtain candidate logs from any combination of:</p>
+<ul>
+<li>its local verified cache;</li>
+<li>a record supplied with an invite or link;</li>
+<li>a known home relay;</li>
+<li>peers already associated with the identity;</li>
+<li>a provider-discovery mechanism keyed by the identity; or</li>
+<li>an opportunistic cache.</li>
+</ul>
+<p>Candidate sources MAY be malicious. Every candidate therefore enters the same
+validation and selection algorithm in Sections 11 and 14. A resolver MUST NOT
+skip signature or chain validation because a candidate arrived from a
+configured home relay, a transport-authenticated peer, or local cache.</p>
+<p>The discovery layer may return no candidates even when valid state exists. This
+is an availability failure, not evidence that the identity or path does not
+exist.</p>
+<h3 id="a4-resolution-and-fetch-procedure">A.4 Resolution and Fetch Procedure</h3>
+<p>For address “identity.jolt/path”, an end-to-end consumer performs:</p>
+<ol>
+<li>Parse the address and derive the requested identity and normalized path.</li>
+<li>Load the highest previously verified local candidate, if present.</li>
+<li>Discover additional candidate providers.</li>
+<li>Request complete logs or extensions from a known verified head.</li>
+<li>Validate every candidate as specified in Section 11.</li>
+<li>Select the winning candidate as specified in Section 14.</li>
+<li>Replay it and resolve the path as specified in Sections 12 and 13.</li>
+<li>Check the local content store for the resolved CID.</li>
+<li>If absent, discover providers for the CID.</li>
+<li>Request bytes from one or more providers according to local transport
+    policy.</li>
+<li>Compute the required BLAKE3-256 digest over the complete received object.</li>
+<li>Reject the response unless the computed CID exactly equals the requested
+    CID.</li>
+<li>Only after successful CID verification, return the bytes to the caller and
+    optionally enter them into the local cache.</li>
+</ol>
+<p>A consumer MUST distinguish at least these failures:</p>
+<ul>
+<li>no state candidates were discovered;</li>
+<li>candidates were discovered but none validated;</li>
+<li>a valid identity state did not contain the requested path;</li>
+<li>the path resolved but no content provider was reachable; and</li>
+<li>bytes were received but failed CID verification.</li>
+</ul>
+<p>Collapsing these cases into “not found” obscures security failures and makes
+availability diagnosis needlessly difficult.</p>
+<h3 id="a5-availability-and-relay-pinning">A.5 Availability and Relay Pinning</h3>
+<p>Jolt cannot make bytes available without an online node that possesses and is
+willing to serve them. Its availability rule is therefore:</p>
+<pre><code>content is available while at least one willing provider that has it is online
+</code></pre>
+<p>The protocol distinguishes:</p>
+<dl>
+<dt><strong>Cache</strong></dt>
+<dd>An opportunistic copy. The caching node may evict it under local policy.</dd>
+<dt><strong>Pin</strong></dt>
+<dd>An intentional local or owner-requested promise to retain an object. A relay
+  may refuse a request because of quota, policy, signature failure, or
+  unsupported features.</dd>
+<dt><strong>Mirror</strong></dt>
+<dd>Owner-authorized relay-to-relay durable replication. This is future work and
+  is not defined by this memo.</dd>
+</dl>
+<p>A home relay is a replaceable availability provider selected by the owner. It
+may keep content and signed records online, announce itself as a provider, and
+serve requests while the owner's personal device is offline. It does not become
+the authority for the identity, path mapping, or content.</p>
+<p>Relays MUST NOT rewrite signed records. A consumer MUST NOT accept a relay's
+unsigned assertion that one path replaces another. Relay selection can change
+without changing the identity identifier, record signatures, or content IDs.</p>
+<h3 id="a6-encrypted-objects">A.6 Encrypted Objects</h3>
+<p>This memo identifies bytes, not plaintext. An application may publish a
+canonical encrypted-object envelope as the content bytes named by a CID.</p>
+<p>In that case:</p>
+<ul>
+<li>the CID verifies the complete encrypted envelope bytes;</li>
+<li>an author signature inside the envelope authenticates its author and
+  metadata;</li>
+<li>recipient key wraps determine which identities can recover the content key;</li>
+<li>relays and caches may store and serve the ciphertext without receiving
+  content keys; and</li>
+<li>successful CID verification does not imply that the local identity is
+  authorized to decrypt the object.</li>
+</ul>
+<p>Encryption suites, identity encryption-key records, recipient wrapping, and
+envelope canonicalization are outside this memo and require their own
+specification. Implementations MUST NOT derive encryption behaviour from path
+names or application schema names in the signed-path layer.</p>
+<h2 id="appendix-b-architectural-boundaries">Appendix B. Architectural Boundaries</h2>
+<p>This appendix is informative but records constraints that future Jolt protocol
+specifications are expected to preserve.</p>
+<h3 id="b1-local-daemon">B.1 Local Daemon</h3>
+<p>The local Jolt daemon is the authority boundary on a user's device. It owns or
+mediates:</p>
+<ul>
+<li>identity and device private keys;</li>
+<li>signature and verification operations;</li>
+<li>verified update-log state;</li>
+<li>content storage and CID verification;</li>
+<li>encryption and decryption operations;</li>
+<li>application session approval and capability checks;</li>
+<li>peer connections, provider discovery, and relay configuration.</li>
+</ul>
+<p>Applications do not receive ambient access to these resources. They submit
+operations to the daemon, and the daemon checks the selected identity,
+application identity, granted capability, and path scope.</p>
+<h3 id="b2-application-boundary">B.2 Application Boundary</h3>
+<p>The protocol layer may know about identities, CIDs, signed logs, generic paths,
+content fetch, provider discovery, relays, pinning, encryption envelopes,
+access grants, capabilities, and schema references.</p>
+<p>It MUST NOT make profiles, posts, feeds, timelines, galleries, games,
+communities-as-products, or application runtimes part of signed-path semantics.
+Those concepts are represented as content and schemas above the protocol.</p>
+<p>This permits multiple applications to interpret the same identity-owned graph
+without requiring the protocol to adopt one application's vocabulary.</p>
+<h3 id="b3-network-boundary">B.3 Network Boundary</h3>
+<p>Network peers, caches, and relays are untrusted data sources. Transport
+encryption can authenticate a live connection and protect it from passive
+observation, but it does not replace:</p>
+<ul>
+<li>Ed25519 verification of mutable identity records;</li>
+<li>chain and sequence validation;</li>
+<li>identity-to-owner matching;</li>
+<li>rollback and fork handling; or</li>
+<li>CID verification of content bytes.</li>
+</ul>
+<p>The source of bytes is provenance metadata, not proof of their validity.</p>
+<h3 id="b4-current-and-target-identity-models">B.4 Current and Target Identity Models</h3>
+<p>The record format in this memo specifies the current single-writer
+compatibility surface. The target architecture gives each authorized device a
+separate writer key and append-only writer log under a root identity authority
+chain.</p>
+<p>That target model must additionally specify:</p>
+<ul>
+<li>device authorization and revocation records;</li>
+<li>the exact accepted sequence boundary for a revoked writer;</li>
+<li>per-device canonical entry encoding;</li>
+<li>deterministic merge ordering independent of discovery order;</li>
+<li>singleton-path conflict selection;</li>
+<li>append-record and tombstone semantics; and</li>
+<li>migration of existing single-writer logs.</li>
+</ul>
+<p>Those requirements are not silently inferred by this memo. Until a
+multi-writer RFC is accepted, implementations claiming conformance to this memo
+must implement the single-writer rules exactly and expose forks rather than
+inventing an undocumented merge.</p>
+<h2 id="appendix-c-implementation-mapping">Appendix C. Implementation Mapping</h2>
+<p>This appendix is informative. It helps reviewers compare the specification
+with the current Rust implementation; file names are not protocol elements.</p>
+<table>
+<thead>
+<tr>
+<th>Protocol concern</th>
+<th>Current implementation area</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Identity identifier and address parsing</td>
+<td>crates/jolt-core/src/identity_address.rs</td>
+</tr>
+<tr>
+<td>CID construction and parsing</td>
+<td>crates/jolt-core/src/content_id.rs</td>
+</tr>
+<tr>
+<td>Record body, actions, canonical bytes, signing, and replay</td>
+<td>crates/jolt-core/src/update_log.rs</td>
+</tr>
+<tr>
+<td>Update-log exchange messages</td>
+<td>crates/jolt-network/src/protocol.rs</td>
+</tr>
+<tr>
+<td>Local content persistence and cache behaviour</td>
+<td>crates/jolt-store</td>
+</tr>
+<tr>
+<td>Publish, fetch, and provider orchestration</td>
+<td>crates/jolt-content and node services</td>
+</tr>
+<tr>
+<td>Identity key ownership and signing</td>
+<td>crates/jolt-identity</td>
+</tr>
+<tr>
+<td>Capability-checked app boundary</td>
+<td>crates/jolt-server session and app API modules</td>
+</tr>
+</tbody>
+</table>
+<p>Conformance is determined by observable protocol behaviour and published test
+vectors, not by using these crates or reproducing their internal structure.</p>
+<h2 id="authors-address">Author's Address</h2>
+<p>Jolt contributors<br />
+<a href="https://github.com/alexanderwanyoike/jolt">https://github.com/alexanderwanyoike/jolt</a></p>
+        <footer class="document-footer">
+          <a href="./">← RFC index</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/rfcs/0001-core-protocol.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Jolt helps people and communities keep their identity, content, and connections when they change apps." />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta property="og:title" content="Jolt — your identity should outlive the app" />
+    <meta property="og:description" content="Share posts, files, and community spaces without handing ownership to one platform." />
+    <title>Jolt — Your identity should outlive the app</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <a class="brand" href="#overview" aria-label="Jolt home">
+        <img class="brand-mark" src="favicon.svg" alt="" width="30" height="30" />
+        <span><strong>Jolt</strong><small>protocol</small></span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#why">Why</a>
+        <a href="#model">How it works</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#download">Download</a>
+        <a href="rfcs/">RFCs</a>
+      </nav>
+      <div class="header-meta">
+        <span><i></i> experimental v0</span>
+        <a href="https://github.com/alexanderwanyoike/jolt">GitHub ↗</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero page-width" id="overview">
+        <div class="hero-copy reveal">
+          <p class="kicker">A new home for online communities</p>
+          <h1>Your identity<br />should outlive<br /><em>the app.</em></h1>
+          <p class="hero-lede">Jolt lets people share posts, files, and private spaces without handing ownership to one platform. Change the app, switch relays, or host it yourself—your identity stays yours.</p>
+          <div class="actions">
+            <a class="button primary" href="#model">See how Jolt works</a>
+            <a class="text-link" href="#download">Download Jolt <span>↓</span></a>
+          </div>
+        </div>
+
+        <figure class="hero-visual jolt-hero-visual reveal">
+          <svg viewBox="0 0 760 560" role="img" aria-labelledby="jolt-hero-title jolt-hero-desc">
+            <title id="jolt-hero-title">Jolt nodes exchanging signed JSON records</title>
+            <desc id="jolt-hero-desc">A low-level network of Jolt nodes sends signed JSON records directly and through relay nodes. The records name identities, paths, content identifiers, and sequences.</desc>
+            <defs>
+              <filter id="hero-cyan-glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              <filter id="hero-soft-shadow" x="-30%" y="-50%" width="160%" height="200%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity=".5"/></filter>
+            </defs>
+
+            <text x="28" y="32" class="graph-kicker">SIGNED DATA · MOVING BETWEEN NODES</text>
+            <g class="graph-live" transform="translate(704 28)"><circle r="4"/><text x="-12" y="4" text-anchor="end">NETWORK LIVE</text></g>
+
+            <g class="graph-links">
+              <path id="json-route-a" class="network-link direct" d="M112 275C146 218 187 163 230 128"/>
+              <path id="json-route-b" class="network-link direct" d="M274 108C360 71 458 75 530 111"/>
+              <path id="json-route-c" class="network-link direct" d="M570 138C635 181 660 229 655 278"/>
+              <path id="json-route-d" class="network-link direct faint" d="M648 321C627 373 591 414 548 443"/>
+              <path id="json-route-e" class="network-link direct" d="M501 464C424 498 325 498 263 465"/>
+              <path id="json-route-f" class="network-link direct faint" d="M217 440C151 405 108 355 100 314"/>
+              <path id="json-route-relay-a" class="network-link via-relay" d="M118 292C210 326 298 308 365 269"/>
+              <path id="json-route-relay-b" class="network-link via-relay" d="M397 245C445 204 496 163 545 130"/>
+              <path id="json-route-relays" class="network-link via-relay" d="M390 280C410 323 420 359 426 397"/>
+              <path id="json-route-relay-c" class="network-link via-relay" d="M449 425C487 440 514 447 531 454"/>
+              <path id="json-route-cross" class="network-link direct faint" d="M251 139C275 232 274 351 239 434"/>
+            </g>
+
+            <g class="protocol-node node-a" transform="translate(90 291)">
+              <circle class="protocol-orbit" r="47"/><circle class="protocol-core" r="34"/><rect x="-17" y="-14" width="34" height="28" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="35" cy="-34" r="5"/>
+              <text y="65" text-anchor="middle" class="protocol-node-name">ALICE.JOLT</text><text y="80" text-anchor="middle" class="protocol-node-note">NODE 01</text>
+            </g>
+            <g class="protocol-node node-b" transform="translate(250 113)">
+              <circle class="protocol-orbit" r="45"/><circle class="protocol-core" r="33"/><rect x="-17" y="-14" width="34" height="28" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="33" cy="-32" r="5"/>
+              <text y="63" text-anchor="middle" class="protocol-node-name">MAYA.JOLT</text><text y="78" text-anchor="middle" class="protocol-node-note">NODE 02</text>
+            </g>
+            <g class="protocol-node node-c" transform="translate(555 119)">
+              <circle class="protocol-orbit" r="46"/><circle class="protocol-core" r="34"/><rect x="-17" y="-14" width="34" height="28" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="34" cy="-33" r="5"/>
+              <text y="64" text-anchor="middle" class="protocol-node-name">BOB.JOLT</text><text y="79" text-anchor="middle" class="protocol-node-note">NODE 03</text>
+            </g>
+            <g class="protocol-node node-d" transform="translate(657 300)">
+              <circle class="protocol-orbit" r="44"/><circle class="protocol-core" r="32"/><rect x="-16" y="-13" width="32" height="26" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="32" cy="-31" r="5"/>
+              <text y="61" text-anchor="middle" class="protocol-node-name">KAI.JOLT</text><text y="76" text-anchor="middle" class="protocol-node-note">NODE 04</text>
+            </g>
+            <g class="protocol-node node-e" transform="translate(530 461)">
+              <circle class="protocol-orbit" r="44"/><circle class="protocol-core" r="32"/><rect x="-16" y="-13" width="32" height="26" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="32" cy="-31" r="5"/>
+              <text y="61" text-anchor="middle" class="protocol-node-name">IRIS.JOLT</text><text y="76" text-anchor="middle" class="protocol-node-note">NODE 05</text>
+            </g>
+            <g class="protocol-node node-f" transform="translate(236 458)">
+              <circle class="protocol-orbit" r="44"/><circle class="protocol-core" r="32"/><rect x="-16" y="-13" width="32" height="26" rx="3"/><text y="6" text-anchor="middle" class="protocol-braces">{ }</text><circle class="protocol-status" cx="32" cy="-31" r="5"/>
+              <text y="61" text-anchor="middle" class="protocol-node-name">NOAH.JOLT</text><text y="76" text-anchor="middle" class="protocol-node-note">NODE 06</text>
+            </g>
+
+            <g class="protocol-relay relay-one" transform="translate(382 258)">
+              <circle class="relay-orbit" r="42"/><path class="relay-core" d="M0-28 25-14v28L0 28-25 14v-28Z"/><path class="relay-mark" d="M-11 8V-8L0-14 11-8V8M-15 13h30"/><text y="57" text-anchor="middle" class="relay-name">RELAY 01</text>
+            </g>
+            <g class="protocol-relay relay-two" transform="translate(431 417)">
+              <circle class="relay-orbit" r="39"/><path class="relay-core" d="M0-26 23-13v26L0 26-23 13v-26Z"/><path class="relay-mark" d="M-10 7V-7L0-13 10-7V7M-14 12h28"/><text y="54" text-anchor="middle" class="relay-name">RELAY 02</text>
+            </g>
+
+            <g class="json-record static-json" transform="translate(389 85)">
+              <rect x="-53" y="-26" width="106" height="52" rx="5"/><text x="-43" y="-8">{ "seq": 42,</text><text x="-43" y="8">  "cid": "bafy…" }</text>
+            </g>
+            <g class="json-record static-json" transform="translate(595 409)">
+              <rect x="-49" y="-25" width="98" height="50" rx="5"/><text x="-39" y="-7">{ "path":</text><text x="-39" y="9">  "/posts/7" }</text>
+            </g>
+
+            <g class="json-record moving-json json-one" filter="url(#hero-soft-shadow)">
+              <rect x="-52" y="-27" width="104" height="54" rx="5"/><text x="-42" y="-9">{ "identity":</text><text x="-42" y="7">  "alice.jolt" }</text>
+              <animateMotion dur="7.2s" repeatCount="indefinite"><mpath href="#json-route-a"/></animateMotion>
+            </g>
+            <g class="json-record moving-json json-two" filter="url(#hero-soft-shadow)">
+              <rect x="-50" y="-26" width="100" height="52" rx="5"/><text x="-40" y="-8">{ "cid":</text><text x="-40" y="8">  "bafy…9f" }</text>
+              <animateMotion dur="8.2s" begin="-3.1s" repeatCount="indefinite"><mpath href="#json-route-b"/></animateMotion>
+            </g>
+            <g class="json-record moving-json json-three" filter="url(#hero-cyan-glow)">
+              <rect x="-48" y="-25" width="96" height="50" rx="5"/><text x="-38" y="-7">{ "signed":</text><text x="-38" y="9">  true }</text>
+              <animateMotion dur="9s" begin="-5.4s" repeatCount="indefinite"><mpath href="#json-route-relay-a"/></animateMotion>
+            </g>
+            <circle class="moving-json signal-packet" r="5"><animateMotion dur="6s" begin="-2s" repeatCount="indefinite"><mpath href="#json-route-relays"/></animateMotion></circle>
+
+            <g class="graph-legend" transform="translate(28 540)">
+              <circle cx="5" cy="-3" r="5"/><text x="18">JOLT NODE</text>
+              <path d="M142-10 151-5v10l-9 5-9-5V-5Z"/><text x="165">RELAY</text>
+              <rect x="264" y="-11" width="24" height="15" rx="2"/><text x="301">SIGNED JSON RECORD</text>
+              <path class="legend-route" d="M492-3h42"/><text x="548">DIRECT OR RELAYED</text>
+            </g>
+          </svg>
+        </figure>
+
+        <dl class="hero-facts reveal">
+          <div><dt>Your identity</dt><dd>Belongs to you</dd></div>
+          <div><dt>Your links</dt><dd>Keep working</dd></div>
+          <div><dt>Your content</dt><dd>Can have many copies</dd></div>
+          <div><dt>Your apps</dt><dd>Remain replaceable</dd></div>
+        </dl>
+      </section>
+
+      <section class="section page-width" id="why">
+        <header class="section-intro reveal">
+          <p class="kicker">01 / Why</p>
+          <h2>When an app disappears,<br />your community shouldn’t.</h2>
+          <p>Today, one company usually holds your account, your posts, and the list of people who know you. That makes leaving painfully expensive.</p>
+        </header>
+
+        <div class="comparison reveal">
+          <div class="comparison-column muted-side">
+            <span class="comparison-label">HOW MOST APPS WORK</span>
+            <p class="equation">the app keeps your account,<br />your content, and your connections</p>
+            <ol>
+              <li><span>01</span>Your identity only works inside that app.</li>
+              <li><span>02</span>Your links depend on its servers.</li>
+              <li><span>03</span>Your audience lives in its database.</li>
+              <li><span>04</span>Leaving often means starting again.</li>
+            </ol>
+          </div>
+          <div class="comparison-column">
+            <span class="comparison-label cyan">JOLT</span>
+            <p class="equation">you keep the identity;<br />apps simply ask to use it</p>
+            <ol>
+              <li><span>01</span>Your identity exists outside any one app.</li>
+              <li><span>02</span>Your links point to content you control.</li>
+              <li><span>03</span>Many computers can keep copies available.</li>
+              <li><span>04</span>You can change the interface without leaving.</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section class="section page-width" id="model">
+        <header class="section-intro compact reveal">
+          <p class="kicker">02 / How it works</p>
+          <h2>Alice shares.<br />Bob opens.</h2>
+          <p>Jolt does the difficult work quietly in the middle: remembering who published something, finding a copy, and checking that nobody changed it.</p>
+        </header>
+
+        <div class="protocol-flow reveal" aria-label="Jolt protocol flow">
+          <div class="flow-node">
+            <span class="flow-index">01</span>
+            <i>A</i>
+            <h3>Alice publishes</h3>
+            <p>She shares a post, a file, or a whole community space.</p>
+          </div>
+          <div class="flow-arrow"><span>Jolt remembers</span></div>
+          <div class="flow-node">
+            <span class="flow-index">02</span>
+            <i>✓</i>
+            <h3>Jolt proves it</h3>
+            <p>Her identity leaves a tamper-evident note saying what she shared.</p>
+          </div>
+          <div class="flow-arrow"><span>copies travel</span></div>
+          <div class="flow-node">
+            <span class="flow-index">03</span>
+            <i>↗</i>
+            <h3>The network carries it</h3>
+            <p>Alice, a friend, or a relay can provide a copy.</p>
+          </div>
+          <div class="flow-arrow"><span>Jolt checks</span></div>
+          <div class="flow-node">
+            <span class="flow-index">04</span>
+            <i>B</i>
+            <h3>Bob opens it</h3>
+            <p>His Jolt verifies Alice's signature and checks that the copy is unchanged.</p>
+          </div>
+        </div>
+
+        <figure class="protocol-statement reveal">
+          <figcaption>THE WHOLE PROMISE</figcaption>
+          <blockquote>
+            Alice can change apps without losing <b>her identity</b>, <b>her links</b>, or <b>her community</b>.
+          </blockquote>
+          <p>Under the hood, signatures prove who published something and content fingerprints prove that the bytes are unchanged.</p>
+        </figure>
+      </section>
+
+      <section class="section page-width" id="architecture">
+        <header class="section-intro reveal">
+          <p class="kicker">03 / Architecture</p>
+          <h2>Two ways in.<br />One local authority.</h2>
+          <p>Spoke gets a tightly scoped session. Console gets trusted admin access. Only the Jolt daemon holds your keys, signs changes, stores content, and joins the network.</p>
+        </header>
+
+        <figure class="architecture-diagram reveal">
+          <div class="diagram-scroll">
+            <svg viewBox="0 0 1200 680" role="img" aria-labelledby="jolt-diagram-title jolt-diagram-desc">
+              <title id="jolt-diagram-title">Jolt architecture</title>
+              <desc id="jolt-diagram-desc">Spoke uses the capability-scoped app API and Jolt Console uses the privileged admin API. Both connect to the local Jolt daemon, which owns identity, protocol state, local storage, and networking. The daemon exchanges protocol data with Jolt peer nodes and Jolt relay nodes, then verifies what it accepts.</desc>
+              <defs>
+                <marker id="jolt-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 Z" class="arrow-head" />
+                </marker>
+                <marker id="jolt-arrow-muted" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 Z" class="arrow-head-muted" />
+                </marker>
+              </defs>
+
+              <path class="device-outline" d="M35 74H807V626H35Z" />
+              <text x="58" y="54" class="diagram-zone-label">THIS DEVICE</text>
+              <text x="918" y="54" class="diagram-zone-label">JOLT NETWORK</text>
+
+              <g class="client-node" transform="translate(118 240)">
+                <circle r="37" />
+                <text text-anchor="middle" y="7" class="client-symbol">S</text>
+                <text x="62" y="-5" class="node-name">Spoke</text>
+                <text x="62" y="17" class="node-note">social app</text>
+              </g>
+              <g class="client-node console-node" transform="translate(118 456)">
+                <rect x="-37" y="-37" width="74" height="74" />
+                <text text-anchor="middle" y="7" class="client-symbol">C</text>
+                <text x="62" y="-5" class="node-name">Jolt Console</text>
+                <text x="62" y="17" class="node-note">trusted control surface</text>
+              </g>
+
+              <path class="diagram-link active" d="M250 240C305 240 316 282 351 282" marker-end="url(#jolt-arrow)" />
+              <text x="300" y="222" text-anchor="middle" class="diagram-gate-label">SCOPED SESSION</text>
+              <path class="diagram-link" d="M250 456C315 456 316 311 351 311" marker-end="url(#jolt-arrow-muted)" />
+              <text x="300" y="435" text-anchor="middle" class="diagram-muted-label">ADMIN ACCESS</text>
+
+              <path class="daemon-outline" d="M365 114H755V585H365Z" />
+              <text x="390" y="149" class="daemon-kicker">LOCAL JOLT DAEMON</text>
+              <text x="390" y="179" class="daemon-version">jolt-node</text>
+
+              <line class="daemon-seam" x1="365" y1="225" x2="755" y2="225" />
+              <circle class="api-port app-port" cx="365" cy="282" r="7" />
+              <circle class="api-port admin-port" cx="365" cy="311" r="7" />
+              <text x="395" y="254" class="component-kicker">HTTP BOUNDARY · jolt-server</text>
+              <text x="395" y="282" class="component-name">App API</text>
+              <text x="520" y="282" class="component-note">checks every session capability</text>
+              <text x="395" y="311" class="component-name">Admin API</text>
+              <text x="520" y="311" class="component-note">local identities, grants, relays, diagnostics</text>
+
+              <line class="daemon-seam" x1="365" y1="337" x2="755" y2="337" />
+              <text x="395" y="368" class="component-kicker">PROTOCOL ENGINE · jolt-network</text>
+              <text x="395" y="399" class="component-name">Identity + signing</text>
+              <text x="395" y="427" class="component-name">Resolve + fetch</text>
+              <text x="575" y="399" class="component-name">Verify + encrypt</text>
+              <text x="575" y="427" class="component-name">Discover providers</text>
+
+              <line class="daemon-seam" x1="365" y1="455" x2="755" y2="455" />
+              <text x="395" y="488" class="component-kicker">LOCAL STORE · jolt-store</text>
+              <text x="395" y="520" class="component-name">Content</text>
+              <text x="485" y="520" class="component-name">Cache</text>
+              <text x="560" y="520" class="component-name">Signed logs</text>
+              <text x="395" y="552" class="component-note">filesystem data owned by this daemon</text>
+
+              <circle class="network-port" cx="755" cy="397" r="8" />
+              <path class="diagram-link active network-trunk" d="M763 397H858" />
+              <text x="810" y="376" text-anchor="middle" class="diagram-gate-label">JOLT P2P</text>
+              <path class="diagram-link active" d="M858 397C892 397 897 220 934 220" />
+              <path class="diagram-link active" d="M858 397C892 397 897 505 934 505" />
+
+              <g class="network-node peer-node" transform="translate(1005 220)">
+                <circle class="network-orbit" r="69" />
+                <circle class="network-core" r="44" />
+                <circle class="peer-dot" cx="-13" cy="-4" r="5" />
+                <circle class="peer-dot" cx="13" cy="-4" r="5" />
+                <path class="peer-link" d="M-13 9L0 17L13 9" />
+                <text text-anchor="middle" y="99" class="node-name">JOLT PEER NODE</text>
+                <text text-anchor="middle" y="121" class="node-note">signed state + content</text>
+              </g>
+
+              <g class="network-node relay-node" transform="translate(1005 505)">
+                <circle class="network-orbit" r="69" />
+                <path class="relay-core" d="M0-47L41-24V24L0 47L-41 24V-24Z" />
+                <path class="relay-mark" d="M-18 9V-10L0-21L18-10V9M-25 17H25" />
+                <text text-anchor="middle" y="99" class="node-name">JOLT RELAY NODE</text>
+                <text text-anchor="middle" y="121" class="node-note">discovery · optional pinning</text>
+              </g>
+            </svg>
+          </div>
+          <figcaption>Spoke and Console never become the authority. The local daemon signs local changes and verifies what it accepts from untrusted peer and relay nodes. A Jolt relay helps discovery and may accept chosen pins—it does not own your identity.</figcaption>
+        </figure>
+      </section>
+
+      <section class="section rfc-section" id="specification">
+        <div class="page-width rfc-layout reveal">
+          <div class="rfc-number" aria-hidden="true">01</div>
+          <div class="rfc-copy">
+            <p class="kicker cyan">Protocol specification · Internet-Draft</p>
+            <h2>Signed paths,<br />specified precisely.</h2>
+            <p>RFC 0001 defines the part of Jolt that gives an identity a stable, verifiable path to content: address syntax, signed records, validation, replay, publication, and resolution.</p>
+            <div class="actions">
+              <a class="button primary" href="rfcs/0001-core-protocol.html">Read RFC 0001</a>
+              <a class="text-link" href="rfcs/">Specification index <span>→</span></a>
+            </div>
+          </div>
+          <dl class="rfc-meta">
+            <div><dt>Status</dt><dd>Internet-Draft</dd></div>
+            <div><dt>Document</dt><dd>RFC 0001</dd></div>
+            <div><dt>Scope</dt><dd>Signed paths + resolution</dd></div>
+            <div><dt>Canonical source</dt><dd>Markdown</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="section page-width status-section" id="status">
+        <header class="section-intro compact reveal">
+          <p class="kicker">04 / Status</p>
+          <h2>You can try it today.<br />It is still early.</h2>
+          <p>Jolt can already publish, find, verify, and privately share content. Spoke uses it for profiles, posts, threads, and private messages. Setup and everyday use still need polish.</p>
+        </header>
+        <div class="status-columns reveal">
+          <div>
+            <span class="status-heading good">WORKING NOW</span>
+            <ul><li>Create and use a Jolt identity</li><li>Publish content under stable links</li><li>Fetch content from other nodes</li><li>Approve what each app may do</li><li>Share encrypted private content</li><li>Use relays for discovery and availability</li></ul>
+          </div>
+          <div>
+              <span class="status-heading caution">STILL ROUGH</span>
+            <ul><li>Using one identity across several devices</li><li>Easy invitations and first-time setup</li><li>Clear recovery when a device is lost</li><li>Rules for public relays</li><li>Platform signing and notarization</li><li>Independent security review</li></ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="download-section" id="download">
+        <div class="page-width">
+          <header class="download-head reveal">
+            <div>
+              <p class="kicker cyan">Jolt Console · __VERSION__</p>
+              <h2>Choose your platform.</h2>
+            </div>
+            <p>Jolt Console includes the local node and the controls for identities, apps, relays, and published content. This release was published on __RELEASE_DATE__.</p>
+          </header>
+
+          <div class="platform-downloads reveal">
+            <a class="download-column" href="https://github.com/alexanderwanyoike/jolt/releases/download/__VERSION__/jolt-console-x86_64.AppImage" aria-label="Download Jolt Console __VERSION__ for Linux x86_64 as an AppImage">
+              <span class="download-column-top"><span class="download-index">01</span><svg class="os-icon linux-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4c-5.2 0-8.2 4.8-8.2 11.7 0 3-1.2 5.8-3.7 8.8-2.3 2.8-3.2 6.3-2.5 9.6l5.3-2c.9 7.2 4.1 11.9 9.1 11.9s8.2-4.7 9.1-11.9l5.3 2c.7-3.3-.2-6.8-2.5-9.6-2.5-3-3.7-5.8-3.7-8.8C32.2 8.8 29.2 4 24 4Z"/><ellipse class="icon-cutout" cx="24" cy="29" rx="7.1" ry="11.2"/><circle class="icon-cutout" cx="20.7" cy="15.8" r="1.5"/><circle class="icon-cutout" cx="27.3" cy="15.8" r="1.5"/><path class="icon-cutout" d="m20.5 20 3.5 2.6 3.5-2.6-3.5-2Z"/></svg></span>
+              <span class="download-platform"><strong>Linux</strong><small>x86_64</small></span>
+              <span class="download-format">AppImage</span>
+              <span class="download-action">Download <b>↓</b></span>
+            </a>
+            <a class="download-column" href="https://github.com/alexanderwanyoike/jolt/releases/download/__VERSION__/jolt-console-aarch64.dmg" aria-label="Download Jolt Console __VERSION__ for Apple silicon as a DMG">
+              <span class="download-column-top"><span class="download-index">02</span><svg class="os-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg></span>
+              <span class="download-platform"><strong>macOS</strong><small>Apple silicon</small></span>
+              <span class="download-format">DMG</span>
+              <span class="download-action">Download <b>↓</b></span>
+            </a>
+            <a class="download-column" href="https://github.com/alexanderwanyoike/jolt/releases/download/__VERSION__/jolt-console-x86_64-setup.exe" aria-label="Download Jolt Console __VERSION__ for Windows x86_64">
+              <span class="download-column-top"><span class="download-index">03</span><svg class="os-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 3.449 9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg></span>
+              <span class="download-platform"><strong>Windows</strong><small>x86_64</small></span>
+              <span class="download-format">Installer</span>
+              <span class="download-action">Download <b>↓</b></span>
+            </a>
+          </div>
+
+          <div class="download-foot reveal">
+            <p>Early builds are not yet signed for every operating system. macOS may require you to allow the app in Privacy &amp; Security.</p>
+            <a href="https://github.com/alexanderwanyoike/jolt/releases/tag/__VERSION__">Release notes ↗</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="page-width">
+      <a class="brand" href="#overview"><img class="brand-mark" src="favicon.svg" alt="" width="30" height="30" /><strong>Jolt</strong></a>
+      <p>Your community. Your content. Your identity.</p>
+      <nav><a href="rfcs/">RFCs</a><a href="https://github.com/alexanderwanyoike/jolt">GitHub ↗</a><a href="https://alexanderwanyoike.github.io/spoke/">Spoke →</a></nav>
+    </footer>
+  </body>
+</html>

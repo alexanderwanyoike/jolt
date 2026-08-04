@@ -1,0 +1,104 @@
+name: GitHub Pages
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - "website/**"
+      - "rfcs/**"
+      - "scripts/render-rfcs.py"
+      - "scripts/verify-website.sh"
+      - ".github/workflows/pages.yml"
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "rfcs/**"
+      - "scripts/render-rfcs.py"
+      - "scripts/verify-website.sh"
+      - ".github/workflows/pages.yml"
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["Package Jolt Console"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify static site
+        run: ./scripts/verify-website.sh
+
+  deploy:
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_run' ||
+        (github.event.workflow_run.conclusion == 'success' &&
+          startsWith(github.event.workflow_run.head_branch, 'v')))
+    needs: verify
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Stage website for the latest published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          release=$(gh release view --repo "$GITHUB_REPOSITORY" \
+            --json tagName,publishedAt,assets)
+          tag=$(jq -r '.tagName' <<<"$release")
+          published=$(jq -r '.publishedAt' <<<"$release")
+
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "::error::No published Jolt release found"
+            exit 1
+          fi
+
+          expected_assets=(
+            jolt-console-x86_64.AppImage
+            jolt-console-aarch64.dmg
+            jolt-console-x86_64-setup.exe
+          )
+          for asset in "${expected_assets[@]}"; do
+            if ! jq -e --arg asset "$asset" '.assets[] | select(.name == $asset)' \
+              <<<"$release" >/dev/null; then
+              echo "::error::Release $tag is missing $asset"
+              exit 1
+            fi
+          done
+
+          release_date=$(date -u -d "$published" '+%-d %B %Y')
+          echo "Publishing Jolt website for $tag ($release_date)"
+
+          mkdir -p _site
+          cp -R website/. _site/
+          sed -i "s|__VERSION__|${tag}|g; s|__RELEASE_DATE__|${release_date}|g" \
+            _site/index.html
+
+          if grep -R -q '__VERSION__\|__RELEASE_DATE__' _site; then
+            echo "::error::Release placeholder left in staged website"
+            exit 1
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
