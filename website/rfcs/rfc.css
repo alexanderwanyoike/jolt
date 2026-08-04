@@ -1,0 +1,124 @@
+.rfc-page {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 100vh;
+  background:
+    linear-gradient(rgba(49, 56, 51, .08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(49, 56, 51, .055) 1px, transparent 1px),
+    var(--bg);
+  background-size: 48px 48px;
+}
+
+.rfc-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 34px 28px 50px;
+  border-right: 1px solid var(--line);
+  background: rgba(13, 15, 15, .94);
+}
+.rfc-sidebar .brand { margin-bottom: 38px; }
+.rfc-sidebar .brand span:last-child { display: grid; gap: 2px; }
+.rfc-sidebar .brand small { color: var(--faint); font: 9px "Cascadia Mono", monospace; text-transform: uppercase; }
+.rfc-sidebar dl { margin: 0 0 34px; padding: 0; border-top: 1px solid var(--line-strong); }
+.rfc-sidebar dl div { display: grid; grid-template-columns: 70px 1fr; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.rfc-sidebar dt { color: var(--faint); font-size: 8px; text-transform: uppercase; }
+.rfc-sidebar dd { margin: 0; color: var(--muted); font-size: 11px; }
+.rfc-sidebar nav > .toc > ul { margin: 0; padding: 0; list-style: none; }
+.rfc-sidebar nav li { margin: 0; list-style: none; }
+.rfc-sidebar nav ul ul { display: none; }
+.rfc-sidebar nav a { display: block; padding: 5px 0; color: var(--faint); font: 9px/1.4 "Cascadia Mono", monospace; }
+.rfc-sidebar nav a:hover { color: var(--cyan); }
+
+.rfc-main { min-width: 0; }
+.rfc-document { width: min(820px, calc(100% - 64px)); margin: 0 auto; padding: 82px 0 120px; }
+.rfc-title > p { margin-bottom: 24px; color: var(--cyan); font: 9px "Cascadia Mono", monospace; letter-spacing: .13em; }
+.rfc-title h1 { max-width: 800px; margin-bottom: 46px; font-size: clamp(54px, 7vw, 88px); line-height: .94; letter-spacing: -.055em; font-weight: 520; }
+.memo-head {
+  margin: 0 0 72px;
+  padding: 18px 0;
+  overflow-x: auto;
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--muted);
+  font: 11px/1.65 "Cascadia Mono", monospace;
+}
+
+.rfc-document h2 {
+  scroll-margin-top: 30px;
+  margin: 76px 0 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line-strong);
+  font-size: 29px;
+  line-height: 1.2;
+  letter-spacing: -.025em;
+  font-weight: 560;
+}
+.rfc-document h2:first-of-type { margin-top: 0; }
+.rfc-document h3 { margin: 42px 0 14px; font-size: 20px; font-weight: 560; }
+.rfc-document h4 { margin: 30px 0 12px; font-size: 16px; }
+.rfc-document p, .rfc-document li, .rfc-document dd { color: var(--muted); font-size: 15px; line-height: 1.75; }
+.rfc-document p { margin-bottom: 18px; }
+.rfc-document strong { color: var(--text); }
+.rfc-document a { color: var(--cyan); }
+.rfc-document code { padding: 2px 4px; background: var(--ink); color: var(--cyan); font: 12px "Cascadia Mono", monospace; }
+.rfc-document pre:not(.memo-head) {
+  margin: 25px 0 28px;
+  padding: 20px 22px;
+  overflow-x: auto;
+  border-left: 2px solid var(--cyan);
+  background: rgba(7, 8, 8, .78);
+  color: var(--text);
+  font: 12px/1.7 "Cascadia Mono", monospace;
+}
+.rfc-document pre code { padding: 0; background: none; color: inherit; font: inherit; }
+.rfc-document blockquote { margin: 28px 0; padding: 4px 0 4px 24px; border-left: 1px solid var(--cyan); }
+.rfc-document blockquote p { margin: 0; color: var(--text); font-size: 17px; }
+.rfc-document ol, .rfc-document ul { padding-left: 24px; }
+.rfc-document li { padding-left: 6px; margin: 6px 0; }
+.rfc-document li::marker { color: var(--faint); font: 10px "Cascadia Mono", monospace; }
+.rfc-document dl { margin: 26px 0; }
+.rfc-document dt { margin-top: 18px; color: var(--text); font-size: 12px; font-weight: 650; }
+.rfc-document dd { margin: 5px 0 0 24px; }
+.rfc-document table { width: 100%; margin: 28px 0; border-collapse: collapse; font-size: 13px; }
+.rfc-document th, .rfc-document td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.rfc-document th { border-top: 1px solid var(--line-strong); color: var(--faint); font: 9px "Cascadia Mono", monospace; letter-spacing: .06em; text-transform: uppercase; }
+.rfc-document td { color: var(--muted); line-height: 1.55; }
+.rfc-document hr { height: 1px; margin: 50px 0; border: 0; background: var(--line-strong); }
+.document-footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 90px; padding-top: 22px; border-top: 1px solid var(--line-strong); font-size: 11px; }
+
+.spec-shell { min-height: 100vh; }
+.rfc-index-header { height: 68px; display: flex; justify-content: space-between; align-items: center; padding-inline: 32px; border-bottom: 1px solid var(--line); }
+.rfc-index-header nav { display: flex; gap: 24px; color: var(--muted); font-size: 12px; }
+.rfc-index-main { width: min(1080px, calc(100% - 64px)); margin: 0 auto; padding: 110px 0; }
+.rfc-index-main > header { display: grid; grid-template-columns: 1fr .7fr; align-items: end; gap: 8vw; margin-bottom: 100px; }
+.rfc-index-main > header h1 { margin: 0; font-size: clamp(62px, 8vw, 108px); line-height: .9; }
+.rfc-index-main > header p:last-child { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.7; }
+.rfc-entry { display: grid; grid-template-columns: 180px 1fr auto; gap: 44px; align-items: start; padding: 34px 0 42px; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
+.rfc-entry + .rfc-entry { border-top: 0; }
+.rfc-entry > span:first-child { color: var(--line-strong); font: 700 58px "Cascadia Mono", monospace; letter-spacing: -.08em; }
+.rfc-entry h2 { margin: 8px 0 13px; font-size: 31px; font-weight: 540; }
+.rfc-entry p { max-width: 680px; margin: 0; color: var(--muted); line-height: 1.65; }
+.rfc-entry .open-arrow { align-self: center; color: var(--cyan); font-size: 28px; }
+
+@media (max-width: 850px) {
+  .rfc-page { display: block; }
+  .rfc-sidebar { position: relative; width: 100%; height: auto; padding: 18px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .rfc-sidebar .brand { margin: 0; }
+  .rfc-sidebar dl, .rfc-sidebar nav { display: none; }
+  .rfc-document { width: min(100% - 36px, 820px); padding-top: 55px; }
+  .rfc-title h1 { font-size: clamp(48px, 13vw, 72px); }
+  .rfc-index-main { width: min(100% - 36px, 760px); padding-top: 80px; }
+  .rfc-index-main > header { grid-template-columns: 1fr; gap: 28px; margin-bottom: 65px; }
+  .rfc-entry { grid-template-columns: 100px 1fr; gap: 24px; }
+  .rfc-entry .open-arrow { display: none; }
+}
+
+@media (max-width: 520px) {
+  .rfc-document p, .rfc-document li, .rfc-document dd { font-size: 14px; }
+  .memo-head { font-size: 9px; }
+  .rfc-index-header nav a:first-child { display: none; }
+  .rfc-entry { grid-template-columns: 1fr; }
+}
