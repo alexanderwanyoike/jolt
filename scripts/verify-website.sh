@@ -128,8 +128,9 @@ for file in website/index.html website/rfcs/index.html scripts/render-rfcs.py sc
 done
 
 python3 - <<'PY'
-from importlib.util import module_from_spec, spec_from_file_location
+import ast
 from pathlib import Path
+import re
 
 expected = {
     "0001": "Implemented with known gaps",
@@ -158,12 +159,17 @@ for number, implementation in expected.items():
     if marker not in index:
         raise SystemExit(f"RFC {number} index badge is not derived from canonical status: {marker}")
 
-spec = spec_from_file_location("render_rfcs", "scripts/render-rfcs.py")
-module = module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(module)
+renderer_source = Path("scripts/render-rfcs.py").read_text(encoding="utf-8")
+renderer_tree = ast.parse(renderer_source)
+memo_date_node = next(
+    node
+    for node in renderer_tree.body
+    if isinstance(node, ast.FunctionDef) and node.name == "memo_date"
+)
+namespace = {"re": re}
+exec(compile(ast.Module(body=[memo_date_node], type_ignores=[]), "render-rfcs.py", "exec"), namespace)
 synthetic = "Request for Comments: 9999\\nDate: September 2031"
-if module.memo_date(synthetic) != "September 2031":
+if namespace["memo_date"](synthetic) != "September 2031":
     raise SystemExit("RFC renderer does not derive the publication month from the memo header")
 PY
 
