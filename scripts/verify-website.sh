@@ -37,7 +37,7 @@ required_protocol_visual_contract=(
   '"owner_public_key"'
   '"content_id"'
   '"signature"'
-  'bafkr…'
+  'bafkr…6f'
   'JOLT NETWORK'
   'SIGNED PATH RECORD'
   'DIRECT OR VIA RELAY'
@@ -50,7 +50,17 @@ for value in "${required_protocol_visual_contract[@]}"; do
   }
 done
 
-for value in 'signed JSON' 'SIGNED JSON' 'alice.jolt' 'bafy…' 'NETWORK LIVE'; do
+for value in \
+  'signed JSON' \
+  'SIGNED JSON' \
+  'alice.jolt' \
+  'bafy…' \
+  'bafkr…9f' \
+  'NETWORK LIVE' \
+  'private spaces' \
+  'community spaces' \
+  'whole community space' \
+  'https://alexanderwanyoike.github.io/spoke/'; do
   if grep -Fq "$value" website/index.html; then
     echo "misleading protocol hero terminology remains: $value" >&2
     exit 1
@@ -88,7 +98,7 @@ test "$rfc_count" -eq 7 || {
 
 required_rfc_library_contract=(
   'Protocol series · seven Internet-Drafts'
-  '0001—0007'
+  '0001-0007'
   '0002-device-authority.html'
   '0003-device-writer-logs.html'
   '0004-encrypted-device-access.html'
@@ -103,6 +113,100 @@ for value in "${required_rfc_library_contract[@]}"; do
     exit 1
   }
 done
+
+grep -Fq 'https://github.com/alexanderwanyoike/spoke' website/index.html || {
+  echo "website does not link to Spoke's currently available home" >&2
+  exit 1
+}
+
+em_dash="$(printf '\342\200\224')"
+for file in website/index.html website/rfcs/index.html scripts/render-rfcs.py scripts/verify-website.sh; do
+  if grep -Fq "$em_dash" "$file"; then
+    echo "house-style em dash remains in $file" >&2
+    exit 1
+  fi
+done
+
+python3 - <<'PY'
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+
+expected = {
+    "0001": "Implemented with known gaps",
+    "0002": "Implemented v1",
+    "0003": "Implemented v1",
+    "0004": "Envelope and daemon operations implemented; device-key custody experimental",
+    "0005": "Design only",
+    "0006": "Design only",
+    "0007": "Implemented v0",
+}
+
+rows = {}
+for line in Path("rfcs/README.md").read_text(encoding="utf-8").splitlines():
+    cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+    if len(cells) != 4 or not cells[0].startswith("["):
+        continue
+    number = cells[0][1:5]
+    rows[number] = cells[3]
+
+if rows != expected:
+    raise SystemExit(f"canonical RFC implementation statuses differ: {rows!r}")
+
+index = Path("website/rfcs/index.html").read_text(encoding="utf-8")
+for number, implementation in expected.items():
+    marker = f"Internet-Draft · {implementation}"
+    if marker not in index:
+        raise SystemExit(f"RFC {number} index badge is not derived from canonical status: {marker}")
+
+spec = spec_from_file_location("render_rfcs", "scripts/render-rfcs.py")
+module = module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+synthetic = "Request for Comments: 9999\\nDate: September 2031"
+if module.memo_date(synthetic) != "September 2031":
+    raise SystemExit("RFC renderer does not derive the publication month from the memo header")
+PY
+
+for contract in \
+  'Fetched bytes are verified against the requested CID before return or caching' \
+  'Equal-height fork detection is not implemented' \
+  'sequence-overflow guard' \
+  'signed action paths' \
+  'empty path segments' \
+  'crates/jolt-network/src/fetch_manager.rs' \
+  'crates/jolt-network/src/node/'; do
+  grep -Fq "$contract" rfcs/0001-core-protocol.md || {
+    echo "RFC 0001 implementation contract missing: $contract" >&2
+    exit 1
+  }
+done
+
+if grep -Fq 'crates/jolt-content' rfcs/0001-core-protocol.md; then
+  echo "RFC 0001 still references the nonexistent jolt-content crate" >&2
+  exit 1
+fi
+
+python3 - <<'PY'
+from pathlib import Path
+
+text = " ".join(
+    " ".join(Path(path).read_text(encoding="utf-8").split())
+    for path in (
+        "rfcs/0003-device-writer-logs.md",
+        "rfcs/0004-encrypted-device-access.md",
+        "rfcs/0007-app-sessions.md",
+    )
+)
+for contract in (
+    "rejects the whole imported batch",
+    "Content AAD does not include the nonce",
+    "does not enforce `declared_size`",
+    "does not require the session to be active first",
+    "not compared in constant time",
+):
+    if contract not in text:
+        raise SystemExit(f"RFC implementation caveat missing: {contract}")
+PY
 
 python3 - <<'PY'
 from html.parser import HTMLParser

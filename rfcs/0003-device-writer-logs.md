@@ -358,8 +358,10 @@ are implemented across `jolt-core`, `jolt-network`, `jolt-store`, and
 
 Known gaps are the wall-clock merge key, no tombstone operation, inline rather
 than CID-pinned remote log snapshots, and no periodic background synchronization
-independent of resolve/enumerate calls. Delivery and verification are recorded
-in cards 091 and 094.
+independent of resolve/enumerate calls. The current importer rejects the whole
+imported batch when any supplied writer log is invalid, which is stricter than
+the per-log rejection described by this memo. Delivery and verification are
+recorded in cards 091 and 094.
 
 ## 19. References
 
@@ -385,4 +387,3 @@ After synchronization, both append records remain. For `/profile`, every
 conforming resolver compares the same four-part tuple and returns the same
 winner. The losing profile binding remains available as conflict diagnostics;
 Jolt does not attempt to merge the profile payloads.
-

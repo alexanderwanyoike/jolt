@@ -267,7 +267,7 @@ uint64be(created_at)
 ### 8.2 Content AAD
 
 Content encryption binds the author identity, plaintext metadata, content
-algorithm/nonce, and creation time under the domain:
+algorithm, and creation time under the domain:
 
 ```text
 "jolt:encrypted-object-content-aad:v1" || 0x00
@@ -275,7 +275,9 @@ algorithm/nonce, and creation time under the domain:
 
 The AAD MUST be constructed identically during encryption and decryption. A
 metadata change therefore causes authentication failure even before author
-signature policy is considered.
+signature policy is considered. Content AAD does not include the nonce. The
+nonce is nevertheless covered by the author's signature over the canonical
+envelope body and is supplied directly to the AEAD operation.
 
 ### 8.3 Recipient-Wrap AAD and HPKE Info
 
@@ -446,9 +448,15 @@ append/rewrap operations, active-device recipient selection, revoked-device
 exclusion, and access-status reporting are implemented.
 
 Generated device private-key custody is still daemon-internal and the current
-integration proof focuses on wrap selection. Group optimization, key rotation,
-and production recovery are unresolved. Work was tracked by cards 052, 096, and
-097 and architecture documents 08 and 16.
+integration proof focuses on wrap selection. Generated device private keys are
+kept only in the in-memory authority store, are not persisted across daemon
+restarts, and are not used by the current decrypt path. Authority records are
+also held only in memory; after a daemon restart the server bootstraps and
+publishes a new legacy-root sequence-zero chain rather than restoring the prior
+chain. The decrypt operation also does not enforce `declared_size` against the
+returned plaintext length, despite the requirement in Section 10. Group
+optimization, key rotation, and production recovery are unresolved. Work was
+tracked by cards 052, 096, and 097 and architecture documents 08 and 16.
 
 ## 21. References
 
@@ -476,4 +484,3 @@ After L rewraps the old index, the new CID is available on T.
 If P is then revoked, later objects and rewraps omit P. The original envelopes
 remain decryptable on P if it retained its private key. No conforming interface
 may claim otherwise.
-

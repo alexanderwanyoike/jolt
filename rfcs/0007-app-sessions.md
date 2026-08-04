@@ -407,8 +407,11 @@ Known gaps include self-declared app identity, no browser-origin proof, no
 remote-admin authentication, in-memory delivery of newly issued tokens, and
 transitional `dev_legacy_root` binding. In particular, generated device IDs and
 session device IDs are not yet universally aligned, so device revocation must
-be audited before this memo advances beyond Draft. Work was tracked by cards
-042, 052, and 095 and architecture document 15.
+be audited before this memo advances beyond Draft. The identity-scoped revoke
+operation does not require the session to be active first, so it also rewrites
+rejected, expired, or already revoked records to `Revoked`. Stored token hashes
+are not compared in constant time during bearer-token lookup. Work was tracked
+by cards 042, 052, and 095 and architecture document 15.
 
 ## 20. References
 
@@ -434,4 +437,3 @@ recipient ingress capabilities. Console may approve all or a narrower subset
 for one selected identity. Spoke receives only a bearer token. Signing and
 private keys remain inside the local daemon, and every later request is checked
 against that identity and capability set.
-

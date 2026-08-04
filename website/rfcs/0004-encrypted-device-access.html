@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d0f0f" />
     <meta name="description" content="JOLT-RFC-0004: Encrypted Objects and Private Device Access" />
-    <meta name="jolt-rfc-source-sha256" content="ef1d1dcfb145d2a490cab076e5786f8f3b5bd4fa8b887a80c0dd3ecb112cf37a" />
-    <title>JOLT-RFC-0004 — Encrypted Objects and Private Device Access</title>
+    <meta name="jolt-rfc-source-sha256" content="32b82af34e074115741b462161820da74eb678fc102d97f5a49b4ddba7a941f4" />
+    <title>JOLT-RFC-0004 - Encrypted Objects and Private Device Access</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="rfc.css" />
@@ -256,12 +256,14 @@ uint64be(created_at)
 </code></pre>
 <h3 id="82-content-aad">8.2 Content AAD</h3>
 <p>Content encryption binds the author identity, plaintext metadata, content
-algorithm/nonce, and creation time under the domain:</p>
+algorithm, and creation time under the domain:</p>
 <pre><code class="language-text">&quot;jolt:encrypted-object-content-aad:v1&quot; || 0x00
 </code></pre>
 <p>The AAD MUST be constructed identically during encryption and decryption. A
 metadata change therefore causes authentication failure even before author
-signature policy is considered.</p>
+signature policy is considered. Content AAD does not include the nonce. The
+nonce is nevertheless covered by the author's signature over the canonical
+envelope body and is supplied directly to the AEAD operation.</p>
 <h3 id="83-recipient-wrap-aad-and-hpke-info">8.3 Recipient-Wrap AAD and HPKE Info</h3>
 <p>Each recipient wrap binds the author identity, recipient identity, and
 recipient key identifier under:</p>
@@ -385,9 +387,15 @@ HPKE wraps, authenticated encryption, capability-checked publish/open/decrypt/
 append/rewrap operations, active-device recipient selection, revoked-device
 exclusion, and access-status reporting are implemented.</p>
 <p>Generated device private-key custody is still daemon-internal and the current
-integration proof focuses on wrap selection. Group optimization, key rotation,
-and production recovery are unresolved. Work was tracked by cards 052, 096, and
-097 and architecture documents 08 and 16.</p>
+integration proof focuses on wrap selection. Generated device private keys are
+kept only in the in-memory authority store, are not persisted across daemon
+restarts, and are not used by the current decrypt path. Authority records are
+also held only in memory; after a daemon restart the server bootstraps and
+publishes a new legacy-root sequence-zero chain rather than restoring the prior
+chain. The decrypt operation also does not enforce <code>declared_size</code> against the
+returned plaintext length, despite the requirement in Section 10. Group
+optimization, key rotation, and production recovery are unresolved. Work was
+tracked by cards 052, 096, and 097 and architecture documents 08 and 16.</p>
 <h2 id="21-references">21. References</h2>
 <h3 id="211-normative-references">21.1 Normative References</h3>
 <ul>

@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d0f0f" />
     <meta name="description" content="JOLT-RFC-0001: Jolt Signed Path Records and Resolution" />
-    <meta name="jolt-rfc-source-sha256" content="a83f4a4886628dff7246c5cbe680a73482a4f31debc9af44ceb64edc6123d0c3" />
-    <title>JOLT-RFC-0001 — Jolt Signed Path Records and Resolution</title>
+    <meta name="jolt-rfc-source-sha256" content="aa33270504a0d750844c5aaf26994c80d1d4f54eaee586414ac87e18ade3ed0c" />
+    <title>JOLT-RFC-0001 - Jolt Signed Path Records and Resolution</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="rfc.css" />
@@ -279,12 +279,14 @@ MAY prepend <code>/</code>. A textual address parser MUST interpret the first <c
 <li>any Unicode whitespace character;</li>
 <li>a query delimiter <code>?</code>;</li>
 <li>a fragment delimiter <code>#</code>;</li>
+<li>an empty path segment;</li>
 <li>a segment equal to <code>.</code>;</li>
 <li>a segment equal to <code>..</code>.</li>
 </ul>
 <p>Path comparison is exact and case-sensitive after the normalization above.
-Implementations MUST NOT percent-decode, Unicode-normalize, collapse repeated
-slashes, or resolve dot segments during comparison.</p>
+Implementations MUST reject repeated slashes because they create an empty path
+segment. They MUST NOT percent-decode, Unicode-normalize, or resolve dot
+segments during comparison.</p>
 <h2 id="7-content-identifiers">7. Content Identifiers</h2>
 <p>For content bytes <code>B</code>, a conforming writer MUST construct the content
 identifier as:</p>
@@ -651,15 +653,28 @@ identifier in this experimental protocol and is not requested as a DNS
 top-level domain by this memo.</p>
 <h2 id="19-implementation-status">19. Implementation Status</h2>
 <p>The Jolt Rust implementation contains the identity encoding, address parser,
-CID construction, canonical record encoding, Ed25519 verification, hash-chain
-validation, state replay, and highest-sequence candidate selection described by
-this memo.</p>
+CID construction and constraint validation, canonical record encoding, Ed25519
+verification, hash-chain validation, state replay, and highest-sequence
+candidate selection described by this memo.</p>
+<p>Fetched bytes are verified against the requested CID before return or caching.</p>
 <p>The following gaps are known at draft time:</p>
 <ul>
-<li>equal-height fork detection is not yet a durable public error contract;</li>
-<li>generic CID parsing and the network fetch/cache path require an audit to ensure
-  the codec and digest constraints in Section 7 are enforced before content is
-  returned or cached;</li>
+<li>Highest-sequence retention is implemented.
+  Equal-height fork detection is not implemented. For the single-writer log
+  described by this memo, selection can
+  therefore depend on candidate arrival order when two verified logs have the
+  same terminal sequence.</li>
+<li>Record creation and log validation increment <code>u64</code> sequences without a
+  sequence-overflow guard.</li>
+<li>Validation verifies signatures and chain structure but does not validate
+  signed action paths against Section 6.3. A correctly signed <code>SetPath</code> action
+  can therefore carry a path that the textual address parser would reject.</li>
+<li>The textual address parser does not consistently reject empty path segments:
+  it collapses the first repeated slash after <code>.jolt</code> and accepts interior
+  repeated slashes.</li>
+<li>The base log verifier accepts an empty log, while an identity-specific helper
+  assumes at least one entry. Remote resolution guards this case, but callers of
+  the lower-level helper must not pass an empty log.</li>
 <li>resource limits are implementation policy rather than protocol constants;</li>
 <li>legacy action tags remain present in the code;</li>
 <li>the transition to per-device writer logs is specified separately and may
@@ -926,8 +941,12 @@ with the current Rust implementation; file names are not protocol elements.</p>
 <td>crates/jolt-store</td>
 </tr>
 <tr>
-<td>Publish, fetch, and provider orchestration</td>
-<td>crates/jolt-content and node services</td>
+<td>Fetch orchestration and digest verification</td>
+<td>crates/jolt-network/src/fetch_manager.rs</td>
+</tr>
+<tr>
+<td>Publish, provider, and resolution orchestration</td>
+<td>crates/jolt-network/src/node/</td>
 </tr>
 <tr>
 <td>Identity key ownership and signing</td>

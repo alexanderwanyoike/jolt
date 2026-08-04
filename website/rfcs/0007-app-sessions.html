@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d0f0f" />
     <meta name="description" content="JOLT-RFC-0007: Capability-Scoped Local App Sessions" />
-    <meta name="jolt-rfc-source-sha256" content="0fc6cc34eb708c9b1cf8cc46f4932616bcff232f3055db9766eda1054f65170a" />
-    <title>JOLT-RFC-0007 — Capability-Scoped Local App Sessions</title>
+    <meta name="jolt-rfc-source-sha256" content="af96fc040e78b1841da8352490217d777ac0ddce2821e2cd43ea2e16042a2710" />
+    <title>JOLT-RFC-0007 - Capability-Scoped Local App Sessions</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="rfc.css" />
@@ -354,8 +354,11 @@ isolation are implemented in <code>jolt-server</code>; Spoke exercises the app b
 remote-admin authentication, in-memory delivery of newly issued tokens, and
 transitional <code>dev_legacy_root</code> binding. In particular, generated device IDs and
 session device IDs are not yet universally aligned, so device revocation must
-be audited before this memo advances beyond Draft. Work was tracked by cards
-042, 052, and 095 and architecture document 15.</p>
+be audited before this memo advances beyond Draft. The identity-scoped revoke
+operation does not require the session to be active first, so it also rewrites
+rejected, expired, or already revoked records to <code>Revoked</code>. Stored token hashes
+are not compared in constant time during bearer-token lookup. Work was tracked
+by cards 042, 052, and 095 and architecture document 15.</p>
 <h2 id="20-references">20. References</h2>
 <h3 id="201-normative-references">20.1 Normative References</h3>
 <ul>

@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d0f0f" />
     <meta name="description" content="JOLT-RFC-0003: Per-Device Writer Logs and Deterministic Merge" />
-    <meta name="jolt-rfc-source-sha256" content="60343f8f6069aec8f0aa62db535a9e759c4a3e08a55fdb3cd65261648d6be3f9" />
-    <title>JOLT-RFC-0003 — Per-Device Writer Logs and Deterministic Merge</title>
+    <meta name="jolt-rfc-source-sha256" content="64b464cf74311c66c7d90cdf7951c3a4ab08a28b40c68d6aa8a3c8a45181f214" />
+    <title>JOLT-RFC-0003 - Per-Device Writer Logs and Deterministic Merge</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="rfc.css" />
@@ -309,8 +309,10 @@ are implemented across <code>jolt-core</code>, <code>jolt-network</code>, <code>
 <code>jolt-server</code>.</p>
 <p>Known gaps are the wall-clock merge key, no tombstone operation, inline rather
 than CID-pinned remote log snapshots, and no periodic background synchronization
-independent of resolve/enumerate calls. Delivery and verification are recorded
-in cards 091 and 094.</p>
+independent of resolve/enumerate calls. The current importer rejects the whole
+imported batch when any supplied writer log is invalid, which is stricter than
+the per-log rejection described by this memo. Delivery and verification are
+recorded in cards 091 and 094.</p>
 <h2 id="19-references">19. References</h2>
 <h3 id="191-normative-references">19.1 Normative References</h3>
 <ul>

@@ -256,12 +256,14 @@ A path MUST NOT contain:
 - any Unicode whitespace character;
 - a query delimiter `?`;
 - a fragment delimiter `#`;
+- an empty path segment;
 - a segment equal to `.`;
 - a segment equal to `..`.
 
 Path comparison is exact and case-sensitive after the normalization above.
-Implementations MUST NOT percent-decode, Unicode-normalize, collapse repeated
-slashes, or resolve dot segments during comparison.
+Implementations MUST reject repeated slashes because they create an empty path
+segment. They MUST NOT percent-decode, Unicode-normalize, or resolve dot
+segments during comparison.
 
 ## 7. Content Identifiers
 
@@ -630,16 +632,30 @@ top-level domain by this memo.
 ## 19. Implementation Status
 
 The Jolt Rust implementation contains the identity encoding, address parser,
-CID construction, canonical record encoding, Ed25519 verification, hash-chain
-validation, state replay, and highest-sequence candidate selection described by
-this memo.
+CID construction and constraint validation, canonical record encoding, Ed25519
+verification, hash-chain validation, state replay, and highest-sequence
+candidate selection described by this memo.
+
+Fetched bytes are verified against the requested CID before return or caching.
 
 The following gaps are known at draft time:
 
-- equal-height fork detection is not yet a durable public error contract;
-- generic CID parsing and the network fetch/cache path require an audit to ensure
-  the codec and digest constraints in Section 7 are enforced before content is
-  returned or cached;
+- Highest-sequence retention is implemented.
+  Equal-height fork detection is not implemented. For the single-writer log
+  described by this memo, selection can
+  therefore depend on candidate arrival order when two verified logs have the
+  same terminal sequence.
+- Record creation and log validation increment `u64` sequences without a
+  sequence-overflow guard.
+- Validation verifies signatures and chain structure but does not validate
+  signed action paths against Section 6.3. A correctly signed `SetPath` action
+  can therefore carry a path that the textual address parser would reject.
+- The textual address parser does not consistently reject empty path segments:
+  it collapses the first repeated slash after `.jolt` and accepts interior
+  repeated slashes.
+- The base log verifier accepts an empty log, while an identity-specific helper
+  assumes at least one entry. Remote resolution guards this case, but callers of
+  the lower-level helper must not pass an empty log.
 - resource limits are implementation policy rather than protocol constants;
 - legacy action tags remain present in the code;
 - the transition to per-device writer logs is specified separately and may
@@ -939,7 +955,8 @@ with the current Rust implementation; file names are not protocol elements.
 | Record body, actions, canonical bytes, signing, and replay | crates/jolt-core/src/update_log.rs |
 | Update-log exchange messages | crates/jolt-network/src/protocol.rs |
 | Local content persistence and cache behaviour | crates/jolt-store |
-| Publish, fetch, and provider orchestration | crates/jolt-content and node services |
+| Fetch orchestration and digest verification | crates/jolt-network/src/fetch_manager.rs |
+| Publish, provider, and resolution orchestration | crates/jolt-network/src/node/ |
 | Identity key ownership and signing | crates/jolt-identity |
 | Capability-checked app boundary | crates/jolt-server session and app API modules |
 
