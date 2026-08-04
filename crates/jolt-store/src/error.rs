@@ -14,6 +14,9 @@ pub enum StoreError {
     #[error("Content not found: {0}")]
     ContentNotFound(String),
 
+    #[error("Content bytes do not match content id: {0}")]
+    ContentMismatch(String),
+
     #[error("Content already exists: {0}")]
     AlreadyExists(String),
 

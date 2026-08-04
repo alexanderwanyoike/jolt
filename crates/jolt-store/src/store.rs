@@ -162,6 +162,15 @@ impl ContentStore {
         publisher_key: &[u8],
         signature: &[u8],
     ) -> Result<(), StoreError> {
+        // Never store bytes under a content id they do not hash to.
+        let digest_ok = content_id
+            .parse::<ContentId>()
+            .map(|id| id.verify(data))
+            .unwrap_or(false);
+        if !digest_ok {
+            return Err(StoreError::ContentMismatch(content_id.to_string()));
+        }
+
         // Don't cache if we already have it (published or cached)
         if self.has_content(content_id) {
             return Ok(());
@@ -976,6 +985,18 @@ mod tests {
             .join("content");
         assert!(content_path.exists());
         assert_eq!(std::fs::read(&content_path).unwrap(), data);
+    }
+
+    #[test]
+    fn cache_content_rejects_mismatched_bytes() {
+        let dir = tempdir().unwrap();
+        let mut store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        let id = ContentId::from_bytes(b"original bytes");
+        let err = store
+            .cache_content(&id.to_string(), b"tampered bytes", &[1], &[2])
+            .unwrap_err();
+        assert!(matches!(err, StoreError::ContentMismatch(_)));
+        assert!(!store.has_content(&id.to_string()));
     }
 
     #[test]

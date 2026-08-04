@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use jolt_core::ContentId;
 use libp2p::request_response::OutboundRequestId;
 use tokio::sync::oneshot;
 use tracing::{info, warn};
@@ -118,11 +119,27 @@ impl FetchManager {
 
     /// Called when a successful content response arrives.
     /// Returns the content_id if this was a managed fetch (so the caller can cache it).
+    /// The returned bytes are digest-verified against the content id; a mismatched
+    /// response is treated like a failed request so the fetch can try other providers.
     pub fn on_content_response(
         &mut self,
         request_id: OutboundRequestId,
         response: ContentResponse,
     ) -> Option<String> {
+        let Some(content_id) = self.request_to_content.get(&request_id) else {
+            return None;
+        };
+
+        let digest_ok = content_id
+            .parse::<ContentId>()
+            .map(|id| id.verify(&response.data))
+            .unwrap_or(false);
+        if !digest_ok {
+            warn!("Content response for {content_id} failed digest verification, treating as failed request");
+            self.on_request_failure(request_id);
+            return None;
+        }
+
         let Some(content_id) = self.request_to_content.remove(&request_id) else {
             return None;
         };
