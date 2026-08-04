@@ -19,6 +19,12 @@ use crate::error::NetworkError;
 
 const DAEMON_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Timeout for commands whose responses are deferred until network operations
+/// complete (DHT walks, peer dials, hole punching, content transfer). Must
+/// exceed the longest underlying network budget: the fetch manager allows 60s
+/// (`DEFAULT_FETCH_TIMEOUT`) and Kademlia queries allow 60s.
+const DAEMON_NETWORK_COMMAND_TIMEOUT: Duration = Duration::from_secs(70);
+
 async fn receive_result<T>(
     rx: oneshot::Receiver<Result<T, NetworkError>>,
 ) -> Result<T, NetworkError> {
@@ -108,7 +114,9 @@ impl DaemonHandle {
         receive_result(rx).await
     }
 
-    /// Fetch content by ID. Returns the data.
+    /// Fetch content by ID. Returns the data. The response is deferred until
+    /// the fetch manager finishes (up to 60s on real networks), so this waits
+    /// with the network command timeout rather than the quick-command one.
     pub async fn fetch(&self, content_id: String) -> Result<FetchResult, NetworkError> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
@@ -118,7 +126,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        receive_result(rx).await
+        receive_result_with_timeout(rx, DAEMON_NETWORK_COMMAND_TIMEOUT).await
     }
 
     /// Publish a file as an append record bound to a path. Returns the content
@@ -159,7 +167,9 @@ impl DaemonHandle {
         receive_result(rx).await
     }
 
-    /// Resolve a `.jolt` address to its current content target.
+    /// Resolve a `.jolt` address to its current content target. Resolution may
+    /// require DHT provider discovery, dialing candidates, and update-log or
+    /// device-writer sync, so this waits with the network command timeout.
     pub async fn resolve(&self, address: String) -> Result<ResolveResponse, NetworkError> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
@@ -169,10 +179,12 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        receive_result(rx).await
+        receive_result_with_timeout(rx, DAEMON_NETWORK_COMMAND_TIMEOUT).await
     }
 
-    /// Diagnose update-log provider discovery for a Jolt identity.
+    /// Diagnose update-log provider discovery for a Jolt identity. The
+    /// response is deferred until DHT probes finish, so this waits with the
+    /// network command timeout.
     pub async fn diagnose_identity(
         &self,
         identity: IdentityId,
@@ -185,7 +197,7 @@ impl DaemonHandle {
             })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
-        receive_result(rx).await
+        receive_result_with_timeout(rx, DAEMON_NETWORK_COMMAND_TIMEOUT).await
     }
 
     /// Ensure the daemon has a local encryption key for its identity.
@@ -555,6 +567,14 @@ impl DaemonHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn network_command_timeout_exceeds_fetch_manager_budget() {
+        // A fetch's response arrives up to DEFAULT_FETCH_TIMEOUT after the
+        // command is sent. Waiting less than that abandons operations the
+        // network layer goes on to complete (issue #186).
+        assert!(DAEMON_NETWORK_COMMAND_TIMEOUT > crate::fetch_manager::DEFAULT_FETCH_TIMEOUT);
+    }
 
     #[tokio::test]
     async fn plain_daemon_response_times_out_when_loop_does_not_answer() {

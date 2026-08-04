@@ -11,7 +11,7 @@ use crate::error::NetworkError;
 use crate::protocol::ContentResponse;
 
 /// Default timeout for fetch operations.
-const DEFAULT_FETCH_TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const DEFAULT_FETCH_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// How long to wait after provider connects before sending the content request.
 /// With iroh transport, connections are ready immediately (DERP relay is instant,
