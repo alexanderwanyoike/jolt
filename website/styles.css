@@ -283,6 +283,10 @@ h1 em { color: var(--cyan); font-style: normal; font-weight: 450; }
 .download-foot { display: flex; justify-content: space-between; gap: 32px; margin-top: 24px; color: var(--faint); font-size: 12px; }
 .download-foot p { max-width: 680px; margin: 0; line-height: 1.6; }
 .download-foot a { color: var(--cyan); white-space: nowrap; }
+.macos-help { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 32px; margin-top: 30px; padding: 24px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.macos-help > span { padding-top: 3px; color: var(--cyan); font: 9px "Cascadia Mono", monospace; letter-spacing: .12em; text-transform: uppercase; }
+.macos-help p { max-width: 760px; margin: 0 0 13px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+.macos-help code { display: block; width: fit-content; max-width: 100%; overflow-x: auto; padding: 10px 13px; border: 1px solid var(--line); color: var(--cyan); background: rgba(140, 216, 232, .035); font: 11px "Cascadia Mono", monospace; white-space: nowrap; user-select: all; }
 
 footer { min-height: 120px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 footer p { margin: 0; }
@@ -339,6 +343,7 @@ footer a:hover { color: var(--text); }
   .download-action { margin: 0; padding: 0; font-size: 0; }
   .download-action b { margin: 0; font-size: 16px; }
   .download-foot { align-items: flex-start; flex-direction: column; }
+  .macos-help { grid-template-columns: 1fr; gap: 10px; }
   .actions { align-items: flex-start; flex-direction: column; gap: 18px; }
   footer nav { gap: 14px; }
 }

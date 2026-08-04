@@ -393,6 +393,14 @@
             <p>Early builds are not yet signed for every operating system. macOS may require you to allow the app in Privacy &amp; Security.</p>
             <a href="https://github.com/alexanderwanyoike/jolt/releases/tag/__VERSION__">Release notes ↗</a>
           </div>
+
+          <aside class="macos-help reveal" aria-label="Opening the unsigned macOS build">
+            <span>macOS help</span>
+            <div>
+              <p>If macOS says Jolt Console is damaged after you drag it to Applications, open Terminal and clear the download quarantine:</p>
+              <code>xattr -dr com.apple.quarantine "/Applications/Jolt Console.app"</code>
+            </div>
+          </aside>
         </div>
       </section>
     </main>

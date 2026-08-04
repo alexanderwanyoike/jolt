@@ -22,6 +22,7 @@ required_download_contract=(
   'https://github.com/alexanderwanyoike/jolt/releases/download/__VERSION__/jolt-console-x86_64.AppImage'
   'https://github.com/alexanderwanyoike/jolt/releases/download/__VERSION__/jolt-console-aarch64.dmg'
   'https://github.com/alexanderwanyoike/jolt/releases/download/__VERSION__/jolt-console-x86_64-setup.exe'
+  'xattr -dr com.apple.quarantine "/Applications/Jolt Console.app"'
 )
 
 for value in "${required_download_contract[@]}"; do
