@@ -32,6 +32,8 @@ for value in "${required_download_contract[@]}"; do
 done
 
 required_protocol_visual_contract=(
+  'Your data<br />should be<br /><em>yours.</em>'
+  '<meta property="og:title" content="Jolt | Your data should be yours." />'
   'Jolt nodes exchanging signed path records'
   'SIGNED PATH RECORDS · MOVING BETWEEN NODES'
   '"owner_public_key"'
@@ -60,6 +62,7 @@ for value in \
   'private spaces' \
   'community spaces' \
   'whole community space' \
+  'Your identity<br />should outlive' \
   'https://alexanderwanyoike.github.io/spoke/'; do
   if grep -Fq "$value" website/index.html; then
     echo "misleading protocol hero terminology remains: $value" >&2
