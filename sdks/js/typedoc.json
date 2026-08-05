@@ -1,0 +1,8 @@
+{
+  "entryPoints": ["src/index.ts", "src/transport-http.ts", "src/transport-tauri.ts", "src/testing.ts"],
+  "out": "docs-html",
+  "json": "docs/api.json",
+  "excludeInternal": true,
+  "readme": "README.md",
+  "name": "@jolt/sdk"
+}
