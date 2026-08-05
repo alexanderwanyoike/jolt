@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-daemon-request"
+description = "Enables the daemon_request command without any pre-configured scope."
+commands.allow = ["daemon_request"]
+
+[[permission]]
+identifier = "deny-daemon-request"
+description = "Denies the daemon_request command without any pre-configured scope."
+commands.deny = ["daemon_request"]

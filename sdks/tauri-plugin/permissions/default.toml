@@ -1,0 +1,7 @@
+[default]
+description = "Allows the app to reach the local Jolt daemon through the plugin's proxy commands"
+permissions = [
+  "allow-daemon-request",
+  "allow-daemon-publish-bytes",
+  "allow-daemon-append",
+]
