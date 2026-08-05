@@ -220,9 +220,25 @@ pub struct NetworkNode {
     pending_ingress: IngressQueue,
     /// In-flight p2p ingress deliveries to remote recipients, keyed by the
     /// outbound request id of the /jolt/ingress/1.0.0 exchange.
-    pending_ingress_submits:
-        HashMap<OutboundRequestId, oneshot::Sender<Result<IngressRecord, NetworkError>>>,
+    pending_ingress_submits: HashMap<OutboundRequestId, PendingIngressSubmit>,
 }
+
+/// An in-flight p2p ingress delivery. Carries everything needed to re-send:
+/// idle-timeout closes and NAT path migrations kill connections between
+/// exchanges, so the first attempt after a quiet period can race a dying
+/// connection and fail with an IO error that a fresh dial resolves.
+pub(crate) struct PendingIngressSubmit {
+    peer: libp2p::PeerId,
+    receiver_id: String,
+    encrypted_object: Vec<u8>,
+    expires_at: Option<u64>,
+    attempts_left: u8,
+    response_tx: oneshot::Sender<Result<IngressRecord, NetworkError>>,
+}
+
+/// Transient transport failures get this many automatic re-sends before the
+/// error surfaces to the caller.
+const INGRESS_SUBMIT_RETRIES: u8 = 2;
 
 const RELAY_RECORD_TTL_SECS: u64 = 60 * 60;
 const RELAY_EXCHANGE_MAX_RECORDS: usize = 32;
@@ -309,25 +325,39 @@ impl NetworkNode {
         expires_at: Option<u64>,
         response_tx: oneshot::Sender<Result<IngressRecord, NetworkError>>,
     ) {
-        if !self.swarm.is_connected(peer) {
-            let addr: libp2p::Multiaddr = format!("/p2p/{peer}")
-                .parse()
-                .expect("peer id renders a valid /p2p multiaddr");
-            if let Err(e) = self.swarm.dial(addr) {
-                tracing::debug!("Ingress delivery pre-dial to {peer} not started: {e}");
-            }
-        }
-        let request = crate::protocol::IngressSubmitRequest {
+        self.dispatch_ingress_submit(PendingIngressSubmit {
+            peer: *peer,
             receiver_id,
             encrypted_object,
             expires_at,
+            attempts_left: INGRESS_SUBMIT_RETRIES,
+            response_tx,
+        });
+    }
+
+    pub(crate) fn dispatch_ingress_submit(&mut self, pending: PendingIngressSubmit) {
+        if !self.swarm.is_connected(&pending.peer) {
+            let addr: libp2p::Multiaddr = format!("/p2p/{}", pending.peer)
+                .parse()
+                .expect("peer id renders a valid /p2p multiaddr");
+            if let Err(e) = self.swarm.dial(addr) {
+                tracing::debug!(
+                    "Ingress delivery pre-dial to {} not started: {e}",
+                    pending.peer
+                );
+            }
+        }
+        let request = crate::protocol::IngressSubmitRequest {
+            receiver_id: pending.receiver_id.clone(),
+            encrypted_object: pending.encrypted_object.clone(),
+            expires_at: pending.expires_at,
         };
         let request_id = self
             .swarm
             .behaviour_mut()
             .ingress_submit
-            .send_request(peer, request);
-        self.pending_ingress_submits.insert(request_id, response_tx);
+            .send_request(&pending.peer, request);
+        self.pending_ingress_submits.insert(request_id, pending);
     }
 
     fn accept_ingress(&mut self, ingress_id: &str) -> Result<IngressRecord, NetworkError> {
