@@ -1,0 +1,401 @@
+/**
+ * The high-level Jolt client: domain-shaped, tolerant, fakeable.
+ *
+ * {@link createJoltClient} binds a transport and a session-token source into
+ * the interface applications actually program against: versioned
+ * publish/read, append/enumerate, encrypted objects, and recipient-controlled
+ * ingress. Reads are tolerant: a missing, unreachable, or undecodable object
+ * returns `null` instead of throwing, so a bad record never poisons an app's
+ * projections.
+ *
+ * The interfaces ({@link JoltSdk}, {@link JoltEncryptedSdk},
+ * {@link JoltIngressSdk}, {@link JoltAppendSdk}) are intentionally small so
+ * tests can fake exactly the capability a feature uses; `@jolt/sdk/testing`
+ * ships a ready-made in-memory implementation.
+ *
+ * @module
+ */
+
+import * as ops from "./operations.js";
+import type { CallOptions, JoltTransport } from "./transport.js";
+import type {
+  AppSessionRequestResponse,
+  AppSessionStatusResponse,
+  CurrentAppSession,
+  IngressRecord,
+  NodeStatus,
+  PublishedContent,
+  PublishResponse,
+} from "./wire.js";
+
+/** The stable identity of a publication: `(identity, path)`. */
+export type Reference = {
+  identity: string;
+  path: string;
+};
+
+/** Result of any publish, in domain (camelCase) shape. */
+export type PublishResult = {
+  contentId: string;
+  latestSequence: number;
+  path: string;
+  address: string | null;
+};
+
+/**
+ * A decoder is the app's schema-level reader: it validates an already-parsed
+ * JSON value into a canonical type, or returns `null` to reject it. Decoders
+ * never see bytes or transport concerns.
+ */
+export type Decoder<T> = (value: unknown) => T | null;
+
+/** A versioned, decoded publication: what a read hands back to the app. */
+export type Versioned<T> = {
+  ref: Reference;
+  value: T;
+  latestSequence: number;
+  contentId: string;
+};
+
+/** One append record, marshalled into domain shape. */
+export type EnumeratedRecord = {
+  identity: string;
+  path: string;
+  contentId: string;
+  deviceId: string;
+  deviceSequence: number;
+  createdAt: string;
+  entryHash: string;
+};
+
+/** Public publish and tolerant versioned reads. */
+export interface JoltSdk {
+  /** Publish a JSON object at a signed path (last-writer-wins). */
+  publishJson(path: string, body: object, options?: CallOptions): Promise<PublishResult>;
+  /**
+   * Resolve, fetch, parse, and decode a publication. Returns `null` when the
+   * reference is missing/unreachable or the bytes do not decode to `T`.
+   */
+  read<T>(ref: Reference, decode: Decoder<T>, options?: CallOptions): Promise<Versioned<T> | null>;
+  /**
+   * Fetch a known content id (from an enumerated append record), then parse
+   * and decode it against the supplied logical reference.
+   */
+  readContent<T>(
+    contentId: string,
+    ref: Reference,
+    latestSequence: number,
+    decode: Decoder<T>,
+    options?: CallOptions
+  ): Promise<Versioned<T> | null>;
+}
+
+/** Coexisting append records and their enumeration. */
+export interface JoltAppendSdk {
+  /** Publish a coexisting device-writer append record at `path`. */
+  publishAppend(path: string, body: object, options?: CallOptions): Promise<PublishResult>;
+  /** List an identity's append records under a path prefix. */
+  enumerate(
+    identity: string,
+    pathPrefix: string,
+    options?: CallOptions
+  ): Promise<EnumeratedRecord[]>;
+}
+
+/** Encrypted publish and tolerant encrypted reads. */
+export interface JoltEncryptedSdk {
+  /**
+   * Publish a JSON body encrypted to `recipients` (identity addresses).
+   * Use `[self]` for an encrypt-to-self publication; the publisher can always
+   * decrypt its own publications, so {@link readEncrypted} reads them back.
+   */
+  publishEncryptedJson(
+    path: string,
+    body: object,
+    recipients: string[],
+    options?: CallOptions
+  ): Promise<PublishResult>;
+  /** Resolve + decrypt + parse + decode; `null` on any failing step. */
+  readEncrypted<T>(
+    ref: Reference,
+    decode: Decoder<T>,
+    options?: CallOptions
+  ): Promise<Versioned<T> | null>;
+  /** The local node's published inventory. */
+  listPublished(options?: CallOptions): Promise<PublishedContent[]>;
+}
+
+/**
+ * The recipient-controlled ingress door: deliver identified objects to
+ * another identity's daemon and review what arrives at yours. Transport-level
+ * vocabulary only; classifying payloads is the app's job.
+ */
+export interface JoltIngressSdk {
+  /**
+   * Encrypt-publish the object at `path` (the sender's own copy) and deliver
+   * it to `recipient`'s daemon. Returns the publish result so the sender can
+   * version its own copy.
+   */
+  sendObject(
+    recipient: string,
+    path: string,
+    body: object,
+    options?: CallOptions
+  ): Promise<PublishResult>;
+  listPendingIngress(options?: CallOptions): Promise<IngressRecord[]>;
+  /** Decrypt a pending envelope and return its parsed JSON, or `null`. */
+  openIngress(ingressId: string, options?: CallOptions): Promise<unknown>;
+  acceptIngress(ingressId: string, options?: CallOptions): Promise<void>;
+  rejectIngress(ingressId: string, options?: CallOptions): Promise<void>;
+}
+
+/** Session bootstrap and daemon status, bound to the client's transport. */
+export interface JoltSessionSdk {
+  /** Ask the daemon for a scoped session; the user approves it in Console. */
+  requestSession(
+    req: ops.SessionRequest,
+    options?: CallOptions
+  ): Promise<AppSessionRequestResponse>;
+  /** Poll a session request until it carries a token. */
+  getSessionRequestStatus(
+    requestId: string,
+    options?: CallOptions
+  ): Promise<AppSessionStatusResponse>;
+  /** The session behind the current token, as the daemon sees it. */
+  getCurrentSession(options?: CallOptions): Promise<CurrentAppSession>;
+  /** Local daemon status (no session required). */
+  getStatus(options?: CallOptions): Promise<NodeStatus>;
+}
+
+/** Everything a typical Jolt application needs, in one object. */
+export type JoltClient = JoltSdk &
+  JoltAppendSdk &
+  JoltEncryptedSdk &
+  JoltIngressSdk &
+  JoltSessionSdk & {
+    /** The transport backing this client, for operations the client does not wrap. */
+    readonly transport: JoltTransport;
+  };
+
+/** Configuration for {@link createJoltClient}. */
+export type JoltClientOptions = {
+  transport: JoltTransport;
+  /**
+   * Where the client finds the current session token. Called per request so
+   * token rotation needs no client rebuild.
+   */
+  getSessionToken: () => string;
+};
+
+/** A stable string key for a {@link Reference}, for maps and stores. */
+export function referenceKey(ref: Reference): string {
+  return `${ref.identity}\u0000${ref.path}`;
+}
+
+/** The `.jolt` address a {@link Reference} resolves through. */
+export function referenceTarget(ref: Reference): string {
+  return `${ref.identity}${ref.path}`;
+}
+
+/** Generate a collision-resistant id with an app-chosen prefix. */
+export function makeId(prefix: string): string {
+  const random =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID().replace(/-/g, "")
+      : Math.random().toString(36).slice(2);
+  return `${prefix}_${random.slice(0, 16)}`;
+}
+
+function toPublishResult(response: PublishResponse, path: string): PublishResult {
+  return {
+    contentId: response.content_id,
+    latestSequence: response.latest_sequence ?? 0,
+    path: response.path ?? path,
+    address: response.address ?? null,
+  };
+}
+
+function parseJsonBytes(bytes: number[]): unknown | undefined {
+  try {
+    return JSON.parse(new TextDecoder().decode(new Uint8Array(bytes)));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Build a {@link JoltClient} over a transport and a session-token source. */
+export function createJoltClient(options: JoltClientOptions): JoltClient {
+  const { transport, getSessionToken } = options;
+
+  async function resolveDecode<T>(
+    ref: Reference,
+    getBytes: (token: string, contentId: string, call?: CallOptions) => Promise<number[]>,
+    decode: Decoder<T>,
+    call?: CallOptions
+  ): Promise<Versioned<T> | null> {
+    const token = getSessionToken();
+    let resolved;
+    let bytes: number[];
+    try {
+      resolved = await ops.resolveAddress(transport, token, referenceTarget(ref), call);
+      bytes = await getBytes(token, resolved.content_id, call);
+    } catch {
+      return null; // missing or unreachable
+    }
+    const parsed = parseJsonBytes(bytes);
+    if (parsed === undefined) return null;
+    const value = decode(parsed);
+    if (value === null) return null;
+    return {
+      ref,
+      value,
+      latestSequence: resolved.latest_sequence,
+      contentId: resolved.content_id,
+    };
+  }
+
+  return {
+    transport,
+
+    async publishJson(path, body, call) {
+      const response = await ops.publishJson(transport, getSessionToken(), path, body, call);
+      return toPublishResult(response, path);
+    },
+
+    async read(ref, decode, call) {
+      return resolveDecode(
+        ref,
+        async (token, contentId, o) => (await ops.fetchTarget(transport, token, contentId, o)).data,
+        decode,
+        call
+      );
+    },
+
+    async readContent(contentId, ref, latestSequence, decode, call) {
+      let bytes: number[];
+      try {
+        bytes = (await ops.fetchTarget(transport, getSessionToken(), contentId, call)).data;
+      } catch {
+        return null;
+      }
+      const parsed = parseJsonBytes(bytes);
+      if (parsed === undefined) return null;
+      const value = decode(parsed);
+      if (value === null) return null;
+      return { ref, value, latestSequence, contentId };
+    },
+
+    async publishAppend(path, body, call) {
+      const response = await ops.appendPublishJson(transport, getSessionToken(), path, body, call);
+      return toPublishResult(response, path);
+    },
+
+    async enumerate(identity, pathPrefix, call) {
+      const records = await ops.enumerate(transport, getSessionToken(), identity, pathPrefix, call);
+      return records.map((record) => ({
+        identity,
+        path: record.path,
+        contentId: record.content_id,
+        deviceId: record.device_id,
+        deviceSequence: record.device_sequence,
+        createdAt: record.created_at,
+        entryHash: record.entry_hash,
+      }));
+    },
+
+    async publishEncryptedJson(path, body, recipients, call) {
+      const response = await ops.publishEncryptedJson(
+        transport,
+        getSessionToken(),
+        path,
+        body,
+        recipients,
+        call
+      );
+      return toPublishResult(response, path);
+    },
+
+    async readEncrypted(ref, decode, call) {
+      const token = getSessionToken();
+      const target = referenceTarget(ref);
+      let resolved;
+      let plaintext: number[];
+      let contentId: string;
+      try {
+        resolved = await ops.resolveAddress(transport, token, target, call);
+        const decrypted = await ops.decryptEncryptedTarget(transport, token, target, call);
+        plaintext = decrypted.plaintext;
+        contentId = decrypted.content_id || resolved.content_id;
+      } catch {
+        return null;
+      }
+      const parsed = parseJsonBytes(plaintext);
+      if (parsed === undefined) return null;
+      const value = decode(parsed);
+      if (value === null) return null;
+      return { ref, value, latestSequence: resolved.latest_sequence, contentId };
+    },
+
+    async listPublished(call) {
+      return ops.listPublished(transport, getSessionToken(), call);
+    },
+
+    async sendObject(recipient, path, body, call) {
+      const token = getSessionToken();
+      const published = await ops.publishEncryptedJson(
+        transport,
+        token,
+        path,
+        body,
+        [recipient],
+        call
+      );
+      const bytes = await ops.fetchTarget(transport, token, published.content_id, call);
+      await ops.sendIngress(
+        transport,
+        token,
+        {
+          recipient,
+          encryptedObject: bytes.data,
+          expiresAt: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+        },
+        call
+      );
+      return toPublishResult(published, path);
+    },
+
+    async listPendingIngress(call) {
+      return ops.listPendingIngress(transport, getSessionToken(), call);
+    },
+
+    async openIngress(ingressId, call) {
+      const opened = await ops.openIngress(transport, getSessionToken(), ingressId, call);
+      const parsed = parseJsonBytes(opened.plaintext);
+      return parsed === undefined ? null : parsed;
+    },
+
+    async acceptIngress(ingressId, call) {
+      await ops.acceptIngress(transport, getSessionToken(), ingressId, call);
+    },
+
+    async rejectIngress(ingressId, call) {
+      await ops.rejectIngress(transport, getSessionToken(), ingressId, call);
+    },
+
+    async requestSession(req, call) {
+      return ops.requestSession(transport, req, call);
+    },
+
+    async getSessionRequestStatus(requestId, call) {
+      return ops.getSessionRequestStatus(transport, requestId, call);
+    },
+
+    async getCurrentSession(call) {
+      return ops.getCurrentSession(transport, getSessionToken(), call);
+    },
+
+    async getStatus(call) {
+      return ops.getStatus(transport, call);
+    },
+  };
+}

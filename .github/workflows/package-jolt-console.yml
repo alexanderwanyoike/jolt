@@ -8,6 +8,7 @@ on:
       - ".github/workflows/package-jolt-console.yml"
       - "apps/jolt-console/**"
       - "crates/**"
+      - "sdks/**"
       - "scripts/package-jolt-console.sh"
       - "scripts/normalize-jolt-console-artifacts.sh"
       - "scripts/assemble-jolt-console-release.sh"
@@ -145,6 +146,16 @@ jobs:
 
       - name: Assemble release assets
         run: scripts/assemble-jolt-console-release.sh --tag "$GITHUB_REF_NAME"
+
+      # The JS SDK ships as a release tarball so applications can depend on it
+      # without a registry: yarn add <release>/jolt-sdk.tgz (sdks/js/README.md).
+      - name: Build and pack the JS SDK
+        run: |
+          cd sdks/js
+          yarn install --frozen-lockfile
+          yarn test
+          yarn build
+          yarn pack --filename ../../release/jolt-sdk.tgz
 
       - name: Upload combined release artifact
         uses: actions/upload-artifact@v4
