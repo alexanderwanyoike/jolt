@@ -63,7 +63,10 @@ export type TauriTransportOptions = {
   plugin?: boolean;
 };
 
-/** {@inheritDoc isTauriRuntime} */
+/**
+ * The Tauri transport: routes every request through the host shell's Rust
+ * commands (tauri-plugin-jolt in plugin mode, or app-defined commands).
+ */
 export class TauriTransport implements JoltTransport {
   private readonly prefix: string;
 
