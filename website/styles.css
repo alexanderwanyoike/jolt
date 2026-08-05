@@ -355,3 +355,27 @@ footer a:hover { color: var(--text); }
   .moving-json { display: none; }
   .static-json { opacity: .86; }
 }
+
+/* --- Showcase (apps built on Jolt) ------------------------------------ */
+
+.showcase-grid { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line-strong); }
+.showcase-card { display: flex; flex-direction: column; gap: 18px; padding: 34px 38px 30px; border-right: 1px solid var(--line-strong); transition: color .18s, background .18s; }
+.showcase-card:last-child { border-right: 0; }
+.showcase-card:hover { background: rgba(140, 216, 232, .045); }
+.showcase-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.showcase-top img { display: block; transition: transform .18s; }
+.showcase-card:hover .showcase-top img { transform: translateY(-3px); }
+.showcase-index { color: var(--faint); font: 9px "Cascadia Mono", monospace; letter-spacing: .12em; }
+.showcase-name { display: flex; align-items: baseline; gap: 12px; }
+.showcase-name strong { font-size: 27px; font-weight: 540; letter-spacing: -.02em; }
+.showcase-name small { color: var(--faint); font: 10px "Cascadia Mono", monospace; letter-spacing: .1em; text-transform: uppercase; }
+.showcase-card p { margin: 0; max-width: 460px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.showcase-action { margin-top: auto; padding-top: 18px; color: var(--cyan); font: 11px "Cascadia Mono", monospace; letter-spacing: .08em; text-transform: uppercase; }
+.showcase-action b { font-weight: 400; transition: transform .18s; display: inline-block; }
+.showcase-card:hover .showcase-action b { transform: translateX(4px); }
+
+@media (max-width: 900px) {
+  .showcase-grid { grid-template-columns: 1fr; }
+  .showcase-card { border-right: 0; }
+  .showcase-card + .showcase-card { border-top: 1px solid var(--line-strong); }
+}

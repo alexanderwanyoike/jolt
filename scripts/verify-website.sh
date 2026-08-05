@@ -68,8 +68,7 @@ for value in \
   'private spaces' \
   'community spaces' \
   'whole community space' \
-  'Your identity<br />should outlive' \
-  'https://alexanderwanyoike.github.io/spoke/'; do
+  'Your identity<br />should outlive'; do
   if grep -Fq "$value" website/index.html; then
     echo "misleading protocol hero terminology remains: $value" >&2
     exit 1
@@ -160,8 +159,9 @@ for value in "${required_rfc_library_contract[@]}"; do
   }
 done
 
-grep -Fq 'https://github.com/alexanderwanyoike/spoke' website/index.html || {
-  echo "website does not link to Spoke's currently available home" >&2
+grep -Fq 'https://alexanderwanyoike.github.io/spoke/' website/index.html &&
+  grep -Fq 'https://alexanderwanyoike.github.io/pastey/' website/index.html || {
+  echo "website does not link to the Spoke and Pastey showcase sites" >&2
   exit 1
 }
 
