@@ -25,7 +25,10 @@ export function ConsoleShell({
     <div className="console-shell">
       <aside className="sidebar" aria-label="Jolt Console sections">
         <div className="brand-lockup">
-          <div className="brand-mark">J</div>
+          <svg viewBox="0 0 64 64" className="brand-mark" aria-hidden="true">
+            <rect width="64" height="64" rx="12" fill="#0b0d0c" />
+            <path d="M17 43 25 17h8l-8 26zm15 0 8-26h8l-8 26z" fill="#d9ff43" />
+          </svg>
           <div>
             <strong>Jolt Console</strong>
             <span>local daemon control</span>
