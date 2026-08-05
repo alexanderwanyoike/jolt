@@ -1070,3 +1070,47 @@ async fn two_nodes_deliver_ingress_over_p2p() {
     node_r_handle.abort();
     node_s_handle.abort();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ingress_delivery_to_unreachable_peer_retries_then_fails() {
+    // Transient transport failures are retried inside the daemon (idle-timeout
+    // closes and NAT path changes kill connections between sends). When the
+    // peer stays unreachable the retries must exhaust and surface an error
+    // instead of hanging or succeeding silently.
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
+
+    let dir_s = tempdir().unwrap();
+    let sender = NodeIdentity::generate();
+    let unreachable_peer = NodeIdentity::generate().peer_id();
+
+    let store_s = make_store(dir_s.path());
+    let mut node_s = NetworkNode::new_tcp(sender, store_s, no_mdns_config()).unwrap();
+
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    node_s.send_ingress_to_peer(
+        &unreachable_peer,
+        "p2p-live".to_string(),
+        vec![1, 2, 3],
+        None,
+        tx,
+    );
+
+    let result = tokio::time::timeout(Duration::from_secs(20), async move {
+        loop {
+            tokio::select! {
+                result = &mut rx => return result,
+                event = node_s.next_event() => node_s.handle_swarm_event(event),
+            }
+        }
+    })
+    .await
+    .expect("delivery to an unreachable peer must fail within the timeout")
+    .expect("oneshot closed");
+
+    let err = result.expect_err("delivery to an unreachable peer cannot succeed");
+    assert!(
+        err.to_string().contains("could not deliver ingress envelope"),
+        "unexpected error: {err}"
+    );
+}
