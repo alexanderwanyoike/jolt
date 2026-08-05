@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="The Jolt SDK: a typed TypeScript client for the daemon's capability-scoped app API." />
+    <title>Jolt SDK</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="../docs.css" />
+  </head>
+  <body>
+    <header class="docs-header">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>sdk</small></span></a>
+      <nav><a href="../">Website</a><a href="../rfcs/">RFCs</a><a href="../guides/app-development.html">Guide</a><a class="cyan" href="reference.html">API reference</a></nav>
+    </header>
+
+    <main class="sdk-main">
+      <header>
+        <div>
+          <p class="kicker cyan">jolt-sdk · TypeScript</p>
+          <h1>Build apps that<br />borrow an identity.</h1>
+        </div>
+        <p>Jolt applications do not own accounts. They ask the local Jolt daemon for a capability-scoped session that the user approves in Jolt Console, then publish signed content under the user's identity, read other identities' content, and exchange encrypted objects through recipient-controlled ingress. The SDK is the typed client for that contract.</p>
+      </header>
+
+      <section class="sdk-section" id="install">
+        <p class="kicker">01 / Install</p>
+        <h2>One package. Four entry points.</h2>
+        <pre><code>yarn add jolt-sdk</code></pre>
+        <p>The SDK also ships with every Jolt release as an installable tarball, if you prefer pinning to a release directly:</p>
+        <pre><code>yarn add https://github.com/alexanderwanyoike/jolt/releases/latest/download/jolt-sdk.tgz</code></pre>
+        <table>
+          <thead><tr><th>Import</th><th>What it is</th></tr></thead>
+          <tbody>
+            <tr><td><code>jolt-sdk</code></td><td>Types, typed errors, and <code>createJoltClient</code>: tolerant, domain-shaped operations</td></tr>
+            <tr><td><code>jolt-sdk/transport-http</code></td><td><code>fetch</code>-based transport for browsers and Node.js 18+</td></tr>
+            <tr><td><code>jolt-sdk/transport-tauri</code></td><td>Tauri <code>invoke</code>-based transport for desktop shells</td></tr>
+            <tr><td><code>jolt-sdk/testing</code></td><td><code>createFakeJolt</code>: a deterministic in-memory fake for tests</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="sdk-section" id="quick-start">
+        <p class="kicker">02 / Quick start</p>
+        <h2>Session in, signed content out.</h2>
+        <p>An app declares who it is and exactly what it wants to do. The daemon holds the request until the user approves it in Jolt Console; the app polls until the approval carries a bearer token, then every call is checked against the granted capabilities.</p>
+        <pre><code>import { createJoltClient } from "jolt-sdk";
+import { HttpTransport } from "jolt-sdk/transport-http";
+
+let token = "";
+const jolt = createJoltClient({
+  transport: new HttpTransport({ daemonUrl: "http://127.0.0.1:9862" }),
+  getSessionToken: () => token,
+});
+
+// 1. Ask for a scoped session; the user approves it in Jolt Console.
+const status = await jolt.getStatus();
+const request = await jolt.requestSession({
+  appId: "myapp.local",
+  appName: "My App",
+  appOrigin: window.location.origin,
+  identity: status.identity_address,
+  capabilities: ["publish:/myapp/*", "resolve:public", "fetch:public"],
+});
+
+// 2. Poll until approved.
+for (;;) {
+  const s = await jolt.getSessionRequestStatus(request.request_id);
+  if (s.session_token) { token = s.session_token; break; }
+  await new Promise((r) => setTimeout(r, 1000));
+}
+
+// 3. Publish signed content and read it back, versioned and decoded.
+await jolt.publishJson("/myapp/profile", { name: "Alice" });
+const profile = await jolt.read(
+  { identity: status.identity_address, path: "/myapp/profile" },
+  (v) => (typeof v === "object" &amp;&amp; v &amp;&amp; "name" in v ? (v as { name: string }) : null)
+);</code></pre>
+        <p>Reads are tolerant: missing, unreachable, or undecodable content returns <code>null</code> instead of throwing, so one bad record never poisons an app projection. Failures from publishes and sends throw <code>JoltApiError</code> (the daemon answered with an error) or <code>JoltTransportError</code> (the daemon was unreachable); every operation accepts <code>{ signal, timeoutMs }</code>.</p>
+      </section>
+
+      <section class="sdk-section" id="transports">
+        <p class="kicker">03 / Transports</p>
+        <h2>Same client. Two ways to the daemon.</h2>
+        <p>Everything above the transport (operations, client, domain types) is identical in the browser, Node.js, and Tauri. Only the last hop changes.</p>
+        <div class="sdk-columns">
+          <div>
+            <span class="sdk-column-label">HTTP · browser and Node.js</span>
+            <p><code>HttpTransport</code> talks to the daemon over <code>fetch</code>. Point it at the daemon directly, or use <code>HttpTransport.viteProxy()</code> behind a dev-server proxy to dodge CORS.</p>
+            <pre><code>import { HttpTransport } from "jolt-sdk/transport-http";
+
+const transport = new HttpTransport({
+  daemonUrl: "http://127.0.0.1:9862",
+});</code></pre>
+          </div>
+          <div>
+            <span class="sdk-column-label">Tauri · desktop shells</span>
+            <p>Daemon calls go through audited Rust proxy commands, so the webview never needs network access. The <code>tauri-plugin-jolt</code> plugin ships those commands; wiring it up is three lines:</p>
+            <ol class="sdk-steps">
+              <li><span>01</span>Add the crate and register it:<br /><code>.plugin(tauri_plugin_jolt::init())</code></li>
+              <li><span>02</span>Grant the <code>jolt:default</code> capability in your Tauri capabilities file.</li>
+              <li><span>03</span>Construct the transport:<br /><code>new TauriTransport({ plugin: true })</code></li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section class="sdk-section" id="testing">
+        <p class="kicker">04 / Testing</p>
+        <h2>A whole daemon, faked in memory.</h2>
+        <p><code>createFakeJolt</code> returns a fully working <code>JoltClient</code> with no daemon and no network: publishes land in an in-memory store, reads resolve against it, sends are recorded, and incoming envelopes can be injected. Your tests exercise your schemas and flows, not HPKE.</p>
+        <pre><code>import { createFakeJolt } from "jolt-sdk/testing";
+
+const { client, sent, deliverIngress } = createFakeJolt("alice.jolt");
+// client satisfies JoltClient and all of its sub-interfaces; sends are
+// recorded in `sent`, and deliverIngress() injects incoming envelopes.</code></pre>
+      </section>
+
+      <section class="sdk-section" id="docs">
+        <p class="kicker">05 / Documentation</p>
+        <h2>Where to go next.</h2>
+        <a class="doc-entry" href="reference.html">
+          <span>API</span>
+          <div>
+            <p class="kicker cyan">Generated from TSDoc · four modules</p>
+            <h2>SDK reference</h2>
+            <p>Every exported class, interface, function, and type: the client and its sub-interfaces, typed operations, wire DTOs, both transports, and the testing fake.</p>
+          </div>
+          <span class="open-arrow">→</span>
+        </a>
+        <a class="doc-entry" href="../guides/app-development.html">
+          <span>01</span>
+          <div>
+            <p class="kicker cyan">Tutorial · Tauri + React</p>
+            <h2>App development guide</h2>
+            <p>Build Chirp, a minimal twitter-style app: scoped sessions, append records and timelines, follow requests over ingress, and tests against the fake.</p>
+          </div>
+          <span class="open-arrow">→</span>
+        </a>
+      </section>
+    </main>
+  </body>
+</html>
