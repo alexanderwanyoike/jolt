@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-daemon-publish-bytes"
+description = "Enables the daemon_publish_bytes command without any pre-configured scope."
+commands.allow = ["daemon_publish_bytes"]
+
+[[permission]]
+identifier = "deny-daemon-publish-bytes"
+description = "Denies the daemon_publish_bytes command without any pre-configured scope."
+commands.deny = ["daemon_publish_bytes"]

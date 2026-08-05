@@ -8,6 +8,7 @@ members = [
     "crates/jolt-server",
     "crates/jolt-node",
     "apps/jolt-console/src-tauri",
+    "sdks/tauri-plugin",
 ]
 
 [workspace.package]
