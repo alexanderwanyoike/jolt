@@ -80,16 +80,11 @@ button {
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 42px;
   height: 42px;
-  border: 1px solid var(--line-strong);
   border-radius: 8px;
-  color: var(--cyan);
-  background: var(--panel);
-  font-family: "Cascadia Mono", monospace;
-  font-weight: 800;
+  flex-shrink: 0;
 }
 
 .brand-lockup strong,
