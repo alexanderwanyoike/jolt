@@ -1,5 +1,5 @@
 /**
- * `@jolt/sdk`: the TypeScript SDK for building applications on the Jolt
+ * `jolt-sdk`: the TypeScript SDK for building applications on the Jolt
  * network.
  *
  * Layers, top to bottom:
@@ -9,14 +9,14 @@
  * 2. **Operations**: one typed function per stable daemon endpoint, for the
  *    rare call the client does not wrap.
  * 3. **Transports**: how requests reach the daemon. Import one from
- *    `@jolt/sdk/transport-http` or `@jolt/sdk/transport-tauri`, or the fake
- *    from `@jolt/sdk/testing`.
+ *    `jolt-sdk/transport-http` or `jolt-sdk/transport-tauri`, or the fake
+ *    from `jolt-sdk/testing`.
  *
  * Quick start (browser or Node.js):
  *
  * ```ts
- * import { createJoltClient } from "@jolt/sdk";
- * import { HttpTransport } from "@jolt/sdk/transport-http";
+ * import { createJoltClient } from "jolt-sdk";
+ * import { HttpTransport } from "jolt-sdk/transport-http";
  *
  * let token = "";
  * const jolt = createJoltClient({

@@ -1,4 +1,4 @@
-# @jolt/sdk
+# jolt-sdk
 
 TypeScript SDK for building applications on the [Jolt](https://github.com/alexanderwanyoike/jolt) network.
 
@@ -22,16 +22,16 @@ yarn add https://github.com/alexanderwanyoike/jolt/releases/latest/download/jolt
 
 | Import | What it is |
 |---|---|
-| `@jolt/sdk` | Types, typed errors, and `createJoltClient`: tolerant, domain-shaped operations |
-| `@jolt/sdk/transport-http` | `fetch`-based transport for browsers and Node.js 18+ |
-| `@jolt/sdk/transport-tauri` | Tauri `invoke`-based transport for desktop shells |
-| `@jolt/sdk/testing` | `createFakeJolt`: a deterministic in-memory fake for tests |
+| `jolt-sdk` | Types, typed errors, and `createJoltClient`: tolerant, domain-shaped operations |
+| `jolt-sdk/transport-http` | `fetch`-based transport for browsers and Node.js 18+ |
+| `jolt-sdk/transport-tauri` | Tauri `invoke`-based transport for desktop shells |
+| `jolt-sdk/testing` | `createFakeJolt`: a deterministic in-memory fake for tests |
 
 ## Quick start
 
 ```ts
-import { createJoltClient } from "@jolt/sdk";
-import { HttpTransport } from "@jolt/sdk/transport-http";
+import { createJoltClient } from "jolt-sdk";
+import { HttpTransport } from "jolt-sdk/transport-http";
 
 let token = "";
 const jolt = createJoltClient({
@@ -73,7 +73,7 @@ unreachable); every operation accepts `{ signal, timeoutMs }`.
 ## Testing your app
 
 ```ts
-import { createFakeJolt } from "@jolt/sdk/testing";
+import { createFakeJolt } from "jolt-sdk/testing";
 
 const { client, sent, deliverIngress } = createFakeJolt("alice.jolt");
 // client satisfies JoltClient and all of its sub-interfaces; sends are
