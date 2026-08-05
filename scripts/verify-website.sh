@@ -134,7 +134,10 @@ for value in "${required_sdk_contract[@]}"; do
   }
 done
 
-grep -Fq 'yarn add jolt-sdk' website/sdk/index.html || {
+# Strip markup first: syntax highlighting wraps the command in token spans.
+# (Process substitution, not a pipe: grep -q quitting early would SIGPIPE
+# sed and trip pipefail.)
+grep -Fq 'yarn add jolt-sdk' <(sed 's/<[^>]*>//g' website/sdk/index.html) || {
   echo "SDK page does not document the jolt-sdk install command" >&2
   exit 1
 }

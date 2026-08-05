@@ -579,6 +579,12 @@ def render_page(project: dict, digest: str) -> str:
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d0f0f" />
     <meta name="description" content="API reference for jolt-sdk, the TypeScript SDK for building applications on the Jolt network." />
+    <meta property="og:title" content="Jolt SDK Reference" />
+    <meta property="og:description" content="API reference for jolt-sdk, the TypeScript SDK for building applications on the Jolt network." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Jolt" />
+    <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="jolt-sdk-source-sha256" content="{digest}" />
     <title>Jolt SDK Reference</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
