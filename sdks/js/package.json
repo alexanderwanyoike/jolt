@@ -29,7 +29,10 @@
       "default": "./dist/testing.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -41,12 +44,27 @@
     "@tauri-apps/api": ">=2"
   },
   "peerDependenciesMeta": {
-    "@tauri-apps/api": { "optional": true }
+    "@tauri-apps/api": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@tauri-apps/api": "^2.0.0",
     "typedoc": "^0.26.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
+  },
+  "typesVersions": {
+    "*": {
+      "transport-http": [
+        "./dist/transport-http.d.ts"
+      ],
+      "transport-tauri": [
+        "./dist/transport-tauri.d.ts"
+      ],
+      "testing": [
+        "./dist/testing.d.ts"
+      ]
+    }
   }
 }
