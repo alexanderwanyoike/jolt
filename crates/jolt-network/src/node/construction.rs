@@ -46,6 +46,15 @@ impl NetworkNode {
         let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
         let bootstrap_peer_ids = Self::parse_bootstrap_peer_ids(&config.effective_bootstrap_relays);
         let local_encryption_key = Self::load_persisted_local_encryption_key(&store, &identity)?;
+        // Friend requests and other recipient-controlled envelopes must survive
+        // a daemon restart (#194); rebuild the queue from disk, dropping
+        // anything whose envelope has expired.
+        let pending_ingress = IngressQueue::from_persisted(
+            store.load_ingress_queue().map_err(|e| {
+                NetworkError::Protocol(format!("failed to load persisted ingress queue: {e}"))
+            })?,
+            crate::node::unix_now(),
+        );
 
         let mut node = Self {
             swarm: built.swarm,
@@ -86,7 +95,7 @@ impl NetworkNode {
             home_relay: config.home_relay,
             local_encryption_key,
             local_encryption_key_published: false,
-            pending_ingress: IngressQueue::default(),
+            pending_ingress,
             pending_ingress_submits: HashMap::new(),
         };
 
@@ -258,6 +267,78 @@ mod tests {
             records.len(),
             2,
             "both pre- and post-restart records enumerate"
+        );
+    }
+
+    fn encrypted_envelope_for(node_identity: &NodeIdentity) -> Vec<u8> {
+        let sender = NodeIdentity::generate();
+        let (key, _private) = jolt_core::generate_identity_encryption_keypair(
+            node_identity.identity_id(),
+            "key-1".to_string(),
+            100,
+        );
+        jolt_core::EncryptedObjectEnvelope::encrypt(
+            sender.public_key_bytes(),
+            sender.identity_id(),
+            br#"{"schema":"spoke.follow_request.v1","id":"fr_1"}"#,
+            "application/json".to_string(),
+            Some("spoke.follow_request.v1".to_string()),
+            vec![jolt_core::EncryptedObjectRecipient {
+                identity: node_identity.identity_id(),
+                key,
+            }],
+            100,
+            |bytes| sender.sign(bytes),
+        )
+        .unwrap()
+        .to_bytes()
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn pending_ingress_survives_node_restart() {
+        // A friend request delivered before a restart must still be pending
+        // after it, and a decided record must stay decided (#194). Before this
+        // the queue was memory-only and every restart silently dropped it.
+        let dir = tempdir().unwrap();
+        let key_dir = tempdir().unwrap();
+        let identity = NodeIdentity::generate();
+        identity.save(key_dir.path()).unwrap();
+        let envelope_a = encrypted_envelope_for(&identity);
+        let envelope_b = encrypted_envelope_for(&identity);
+
+        let (kept_id, rejected_id) = {
+            let store = make_store(dir.path());
+            let mut node =
+                NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+            let kept = node
+                .submit_ingress("direct-live".to_string(), envelope_a, None)
+                .unwrap();
+            let rejected = node
+                .submit_ingress("direct-live".to_string(), envelope_b, None)
+                .unwrap();
+            node.reject_ingress(&rejected.ingress_id).unwrap();
+            (kept.ingress_id, rejected.ingress_id)
+        };
+
+        let reloaded = NodeIdentity::load(key_dir.path()).unwrap();
+        let store = make_store(dir.path());
+        let mut node = NetworkNode::new_tcp(reloaded, store, NetworkConfig::test_config()).unwrap();
+
+        let pending = node.list_pending_ingress();
+        assert_eq!(pending.len(), 1, "the undecided record survives");
+        assert_eq!(pending[0].ingress_id, kept_id);
+        assert!(
+            !pending[0].encrypted_object.is_empty(),
+            "the encrypted bytes survive so the record can still be opened"
+        );
+
+        // The rejected record stays decided across the restart: flipping it
+        // to accepted must fail.
+        let accept_replay = node.accept_ingress(&rejected_id);
+        assert!(
+            accept_replay.is_err(),
+            "a rejected record cannot be flipped to accepted after a restart"
         );
     }
 
