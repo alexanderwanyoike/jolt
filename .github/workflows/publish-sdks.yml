@@ -1,0 +1,96 @@
+name: Publish SDKs
+
+# The SDKs version independently of the daemon. Tag formats:
+#   js-sdk-v<version>            publishes sdks/js to npm
+#   tauri-plugin-jolt-v<version> publishes sdks/tauri-plugin to crates.io
+# Each job verifies the tag matches the manifest version before publishing.
+#
+# npm uses Trusted Publishing (OIDC): no token secret. One-time setup on
+# npmjs.com (package Settings, Trusted Publisher): GitHub Actions,
+# repository alexanderwanyoike/jolt, workflow publish-sdks.yml. The very
+# first publish of a brand-new package may need to be run once from a
+# logged-in machine (npm publish --access public in sdks/js) if npm's UI
+# only attaches trusted publishers to existing packages.
+#
+# crates.io also uses Trusted Publishing: configure it on the crate's
+# Settings page (GitHub repository alexanderwanyoike/jolt, workflow
+# publish-sdks.yml); the auth action exchanges the workflow's OIDC
+# identity for a short-lived publish token. No long-lived secrets.
+
+on:
+  push:
+    tags:
+      - "js-sdk-v*"
+      - "tauri-plugin-jolt-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish-npm:
+    name: Publish JS SDK to npm
+    if: startsWith(github.ref_name, 'js-sdk-v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      # Trusted Publishing: this workflow authenticates to npm via OIDC.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Verify tag matches package version
+        run: |
+          tag_version="${GITHUB_REF_NAME#js-sdk-v}"
+          pkg_version=$(node -p "require('./sdks/js/package.json').version")
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match sdks/js version $pkg_version" >&2
+            exit 1
+          fi
+      - name: Update npm (OIDC support needs 11.5.1+)
+        run: npm install -g npm@latest
+      - name: Test, build, publish
+        working-directory: sdks/js
+        run: |
+          yarn install --frozen-lockfile
+          yarn test
+          yarn build
+          npm publish --access public --provenance
+
+  publish-crate:
+    name: Publish tauri-plugin-jolt to crates.io
+    if: startsWith(github.ref_name, 'tauri-plugin-jolt-v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      # Trusted Publishing: this workflow authenticates to crates.io via OIDC.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+      - name: Verify tag matches crate version
+        run: |
+          tag_version="${GITHUB_REF_NAME#tauri-plugin-jolt-v}"
+          crate_version=$(grep -m1 '^version = ' sdks/tauri-plugin/Cargo.toml | cut -d'"' -f2)
+          if [ "$tag_version" != "$crate_version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match sdks/tauri-plugin version $crate_version" >&2
+            exit 1
+          fi
+      - name: Authenticate with crates.io (OIDC)
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Test and publish
+        run: |
+          cargo test -p tauri-plugin-jolt
+          cargo publish -p tauri-plugin-jolt
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

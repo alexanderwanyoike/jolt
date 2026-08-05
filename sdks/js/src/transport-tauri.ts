@@ -52,11 +52,31 @@ export function isTauriRuntime(): boolean {
   return isTauri() || typeof internals?.invoke === "function";
 }
 
-/** {@inheritDoc isTauriRuntime} */
+/** Configuration for {@link TauriTransport}. */
+export type TauriTransportOptions = {
+  /**
+   * Invoke the commands provided by the `tauri-plugin-jolt` Rust plugin
+   * (`plugin:jolt|daemon_request` etc.) instead of app-defined commands.
+   * Recommended: add `tauri_plugin_jolt::init()` to your Tauri builder and
+   * the `jolt:default` capability, and no hand-written Rust proxy is needed.
+   */
+  plugin?: boolean;
+};
+
+/**
+ * The Tauri transport: routes every request through the host shell's Rust
+ * commands (tauri-plugin-jolt in plugin mode, or app-defined commands).
+ */
 export class TauriTransport implements JoltTransport {
+  private readonly prefix: string;
+
+  constructor(options: TauriTransportOptions = {}) {
+    this.prefix = options.plugin ? "plugin:jolt|" : "";
+  }
+
   async request<T>(base: ApiBase, path: string, req: TransportRequest = {}): Promise<T> {
     try {
-      return await invoke<T>("daemon_request", {
+      return await invoke<T>(`${this.prefix}daemon_request`, {
         basePath: BASE_PATHS[base],
         path,
         method: req.method ?? (req.json !== undefined ? "POST" : "GET"),
@@ -71,7 +91,7 @@ export class TauriTransport implements JoltTransport {
   async upload<T>(base: ApiBase, path: string, req: TransportUpload): Promise<T> {
     const command = path === "/append" ? "daemon_append" : "daemon_publish_bytes";
     try {
-      return await invoke<T>(command, {
+      return await invoke<T>(`${this.prefix}${command}`, {
         sessionToken: req.token,
         path: req.path,
         bytes: Array.from(req.bytes),

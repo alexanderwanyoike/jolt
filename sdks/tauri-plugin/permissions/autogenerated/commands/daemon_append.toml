@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-daemon-append"
+description = "Enables the daemon_append command without any pre-configured scope."
+commands.allow = ["daemon_append"]
+
+[[permission]]
+identifier = "deny-daemon-append"
+description = "Denies the daemon_append command without any pre-configured scope."
+commands.deny = ["daemon_append"]
