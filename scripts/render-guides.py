@@ -130,6 +130,12 @@ def render(source_path: Path) -> str:
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d0f0f" />
     <meta name="description" content="{escape(meta["Description"])}" />
+    <meta property="og:title" content="Jolt Guide | {escape(title)}" />
+    <meta property="og:description" content="{escape(meta["Description"])}" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Jolt" />
+    <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="jolt-guide-source-sha256" content="{digest.hexdigest()}" />
     <title>Jolt Guide | {escape(title)}</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />

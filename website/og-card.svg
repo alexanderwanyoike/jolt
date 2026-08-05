@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0d0f0f"/>
+  <rect x="0" y="0" width="1200" height="6" fill="#d9ff43"/>
+  <g transform="translate(84,84)">
+    <rect width="132" height="132" rx="24" fill="#0b0d0c" stroke="#313833" stroke-width="2"/>
+    <path d="M35 89 51.5 35h16.5l-16.5 54zm31 0 16.5-54h16.5l-16.5 54z" fill="#d9ff43"/>
+  </g>
+  <text x="86" y="308" font-family="DejaVu Sans Mono, monospace" font-size="26" letter-spacing="6" fill="#8cd8e8">JOLT · PEER-TO-PEER IDENTITY AND CONTENT</text>
+  <text x="80" y="400" font-family="DejaVu Sans, sans-serif" font-size="84" font-weight="bold" fill="#f1f0e8">Your data should</text>
+  <text x="80" y="496" font-family="DejaVu Sans, sans-serif" font-size="84" font-weight="bold" fill="#f1f0e8">be yours.</text>
+  <text x="86" y="566" font-family="DejaVu Sans Mono, monospace" font-size="24" fill="#737b70">Posts, files, and encrypted sharing with no platform in the middle.</text>
+</svg>

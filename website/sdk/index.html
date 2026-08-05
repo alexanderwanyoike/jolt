@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d0f0f" />
     <meta name="description" content="The Jolt SDK: a typed TypeScript client for the daemon's capability-scoped app API." />
+    <meta property="og:title" content="Jolt SDK" />
+    <meta property="og:description" content="The Jolt SDK: a typed TypeScript client for the daemon's capability-scoped app API." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Jolt" />
+    <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
     <title>Jolt SDK</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -28,9 +34,9 @@
       <section class="sdk-section" id="install">
         <p class="kicker">01 / Install</p>
         <h2>One package. Four entry points.</h2>
-        <pre><code>yarn add jolt-sdk</code></pre>
+        <pre class="doc-code"><code data-lang="bash">yarn<span class="w"> </span>add<span class="w"> </span>jolt-sdk</code></pre>
         <p>The SDK also ships with every Jolt release as an installable tarball, if you prefer pinning to a release directly:</p>
-        <pre><code>yarn add https://github.com/alexanderwanyoike/jolt/releases/latest/download/jolt-sdk.tgz</code></pre>
+        <pre class="doc-code"><code data-lang="bash">yarn<span class="w"> </span>add<span class="w"> </span>https://github.com/alexanderwanyoike/jolt/releases/latest/download/jolt-sdk.tgz</code></pre>
         <table>
           <thead><tr><th>Import</th><th>What it is</th></tr></thead>
           <tbody>
@@ -46,38 +52,38 @@
         <p class="kicker">02 / Quick start</p>
         <h2>Session in, signed content out.</h2>
         <p>An app declares who it is and exactly what it wants to do. The daemon holds the request until the user approves it in Jolt Console; the app polls until the approval carries a bearer token, then every call is checked against the granted capabilities.</p>
-        <pre><code>import { createJoltClient } from "jolt-sdk";
-import { HttpTransport } from "jolt-sdk/transport-http";
+        <pre class="doc-code"><code data-lang="ts"><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">createJoltClient</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">HttpTransport</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/transport-http&quot;</span><span class="p">;</span>
 
-let token = "";
-const jolt = createJoltClient({
-  transport: new HttpTransport({ daemonUrl: "http://127.0.0.1:9862" }),
-  getSessionToken: () => token,
-});
+<span class="kd">let</span><span class="w"> </span><span class="nx">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">;</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">jolt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">createJoltClient</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">transport</span><span class="o">:</span><span class="w"> </span><span class="kt">new</span><span class="w"> </span><span class="nx">HttpTransport</span><span class="p">({</span><span class="w"> </span><span class="nx">daemonUrl</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;http://127.0.0.1:9862&quot;</span><span class="w"> </span><span class="p">}),</span>
+<span class="w">  </span><span class="nx">getSessionToken</span><span class="o">:</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">token</span><span class="p">,</span>
+<span class="p">});</span>
 
-// 1. Ask for a scoped session; the user approves it in Jolt Console.
-const status = await jolt.getStatus();
-const request = await jolt.requestSession({
-  appId: "myapp.local",
-  appName: "My App",
-  appOrigin: window.location.origin,
-  identity: status.identity_address,
-  capabilities: ["publish:/myapp/*", "resolve:public", "fetch:public"],
-});
+<span class="c1">// 1. Ask for a scoped session; the user approves it in Jolt Console.</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">getStatus</span><span class="p">();</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">request</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">requestSession</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">appId</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;myapp.local&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">appName</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;My App&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">appOrigin</span><span class="o">:</span><span class="w"> </span><span class="kt">window.location.origin</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="kt">status.identity_address</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">capabilities</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;publish:/myapp/*&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;resolve:public&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;fetch:public&quot;</span><span class="p">],</span>
+<span class="p">});</span>
 
-// 2. Poll until approved.
-for (;;) {
-  const s = await jolt.getSessionRequestStatus(request.request_id);
-  if (s.session_token) { token = s.session_token; break; }
-  await new Promise((r) => setTimeout(r, 1000));
-}
+<span class="c1">// 2. Poll until approved.</span>
+<span class="k">for</span><span class="w"> </span><span class="p">(;;)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">s</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">getSessionRequestStatus</span><span class="p">(</span><span class="nx">request</span><span class="p">.</span><span class="nx">request_id</span><span class="p">);</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">s</span><span class="p">.</span><span class="nx">session_token</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">s</span><span class="p">.</span><span class="nx">session_token</span><span class="p">;</span><span class="w"> </span><span class="k">break</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nb">Promise</span><span class="p">((</span><span class="nx">r</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">setTimeout</span><span class="p">(</span><span class="nx">r</span><span class="p">,</span><span class="w"> </span><span class="mf">1000</span><span class="p">));</span>
+<span class="p">}</span>
 
-// 3. Publish signed content and read it back, versioned and decoded.
-await jolt.publishJson("/myapp/profile", { name: "Alice" });
-const profile = await jolt.read(
-  { identity: status.identity_address, path: "/myapp/profile" },
-  (v) => (typeof v === "object" &amp;&amp; v &amp;&amp; "name" in v ? (v as { name: string }) : null)
-);</code></pre>
+<span class="c1">// 3. Publish signed content and read it back, versioned and decoded.</span>
+<span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">publishJson</span><span class="p">(</span><span class="s2">&quot;/myapp/profile&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Alice&quot;</span><span class="w"> </span><span class="p">});</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">profile</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">read</span><span class="p">(</span>
+<span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="kt">status.identity_address</span><span class="p">,</span><span class="w"> </span><span class="nx">path</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;/myapp/profile&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">  </span><span class="p">(</span><span class="nx">v</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">(</span><span class="ow">typeof</span><span class="w"> </span><span class="nx">v</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;object&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">v</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="s2">&quot;name&quot;</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="nx">v</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="nx">v</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">})</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span>
+<span class="p">);</span></code></pre>
         <p>Reads are tolerant: missing, unreachable, or undecodable content returns <code>null</code> instead of throwing, so one bad record never poisons an app projection. Failures from publishes and sends throw <code>JoltApiError</code> (the daemon answered with an error) or <code>JoltTransportError</code> (the daemon was unreachable); every operation accepts <code>{ signal, timeoutMs }</code>.</p>
       </section>
 
@@ -89,11 +95,11 @@ const profile = await jolt.read(
           <div>
             <span class="sdk-column-label">HTTP · browser and Node.js</span>
             <p><code>HttpTransport</code> talks to the daemon over <code>fetch</code>. Point it at the daemon directly, or use <code>HttpTransport.viteProxy()</code> behind a dev-server proxy to dodge CORS.</p>
-            <pre><code>import { HttpTransport } from "jolt-sdk/transport-http";
+            <pre class="doc-code"><code data-lang="ts"><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">HttpTransport</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/transport-http&quot;</span><span class="p">;</span>
 
-const transport = new HttpTransport({
-  daemonUrl: "http://127.0.0.1:9862",
-});</code></pre>
+<span class="kd">const</span><span class="w"> </span><span class="nx">transport</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nx">HttpTransport</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">daemonUrl</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;http://127.0.0.1:9862&quot;</span><span class="p">,</span>
+<span class="p">});</span></code></pre>
           </div>
           <div>
             <span class="sdk-column-label">Tauri · desktop shells</span>
@@ -111,11 +117,11 @@ const transport = new HttpTransport({
         <p class="kicker">04 / Testing</p>
         <h2>A whole daemon, faked in memory.</h2>
         <p><code>createFakeJolt</code> returns a fully working <code>JoltClient</code> with no daemon and no network: publishes land in an in-memory store, reads resolve against it, sends are recorded, and incoming envelopes can be injected. Your tests exercise your schemas and flows, not HPKE.</p>
-        <pre><code>import { createFakeJolt } from "jolt-sdk/testing";
+        <pre class="doc-code"><code data-lang="ts"><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/testing&quot;</span><span class="p">;</span>
 
-const { client, sent, deliverIngress } = createFakeJolt("alice.jolt");
-// client satisfies JoltClient and all of its sub-interfaces; sends are
-// recorded in `sent`, and deliverIngress() injects incoming envelopes.</code></pre>
+<span class="kd">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="nx">sent</span><span class="p">,</span><span class="w"> </span><span class="nx">deliverIngress</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">);</span>
+<span class="c1">// client satisfies JoltClient and all of its sub-interfaces; sends are</span>
+<span class="c1">// recorded in `sent`, and deliverIngress() injects incoming envelopes.</span></code></pre>
       </section>
 
       <section class="sdk-section" id="docs">
