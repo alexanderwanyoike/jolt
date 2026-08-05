@@ -719,14 +719,14 @@ impl NetworkNode {
                     ..
                 },
             )) => {
-                if let Some(tx) = self.pending_ingress_submits.remove(&request_id) {
+                if let Some(pending) = self.pending_ingress_submits.remove(&request_id) {
                     let result = match response {
                         IngressSubmitResponse::Accepted { record } => Ok(record),
                         IngressSubmitResponse::Rejected { error } => Err(NetworkError::Protocol(
                             format!("recipient rejected ingress envelope: {error}"),
                         )),
                     };
-                    let _ = tx.send(result);
+                    let _ = pending.response_tx.send(result);
                 }
             }
 
@@ -735,11 +735,31 @@ impl NetworkNode {
                     request_id, error, ..
                 },
             )) => {
-                warn!("Outbound ingress-submit request failed: {error}");
-                if let Some(tx) = self.pending_ingress_submits.remove(&request_id) {
-                    let _ = tx.send(Err(NetworkError::Protocol(format!(
-                        "could not deliver ingress envelope to recipient: {error}"
-                    ))));
+                if let Some(mut pending) = self.pending_ingress_submits.remove(&request_id) {
+                    // Idle-timeout closes and NAT path migrations kill the
+                    // connection between exchanges; a fresh dial usually
+                    // succeeds immediately, so retry transient transport
+                    // failures instead of surfacing them to the sender. A
+                    // protocol mismatch is permanent and fails at once.
+                    let retryable = !matches!(
+                        error,
+                        request_response::OutboundFailure::UnsupportedProtocols
+                    );
+                    if retryable && pending.attempts_left > 0 {
+                        pending.attempts_left -= 1;
+                        info!(
+                            "Retrying ingress delivery to {} after transport failure ({} attempts left): {error}",
+                            pending.peer, pending.attempts_left
+                        );
+                        self.dispatch_ingress_submit(pending);
+                    } else {
+                        warn!("Outbound ingress-submit request failed: {error}");
+                        let _ = pending.response_tx.send(Err(NetworkError::Protocol(format!(
+                            "could not deliver ingress envelope to recipient: {error}"
+                        ))));
+                    }
+                } else {
+                    warn!("Outbound ingress-submit request failed: {error}");
                 }
             }
 
