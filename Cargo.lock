@@ -3466,7 +3466,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-core"
-version = "0.3.18"
+version = "0.3.19"
 dependencies = [
  "blake3",
  "chacha20poly1305",
@@ -3485,7 +3485,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-identity"
-version = "0.3.18"
+version = "0.3.19"
 dependencies = [
  "argon2",
  "chacha20poly1305",
@@ -3503,7 +3503,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-network"
-version = "0.3.18"
+version = "0.3.19"
 dependencies = [
  "anyhow",
  "ciborium",
@@ -3525,7 +3525,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-node"
-version = "0.3.18"
+version = "0.3.19"
 dependencies = [
  "anyhow",
  "clap",
@@ -3548,7 +3548,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-server"
-version = "0.3.18"
+version = "0.3.19"
 dependencies = [
  "axum",
  "axum-extra",
@@ -3573,7 +3573,7 @@ dependencies = [
 
 [[package]]
 name = "jolt-store"
-version = "0.3.18"
+version = "0.3.19"
 dependencies = [
  "jolt-core",
  "jolt-identity",
