@@ -204,3 +204,36 @@
   .doc-entry { grid-template-columns: 1fr; }
   .api-name { font-size: 16px; }
 }
+
+/* --- Code figures (filename-captioned blocks) ------------------------- */
+
+.code-figure { margin: 26px 0; }
+.code-figure figcaption {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 22px;
+  border-left: 2px solid var(--cyan);
+  background: var(--panel-strong);
+  color: var(--muted);
+  font: 10px "Cascadia Mono", monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.code-figure figcaption span:last-child { color: var(--faint); }
+.code-figure .doc-code { margin: 0; }
+
+/* --- Syntax highlighting (pygments token classes) --------------------- */
+
+.doc-code .c, .doc-code .c1, .doc-code .cm, .doc-code .cs { color: var(--faint); }
+.doc-code .k, .doc-code .kd, .doc-code .kr, .doc-code .kc,
+.doc-code .kn, .doc-code .ow, .doc-code .cp { color: var(--cyan); }
+.doc-code .kt, .doc-code .nc, .doc-code .nn, .doc-code .nb,
+.doc-code .nd, .doc-code .ne { color: #b9e3b4; }
+.doc-code .s, .doc-code .s1, .doc-code .s2, .doc-code .sb, .doc-code .sd,
+.doc-code .se, .doc-code .sr, .doc-code .ss, .doc-code .sx, .doc-code .sa { color: var(--green); }
+.doc-code .m, .doc-code .mi, .doc-code .mf, .doc-code .mh, .doc-code .mo,
+.doc-code .il, .doc-code .kp { color: var(--amber); }
+.doc-code .nf, .doc-code .fm { color: var(--text); }
+.doc-code .na, .doc-code .nt { color: #b9e3b4; }
+.doc-code .o, .doc-code .p { color: var(--muted); }
+.doc-code .err { color: inherit; border: 0; background: none; }

@@ -38,7 +38,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "docs": "typedoc",
-    "pack:release": "npm run build && npm pack"
+    "pack:release": "npm run build && npm pack",
+    "typecheck:guide": "tsc -p tsconfig.guide.json"
   },
   "peerDependencies": {
     "@tauri-apps/api": ">=2"
@@ -52,7 +53,9 @@
     "@tauri-apps/api": "^2.0.0",
     "typedoc": "^0.26.0",
     "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0",
+    "react": "^18.3.0",
+    "@types/react": "^18.3.0"
   },
   "typesVersions": {
     "*": {

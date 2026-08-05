@@ -111,6 +111,17 @@ grep -q "jolt-sdk-source-sha256.*${sdk_source_sha}" website/sdk/reference.html |
   exit 1
 }
 
+for guide_source in guides/*.md; do
+  guide_name="$(basename "$guide_source" .md)"
+  guide_includes="$(sed -n 's/^@include \([^ ]*\) as .*$/\1/p' "$guide_source")"
+  # shellcheck disable=SC2086 # include paths are word-split on purpose
+  guide_sha="$(cat "$guide_source" $guide_includes | sha256sum | cut -d' ' -f1)"
+  grep -q "jolt-guide-source-sha256.*${guide_sha}" "website/guides/${guide_name}.html" || {
+    echo "rendered guide is stale: website/guides/${guide_name}.html; run: python3 scripts/render-guides.py" >&2
+    exit 1
+  }
+done
+
 required_sdk_contract=(
   'href="sdk/"'
   'href="guides/app-development.html"'
