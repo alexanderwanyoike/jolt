@@ -4,7 +4,15 @@ name: Publish SDKs
 #   js-sdk-v<version>            publishes sdks/js to npm
 #   tauri-plugin-jolt-v<version> publishes sdks/tauri-plugin to crates.io
 # Each job verifies the tag matches the manifest version before publishing.
-# Required repository secrets: NPM_TOKEN, CARGO_REGISTRY_TOKEN.
+#
+# npm uses Trusted Publishing (OIDC): no token secret. One-time setup on
+# npmjs.com (package Settings, Trusted Publisher): GitHub Actions,
+# repository alexanderwanyoike/jolt, workflow publish-sdks.yml. The very
+# first publish of a brand-new package may need to be run once from a
+# logged-in machine (npm publish --access public in sdks/js) if npm's UI
+# only attaches trusted publishers to existing packages.
+#
+# crates.io still uses the CARGO_REGISTRY_TOKEN repository secret.
 
 on:
   push:
@@ -20,6 +28,10 @@ jobs:
     name: Publish JS SDK to npm
     if: startsWith(github.ref_name, 'js-sdk-v')
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      # Trusted Publishing: this workflow authenticates to npm via OIDC.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,15 +46,15 @@ jobs:
             echo "tag $GITHUB_REF_NAME does not match sdks/js version $pkg_version" >&2
             exit 1
           fi
+      - name: Update npm (OIDC support needs 11.5.1+)
+        run: npm install -g npm@latest
       - name: Test, build, publish
         working-directory: sdks/js
         run: |
           yarn install --frozen-lockfile
           yarn test
           yarn build
-          npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm publish --access public --provenance
 
   publish-crate:
     name: Publish tauri-plugin-jolt to crates.io
