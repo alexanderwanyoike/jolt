@@ -128,6 +128,13 @@ fn build_behaviour(
         )],
         request_response::Config::default(),
     );
+    let ingress_submit = request_response::cbor::Behaviour::new(
+        [(
+            StreamProtocol::new("/jolt/ingress/1.0.0"),
+            ProtocolSupport::Full,
+        )],
+        request_response::Config::default(),
+    );
 
     let mut kad_config = libp2p::kad::Config::new(StreamProtocol::new("/jolt/kad/1.0.0"));
     kad_config.set_query_timeout(Duration::from_secs(60));
@@ -145,6 +152,7 @@ fn build_behaviour(
         update_log_sync,
         device_writer_sync,
         relay_exchange,
+        ingress_submit,
         kademlia,
         identify,
     })

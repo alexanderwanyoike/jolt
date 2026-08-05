@@ -5,6 +5,8 @@ use jolt_core::{
     RelayRecordCapability, UpdateLogEntry,
 };
 
+use crate::command::IngressRecord;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentRequest {
     pub content_id: String,
@@ -93,6 +95,27 @@ pub enum RelayExchangeResponse {
 pub struct IdentityProviderCandidate {
     pub peer_id: String,
     pub addrs: Vec<String>,
+}
+
+/// Deliver a recipient-controlled ingress envelope to the recipient's own
+/// daemon over p2p. The recipient re-validates the envelope (signature and
+/// addressing) before queueing it, exactly as its trusted HTTP submit route
+/// does, so a hostile sender gains nothing beyond what HTTP submission allows.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngressSubmitRequest {
+    pub receiver_id: String,
+    pub encrypted_object: Vec<u8>,
+    pub expires_at: Option<u64>,
+}
+
+/// The recipient's verdict. `Accepted` carries the queued record (metadata
+/// only; the encrypted bytes never travel back). The sender must verify the
+/// record's `recipient_identity` is the identity it meant to reach - a
+/// delivery that lands anywhere else is a failure, never a success.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum IngressSubmitResponse {
+    Accepted { record: IngressRecord },
+    Rejected { error: String },
 }
 
 #[cfg(test)]

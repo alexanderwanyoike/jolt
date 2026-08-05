@@ -184,19 +184,19 @@ async fn publish_direct_ingress_reachability(
 }
 
 fn direct_ingress_reachability_endpoint(
-    api_bind: &str,
-    api_port: u16,
+    _api_bind: &str,
+    _api_port: u16,
     peer_id: String,
 ) -> LiveReachabilityEndpoint {
-    let host = if api_bind == "0.0.0.0" {
-        "127.0.0.1"
-    } else {
-        api_bind
-    };
+    // Ingress delivery is peer-to-peer: senders dial `peer_id` and speak
+    // /jolt/ingress/1.0.0. The record deliberately advertises no HTTP address.
+    // The daemon's /api/v1/ingress bind is loopback-only, and publishing it
+    // globally made pre-0.3.13 senders POST envelopes to their OWN daemon
+    // (#195); with no address advertised those senders fail loudly instead.
     LiveReachabilityEndpoint {
         transport: "jolt-http-ingress".to_string(),
         peer_id,
-        addresses: vec![format!("http://{host}:{api_port}/api/v1/ingress")],
+        addresses: Vec::new(),
         relay_hints: Vec::new(),
         protocols: vec!["recipient-ingress-v1".to_string()],
         max_payload_bytes: 1024 * 1024,
@@ -356,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_ingress_reachability_endpoint_advertises_local_http_ingress() {
+    fn direct_ingress_reachability_endpoint_advertises_p2p_ingress_only() {
         let endpoint = direct_ingress_reachability_endpoint(
             "127.0.0.1",
             9862,
@@ -365,25 +365,10 @@ mod tests {
 
         assert_eq!(endpoint.transport, "jolt-http-ingress");
         assert_eq!(endpoint.peer_id, "12D3KooWReachablePeer");
-        assert_eq!(
-            endpoint.addresses,
-            vec!["http://127.0.0.1:9862/api/v1/ingress"]
-        );
+        // No HTTP address: the loopback bind is meaningless off-machine, and
+        // advertising it made pre-0.3.13 senders deliver to themselves (#195).
+        assert!(endpoint.addresses.is_empty());
         assert_eq!(endpoint.protocols, vec!["recipient-ingress-v1"]);
         assert_eq!(endpoint.max_payload_bytes, 1024 * 1024);
-    }
-
-    #[test]
-    fn direct_ingress_reachability_endpoint_uses_loopback_for_wildcard_bind() {
-        let endpoint = direct_ingress_reachability_endpoint(
-            "0.0.0.0",
-            9862,
-            "12D3KooWReachablePeer".to_string(),
-        );
-
-        assert_eq!(
-            endpoint.addresses,
-            vec!["http://127.0.0.1:9862/api/v1/ingress"]
-        );
     }
 }
