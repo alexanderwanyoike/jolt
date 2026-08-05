@@ -963,3 +963,110 @@ async fn identity_head_gossip_resolves_common_lookup_without_forwarding() {
     r1_handle.abort();
     r2_handle.abort();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn two_nodes_deliver_ingress_over_p2p() {
+    // Regression test for #195: an ingress envelope addressed to a remote
+    // identity must queue on the RECIPIENT's daemon with the recipient's
+    // identity stamped on the record. The old HTTP delivery path posted to
+    // the loopback URL in the recipient's reachability record, which fed the
+    // envelope back to the sender's own daemon and stamped the sender's
+    // identity as recipient.
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
+
+    let dir_r = tempdir().unwrap();
+    let dir_s = tempdir().unwrap();
+
+    let recipient = NodeIdentity::generate();
+    let recipient_identity = recipient.identity_id();
+    let recipient_peer = recipient.peer_id();
+    let sender = NodeIdentity::generate();
+
+    // The envelope names the recipient identity; the wrapped key does not
+    // need to be decryptable for the queueing path under test.
+    let (recipient_key, _recipient_private) = jolt_core::generate_identity_encryption_keypair(
+        recipient_identity.clone(),
+        "key-1".to_string(),
+        unix_now(),
+    );
+    let envelope = jolt_core::EncryptedObjectEnvelope::encrypt(
+        sender.public_key_bytes(),
+        sender.identity_id(),
+        br#"{"schema":"spoke.follow_request.v1","id":"follow_req_test"}"#,
+        "application/json".to_string(),
+        Some("spoke.follow_request.v1".to_string()),
+        vec![jolt_core::EncryptedObjectRecipient {
+            identity: recipient_identity.clone(),
+            key: recipient_key,
+        }],
+        unix_now(),
+        |bytes| sender.sign(bytes),
+    )
+    .unwrap()
+    .to_bytes()
+    .unwrap();
+
+    let store_r = make_store(dir_r.path());
+    let mut node_r = NetworkNode::new_tcp(recipient, store_r, no_mdns_config()).unwrap();
+    node_r.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    let node_r = wait_for_listener(node_r).await;
+    let addr_r = node_r.listeners()[0].clone();
+
+    let store_s = make_store(dir_s.path());
+    let mut node_s = NetworkNode::new_tcp(sender, store_s, no_mdns_config()).unwrap();
+    node_s.dial(addr_r).unwrap();
+
+    let (tx_result, rx_result) = tokio::sync::oneshot::channel();
+
+    let mut node_r = node_r;
+    let node_r_handle = tokio::spawn(async move {
+        node_r.run_event_loop().await;
+    });
+
+    let node_s_handle = tokio::spawn(async move {
+        let peer = loop {
+            let event = tokio::time::timeout(Duration::from_secs(1), node_s.next_event()).await;
+            if let Ok(ev) = event {
+                node_s.handle_swarm_event(ev);
+            }
+            if let Some(peer) = node_s.connected_peers().first().cloned() {
+                break peer;
+            }
+        };
+        assert_eq!(peer, recipient_peer, "sender connected to the recipient");
+
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        node_s.send_ingress_to_peer(&peer, "p2p-live".to_string(), envelope, None, tx);
+
+        loop {
+            tokio::select! {
+                result = &mut rx => {
+                    let _ = tx_result.send(result);
+                    return;
+                }
+                event = node_s.next_event() => {
+                    node_s.handle_swarm_event(event);
+                }
+            }
+        }
+    });
+
+    let record = tokio::time::timeout(Duration::from_secs(15), rx_result)
+        .await
+        .expect("timed out waiting for ingress delivery")
+        .expect("sender task dropped result channel")
+        .expect("oneshot closed")
+        .expect("ingress delivery failed");
+
+    assert_eq!(
+        record.recipient_identity,
+        recipient_identity.to_string(),
+        "record must be stamped with the addressed recipient, not the sender"
+    );
+    assert_eq!(record.receiver_id, "p2p-live");
+    assert!(record.ingress_id.starts_with("ing_"));
+
+    node_r_handle.abort();
+    node_s_handle.abort();
+}

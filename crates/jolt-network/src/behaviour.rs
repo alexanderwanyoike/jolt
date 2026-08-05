@@ -4,7 +4,8 @@ use libp2p::swarm::NetworkBehaviour;
 
 use crate::protocol::{
     ContentRequest, ContentResponse, DeviceWriterSyncRequest, DeviceWriterSyncResponse,
-    RelayExchangeRequest, RelayExchangeResponse, UpdateLogRequest, UpdateLogResponse,
+    IngressSubmitRequest, IngressSubmitResponse, RelayExchangeRequest, RelayExchangeResponse,
+    UpdateLogRequest, UpdateLogResponse,
 };
 
 #[derive(NetworkBehaviour)]
@@ -16,6 +17,8 @@ pub struct JoltBehaviour {
         request_response::cbor::Behaviour<DeviceWriterSyncRequest, DeviceWriterSyncResponse>,
     pub relay_exchange:
         request_response::cbor::Behaviour<RelayExchangeRequest, RelayExchangeResponse>,
+    pub ingress_submit:
+        request_response::cbor::Behaviour<IngressSubmitRequest, IngressSubmitResponse>,
     pub kademlia: libp2p::kad::Behaviour<libp2p::kad::store::MemoryStore>,
     pub identify: libp2p::identify::Behaviour,
 }

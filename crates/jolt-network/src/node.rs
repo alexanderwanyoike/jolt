@@ -218,6 +218,10 @@ pub struct NetworkNode {
     local_encryption_key_published: bool,
     /// Recipient-controlled envelopes received by this daemon and awaiting a decision.
     pending_ingress: IngressQueue,
+    /// In-flight p2p ingress deliveries to remote recipients, keyed by the
+    /// outbound request id of the /jolt/ingress/1.0.0 exchange.
+    pending_ingress_submits:
+        HashMap<OutboundRequestId, oneshot::Sender<Result<IngressRecord, NetworkError>>>,
 }
 
 const RELAY_RECORD_TTL_SECS: u64 = 60 * 60;
@@ -290,6 +294,40 @@ impl NetworkNode {
 
     fn list_pending_ingress(&self) -> Vec<IngressRecord> {
         self.pending_ingress.list_pending()
+    }
+
+    /// Deliver an ingress envelope to a remote recipient's daemon over the
+    /// /jolt/ingress/1.0.0 request-response protocol. The result arrives via
+    /// `response_tx` once the recipient answers (or the exchange fails). Dials
+    /// the peer by id when not already connected; with the iroh transport a
+    /// bare /p2p multiaddr resolves through discovery.
+    pub fn send_ingress_to_peer(
+        &mut self,
+        peer: &libp2p::PeerId,
+        receiver_id: String,
+        encrypted_object: Vec<u8>,
+        expires_at: Option<u64>,
+        response_tx: oneshot::Sender<Result<IngressRecord, NetworkError>>,
+    ) {
+        if !self.swarm.is_connected(peer) {
+            let addr: libp2p::Multiaddr = format!("/p2p/{peer}")
+                .parse()
+                .expect("peer id renders a valid /p2p multiaddr");
+            if let Err(e) = self.swarm.dial(addr) {
+                tracing::debug!("Ingress delivery pre-dial to {peer} not started: {e}");
+            }
+        }
+        let request = crate::protocol::IngressSubmitRequest {
+            receiver_id,
+            encrypted_object,
+            expires_at,
+        };
+        let request_id = self
+            .swarm
+            .behaviour_mut()
+            .ingress_submit
+            .send_request(peer, request);
+        self.pending_ingress_submits.insert(request_id, response_tx);
     }
 
     fn accept_ingress(&mut self, ingress_id: &str) -> Result<IngressRecord, NetworkError> {

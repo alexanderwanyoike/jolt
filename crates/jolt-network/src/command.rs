@@ -67,6 +67,17 @@ pub enum DaemonCommand {
         expires_at: Option<u64>,
         response_tx: oneshot::Sender<Result<IngressRecord, NetworkError>>,
     },
+    /// Deliver an ingress envelope to a remote recipient's daemon over p2p.
+    /// Resolves and dials the peer, so unlike SubmitIngress this can fail on
+    /// connectivity; the caller must treat anything but an Accepted response
+    /// naming the intended recipient as a failed delivery.
+    SendIngressToPeer {
+        peer_id: String,
+        receiver_id: String,
+        encrypted_object: Vec<u8>,
+        expires_at: Option<u64>,
+        response_tx: oneshot::Sender<Result<IngressRecord, NetworkError>>,
+    },
     ListPendingIngress {
         response_tx: oneshot::Sender<Result<Vec<IngressRecord>, NetworkError>>,
     },
@@ -296,9 +307,12 @@ pub struct IngressRecord {
     pub size: u64,
     #[serde(skip)]
     pub encrypted_object: Vec<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // default: these are omitted from the wire when None, so deserializing a
+    // pending record (from the HTTP submit response or the p2p ingress-submit
+    // response) must tolerate their absence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accepted_at: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rejected_at: Option<u64>,
 }
 

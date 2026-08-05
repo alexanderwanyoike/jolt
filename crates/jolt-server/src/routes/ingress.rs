@@ -55,9 +55,52 @@ pub async fn send_ingress_by_identity(
     require_capability(&session, "ingress:send")?;
 
     let identity = recipient_identity(&req.recipient)?;
-    let endpoint =
-        resolve_live_ingress_endpoint(&state, &identity, req.encrypted_object.len()).await?;
-    let record = post_ingress(endpoint, req.encrypted_object, req.expires_at).await?;
+
+    // Self-delivery never touches the network: queue on our own daemon.
+    // active_identity() renders the suffixed address form; compare bare ids.
+    let local_identity = state.local_identities.active_identity().await;
+    let sending_to_self = local_identity
+        .as_deref()
+        .map(|active| active.trim_end_matches(".jolt") == identity.to_string())
+        .unwrap_or(false);
+    if sending_to_self {
+        let record = state
+            .daemon
+            .submit_ingress(
+                "direct-live".to_string(),
+                req.encrypted_object,
+                req.expires_at,
+            )
+            .await?;
+        return Ok(Json(record));
+    }
+
+    // Remote recipients are reached over p2p using the peer id their signed
+    // reachability record declares. Reachability records advertise an HTTP
+    // address too, but it is the daemon's own loopback bind and only ever
+    // valid on the recipient's machine; POSTing to it from here delivered
+    // envelopes to the sender's own daemon (#195).
+    let endpoint = resolve_live_ingress_peer(&state, &identity, req.encrypted_object.len()).await?;
+    let record = state
+        .daemon
+        .send_ingress_to_peer(
+            endpoint,
+            "p2p-live".to_string(),
+            req.encrypted_object,
+            req.expires_at,
+        )
+        .await?;
+
+    // A delivery only counts when the daemon that queued it answers for the
+    // identity we addressed. Anything else is a mis-delivery, never success.
+    if record.recipient_identity != identity.to_string() {
+        return Err(AppApiError::Network(
+            jolt_network::NetworkError::Protocol(format!(
+                "ingress envelope was accepted by {} instead of the addressed recipient",
+                record.recipient_identity
+            )),
+        ));
+    }
     Ok(Json(record))
 }
 
@@ -108,7 +151,9 @@ pub async fn reject_ingress(
     Ok(Json(record))
 }
 
-async fn resolve_live_ingress_endpoint(
+// Returns the peer id of the recipient's live ingress receiver, from its
+// signed reachability record.
+async fn resolve_live_ingress_peer(
     state: &AppState,
     identity: &IdentityId,
     object_bytes: usize,
@@ -141,45 +186,13 @@ async fn resolve_live_ingress_endpoint(
                     .any(|protocol| protocol == "recipient-ingress-v1")
                 && endpoint.max_payload_bytes >= object_bytes as u64
         })
-        .flat_map(|endpoint| endpoint.addresses)
-        .find(|address| address.starts_with("http://") || address.starts_with("https://"))
+        .map(|endpoint| endpoint.peer_id)
+        .find(|peer_id| !peer_id.trim().is_empty())
         .ok_or_else(|| {
             AppApiError::Network(jolt_network::NetworkError::InvalidInput(
                 "recipient has no usable live ingress receiver".to_string(),
             ))
         })
-}
-
-async fn post_ingress(
-    endpoint: String,
-    encrypted_object: Vec<u8>,
-    expires_at: Option<u64>,
-) -> Result<IngressRecord, AppApiError> {
-    let response = reqwest::Client::new()
-        .post(endpoint)
-        .json(&SubmitIngressRequest {
-            receiver_id: "direct-live".to_string(),
-            encrypted_object,
-            expires_at,
-        })
-        .send()
-        .await
-        .map_err(|err| {
-            AppApiError::Network(jolt_network::NetworkError::Protocol(err.to_string()))
-        })?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(AppApiError::Network(jolt_network::NetworkError::Protocol(
-            format!("recipient ingress endpoint returned {status}: {body}"),
-        )));
-    }
-
-    response
-        .json::<IngressRecord>()
-        .await
-        .map_err(|err| AppApiError::Network(jolt_network::NetworkError::Protocol(err.to_string())))
 }
 
 fn recipient_identity(raw: &str) -> Result<IdentityId, AppApiError> {
