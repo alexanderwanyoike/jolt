@@ -8,8 +8,13 @@ required=(
   website/index.html
   website/styles.css
   website/script.js
+  website/docs.css
   website/rfcs/index.html
+  website/sdk/index.html
+  website/sdk/reference.html
+  website/guides/app-development.html
   rfcs/README.md
+  sdks/js/docs/api.json
 )
 
 for file in "${required[@]}"; do
@@ -100,6 +105,29 @@ test "$rfc_count" -eq 7 || {
   exit 1
 }
 
+sdk_source_sha="$(sha256sum sdks/js/docs/api.json | cut -d' ' -f1)"
+grep -q "jolt-sdk-source-sha256.*${sdk_source_sha}" website/sdk/reference.html || {
+  echo "rendered SDK reference is stale: website/sdk/reference.html; run: python3 scripts/render-sdk-docs.py" >&2
+  exit 1
+}
+
+required_sdk_contract=(
+  'href="sdk/"'
+  'href="guides/app-development.html"'
+)
+
+for value in "${required_sdk_contract[@]}"; do
+  grep -Fq "$value" website/index.html || {
+    echo "website navigation is missing the SDK docs contract: $value" >&2
+    exit 1
+  }
+done
+
+grep -Fq 'yarn add jolt-sdk' website/sdk/index.html || {
+  echo "SDK page does not document the jolt-sdk install command" >&2
+  exit 1
+}
+
 required_rfc_library_contract=(
   'Protocol series · seven Internet-Drafts'
   '0001-0007'
@@ -124,7 +152,9 @@ grep -Fq 'https://github.com/alexanderwanyoike/spoke' website/index.html || {
 }
 
 em_dash="$(printf '\342\200\224')"
-for file in website/index.html website/rfcs/index.html scripts/render-rfcs.py scripts/verify-website.sh; do
+for file in website/index.html website/rfcs/index.html website/docs.css \
+  website/sdk/index.html website/sdk/reference.html website/guides/app-development.html \
+  scripts/render-rfcs.py scripts/render-sdk-docs.py scripts/verify-website.sh; do
   if grep -Fq "$em_dash" "$file"; then
     echo "house-style em dash remains in $file" >&2
     exit 1

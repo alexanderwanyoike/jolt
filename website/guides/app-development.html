@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="Build Chirp, a minimal twitter-style app on Jolt with Tauri: scoped sessions, append records, timelines, follow requests over ingress, and tests." />
+    <title>Jolt Guide | Building Chirp</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="../docs.css" />
+  </head>
+  <body class="doc-page">
+    <aside class="doc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>guide 01</small></span></a>
+      <dl>
+        <div><dt>App</dt><dd>Chirp</dd></div>
+        <div><dt>Stack</dt><dd>Tauri 2 · React</dd></div>
+        <div><dt>SDK</dt><dd>jolt-sdk</dd></div>
+      </dl>
+      <nav aria-label="Guide contents">
+        <ul class="toc">
+          <li class="toc-module"><a href="#why">Why every Jolt app is social</a></li>
+          <li class="toc-module"><a href="#scaffold">1 · Scaffold the app</a></li>
+          <li class="toc-module"><a href="#wire-up">2 · Add the SDK and the plugin</a></li>
+          <li class="toc-module"><a href="#session">3 · Request a scoped session</a></li>
+          <li class="toc-module"><a href="#chirps">4 · Chirps and timelines</a></li>
+          <li class="toc-module"><a href="#follows">5 · Follows over ingress</a></li>
+          <li class="toc-module"><a href="#testing">6 · Test it with the fake</a></li>
+          <li class="toc-module"><a href="#next">Where to go next</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <main class="doc-main">
+      <article class="doc-document">
+        <header class="doc-title">
+          <p>JOLT APP DEVELOPMENT GUIDE · 01</p>
+          <h1>Building Chirp</h1>
+          <p class="doc-lede">A minimal twitter-style app on Jolt, built with Tauri and React. By the end you will have an app that borrows the user's identity through a capability-scoped session, publishes signed posts, assembles a timeline from other people's nodes, exchanges follow requests through recipient-controlled ingress, and tests all of it against an in-memory fake. Requires a running <a href="../#download">Jolt Console</a> and the <a href="../sdk/">Jolt SDK</a>.</p>
+        </header>
+
+        <h2 id="why">Why every Jolt app is social</h2>
+        <p>Chirp has no backend, no user table, and no signup screen, and it does not need them. On Jolt, <strong>identity comes from the network</strong>: the local daemon holds the user's keys and signs everything Chirp publishes, so a "Chirp account" is just the user's existing Jolt identity wearing a different interface. And <strong>distribution comes from the network</strong>: anything Chirp publishes is resolvable and fetchable by any other node, and anything other identities publish under Chirp's paths is readable by your app.</p>
+        <p>That makes Jolt apps social by nature. The moment Chirp writes its first post, that post has a stable address any other app can read, and Chirp can read everyone else's. You are not building a silo with a network attached; you are building a lens over a network that already exists. The flip side is honest too: public publications are public. "Following" in Chirp is not permission to read (nobody needs permission to read public posts); it is a subscription list that decides whose posts your timeline assembles.</p>
+        <p>Chirp exercises the whole app surface specified in <a href="../rfcs/0007-app-sessions.html">JOLT-RFC-0007</a>: session bootstrap, signed publication, append records and enumeration, encrypted objects, and ingress.</p>
+
+        <h2 id="scaffold">1 · Scaffold a Tauri + React app</h2>
+        <p>Start from the standard Tauri scaffold with the React and TypeScript template:</p>
+        <pre class="doc-code"><code>yarn create tauri-app chirp --template react-ts
+cd chirp
+yarn
+yarn tauri dev</code></pre>
+        <p>You should see the template window open. Everything Jolt-specific happens in two places: <code>src-tauri/</code> (one plugin registration) and <code>src/</code> (the SDK calls).</p>
+
+        <h2 id="wire-up">2 · Add jolt-sdk and tauri-plugin-jolt</h2>
+        <p>Add the SDK:</p>
+        <pre class="doc-code"><code>yarn add jolt-sdk</code></pre>
+        <p>In a desktop shell the webview should not talk to the daemon directly; daemon calls go through audited Rust proxy commands. The <code>tauri-plugin-jolt</code> crate ships those commands so you never write them yourself. One Cargo dependency in <code>src-tauri/Cargo.toml</code>:</p>
+        <pre class="doc-code"><code>[dependencies]
+tauri-plugin-jolt = { git = "https://github.com/alexanderwanyoike/jolt" }</code></pre>
+        <p>One line in <code>src-tauri/src/lib.rs</code>:</p>
+        <pre class="doc-code"><code>pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_jolt::init())
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}</code></pre>
+        <p>And one permission in <code>src-tauri/capabilities/default.json</code>, next to the defaults the template generated:</p>
+        <pre class="doc-code"><code>{
+  "identifier": "default",
+  "windows": ["main"],
+  "permissions": ["core:default", "jolt:default"]
+}</code></pre>
+        <p>On the TypeScript side, the Tauri transport pairs with the plugin when you pass <code>{ plugin: true }</code>. The daemon base URL defaults to <code>http://127.0.0.1:9862</code>; set <code>JOLT_DAEMON_URL</code> to override it.</p>
+
+        <h2 id="session">3 · Request a scoped session</h2>
+        <p>Chirp now declares who it is and exactly what it wants to do. Capabilities follow the grammar of <a href="../rfcs/0007-app-sessions.html">RFC 0007</a>: an action, optionally narrowed to a path scope with at most one trailing wildcard. Chirp asks for the full set it will use in this guide, and nothing more; the daemon will refuse any call outside the granted set, and the user can narrow the grant further at approval time.</p>
+        <pre class="doc-code"><code>// src/jolt.ts
+import { createJoltClient } from "jolt-sdk";
+import { TauriTransport } from "jolt-sdk/transport-tauri";
+
+const TOKEN_KEY = "chirp.session-token";
+let token = localStorage.getItem(TOKEN_KEY) ?? "";
+
+export const jolt = createJoltClient({
+  transport: new TauriTransport({ plugin: true }),
+  getSessionToken: () => token,
+});
+
+export const CAPABILITIES = [
+  "publish:/chirp/*",            // write posts and the follow list
+  "publish:encrypted:/chirp/*",  // keep the sender's copy of ingress objects
+  "resolve:public",              // resolve .jolt addresses
+  "fetch:public",                // fetch content by content id
+  "enumerate:self:/chirp/*",     // list our own append records
+  "enumerate:any:/chirp/*",      // list other identities' /chirp/ records
+  "ingress:send",                // deliver follow requests
+  "ingress:read",                // list and open our pending inbox
+  "ingress:decide",              // accept or reject inbox envelopes
+];
+
+export async function connect(): Promise<string> {
+  const status = await jolt.getStatus();
+  if (token) {
+    try {
+      const session = await jolt.getCurrentSession();
+      if (session.status === "active") return status.identity_address;
+    } catch {
+      token = ""; // stored token was revoked or expired; ask again
+    }
+  }
+
+  const request = await jolt.requestSession({
+    appId: "chirp.example",
+    appName: "Chirp",
+    appOrigin: "tauri://chirp.example",
+    identity: status.identity_address,
+    capabilities: CAPABILITIES,
+  });
+
+  for (;;) {
+    const s = await jolt.getSessionRequestStatus(request.request_id);
+    if (s.status === "rejected") {
+      throw new Error("Chirp's session request was rejected in Jolt Console.");
+    }
+    if (s.session_token) {
+      token = s.session_token;
+      localStorage.setItem(TOKEN_KEY, token);
+      return status.identity_address;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}</code></pre>
+        <p>Run the app and call <code>connect()</code>. The request now sits pending on the daemon: open <strong>Jolt Console → Apps</strong>, find the pending "Chirp" request, review the capability list, and approve it. The poll loop picks up the token and Chirp is connected. The token is a bearer secret scoped to exactly these capabilities; if the user revokes the session in Console, every call starts failing with <code>JoltApiError</code> and <code>connect()</code> will request a fresh session on next launch.</p>
+
+        <h2 id="chirps">4 · Publish chirps, assemble timelines</h2>
+        <p>A chirp is an append record: <code>publishAppend</code> writes coexisting records that never overwrite each other, which is exactly what a feed of posts wants (and it keeps concurrent devices safe). Each chirp gets its own path under <code>/chirp/posts/</code>, and readers list them back with <code>enumerate</code>, never with resolve.</p>
+        <pre class="doc-code"><code>// src/chirp.ts
+import { makeId } from "jolt-sdk";
+import type { JoltAppendSdk, JoltSdk } from "jolt-sdk";
+
+export type Chirp = {
+  kind: "chirp";
+  id: string;
+  text: string;
+  postedAt: string; // ISO 8601
+};
+
+export function decodeChirp(value: unknown): Chirp | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record&lt;string, unknown&gt;;
+  return v.kind === "chirp" &amp;&amp;
+    typeof v.id === "string" &amp;&amp;
+    typeof v.text === "string" &amp;&amp;
+    typeof v.postedAt === "string"
+    ? { kind: "chirp", id: v.id, text: v.text, postedAt: v.postedAt }
+    : null;
+}
+
+export async function postChirp(
+  jolt: JoltAppendSdk,
+  text: string,
+  now: () =&gt; string = () =&gt; new Date().toISOString()
+) {
+  const id = makeId("chirp");
+  const chirp: Chirp = { kind: "chirp", id, text, postedAt: now() };
+  return jolt.publishAppend(`/chirp/posts/${id}`, chirp);
+}</code></pre>
+        <p>Note the shape of <code>postChirp</code>: it takes the narrow <code>JoltAppendSdk</code> interface rather than the whole client, and the clock is injectable. Every client sub-interface (<code>JoltSdk</code>, <code>JoltAppendSdk</code>, <code>JoltEncryptedSdk</code>, <code>JoltIngressSdk</code>) is intentionally small so features declare exactly the capability they use; this pays off in section 6.</p>
+        <p>The timeline enumerates each followed identity's <code>/chirp/posts/</code> records, fetches each content id, and decodes it through <code>decodeChirp</code>. Reads are tolerant: a record that is missing, unreachable, or not a valid chirp simply comes back <code>null</code> and is skipped, so one bad record never breaks the feed.</p>
+        <pre class="doc-code"><code>export type TimelineEntry = { author: string; chirp: Chirp };
+
+export async function loadTimeline(
+  jolt: JoltSdk &amp; JoltAppendSdk,
+  identities: string[]
+): Promise&lt;TimelineEntry[]&gt; {
+  const entries: TimelineEntry[] = [];
+  for (const identity of identities) {
+    const records = await jolt.enumerate(identity, "/chirp/posts/");
+    for (const record of records) {
+      const read = await jolt.readContent(
+        record.contentId,
+        { identity, path: record.path },
+        record.deviceSequence,
+        decodeChirp
+      );
+      if (read) entries.push({ author: identity, chirp: read.value });
+    }
+  }
+  return entries.sort((a, b) =&gt; b.chirp.postedAt.localeCompare(a.chirp.postedAt));
+}</code></pre>
+        <p>Whose posts go in the timeline? Chirp keeps a follow list as a singleton publication at <code>/chirp/follows</code>: a plain JSON object updated with <code>publishJson</code> (last writer wins is fine for a settings-like object). It is published under your identity, so any Chirp instance on any device, and any other app the user tries later, sees the same list.</p>
+        <pre class="doc-code"><code>export type Follows = { kind: "chirp.follows"; identities: string[] };
+
+export function decodeFollows(value: unknown): Follows | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record&lt;string, unknown&gt;;
+  return v.kind === "chirp.follows" &amp;&amp;
+    Array.isArray(v.identities) &amp;&amp;
+    v.identities.every((entry) =&gt; typeof entry === "string")
+    ? { kind: "chirp.follows", identities: v.identities as string[] }
+    : null;
+}
+
+export async function follow(jolt: JoltSdk, me: string, them: string) {
+  const current = await jolt.read({ identity: me, path: "/chirp/follows" }, decodeFollows);
+  const identities = new Set(current?.value.identities ?? []);
+  identities.add(them);
+  await jolt.publishJson("/chirp/follows", {
+    kind: "chirp.follows",
+    identities: [...identities].sort(),
+  });
+}</code></pre>
+
+        <h2 id="follows">5 · Follow requests over ingress</h2>
+        <p>Following someone requires no permission: their posts are public, and <code>follow()</code> above is enough to read them. What ingress adds is the social handshake, telling someone you exist without spam. On Jolt, one identity cannot write into another identity's state; the only way to hand an object to someone else is the <strong>recipient-controlled ingress door</strong>: the sender encrypts an object to the recipient and delivers it to the recipient's daemon, where it waits in a pending queue until the recipient's app opens it and decides.</p>
+        <p><code>sendObject</code> does the sender's half in one call: it encrypt-publishes the object at the given path (that is the sender's own copy, under <code>publish:encrypted:/chirp/*</code>), then delivers the envelope to the recipient's daemon.</p>
+        <pre class="doc-code"><code>// src/follows.ts
+import { makeId } from "jolt-sdk";
+import type { JoltIngressSdk } from "jolt-sdk";
+
+export type FollowRequest = {
+  kind: "chirp.follow-request";
+  from: string;
+  note?: string;
+};
+
+export function decodeFollowRequest(value: unknown): FollowRequest | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record&lt;string, unknown&gt;;
+  return v.kind === "chirp.follow-request" &amp;&amp; typeof v.from === "string"
+    ? {
+        kind: "chirp.follow-request",
+        from: v.from,
+        note: typeof v.note === "string" ? v.note : undefined,
+      }
+    : null;
+}
+
+export async function sendFollowRequest(
+  jolt: JoltIngressSdk,
+  me: string,
+  them: string,
+  note?: string
+) {
+  const request: FollowRequest = { kind: "chirp.follow-request", from: me, note };
+  await jolt.sendObject(them, `/chirp/outbox/${makeId("follow")}`, request);
+}</code></pre>
+        <p>On the receiving side, Chirp lists the pending queue, opens each envelope to see what it is, and decides. <code>openIngress</code> decrypts without deciding, so the app can classify the payload first; the transport layer does not know or care what a "follow request" is, classifying payloads is the app's job. Envelopes that are not Chirp objects are left alone for whatever app they belong to.</p>
+        <pre class="doc-code"><code>export type InboxDecision = (request: FollowRequest) =&gt; Promise&lt;boolean&gt;;
+
+export async function reviewInbox(jolt: JoltIngressSdk, decide: InboxDecision) {
+  const accepted: FollowRequest[] = [];
+  for (const record of await jolt.listPendingIngress()) {
+    const payload = await jolt.openIngress(record.ingress_id);
+    const request = decodeFollowRequest(payload);
+    if (!request) continue; // not a Chirp object; leave it pending
+    if (request.from !== record.sender_identity) {
+      await jolt.rejectIngress(record.ingress_id); // claimed sender must match the envelope
+      continue;
+    }
+    if (await decide(request)) {
+      await jolt.acceptIngress(record.ingress_id);
+      accepted.push(request);
+    } else {
+      await jolt.rejectIngress(record.ingress_id);
+    }
+  }
+  return accepted;
+}</code></pre>
+        <p>A typical Chirp flow wires the two together: when Bob accepts Alice's follow request, Chirp calls <code>follow(jolt, bob, request.from)</code> so Bob follows back, or simply shows Alice in a "your followers" view. Either way the decision stays with the recipient; nothing lands in Bob's world without Bob's daemon holding it at the door first.</p>
+
+        <h2 id="testing">6 · Test it all with the fake</h2>
+        <p>Because every Chirp function takes a client interface instead of reaching for a global, all of the flows above run against <code>createFakeJolt</code>: a deterministic in-memory implementation of the full <code>JoltClient</code> with no daemon and no network. Publishes land in an in-memory store, enumeration lists them back, sends are recorded, and <code>deliverIngress</code> injects incoming envelopes as if a remote sender delivered them.</p>
+        <pre class="doc-code"><code>// src/chirp.test.ts
+import { describe, expect, it } from "vitest";
+import { createFakeJolt } from "jolt-sdk/testing";
+
+import { follow, loadTimeline, postChirp, decodeFollows } from "./chirp";
+import { reviewInbox, sendFollowRequest } from "./follows";
+
+describe("chirp", () =&gt; {
+  it("publishes chirps and projects a timeline, newest first", async () =&gt; {
+    const { client, identity } = createFakeJolt("alice.jolt");
+    await postChirp(client, "first!", () =&gt; "2026-08-05T10:00:00Z");
+    await postChirp(client, "second!", () =&gt; "2026-08-05T11:00:00Z");
+
+    const timeline = await loadTimeline(client, [identity]);
+    expect(timeline.map((entry) =&gt; entry.chirp.text)).toEqual(["second!", "first!"]);
+    expect(timeline.every((entry) =&gt; entry.author === "alice.jolt")).toBe(true);
+  });
+
+  it("records follow requests on the sender's side", async () =&gt; {
+    const { client, sent } = createFakeJolt("alice.jolt");
+    await sendFollowRequest(client, "alice.jolt", "bob.jolt", "hi!");
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].recipient).toBe("bob.jolt");
+    expect(sent[0].body).toMatchObject({ kind: "chirp.follow-request", from: "alice.jolt" });
+  });
+
+  it("accepts a follow request from the inbox and follows back", async () =&gt; {
+    const { client, identity, deliverIngress } = createFakeJolt("bob.jolt");
+    deliverIngress({
+      sender: "alice.jolt",
+      body: { kind: "chirp.follow-request", from: "alice.jolt" },
+    });
+
+    const accepted = await reviewInbox(client, async () =&gt; true);
+    expect(accepted.map((request) =&gt; request.from)).toEqual(["alice.jolt"]);
+    expect(await client.listPendingIngress()).toHaveLength(0);
+
+    await follow(client, identity, accepted[0].from);
+    const follows = await client.read(
+      { identity, path: "/chirp/follows" },
+      decodeFollows
+    );
+    expect(follows?.value.identities).toEqual(["alice.jolt"]);
+  });
+
+  it("rejects envelopes whose claimed sender does not match", async () =&gt; {
+    const { client, deliverIngress } = createFakeJolt("bob.jolt");
+    deliverIngress({
+      sender: "mallory.jolt",
+      body: { kind: "chirp.follow-request", from: "alice.jolt" },
+    });
+
+    const accepted = await reviewInbox(client, async () =&gt; true);
+    expect(accepted).toHaveLength(0);
+    expect(await client.listPendingIngress()).toHaveLength(0);
+  });
+});</code></pre>
+        <p>These tests exercise Chirp's schemas and flows, not cryptography: the fake simulates encryption by recording recipients and storing plaintext, which is exactly the right level for app tests. The same code runs unchanged against the real daemon because <code>createFakeJolt</code> satisfies <code>JoltClient</code> and every sub-interface.</p>
+
+        <h2 id="next">Where to go next</h2>
+        <ul>
+          <li>The <a href="../sdk/reference.html">SDK reference</a> documents every exported class, interface, function, and type, including the typed <code>operations</code> layer for endpoints the client does not wrap (binary publish, raw ingress send).</li>
+          <li><a href="../rfcs/0007-app-sessions.html">JOLT-RFC-0007</a> specifies the session and capability model Chirp just used, including the grants this guide did not need: <code>inventory</code>, <code>pin:own</code>, <code>encrypt</code>, and <code>decrypt</code>.</li>
+          <li><a href="../rfcs/0003-device-writer-logs.html">JOLT-RFC-0003</a> explains why append records from several devices merge deterministically, which is what made <code>publishAppend</code> safe to call from anywhere.</li>
+          <li>For private content between chirpers, look at <code>publishEncryptedJson</code> and <code>readEncrypted</code> in the reference, backed by <a href="../rfcs/0004-encrypted-device-access.html">JOLT-RFC-0004</a>.</li>
+        </ul>
+
+        <footer class="document-footer">
+          <a href="../sdk/">← SDK overview</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/tree/dev/sdks/js">SDK source ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>
