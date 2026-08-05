@@ -1,0 +1,47 @@
+.chirp {
+  max-width: 36rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  font-family: system-ui, sans-serif;
+  text-align: left;
+}
+
+.chirp .identity {
+  font-family: monospace;
+  color: #4b8;
+}
+
+.chirp form {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.chirp textarea,
+.chirp input {
+  flex: 1;
+  padding: 0.5rem;
+  font: inherit;
+}
+
+.chirp article {
+  border-top: 1px solid #ccc3;
+  padding: 0.75rem 0;
+}
+
+.chirp article header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.chirp .request {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chirp .error {
+  color: #c66;
+}

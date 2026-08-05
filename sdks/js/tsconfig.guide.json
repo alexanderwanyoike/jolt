@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "jolt-sdk": ["./src/index.ts"],
+      "jolt-sdk/transport-http": ["./src/transport-http.ts"],
+      "jolt-sdk/transport-tauri": ["./src/transport-tauri.ts"],
+      "jolt-sdk/testing": ["./src/testing.ts"]
+    }
+  },
+  "include": ["guide/src"]
+}
