@@ -12,7 +12,10 @@ name: Publish SDKs
 # logged-in machine (npm publish --access public in sdks/js) if npm's UI
 # only attaches trusted publishers to existing packages.
 #
-# crates.io still uses the CARGO_REGISTRY_TOKEN repository secret.
+# crates.io also uses Trusted Publishing: configure it on the crate's
+# Settings page (GitHub repository alexanderwanyoike/jolt, workflow
+# publish-sdks.yml); the auth action exchanges the workflow's OIDC
+# identity for a short-lived publish token. No long-lived secrets.
 
 on:
   push:
@@ -60,6 +63,10 @@ jobs:
     name: Publish tauri-plugin-jolt to crates.io
     if: startsWith(github.ref_name, 'tauri-plugin-jolt-v')
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      # Trusted Publishing: this workflow authenticates to crates.io via OIDC.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - name: Install Tauri system dependencies
@@ -78,9 +85,12 @@ jobs:
             echo "tag $GITHUB_REF_NAME does not match sdks/tauri-plugin version $crate_version" >&2
             exit 1
           fi
+      - name: Authenticate with crates.io (OIDC)
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
       - name: Test and publish
         run: |
           cargo test -p tauri-plugin-jolt
           cargo publish -p tauri-plugin-jolt
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
