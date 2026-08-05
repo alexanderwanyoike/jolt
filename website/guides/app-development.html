@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d0f0f" />
-    <meta name="description" content="Build Chirp, a minimal twitter-style app on Jolt with Tauri: scoped sessions, append records, timelines, follow requests over ingress, and tests." />
+    <meta name="description" content="Build Chirp, a minimal twitter-style app on Jolt with Tauri: scoped sessions, append records, timelines, follow requests over ingress, a working UI, and tests." />
+    <meta name="jolt-guide-source-sha256" content="62ccb10337c0c4fb89b36143492ab91dd196aa5d257f179678f21d5614cd04e5" />
     <title>Jolt Guide | Building Chirp</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -19,16 +20,7 @@
         <div><dt>SDK</dt><dd>jolt-sdk</dd></div>
       </dl>
       <nav aria-label="Guide contents">
-        <ul class="toc">
-          <li class="toc-module"><a href="#why">Why every Jolt app is social</a></li>
-          <li class="toc-module"><a href="#scaffold">1 · Scaffold the app</a></li>
-          <li class="toc-module"><a href="#wire-up">2 · Add the SDK and the plugin</a></li>
-          <li class="toc-module"><a href="#session">3 · Request a scoped session</a></li>
-          <li class="toc-module"><a href="#chirps">4 · Chirps and timelines</a></li>
-          <li class="toc-module"><a href="#follows">5 · Follows over ingress</a></li>
-          <li class="toc-module"><a href="#testing">6 · Test it with the fake</a></li>
-          <li class="toc-module"><a href="#next">Where to go next</a></li>
-        </ul>
+        <ul class="toc"><li class="toc-module"><a href="#why-every-jolt-app-is-social">Why every Jolt app is social</a></li><li class="toc-module"><a href="#1-scaffold-a-tauri-react-app">1 · Scaffold a Tauri + React app</a></li><li class="toc-module"><a href="#2-add-jolt-sdk-and-tauri-plugin-jolt">2 · Add jolt-sdk and tauri-plugin-jolt</a></li><li class="toc-module"><a href="#3-request-a-scoped-session">3 · Request a scoped session</a></li><li class="toc-module"><a href="#4-publish-chirps-assemble-timelines">4 · Publish chirps, assemble timelines</a></li><li class="toc-module"><a href="#5-follow-requests-over-ingress">5 · Follow requests over ingress</a></li><li class="toc-module"><a href="#6-the-ui">6 · The UI</a></li><li class="toc-module"><a href="#7-test-it-all-with-the-fake">7 · Test it all with the fake</a></li><li class="toc-module"><a href="#8-run-it-with-a-friend">8 · Run it with a friend</a></li><li class="toc-module"><a href="#where-to-go-next">Where to go next</a></li></ul>
       </nav>
     </aside>
     <main class="doc-main">
@@ -36,313 +28,496 @@
         <header class="doc-title">
           <p>JOLT APP DEVELOPMENT GUIDE · 01</p>
           <h1>Building Chirp</h1>
-          <p class="doc-lede">A minimal twitter-style app on Jolt, built with Tauri and React. By the end you will have an app that borrows the user's identity through a capability-scoped session, publishes signed posts, assembles a timeline from other people's nodes, exchanges follow requests through recipient-controlled ingress, and tests all of it against an in-memory fake. Requires a running <a href="../#download">Jolt Console</a> and the <a href="../sdk/">Jolt SDK</a>.</p>
+          <p class="doc-lede">A minimal twitter-style app on Jolt, built with Tauri and React. By the end you will have a running desktop app that borrows the user's identity through a capability-scoped session, publishes signed posts, assembles a timeline from other people's nodes, exchanges follow requests through recipient-controlled ingress, and tests all of it against an in-memory fake. Requires a running <a href="../#download">Jolt Console</a> and the <a href="../sdk/">Jolt SDK</a>.</p>
+<p>Every code file on this page is lifted verbatim from <a href="https://github.com/alexanderwanyoike/jolt/tree/dev/sdks/js/guide"><code>sdks/js/guide</code></a> in the Jolt repository, where it is type-checked and unit-tested against the SDK on every change. If you follow along file by file, you end up with the same app.</p>
+
         </header>
-
-        <h2 id="why">Why every Jolt app is social</h2>
-        <p>Chirp has no backend, no user table, and no signup screen, and it does not need them. On Jolt, <strong>identity comes from the network</strong>: the local daemon holds the user's keys and signs everything Chirp publishes, so a "Chirp account" is just the user's existing Jolt identity wearing a different interface. And <strong>distribution comes from the network</strong>: anything Chirp publishes is resolvable and fetchable by any other node, and anything other identities publish under Chirp's paths is readable by your app.</p>
-        <p>That makes Jolt apps social by nature. The moment Chirp writes its first post, that post has a stable address any other app can read, and Chirp can read everyone else's. You are not building a silo with a network attached; you are building a lens over a network that already exists. The flip side is honest too: public publications are public. "Following" in Chirp is not permission to read (nobody needs permission to read public posts); it is a subscription list that decides whose posts your timeline assembles.</p>
-        <p>Chirp exercises the whole app surface specified in <a href="../rfcs/0007-app-sessions.html">JOLT-RFC-0007</a>: session bootstrap, signed publication, append records and enumeration, encrypted objects, and ingress.</p>
-
-        <h2 id="scaffold">1 · Scaffold a Tauri + React app</h2>
-        <p>Start from the standard Tauri scaffold with the React and TypeScript template:</p>
-        <pre class="doc-code"><code>yarn create tauri-app chirp --template react-ts
-cd chirp
+        <h2 id="why-every-jolt-app-is-social">Why every Jolt app is social</h2>
+<p>Chirp has no backend, no user table, and no signup screen, and it does not need them. On Jolt, <strong>identity comes from the network</strong>: the local daemon holds the user's keys and signs everything Chirp publishes, so a "Chirp account" is just the user's existing Jolt identity wearing a different interface. And <strong>distribution comes from the network</strong>: anything Chirp publishes is resolvable and fetchable by any other node, and anything other identities publish under Chirp's paths is readable by your app.</p>
+<p>That makes Jolt apps social by nature. The moment Chirp writes its first post, that post has a stable address any other app can read, and Chirp can read everyone else's. You are not building a silo with a network attached; you are building a lens over a network that already exists. The flip side is honest too: public publications are public. "Following" in Chirp is not permission to read (nobody needs permission to read public posts); it is a subscription list that decides whose posts your timeline assembles.</p>
+<p>Chirp exercises the whole app surface specified in <a href="../rfcs/0007-app-sessions.html">JOLT-RFC-0007</a>: session bootstrap, signed publication, append records and enumeration, encrypted objects, and ingress.</p>
+<h2 id="1-scaffold-a-tauri-react-app">1 · Scaffold a Tauri + React app</h2>
+<p>Start from the standard Tauri scaffold with the React and TypeScript template:</p>
+<pre class="doc-code"><code>yarn<span class="w"> </span>create<span class="w"> </span>tauri-app<span class="w"> </span>chirp<span class="w"> </span>--template<span class="w"> </span>react-ts
+<span class="nb">cd</span><span class="w"> </span>chirp
 yarn
-yarn tauri dev</code></pre>
-        <p>You should see the template window open. Everything Jolt-specific happens in two places: <code>src-tauri/</code> (one plugin registration) and <code>src/</code> (the SDK calls).</p>
+yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
+<p>You should see the template window open. Everything Jolt-specific happens in two places: <code>src-tauri/</code> (one plugin registration) and <code>src/</code> (the SDK calls). By the end of this guide you will have touched exactly seven files:</p>
+<pre class="doc-code"><code>chirp/
+├── src-tauri/
+│   ├── Cargo.toml                    # add one dependency
+│   ├── capabilities/default.json     # add one permission
+│   └── src/lib.rs                    # add one line
+└── src/
+    ├── jolt.ts                       # client + session  (section 3)
+    ├── chirp.ts                      # posts + timeline  (section 4)
+    ├── follows.ts                    # ingress handshake (section 5)
+    ├── App.tsx                       # the UI            (section 6)
+    └── App.css                       # replace the scaffold&#x27;s styles</code></pre>
+<h2 id="2-add-jolt-sdk-and-tauri-plugin-jolt">2 · Add jolt-sdk and tauri-plugin-jolt</h2>
+<p>Add the SDK:</p>
+<pre class="doc-code"><code>yarn<span class="w"> </span>add<span class="w"> </span>jolt-sdk</code></pre>
+<p>In a desktop shell the webview should not talk to the daemon directly; daemon calls go through audited Rust proxy commands. The <a href="https://crates.io/crates/tauri-plugin-jolt"><code>tauri-plugin-jolt</code></a> crate ships those commands so you never write them yourself. One dependency in <code>src-tauri/Cargo.toml</code>, next to the tauri dependencies the template generated:</p>
+<figure class="code-figure"><figcaption><span>src-tauri/Cargo.toml</span><span>toml</span></figcaption><pre class="doc-code"><code><span class="k">[dependencies]</span>
+<span class="n">tauri-plugin-jolt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;0.1&quot;</span></code></pre></figure>
+<p>One line in the builder in <code>src-tauri/src/lib.rs</code>:</p>
+<figure class="code-figure"><figcaption><span>src-tauri/src/lib.rs</span><span>rust</span></figcaption><pre class="doc-code"><code><span class="cp">#[cfg_attr(mobile, tauri::mobile_entry_point)]</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">fn</span> <span class="nf">run</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">tauri</span>::<span class="n">Builder</span>::<span class="n">default</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="n">plugin</span><span class="p">(</span><span class="n">tauri_plugin_jolt</span>::<span class="n">init</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="n">tauri</span>::<span class="n">generate_context</span><span class="o">!</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="n">expect</span><span class="p">(</span><span class="s">&quot;error while running tauri application&quot;</span><span class="p">);</span>
+<span class="p">}</span></code></pre></figure>
+<p>And one permission in <code>src-tauri/capabilities/default.json</code>, next to the defaults the template generated:</p>
+<figure class="code-figure"><figcaption><span>src-tauri/capabilities/default.json</span><span>json</span></figcaption><pre class="doc-code"><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;identifier&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;default&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;windows&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;main&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;permissions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;core:default&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;jolt:default&quot;</span><span class="p">]</span>
+<span class="p">}</span></code></pre></figure>
+<p>On the TypeScript side, the Tauri transport pairs with the plugin when you pass <code>{ plugin: true }</code>, which you will do in the next section. The plugin reaches the daemon at <code>http://127.0.0.1:9862</code>; set <code>JOLT_DAEMON_URL</code> to override it.</p>
+<h2 id="3-request-a-scoped-session">3 · Request a scoped session</h2>
+<p>Chirp now declares who it is and exactly what it wants to do. Capabilities follow the grammar of <a href="../rfcs/0007-app-sessions.html">RFC 0007</a>: an action, optionally narrowed to a path scope with at most one trailing wildcard. Chirp asks for the full set it will use in this guide, and nothing more; the daemon will refuse any call outside the granted set, and the user can narrow the grant further at approval time.</p>
+<figure class="code-figure"><figcaption><span>src/jolt.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">createJoltClient</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">TauriTransport</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/transport-tauri&quot;</span><span class="p">;</span>
 
-        <h2 id="wire-up">2 · Add jolt-sdk and tauri-plugin-jolt</h2>
-        <p>Add the SDK:</p>
-        <pre class="doc-code"><code>yarn add jolt-sdk</code></pre>
-        <p>In a desktop shell the webview should not talk to the daemon directly; daemon calls go through audited Rust proxy commands. The <code>tauri-plugin-jolt</code> crate ships those commands so you never write them yourself. One Cargo dependency in <code>src-tauri/Cargo.toml</code>:</p>
-        <pre class="doc-code"><code>[dependencies]
-tauri-plugin-jolt = { git = "https://github.com/alexanderwanyoike/jolt" }</code></pre>
-        <p>One line in <code>src-tauri/src/lib.rs</code>:</p>
-        <pre class="doc-code"><code>pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_jolt::init())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}</code></pre>
-        <p>And one permission in <code>src-tauri/capabilities/default.json</code>, next to the defaults the template generated:</p>
-        <pre class="doc-code"><code>{
-  "identifier": "default",
-  "windows": ["main"],
-  "permissions": ["core:default", "jolt:default"]
-}</code></pre>
-        <p>On the TypeScript side, the Tauri transport pairs with the plugin when you pass <code>{ plugin: true }</code>. The daemon base URL defaults to <code>http://127.0.0.1:9862</code>; set <code>JOLT_DAEMON_URL</code> to override it.</p>
+<span class="kd">const</span><span class="w"> </span><span class="nx">TOKEN_KEY</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;chirp.session-token&quot;</span><span class="p">;</span>
+<span class="kd">let</span><span class="w"> </span><span class="nx">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">localStorage</span><span class="p">.</span><span class="nx">getItem</span><span class="p">(</span><span class="nx">TOKEN_KEY</span><span class="p">)</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">;</span>
 
-        <h2 id="session">3 · Request a scoped session</h2>
-        <p>Chirp now declares who it is and exactly what it wants to do. Capabilities follow the grammar of <a href="../rfcs/0007-app-sessions.html">RFC 0007</a>: an action, optionally narrowed to a path scope with at most one trailing wildcard. Chirp asks for the full set it will use in this guide, and nothing more; the daemon will refuse any call outside the granted set, and the user can narrow the grant further at approval time.</p>
-        <pre class="doc-code"><code>// src/jolt.ts
-import { createJoltClient } from "jolt-sdk";
-import { TauriTransport } from "jolt-sdk/transport-tauri";
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">jolt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">createJoltClient</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">transport</span><span class="o">:</span><span class="w"> </span><span class="kt">new</span><span class="w"> </span><span class="nx">TauriTransport</span><span class="p">({</span><span class="w"> </span><span class="nx">plugin</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="w"> </span><span class="p">}),</span>
+<span class="w">  </span><span class="nx">getSessionToken</span><span class="o">:</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">token</span><span class="p">,</span>
+<span class="p">});</span>
 
-const TOKEN_KEY = "chirp.session-token";
-let token = localStorage.getItem(TOKEN_KEY) ?? "";
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">CAPABILITIES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="s2">&quot;publish:/chirp/*&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// write posts and the follow list</span>
+<span class="w">  </span><span class="s2">&quot;publish:encrypted:/chirp/*&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// keep the sender&#39;s copy of ingress objects</span>
+<span class="w">  </span><span class="s2">&quot;resolve:public&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// resolve .jolt addresses</span>
+<span class="w">  </span><span class="s2">&quot;fetch:public&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// fetch content by content id</span>
+<span class="w">  </span><span class="s2">&quot;enumerate:self:/chirp/*&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// list our own append records</span>
+<span class="w">  </span><span class="s2">&quot;enumerate:any:/chirp/*&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// list other identities&#39; /chirp/ records</span>
+<span class="w">  </span><span class="s2">&quot;ingress:send&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// deliver follow requests</span>
+<span class="w">  </span><span class="s2">&quot;ingress:read&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// list and open our pending inbox</span>
+<span class="w">  </span><span class="s2">&quot;ingress:decide&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// accept or reject inbox envelopes</span>
+<span class="p">];</span>
 
-export const jolt = createJoltClient({
-  transport: new TauriTransport({ plugin: true }),
-  getSessionToken: () => token,
-});
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">connect</span><span class="p">()</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="kt">string</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">getStatus</span><span class="p">();</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">token</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="kd">const</span><span class="w"> </span><span class="nx">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">getCurrentSession</span><span class="p">();</span>
+<span class="w">      </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">session</span><span class="p">.</span><span class="nx">status</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;active&quot;</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nx">status</span><span class="p">.</span><span class="nx">identity_address</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nx">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">;</span><span class="w"> </span><span class="c1">// stored token was revoked or expired; ask again</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
 
-export const CAPABILITIES = [
-  "publish:/chirp/*",            // write posts and the follow list
-  "publish:encrypted:/chirp/*",  // keep the sender's copy of ingress objects
-  "resolve:public",              // resolve .jolt addresses
-  "fetch:public",                // fetch content by content id
-  "enumerate:self:/chirp/*",     // list our own append records
-  "enumerate:any:/chirp/*",      // list other identities' /chirp/ records
-  "ingress:send",                // deliver follow requests
-  "ingress:read",                // list and open our pending inbox
-  "ingress:decide",              // accept or reject inbox envelopes
-];
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">request</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">requestSession</span><span class="p">({</span>
+<span class="w">    </span><span class="nx">appId</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp.example&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">appName</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Chirp&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">appOrigin</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;tauri://chirp.example&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="kt">status.identity_address</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">capabilities</span><span class="o">:</span><span class="w"> </span><span class="kt">CAPABILITIES</span><span class="p">,</span>
+<span class="w">  </span><span class="p">});</span>
 
-export async function connect(): Promise<string> {
-  const status = await jolt.getStatus();
-  if (token) {
-    try {
-      const session = await jolt.getCurrentSession();
-      if (session.status === "active") return status.identity_address;
-    } catch {
-      token = ""; // stored token was revoked or expired; ask again
-    }
-  }
+<span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(;;)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">s</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">getSessionRequestStatus</span><span class="p">(</span><span class="nx">request</span><span class="p">.</span><span class="nx">request_id</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">s</span><span class="p">.</span><span class="nx">status</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;rejected&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="k">throw</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="ne">Error</span><span class="p">(</span><span class="s2">&quot;Chirp&#39;s session request was rejected in Jolt Console.&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">s</span><span class="p">.</span><span class="nx">session_token</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nx">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">s</span><span class="p">.</span><span class="nx">session_token</span><span class="p">;</span>
+<span class="w">      </span><span class="nx">localStorage</span><span class="p">.</span><span class="nx">setItem</span><span class="p">(</span><span class="nx">TOKEN_KEY</span><span class="p">,</span><span class="w"> </span><span class="nx">token</span><span class="p">);</span>
+<span class="w">      </span><span class="k">return</span><span class="w"> </span><span class="nx">status</span><span class="p">.</span><span class="nx">identity_address</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nb">Promise</span><span class="p">((</span><span class="nx">resolve</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">setTimeout</span><span class="p">(</span><span class="nx">resolve</span><span class="p">,</span><span class="w"> </span><span class="mf">1000</span><span class="p">));</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span></code></pre></figure>
+<p>Run the app and call <code>connect()</code>. The request now sits pending on the daemon: open <strong>Jolt Console → Apps</strong>, find the pending "Chirp" request, review the capability list, and approve it. The poll loop picks up the token and Chirp is connected. The token is a bearer secret scoped to exactly these capabilities; if the user revokes the session in Console, every call starts failing with <code>JoltApiError</code> and <code>connect()</code> will request a fresh session on next launch.</p>
+<h2 id="4-publish-chirps-assemble-timelines">4 · Publish chirps, assemble timelines</h2>
+<p>A chirp is an append record: <code>publishAppend</code> writes coexisting records that never overwrite each other, which is exactly what a feed of posts wants (and it keeps concurrent devices safe). Each chirp gets its own path under <code>/chirp/posts/</code>, and readers list them back with <code>enumerate</code>, never with resolve. The follow list is the opposite kind of data: a singleton settings-like object at <code>/chirp/follows</code>, updated with <code>publishJson</code> where last-writer-wins is fine. It is published under your identity, so any Chirp instance on any device sees the same list.</p>
+<figure class="code-figure"><figcaption><span>src/chirp.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">makeId</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">JoltAppendSdk</span><span class="p">,</span><span class="w"> </span><span class="nx">JoltSdk</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk&quot;</span><span class="p">;</span>
 
-  const request = await jolt.requestSession({
-    appId: "chirp.example",
-    appName: "Chirp",
-    appOrigin: "tauri://chirp.example",
-    identity: status.identity_address,
-    capabilities: CAPABILITIES,
-  });
+<span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">Chirp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp&quot;</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">postedAt</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="c1">// ISO 8601</span>
+<span class="p">};</span>
 
-  for (;;) {
-    const s = await jolt.getSessionRequestStatus(request.request_id);
-    if (s.status === "rejected") {
-      throw new Error("Chirp's session request was rejected in Jolt Console.");
-    }
-    if (s.session_token) {
-      token = s.session_token;
-      localStorage.setItem(TOKEN_KEY, token);
-      return status.identity_address;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-}</code></pre>
-        <p>Run the app and call <code>connect()</code>. The request now sits pending on the daemon: open <strong>Jolt Console → Apps</strong>, find the pending "Chirp" request, review the capability list, and approve it. The poll loop picks up the token and Chirp is connected. The token is a bearer secret scoped to exactly these capabilities; if the user revokes the session in Console, every call starts failing with <code>JoltApiError</code> and <code>connect()</code> will request a fresh session on next launch.</p>
+<span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">decodeChirp</span><span class="p">(</span><span class="nx">value</span><span class="o">:</span><span class="w"> </span><span class="kt">unknown</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">Chirp</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="ow">typeof</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="s2">&quot;object&quot;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">v</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="nx">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">unknown</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="nx">kind</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;chirp&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<span class="w">    </span><span class="ow">typeof</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="nx">id</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<span class="w">    </span><span class="ow">typeof</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="nx">text</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<span class="w">    </span><span class="ow">typeof</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="nx">postedAt</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;string&quot;</span>
+<span class="w">    </span><span class="o">?</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="kt">v.id</span><span class="p">,</span><span class="w"> </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="kt">v.text</span><span class="p">,</span><span class="w"> </span><span class="nx">postedAt</span><span class="o">:</span><span class="w"> </span><span class="kt">v.postedAt</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="o">:</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="p">}</span>
 
-        <h2 id="chirps">4 · Publish chirps, assemble timelines</h2>
-        <p>A chirp is an append record: <code>publishAppend</code> writes coexisting records that never overwrite each other, which is exactly what a feed of posts wants (and it keeps concurrent devices safe). Each chirp gets its own path under <code>/chirp/posts/</code>, and readers list them back with <code>enumerate</code>, never with resolve.</p>
-        <pre class="doc-code"><code>// src/chirp.ts
-import { makeId } from "jolt-sdk";
-import type { JoltAppendSdk, JoltSdk } from "jolt-sdk";
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">postChirp</span><span class="p">(</span>
+<span class="w">  </span><span class="nx">jolt</span><span class="o">:</span><span class="w"> </span><span class="kt">JoltAppendSdk</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">now</span><span class="o">:</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nb">Date</span><span class="p">().</span><span class="nx">toISOString</span><span class="p">()</span>
+<span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">makeId</span><span class="p">(</span><span class="s2">&quot;chirp&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">chirp</span><span class="o">:</span><span class="w"> </span><span class="kt">Chirp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">id</span><span class="p">,</span><span class="w"> </span><span class="nx">text</span><span class="p">,</span><span class="w"> </span><span class="nx">postedAt</span><span class="o">:</span><span class="w"> </span><span class="kt">now</span><span class="p">()</span><span class="w"> </span><span class="p">};</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">publishAppend</span><span class="p">(</span><span class="sb">`/chirp/posts/</span><span class="si">${</span><span class="nx">id</span><span class="si">}</span><span class="sb">`</span><span class="p">,</span><span class="w"> </span><span class="nx">chirp</span><span class="p">);</span>
+<span class="p">}</span>
 
-export type Chirp = {
-  kind: "chirp";
-  id: string;
-  text: string;
-  postedAt: string; // ISO 8601
-};
+<span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">TimelineEntry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">author</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">chirp</span><span class="o">:</span><span class="w"> </span><span class="kt">Chirp</span><span class="w"> </span><span class="p">};</span>
 
-export function decodeChirp(value: unknown): Chirp | null {
-  if (typeof value !== "object" || value === null) return null;
-  const v = value as Record&lt;string, unknown&gt;;
-  return v.kind === "chirp" &amp;&amp;
-    typeof v.id === "string" &amp;&amp;
-    typeof v.text === "string" &amp;&amp;
-    typeof v.postedAt === "string"
-    ? { kind: "chirp", id: v.id, text: v.text, postedAt: v.postedAt }
-    : null;
-}
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">loadTimeline</span><span class="p">(</span>
+<span class="w">  </span><span class="nx">jolt</span><span class="o">:</span><span class="w"> </span><span class="kt">JoltSdk</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="nx">JoltAppendSdk</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">identities</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[]</span>
+<span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">TimelineEntry</span><span class="p">[]</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">entries</span><span class="o">:</span><span class="w"> </span><span class="kt">TimelineEntry</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[];</span>
+<span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">identity</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="nx">identities</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">records</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">enumerate</span><span class="p">(</span><span class="nx">identity</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/chirp/posts/&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">record</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="nx">records</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="kd">const</span><span class="w"> </span><span class="nx">read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">readContent</span><span class="p">(</span>
+<span class="w">        </span><span class="nx">record</span><span class="p">.</span><span class="nx">contentId</span><span class="p">,</span>
+<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nx">identity</span><span class="p">,</span><span class="w"> </span><span class="nx">path</span><span class="o">:</span><span class="w"> </span><span class="kt">record.path</span><span class="w"> </span><span class="p">},</span>
+<span class="w">        </span><span class="nx">record</span><span class="p">.</span><span class="nx">deviceSequence</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">decodeChirp</span>
+<span class="w">      </span><span class="p">);</span>
+<span class="w">      </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">read</span><span class="p">)</span><span class="w"> </span><span class="nx">entries</span><span class="p">.</span><span class="nx">push</span><span class="p">({</span><span class="w"> </span><span class="nx">author</span><span class="o">:</span><span class="w"> </span><span class="kt">identity</span><span class="p">,</span><span class="w"> </span><span class="nx">chirp</span><span class="o">:</span><span class="w"> </span><span class="kt">read.value</span><span class="w"> </span><span class="p">});</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">entries</span><span class="p">.</span><span class="nx">sort</span><span class="p">((</span><span class="nx">a</span><span class="p">,</span><span class="w"> </span><span class="nx">b</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">b</span><span class="p">.</span><span class="nx">chirp</span><span class="p">.</span><span class="nx">postedAt</span><span class="p">.</span><span class="nx">localeCompare</span><span class="p">(</span><span class="nx">a</span><span class="p">.</span><span class="nx">chirp</span><span class="p">.</span><span class="nx">postedAt</span><span class="p">));</span>
+<span class="p">}</span>
 
-export async function postChirp(
-  jolt: JoltAppendSdk,
-  text: string,
-  now: () =&gt; string = () =&gt; new Date().toISOString()
-) {
-  const id = makeId("chirp");
-  const chirp: Chirp = { kind: "chirp", id, text, postedAt: now() };
-  return jolt.publishAppend(`/chirp/posts/${id}`, chirp);
-}</code></pre>
-        <p>Note the shape of <code>postChirp</code>: it takes the narrow <code>JoltAppendSdk</code> interface rather than the whole client, and the clock is injectable. Every client sub-interface (<code>JoltSdk</code>, <code>JoltAppendSdk</code>, <code>JoltEncryptedSdk</code>, <code>JoltIngressSdk</code>) is intentionally small so features declare exactly the capability they use; this pays off in section 6.</p>
-        <p>The timeline enumerates each followed identity's <code>/chirp/posts/</code> records, fetches each content id, and decodes it through <code>decodeChirp</code>. Reads are tolerant: a record that is missing, unreachable, or not a valid chirp simply comes back <code>null</code> and is skipped, so one bad record never breaks the feed.</p>
-        <pre class="doc-code"><code>export type TimelineEntry = { author: string; chirp: Chirp };
+<span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">Follows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp.follows&quot;</span><span class="p">;</span><span class="w"> </span><span class="nx">identities</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[]</span><span class="w"> </span><span class="p">};</span>
 
-export async function loadTimeline(
-  jolt: JoltSdk &amp; JoltAppendSdk,
-  identities: string[]
-): Promise&lt;TimelineEntry[]&gt; {
-  const entries: TimelineEntry[] = [];
-  for (const identity of identities) {
-    const records = await jolt.enumerate(identity, "/chirp/posts/");
-    for (const record of records) {
-      const read = await jolt.readContent(
-        record.contentId,
-        { identity, path: record.path },
-        record.deviceSequence,
-        decodeChirp
-      );
-      if (read) entries.push({ author: identity, chirp: read.value });
-    }
-  }
-  return entries.sort((a, b) =&gt; b.chirp.postedAt.localeCompare(a.chirp.postedAt));
-}</code></pre>
-        <p>Whose posts go in the timeline? Chirp keeps a follow list as a singleton publication at <code>/chirp/follows</code>: a plain JSON object updated with <code>publishJson</code> (last writer wins is fine for a settings-like object). It is published under your identity, so any Chirp instance on any device, and any other app the user tries later, sees the same list.</p>
-        <pre class="doc-code"><code>export type Follows = { kind: "chirp.follows"; identities: string[] };
+<span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">decodeFollows</span><span class="p">(</span><span class="nx">value</span><span class="o">:</span><span class="w"> </span><span class="kt">unknown</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">Follows</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="ow">typeof</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="s2">&quot;object&quot;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">v</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="nx">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">unknown</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="nx">kind</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;chirp.follows&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<span class="w">    </span><span class="nb">Array</span><span class="p">.</span><span class="nx">isArray</span><span class="p">(</span><span class="nx">v</span><span class="p">.</span><span class="nx">identities</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<span class="w">    </span><span class="nx">v</span><span class="p">.</span><span class="nx">identities</span><span class="p">.</span><span class="nx">every</span><span class="p">((</span><span class="nx">entry</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="ow">typeof</span><span class="w"> </span><span class="nx">entry</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="o">?</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp.follows&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">identities</span><span class="o">:</span><span class="w"> </span><span class="kt">v.identities</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kt">string</span><span class="p">[]</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="o">:</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="p">}</span>
 
-export function decodeFollows(value: unknown): Follows | null {
-  if (typeof value !== "object" || value === null) return null;
-  const v = value as Record&lt;string, unknown&gt;;
-  return v.kind === "chirp.follows" &amp;&amp;
-    Array.isArray(v.identities) &amp;&amp;
-    v.identities.every((entry) =&gt; typeof entry === "string")
-    ? { kind: "chirp.follows", identities: v.identities as string[] }
-    : null;
-}
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">loadFollows</span><span class="p">(</span><span class="nx">jolt</span><span class="o">:</span><span class="w"> </span><span class="kt">JoltSdk</span><span class="p">,</span><span class="w"> </span><span class="nx">me</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">[]</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">current</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">read</span><span class="p">({</span><span class="w"> </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="kt">me</span><span class="p">,</span><span class="w"> </span><span class="nx">path</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;/chirp/follows&quot;</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="nx">decodeFollows</span><span class="p">);</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">current</span><span class="o">?</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">identities</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="p">[];</span>
+<span class="p">}</span>
 
-export async function follow(jolt: JoltSdk, me: string, them: string) {
-  const current = await jolt.read({ identity: me, path: "/chirp/follows" }, decodeFollows);
-  const identities = new Set(current?.value.identities ?? []);
-  identities.add(them);
-  await jolt.publishJson("/chirp/follows", {
-    kind: "chirp.follows",
-    identities: [...identities].sort(),
-  });
-}</code></pre>
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">follow</span><span class="p">(</span><span class="nx">jolt</span><span class="o">:</span><span class="w"> </span><span class="kt">JoltSdk</span><span class="p">,</span><span class="w"> </span><span class="nx">me</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">them</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">identities</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nb">Set</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">loadFollows</span><span class="p">(</span><span class="nx">jolt</span><span class="p">,</span><span class="w"> </span><span class="nx">me</span><span class="p">));</span>
+<span class="w">  </span><span class="nx">identities</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">them</span><span class="p">);</span>
+<span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">publishJson</span><span class="p">(</span><span class="s2">&quot;/chirp/follows&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp.follows&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">identities</span><span class="o">:</span><span class="w"> </span><span class="p">[...</span><span class="nx">identities</span><span class="p">].</span><span class="nx">sort</span><span class="p">(),</span>
+<span class="w">  </span><span class="p">});</span>
+<span class="p">}</span></code></pre></figure>
+<p>Note the shape of these functions: each takes the narrow interface it needs (<code>JoltAppendSdk</code>, <code>JoltSdk</code>) rather than the whole client, and the clock is injectable. Every client sub-interface (<code>JoltSdk</code>, <code>JoltAppendSdk</code>, <code>JoltEncryptedSdk</code>, <code>JoltIngressSdk</code>) is intentionally small so features declare exactly the capability they use; this pays off in section 7.</p>
+<p>Reads are tolerant: in <code>loadTimeline</code>, a record that is missing, unreachable, or not a valid chirp simply comes back <code>null</code> from <code>readContent</code> and is skipped, so one bad record never breaks the feed.</p>
+<h2 id="5-follow-requests-over-ingress">5 · Follow requests over ingress</h2>
+<p>Following someone requires no permission: their posts are public, and <code>follow()</code> above is enough to read them. What ingress adds is the social handshake, telling someone you exist without spam. On Jolt, one identity cannot write into another identity's state; the only way to hand an object to someone else is the <strong>recipient-controlled ingress door</strong>: the sender encrypts an object to the recipient and delivers it to the recipient's daemon, where it waits in a pending queue until the recipient's app opens it and decides.</p>
+<p><code>sendObject</code> does the sender's half in one call: it encrypt-publishes the object at the given path (that is the sender's own copy, under <code>publish:encrypted:/chirp/*</code>), then delivers the envelope to the recipient's daemon. On the receiving side, <code>listFollowRequests</code> lists the pending queue, opens each envelope to see what it is, and classifies it; the transport layer does not know or care what a "follow request" is, classifying payloads is the app's job. Envelopes that are not Chirp objects are left alone for whatever app they belong to, and envelopes whose claimed sender does not match the envelope's actual sender are rejected on sight. Deciding is deliberately left to the UI: accept and reject are one SDK call each.</p>
+<figure class="code-figure"><figcaption><span>src/follows.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">makeId</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">JoltIngressSdk</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk&quot;</span><span class="p">;</span>
 
-        <h2 id="follows">5 · Follow requests over ingress</h2>
-        <p>Following someone requires no permission: their posts are public, and <code>follow()</code> above is enough to read them. What ingress adds is the social handshake, telling someone you exist without spam. On Jolt, one identity cannot write into another identity's state; the only way to hand an object to someone else is the <strong>recipient-controlled ingress door</strong>: the sender encrypts an object to the recipient and delivers it to the recipient's daemon, where it waits in a pending queue until the recipient's app opens it and decides.</p>
-        <p><code>sendObject</code> does the sender's half in one call: it encrypt-publishes the object at the given path (that is the sender's own copy, under <code>publish:encrypted:/chirp/*</code>), then delivers the envelope to the recipient's daemon.</p>
-        <pre class="doc-code"><code>// src/follows.ts
-import { makeId } from "jolt-sdk";
-import type { JoltIngressSdk } from "jolt-sdk";
+<span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">FollowRequest</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp.follow-request&quot;</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">from</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">note?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<span class="p">};</span>
 
-export type FollowRequest = {
-  kind: "chirp.follow-request";
-  from: string;
-  note?: string;
-};
+<span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">decodeFollowRequest</span><span class="p">(</span><span class="nx">value</span><span class="o">:</span><span class="w"> </span><span class="kt">unknown</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">FollowRequest</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="ow">typeof</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="s2">&quot;object&quot;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">v</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="nx">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">unknown</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="nx">kind</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;chirp.follow-request&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="ow">typeof</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="kr">from</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;string&quot;</span>
+<span class="w">    </span><span class="o">?</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp.follow-request&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">from</span><span class="o">:</span><span class="w"> </span><span class="kt">v.from</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">note</span><span class="o">:</span><span class="w"> </span><span class="kt">typeof</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="nx">note</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="nx">v.note</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="kt">undefined</span><span class="p">,</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="o">:</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="p">}</span>
 
-export function decodeFollowRequest(value: unknown): FollowRequest | null {
-  if (typeof value !== "object" || value === null) return null;
-  const v = value as Record&lt;string, unknown&gt;;
-  return v.kind === "chirp.follow-request" &amp;&amp; typeof v.from === "string"
-    ? {
-        kind: "chirp.follow-request",
-        from: v.from,
-        note: typeof v.note === "string" ? v.note : undefined,
-      }
-    : null;
-}
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">sendFollowRequest</span><span class="p">(</span>
+<span class="w">  </span><span class="nx">jolt</span><span class="o">:</span><span class="w"> </span><span class="kt">JoltIngressSdk</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">me</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">them</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">note?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span>
+<span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">request</span><span class="o">:</span><span class="w"> </span><span class="kt">FollowRequest</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp.follow-request&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">from</span><span class="o">:</span><span class="w"> </span><span class="kt">me</span><span class="p">,</span><span class="w"> </span><span class="nx">note</span><span class="w"> </span><span class="p">};</span>
+<span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">sendObject</span><span class="p">(</span><span class="nx">them</span><span class="p">,</span><span class="w"> </span><span class="sb">`/chirp/outbox/</span><span class="si">${</span><span class="nx">makeId</span><span class="p">(</span><span class="s2">&quot;follow&quot;</span><span class="p">)</span><span class="si">}</span><span class="sb">`</span><span class="p">,</span><span class="w"> </span><span class="nx">request</span><span class="p">);</span>
+<span class="p">}</span>
 
-export async function sendFollowRequest(
-  jolt: JoltIngressSdk,
-  me: string,
-  them: string,
-  note?: string
-) {
-  const request: FollowRequest = { kind: "chirp.follow-request", from: me, note };
-  await jolt.sendObject(them, `/chirp/outbox/${makeId("follow")}`, request);
-}</code></pre>
-        <p>On the receiving side, Chirp lists the pending queue, opens each envelope to see what it is, and decides. <code>openIngress</code> decrypts without deciding, so the app can classify the payload first; the transport layer does not know or care what a "follow request" is, classifying payloads is the app's job. Envelopes that are not Chirp objects are left alone for whatever app they belong to.</p>
-        <pre class="doc-code"><code>export type InboxDecision = (request: FollowRequest) =&gt; Promise&lt;boolean&gt;;
+<span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">PendingFollow</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">ingressId</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">request</span><span class="o">:</span><span class="w"> </span><span class="kt">FollowRequest</span><span class="w"> </span><span class="p">};</span>
 
-export async function reviewInbox(jolt: JoltIngressSdk, decide: InboxDecision) {
-  const accepted: FollowRequest[] = [];
-  for (const record of await jolt.listPendingIngress()) {
-    const payload = await jolt.openIngress(record.ingress_id);
-    const request = decodeFollowRequest(payload);
-    if (!request) continue; // not a Chirp object; leave it pending
-    if (request.from !== record.sender_identity) {
-      await jolt.rejectIngress(record.ingress_id); // claimed sender must match the envelope
-      continue;
-    }
-    if (await decide(request)) {
-      await jolt.acceptIngress(record.ingress_id);
-      accepted.push(request);
-    } else {
-      await jolt.rejectIngress(record.ingress_id);
-    }
-  }
-  return accepted;
-}</code></pre>
-        <p>A typical Chirp flow wires the two together: when Bob accepts Alice's follow request, Chirp calls <code>follow(jolt, bob, request.from)</code> so Bob follows back, or simply shows Alice in a "your followers" view. Either way the decision stays with the recipient; nothing lands in Bob's world without Bob's daemon holding it at the door first.</p>
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">listFollowRequests</span><span class="p">(</span><span class="nx">jolt</span><span class="o">:</span><span class="w"> </span><span class="kt">JoltIngressSdk</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">PendingFollow</span><span class="p">[]</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">pending</span><span class="o">:</span><span class="w"> </span><span class="kt">PendingFollow</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[];</span>
+<span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">record</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">listPendingIngress</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">payload</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">openIngress</span><span class="p">(</span><span class="nx">record</span><span class="p">.</span><span class="nx">ingress_id</span><span class="p">);</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">request</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">decodeFollowRequest</span><span class="p">(</span><span class="nx">payload</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">request</span><span class="p">)</span><span class="w"> </span><span class="k">continue</span><span class="p">;</span><span class="w"> </span><span class="c1">// not a Chirp object; leave it pending for its app</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">request</span><span class="p">.</span><span class="kr">from</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="nx">record</span><span class="p">.</span><span class="nx">sender_identity</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">rejectIngress</span><span class="p">(</span><span class="nx">record</span><span class="p">.</span><span class="nx">ingress_id</span><span class="p">);</span><span class="w"> </span><span class="c1">// claimed sender must match the envelope</span>
+<span class="w">      </span><span class="k">continue</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="nx">pending</span><span class="p">.</span><span class="nx">push</span><span class="p">({</span><span class="w"> </span><span class="nx">ingressId</span><span class="o">:</span><span class="w"> </span><span class="kt">record.ingress_id</span><span class="p">,</span><span class="w"> </span><span class="nx">request</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">pending</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+<h2 id="6-the-ui">6 · The UI</h2>
+<p>One file ties it together. <code>App.tsx</code> connects on mount, then renders four things: a composer that calls <code>postChirp</code>, a follow form that subscribes and says hello, the pending follow requests with accept and ignore buttons, and the timeline. Every action ends by re-running <code>refresh</code>, so the UI is always a projection of daemon state; when Bob accepts Alice's request, Chirp accepts the envelope and follows back, so nothing lands in Bob's world without Bob's daemon holding it at the door first.</p>
+<figure class="code-figure"><figcaption><span>src/App.tsx</span><span>tsx</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">useCallback</span><span class="p">,</span><span class="w"> </span><span class="nx">useEffect</span><span class="p">,</span><span class="w"> </span><span class="nx">useState</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;react&quot;</span><span class="p">;</span>
 
-        <h2 id="testing">6 · Test it all with the fake</h2>
-        <p>Because every Chirp function takes a client interface instead of reaching for a global, all of the flows above run against <code>createFakeJolt</code>: a deterministic in-memory implementation of the full <code>JoltClient</code> with no daemon and no network. Publishes land in an in-memory store, enumeration lists them back, sends are recorded, and <code>deliverIngress</code> injects incoming envelopes as if a remote sender delivered them.</p>
-        <pre class="doc-code"><code>// src/chirp.test.ts
-import { describe, expect, it } from "vitest";
-import { createFakeJolt } from "jolt-sdk/testing";
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">connect</span><span class="p">,</span><span class="w"> </span><span class="nx">jolt</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./jolt&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">follow</span><span class="p">,</span><span class="w"> </span><span class="nx">loadFollows</span><span class="p">,</span><span class="w"> </span><span class="nx">loadTimeline</span><span class="p">,</span><span class="w"> </span><span class="nx">postChirp</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./chirp&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">TimelineEntry</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./chirp&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">listFollowRequests</span><span class="p">,</span><span class="w"> </span><span class="nx">sendFollowRequest</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./follows&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">PendingFollow</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./follows&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="s2">&quot;./App.css&quot;</span><span class="p">;</span>
 
-import { follow, loadTimeline, postChirp, decodeFollows } from "./chirp";
-import { reviewInbox, sendFollowRequest } from "./follows";
+<span class="k">export</span><span class="w"> </span><span class="k">default</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">App</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">me</span><span class="p">,</span><span class="w"> </span><span class="nx">setMe</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="o">&gt;</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">timeline</span><span class="p">,</span><span class="w"> </span><span class="nx">setTimeline</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="nx">TimelineEntry</span><span class="p">[]</span><span class="o">&gt;</span><span class="p">([]);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">inbox</span><span class="p">,</span><span class="w"> </span><span class="nx">setInbox</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="nx">PendingFollow</span><span class="p">[]</span><span class="o">&gt;</span><span class="p">([]);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">draft</span><span class="p">,</span><span class="w"> </span><span class="nx">setDraft</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">friend</span><span class="p">,</span><span class="w"> </span><span class="nx">setFriend</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">error</span><span class="p">,</span><span class="w"> </span><span class="nx">setError</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="o">&gt;</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
 
-describe("chirp", () =&gt; {
-  it("publishes chirps and projects a timeline, newest first", async () =&gt; {
-    const { client, identity } = createFakeJolt("alice.jolt");
-    await postChirp(client, "first!", () =&gt; "2026-08-05T10:00:00Z");
-    await postChirp(client, "second!", () =&gt; "2026-08-05T11:00:00Z");
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">refresh</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useCallback</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">(</span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">follows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">loadFollows</span><span class="p">(</span><span class="nx">jolt</span><span class="p">,</span><span class="w"> </span><span class="nx">identity</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">setTimeline</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">loadTimeline</span><span class="p">(</span><span class="nx">jolt</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="nx">identity</span><span class="p">,</span><span class="w"> </span><span class="p">...</span><span class="nx">follows</span><span class="p">]));</span>
+<span class="w">    </span><span class="nx">setInbox</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">listFollowRequests</span><span class="p">(</span><span class="nx">jolt</span><span class="p">));</span>
+<span class="w">  </span><span class="p">},</span><span class="w"> </span><span class="p">[]);</span>
 
-    const timeline = await loadTimeline(client, [identity]);
-    expect(timeline.map((entry) =&gt; entry.chirp.text)).toEqual(["second!", "first!"]);
-    expect(timeline.every((entry) =&gt; entry.author === "alice.jolt")).toBe(true);
-  });
+<span class="w">  </span><span class="nx">useEffect</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">connect</span><span class="p">()</span>
+<span class="w">      </span><span class="p">.</span><span class="nx">then</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">(</span><span class="nx">identity</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">setMe</span><span class="p">(</span><span class="nx">identity</span><span class="p">);</span>
+<span class="w">        </span><span class="k">await</span><span class="w"> </span><span class="nx">refresh</span><span class="p">(</span><span class="nx">identity</span><span class="p">);</span>
+<span class="w">      </span><span class="p">})</span>
+<span class="w">      </span><span class="p">.</span><span class="k">catch</span><span class="p">((</span><span class="nx">cause</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">setError</span><span class="p">(</span><span class="nb">String</span><span class="p">(</span><span class="nx">cause</span><span class="p">)));</span>
+<span class="w">  </span><span class="p">},</span><span class="w"> </span><span class="p">[</span><span class="nx">refresh</span><span class="p">]);</span>
 
-  it("records follow requests on the sender's side", async () =&gt; {
-    const { client, sent } = createFakeJolt("alice.jolt");
-    await sendFollowRequest(client, "alice.jolt", "bob.jolt", "hi!");
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">error</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp&quot;</span><span class="o">&gt;&lt;</span><span class="nx">p</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;error&quot;</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">error</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/p&gt;&lt;/main&gt;;</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">me</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp&quot;</span><span class="o">&gt;&lt;</span><span class="nx">p</span><span class="o">&gt;</span><span class="nx">Waiting</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="nx">approval</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="nx">Jolt</span><span class="w"> </span><span class="nx">Console</span><span class="err">…</span><span class="o">&lt;</span><span class="err">/p&gt;&lt;/main&gt;;</span>
 
-    expect(sent).toHaveLength(1);
-    expect(sent[0].recipient).toBe("bob.jolt");
-    expect(sent[0].body).toMatchObject({ kind: "chirp.follow-request", from: "alice.jolt" });
-  });
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">run</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="nx">action</span><span class="o">:</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="ow">void</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span>
+<span class="w">    </span><span class="nx">action</span><span class="p">().</span><span class="nx">then</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">refresh</span><span class="p">(</span><span class="nx">me</span><span class="p">)).</span><span class="k">catch</span><span class="p">((</span><span class="nx">cause</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">setError</span><span class="p">(</span><span class="nb">String</span><span class="p">(</span><span class="nx">cause</span><span class="p">)));</span>
 
-  it("accepts a follow request from the inbox and follows back", async () =&gt; {
-    const { client, identity, deliverIngress } = createFakeJolt("bob.jolt");
-    deliverIngress({
-      sender: "alice.jolt",
-      body: { kind: "chirp.follow-request", from: "alice.jolt" },
-    });
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp&quot;</span><span class="o">&gt;</span>
+<span class="w">      </span><span class="o">&lt;</span><span class="nx">header</span><span class="o">&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">h1</span><span class="o">&gt;</span><span class="nx">Chirp</span><span class="o">&lt;</span><span class="err">/h1&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">p</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;identity&quot;</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">me</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/p&gt;</span>
+<span class="w">      </span><span class="o">&lt;</span><span class="err">/header&gt;</span>
 
-    const accepted = await reviewInbox(client, async () =&gt; true);
-    expect(accepted.map((request) =&gt; request.from)).toEqual(["alice.jolt"]);
-    expect(await client.listPendingIngress()).toHaveLength(0);
+<span class="w">      </span><span class="o">&lt;</span><span class="nx">form</span>
+<span class="w">        </span><span class="nx">onSubmit</span><span class="o">=</span><span class="p">{(</span><span class="nx">event</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nx">event</span><span class="p">.</span><span class="nx">preventDefault</span><span class="p">();</span>
+<span class="w">          </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">draft</span><span class="p">.</span><span class="nx">trim</span><span class="p">())</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
+<span class="w">          </span><span class="nx">run</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">await</span><span class="w"> </span><span class="nx">postChirp</span><span class="p">(</span><span class="nx">jolt</span><span class="p">,</span><span class="w"> </span><span class="nx">draft</span><span class="p">.</span><span class="nx">trim</span><span class="p">());</span>
+<span class="w">            </span><span class="nx">setDraft</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">);</span>
+<span class="w">          </span><span class="p">});</span>
+<span class="w">        </span><span class="p">}}</span>
+<span class="w">      </span><span class="o">&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">textarea</span>
+<span class="w">          </span><span class="nx">value</span><span class="o">=</span><span class="p">{</span><span class="nx">draft</span><span class="p">}</span>
+<span class="w">          </span><span class="nx">onChange</span><span class="o">=</span><span class="p">{(</span><span class="nx">event</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">setDraft</span><span class="p">(</span><span class="nx">event</span><span class="p">.</span><span class="nx">target</span><span class="p">.</span><span class="nx">value</span><span class="p">)}</span>
+<span class="w">          </span><span class="nx">placeholder</span><span class="o">=</span><span class="s2">&quot;What&#39;s happening on the network?&quot;</span>
+<span class="w">          </span><span class="nx">maxLength</span><span class="o">=</span><span class="p">{</span><span class="mf">280</span><span class="p">}</span>
+<span class="w">        </span><span class="o">/&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">button</span><span class="w"> </span><span class="kr">type</span><span class="o">=</span><span class="s2">&quot;submit&quot;</span><span class="o">&gt;</span><span class="nx">Chirp</span><span class="o">&lt;</span><span class="err">/button&gt;</span>
+<span class="w">      </span><span class="o">&lt;</span><span class="err">/form&gt;</span>
 
-    await follow(client, identity, accepted[0].from);
-    const follows = await client.read(
-      { identity, path: "/chirp/follows" },
-      decodeFollows
-    );
-    expect(follows?.value.identities).toEqual(["alice.jolt"]);
-  });
+<span class="w">      </span><span class="o">&lt;</span><span class="nx">form</span>
+<span class="w">        </span><span class="nx">onSubmit</span><span class="o">=</span><span class="p">{(</span><span class="nx">event</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nx">event</span><span class="p">.</span><span class="nx">preventDefault</span><span class="p">();</span>
+<span class="w">          </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">friend</span><span class="p">.</span><span class="nx">trim</span><span class="p">())</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
+<span class="w">          </span><span class="nx">run</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="kd">const</span><span class="w"> </span><span class="nx">them</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">friend</span><span class="p">.</span><span class="nx">trim</span><span class="p">();</span>
+<span class="w">            </span><span class="k">await</span><span class="w"> </span><span class="nx">follow</span><span class="p">(</span><span class="nx">jolt</span><span class="p">,</span><span class="w"> </span><span class="nx">me</span><span class="p">,</span><span class="w"> </span><span class="nx">them</span><span class="p">);</span><span class="w"> </span><span class="c1">// their posts are public; just subscribe</span>
+<span class="w">            </span><span class="k">await</span><span class="w"> </span><span class="nx">sendFollowRequest</span><span class="p">(</span><span class="nx">jolt</span><span class="p">,</span><span class="w"> </span><span class="nx">me</span><span class="p">,</span><span class="w"> </span><span class="nx">them</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;chirp?&quot;</span><span class="p">);</span><span class="w"> </span><span class="c1">// and say hello</span>
+<span class="w">            </span><span class="nx">setFriend</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">);</span>
+<span class="w">          </span><span class="p">});</span>
+<span class="w">        </span><span class="p">}}</span>
+<span class="w">      </span><span class="o">&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">input</span>
+<span class="w">          </span><span class="nx">value</span><span class="o">=</span><span class="p">{</span><span class="nx">friend</span><span class="p">}</span>
+<span class="w">          </span><span class="nx">onChange</span><span class="o">=</span><span class="p">{(</span><span class="nx">event</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">setFriend</span><span class="p">(</span><span class="nx">event</span><span class="p">.</span><span class="nx">target</span><span class="p">.</span><span class="nx">value</span><span class="p">)}</span>
+<span class="w">          </span><span class="nx">placeholder</span><span class="o">=</span><span class="s2">&quot;somebody.jolt&quot;</span>
+<span class="w">        </span><span class="o">/&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">button</span><span class="w"> </span><span class="kr">type</span><span class="o">=</span><span class="s2">&quot;submit&quot;</span><span class="o">&gt;</span><span class="nx">Follow</span><span class="o">&lt;</span><span class="err">/button&gt;</span>
+<span class="w">      </span><span class="o">&lt;</span><span class="err">/form&gt;</span>
 
-  it("rejects envelopes whose claimed sender does not match", async () =&gt; {
-    const { client, deliverIngress } = createFakeJolt("bob.jolt");
-    deliverIngress({
-      sender: "mallory.jolt",
-      body: { kind: "chirp.follow-request", from: "alice.jolt" },
-    });
+<span class="w">      </span><span class="p">{</span><span class="nx">inbox</span><span class="p">.</span><span class="nx">length</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mf">0</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">(</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">section</span><span class="o">&gt;</span>
+<span class="w">          </span><span class="o">&lt;</span><span class="nx">h2</span><span class="o">&gt;</span><span class="nx">Follow</span><span class="w"> </span><span class="nx">requests</span><span class="o">&lt;</span><span class="err">/h2&gt;</span>
+<span class="w">          </span><span class="p">{</span><span class="nx">inbox</span><span class="p">.</span><span class="nx">map</span><span class="p">((</span><span class="nx">pending</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">(</span>
+<span class="w">            </span><span class="o">&lt;</span><span class="nx">article</span><span class="w"> </span><span class="nx">key</span><span class="o">=</span><span class="p">{</span><span class="nx">pending</span><span class="p">.</span><span class="nx">ingressId</span><span class="p">}</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;request&quot;</span><span class="o">&gt;</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">span</span><span class="o">&gt;</span>
+<span class="w">                </span><span class="o">&lt;</span><span class="nx">strong</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">pending</span><span class="p">.</span><span class="nx">request</span><span class="p">.</span><span class="kr">from</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/strong&gt; {pending.request.note ?? &quot;&quot;}</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="err">/span&gt;</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">button</span><span class="w"> </span><span class="nx">onClick</span><span class="o">=</span><span class="p">{()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">run</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="k">await</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">acceptIngress</span><span class="p">(</span><span class="nx">pending</span><span class="p">.</span><span class="nx">ingressId</span><span class="p">);</span>
+<span class="w">                </span><span class="k">await</span><span class="w"> </span><span class="nx">follow</span><span class="p">(</span><span class="nx">jolt</span><span class="p">,</span><span class="w"> </span><span class="nx">me</span><span class="p">,</span><span class="w"> </span><span class="nx">pending</span><span class="p">.</span><span class="nx">request</span><span class="p">.</span><span class="kr">from</span><span class="p">);</span><span class="w"> </span><span class="c1">// follow back</span>
+<span class="w">              </span><span class="p">})}</span><span class="o">&gt;</span>
+<span class="w">                </span><span class="nx">Accept</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="err">/button&gt;</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">button</span><span class="w"> </span><span class="nx">onClick</span><span class="o">=</span><span class="p">{()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">run</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">jolt</span><span class="p">.</span><span class="nx">rejectIngress</span><span class="p">(</span><span class="nx">pending</span><span class="p">.</span><span class="nx">ingressId</span><span class="p">))}</span><span class="o">&gt;</span>
+<span class="w">                </span><span class="nx">Ignore</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="err">/button&gt;</span>
+<span class="w">            </span><span class="o">&lt;</span><span class="err">/article&gt;</span>
+<span class="w">          </span><span class="p">))}</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="err">/section&gt;</span>
+<span class="w">      </span><span class="p">)}</span>
 
-    const accepted = await reviewInbox(client, async () =&gt; true);
-    expect(accepted).toHaveLength(0);
-    expect(await client.listPendingIngress()).toHaveLength(0);
-  });
-});</code></pre>
-        <p>These tests exercise Chirp's schemas and flows, not cryptography: the fake simulates encryption by recording recipients and storing plaintext, which is exactly the right level for app tests. The same code runs unchanged against the real daemon because <code>createFakeJolt</code> satisfies <code>JoltClient</code> and every sub-interface.</p>
+<span class="w">      </span><span class="o">&lt;</span><span class="nx">section</span><span class="o">&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">h2</span><span class="o">&gt;</span><span class="nx">Timeline</span><span class="o">&lt;</span><span class="err">/h2&gt;</span>
+<span class="w">        </span><span class="p">{</span><span class="nx">timeline</span><span class="p">.</span><span class="nx">length</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="mf">0</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="o">&lt;</span><span class="nx">p</span><span class="o">&gt;</span><span class="nx">No</span><span class="w"> </span><span class="nx">chirps</span><span class="w"> </span><span class="nx">yet</span><span class="p">.</span><span class="w"> </span><span class="nx">Write</span><span class="w"> </span><span class="nx">the</span><span class="w"> </span><span class="nx">first</span><span class="w"> </span><span class="nx">one</span><span class="p">.</span><span class="o">&lt;</span><span class="err">/p&gt;}</span>
+<span class="w">        </span><span class="p">{</span><span class="nx">timeline</span><span class="p">.</span><span class="nx">map</span><span class="p">((</span><span class="nx">entry</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">(</span>
+<span class="w">          </span><span class="o">&lt;</span><span class="nx">article</span><span class="w"> </span><span class="nx">key</span><span class="o">=</span><span class="p">{</span><span class="nx">entry</span><span class="p">.</span><span class="nx">chirp</span><span class="p">.</span><span class="nx">id</span><span class="p">}</span><span class="o">&gt;</span>
+<span class="w">            </span><span class="o">&lt;</span><span class="nx">header</span><span class="o">&gt;</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">strong</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">entry</span><span class="p">.</span><span class="nx">author</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/strong&gt;</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">time</span><span class="w"> </span><span class="nx">dateTime</span><span class="o">=</span><span class="p">{</span><span class="nx">entry</span><span class="p">.</span><span class="nx">chirp</span><span class="p">.</span><span class="nx">postedAt</span><span class="p">}</span><span class="o">&gt;</span>
+<span class="w">                </span><span class="p">{</span><span class="ow">new</span><span class="w"> </span><span class="nb">Date</span><span class="p">(</span><span class="nx">entry</span><span class="p">.</span><span class="nx">chirp</span><span class="p">.</span><span class="nx">postedAt</span><span class="p">).</span><span class="nx">toLocaleString</span><span class="p">()}</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="err">/time&gt;</span>
+<span class="w">            </span><span class="o">&lt;</span><span class="err">/header&gt;</span>
+<span class="w">            </span><span class="o">&lt;</span><span class="nx">p</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">entry</span><span class="p">.</span><span class="nx">chirp</span><span class="p">.</span><span class="nx">text</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/p&gt;</span>
+<span class="w">          </span><span class="o">&lt;</span><span class="err">/article&gt;</span>
+<span class="w">        </span><span class="p">))}</span>
+<span class="w">      </span><span class="o">&lt;</span><span class="err">/section&gt;</span>
+<span class="w">    </span><span class="o">&lt;</span><span class="err">/main&gt;</span>
+<span class="w">  </span><span class="p">);</span>
+<span class="p">}</span></code></pre></figure>
+<p>Replace the scaffold's <code>src/App.css</code> with a small stylesheet (the scaffold's <code>main.tsx</code> already renders <code>&lt;App /&gt;</code>, so no other file changes):</p>
+<figure class="code-figure"><figcaption><span>src/App.css</span><span>css</span></figcaption><pre class="doc-code"><code><span class="p">.</span><span class="nc">chirp</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">max-width</span><span class="p">:</span><span class="w"> </span><span class="mi">36</span><span class="kt">rem</span><span class="p">;</span>
+<span class="w">  </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="kc">auto</span><span class="p">;</span>
+<span class="w">  </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="kt">rem</span><span class="w"> </span><span class="mi">1</span><span class="kt">rem</span><span class="p">;</span>
+<span class="w">  </span><span class="k">font-family</span><span class="p">:</span><span class="w"> </span><span class="n">system-ui</span><span class="p">,</span><span class="w"> </span><span class="kc">sans-serif</span><span class="p">;</span>
+<span class="w">  </span><span class="k">text-align</span><span class="p">:</span><span class="w"> </span><span class="kc">left</span><span class="p">;</span>
+<span class="p">}</span>
 
-        <h2 id="next">Where to go next</h2>
-        <ul>
-          <li>The <a href="../sdk/reference.html">SDK reference</a> documents every exported class, interface, function, and type, including the typed <code>operations</code> layer for endpoints the client does not wrap (binary publish, raw ingress send).</li>
-          <li><a href="../rfcs/0007-app-sessions.html">JOLT-RFC-0007</a> specifies the session and capability model Chirp just used, including the grants this guide did not need: <code>inventory</code>, <code>pin:own</code>, <code>encrypt</code>, and <code>decrypt</code>.</li>
-          <li><a href="../rfcs/0003-device-writer-logs.html">JOLT-RFC-0003</a> explains why append records from several devices merge deterministically, which is what made <code>publishAppend</code> safe to call from anywhere.</li>
-          <li>For private content between chirpers, look at <code>publishEncryptedJson</code> and <code>readEncrypted</code> in the reference, backed by <a href="../rfcs/0004-encrypted-device-access.html">JOLT-RFC-0004</a>.</li>
-        </ul>
+<span class="p">.</span><span class="nc">chirp</span><span class="w"> </span><span class="p">.</span><span class="nc">identity</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">font-family</span><span class="p">:</span><span class="w"> </span><span class="kc">monospace</span><span class="p">;</span>
+<span class="w">  </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#4b8</span><span class="p">;</span>
+<span class="p">}</span>
 
+<span class="p">.</span><span class="nc">chirp</span><span class="w"> </span><span class="nt">form</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">flex</span><span class="p">;</span>
+<span class="w">  </span><span class="k">gap</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="kt">rem</span><span class="p">;</span>
+<span class="w">  </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">rem</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="p">.</span><span class="nc">chirp</span><span class="w"> </span><span class="nt">textarea</span><span class="o">,</span>
+<span class="p">.</span><span class="nc">chirp</span><span class="w"> </span><span class="nt">input</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">flex</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">  </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="kt">rem</span><span class="p">;</span>
+<span class="w">  </span><span class="k">font</span><span class="p">:</span><span class="w"> </span><span class="kc">inherit</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="p">.</span><span class="nc">chirp</span><span class="w"> </span><span class="nt">article</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">border-top</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="mh">#ccc3</span><span class="p">;</span>
+<span class="w">  </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mf">0.75</span><span class="kt">rem</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="p">.</span><span class="nc">chirp</span><span class="w"> </span><span class="nt">article</span><span class="w"> </span><span class="nt">header</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">flex</span><span class="p">;</span>
+<span class="w">  </span><span class="k">justify-content</span><span class="p">:</span><span class="w"> </span><span class="kc">space-between</span><span class="p">;</span>
+<span class="w">  </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mf">0.85</span><span class="kt">rem</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="p">.</span><span class="nc">chirp</span><span class="w"> </span><span class="p">.</span><span class="nc">request</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">flex</span><span class="p">;</span>
+<span class="w">  </span><span class="k">gap</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="kt">rem</span><span class="p">;</span>
+<span class="w">  </span><span class="k">align-items</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span>
+<span class="w">  </span><span class="k">justify-content</span><span class="p">:</span><span class="w"> </span><span class="kc">space-between</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="p">.</span><span class="nc">chirp</span><span class="w"> </span><span class="p">.</span><span class="nc">error</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#c66</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+<p>Run <code>yarn tauri dev</code> again. Approve the session in Jolt Console when the window says it is waiting, and post your first chirp.</p>
+<h2 id="7-test-it-all-with-the-fake">7 · Test it all with the fake</h2>
+<p>Because every Chirp function takes a client interface instead of reaching for a global, all of the flows above run against <code>createFakeJolt</code>: a deterministic in-memory implementation of the full <code>JoltClient</code> with no daemon and no network. Publishes land in an in-memory store, enumeration lists them back, sends are recorded, and <code>deliverIngress</code> injects incoming envelopes as if a remote sender delivered them. Add <code>vitest</code> (<code>yarn add -D vitest</code>) and drop this next to the code:</p>
+<figure class="code-figure"><figcaption><span>src/chirp.test.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">describe</span><span class="p">,</span><span class="w"> </span><span class="nx">expect</span><span class="p">,</span><span class="w"> </span><span class="nx">it</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;vitest&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/testing&quot;</span><span class="p">;</span>
+
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">follow</span><span class="p">,</span><span class="w"> </span><span class="nx">loadFollows</span><span class="p">,</span><span class="w"> </span><span class="nx">loadTimeline</span><span class="p">,</span><span class="w"> </span><span class="nx">postChirp</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./chirp&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">listFollowRequests</span><span class="p">,</span><span class="w"> </span><span class="nx">sendFollowRequest</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./follows&quot;</span><span class="p">;</span>
+
+<span class="nx">describe</span><span class="p">(</span><span class="s2">&quot;chirp&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;publishes chirps and projects a timeline, newest first&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="nx">identity</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">postChirp</span><span class="p">(</span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;first!&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="s2">&quot;2026-08-05T10:00:00Z&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">postChirp</span><span class="p">(</span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;second!&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="s2">&quot;2026-08-05T11:00:00Z&quot;</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">timeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">loadTimeline</span><span class="p">(</span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="nx">identity</span><span class="p">]);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">timeline</span><span class="p">.</span><span class="nx">map</span><span class="p">((</span><span class="nx">entry</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">entry</span><span class="p">.</span><span class="nx">chirp</span><span class="p">.</span><span class="nx">text</span><span class="p">)).</span><span class="nx">toEqual</span><span class="p">([</span><span class="s2">&quot;second!&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;first!&quot;</span><span class="p">]);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">timeline</span><span class="p">.</span><span class="nx">every</span><span class="p">((</span><span class="nx">entry</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">entry</span><span class="p">.</span><span class="nx">author</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">)).</span><span class="nx">toBe</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span>
+<span class="w">  </span><span class="p">});</span>
+
+<span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;records follow requests on the sender&#39;s side&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="nx">sent</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">sendFollowRequest</span><span class="p">(</span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;bob.jolt&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;hi!&quot;</span><span class="p">);</span>
+
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">sent</span><span class="p">).</span><span class="nx">toHaveLength</span><span class="p">(</span><span class="mf">1</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">sent</span><span class="p">[</span><span class="mf">0</span><span class="p">]</span><span class="o">?</span><span class="p">.</span><span class="nx">recipient</span><span class="p">).</span><span class="nx">toBe</span><span class="p">(</span><span class="s2">&quot;bob.jolt&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">sent</span><span class="p">[</span><span class="mf">0</span><span class="p">]</span><span class="o">?</span><span class="p">.</span><span class="nx">body</span><span class="p">).</span><span class="nx">toMatchObject</span><span class="p">({</span><span class="w"> </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp.follow-request&quot;</span><span class="p">,</span><span class="w"> </span><span class="kr">from</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;alice.jolt&quot;</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="p">});</span>
+
+<span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;lists a pending follow request, accepts it, and follows back&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="nx">identity</span><span class="p">,</span><span class="w"> </span><span class="nx">deliverIngress</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="p">(</span><span class="s2">&quot;bob.jolt&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">deliverIngress</span><span class="p">({</span>
+<span class="w">      </span><span class="nx">sender</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">body</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp.follow-request&quot;</span><span class="p">,</span><span class="w"> </span><span class="kr">from</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;alice.jolt&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">});</span>
+
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">pending</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">listFollowRequests</span><span class="p">(</span><span class="nx">client</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">pending</span><span class="p">.</span><span class="nx">map</span><span class="p">((</span><span class="nx">entry</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">entry</span><span class="p">.</span><span class="nx">request</span><span class="p">.</span><span class="kr">from</span><span class="p">)).</span><span class="nx">toEqual</span><span class="p">([</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">]);</span>
+
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">accepted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">pending</span><span class="p">[</span><span class="mf">0</span><span class="p">]</span><span class="o">!</span><span class="p">;</span>
+<span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">acceptIngress</span><span class="p">(</span><span class="nx">accepted</span><span class="p">.</span><span class="nx">ingressId</span><span class="p">);</span>
+<span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">follow</span><span class="p">(</span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="nx">identity</span><span class="p">,</span><span class="w"> </span><span class="nx">accepted</span><span class="p">.</span><span class="nx">request</span><span class="p">.</span><span class="kr">from</span><span class="p">);</span>
+
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">listPendingIngress</span><span class="p">()).</span><span class="nx">toHaveLength</span><span class="p">(</span><span class="mf">0</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">loadFollows</span><span class="p">(</span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="nx">identity</span><span class="p">)).</span><span class="nx">toEqual</span><span class="p">([</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">]);</span>
+<span class="w">  </span><span class="p">});</span>
+
+<span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;rejects envelopes whose claimed sender does not match&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="nx">deliverIngress</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="p">(</span><span class="s2">&quot;bob.jolt&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">deliverIngress</span><span class="p">({</span>
+<span class="w">      </span><span class="nx">sender</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;mallory.jolt&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">body</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp.follow-request&quot;</span><span class="p">,</span><span class="w"> </span><span class="kr">from</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;alice.jolt&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">});</span>
+
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">listFollowRequests</span><span class="p">(</span><span class="nx">client</span><span class="p">)).</span><span class="nx">toHaveLength</span><span class="p">(</span><span class="mf">0</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">listPendingIngress</span><span class="p">()).</span><span class="nx">toHaveLength</span><span class="p">(</span><span class="mf">0</span><span class="p">);</span>
+<span class="w">  </span><span class="p">});</span>
+<span class="p">});</span></code></pre></figure>
+<p>These tests exercise Chirp's schemas and flows, not cryptography: the fake simulates encryption by recording recipients and storing plaintext, which is exactly the right level for app tests. The same code runs unchanged against the real daemon because <code>createFakeJolt</code> satisfies <code>JoltClient</code> and every sub-interface.</p>
+<h2 id="8-run-it-with-a-friend">8 · Run it with a friend</h2>
+<p>The whole point of a Jolt app is that two installs of it form a network with no server in between. To see Chirp actually be social you need a second identity, either a friend running Jolt Console on their machine or your own second machine.</p>
+<ol>
+<li>Both sides launch Jolt Console, run Chirp with <code>yarn tauri dev</code>, and approve the session request.</li>
+<li>Swap <code>.jolt</code> addresses (each of you sees your own at the top of the Chirp window).</li>
+<li>Each of you posts a chirp.</li>
+<li>You type their address into the follow form. Two things happen at once: their existing posts appear in your timeline on the next refresh, because following is just reading public records, and a follow request lands at their daemon's door.</li>
+<li>Their Chirp shows "Follow requests" with your address. When they hit <strong>Accept</strong>, Chirp follows back, and both timelines now interleave both authors, newest first.</li>
+</ol>
+<p>If the other side is offline, nothing breaks: chirps are served by whichever nodes hold them (the author's devices, and relays if the author pins there), and the follow request waits in the daemon's ingress queue and retries. Delivery, retries, and queue persistence are the daemon's job, not yours.</p>
+<h2 id="where-to-go-next">Where to go next</h2>
+<ul>
+<li>The <a href="../sdk/reference.html">SDK reference</a> documents every exported class, interface, function, and type, including the typed <code>operations</code> layer for endpoints the client does not wrap (binary publish, raw ingress send).</li>
+<li><a href="../rfcs/0007-app-sessions.html">JOLT-RFC-0007</a> specifies the session and capability model Chirp just used, including the grants this guide did not need: <code>inventory</code>, <code>pin:own</code>, <code>encrypt</code>, and <code>decrypt</code>.</li>
+<li><a href="../rfcs/0003-device-writer-logs.html">JOLT-RFC-0003</a> explains why append records from several devices merge deterministically, which is what made <code>publishAppend</code> safe to call from anywhere.</li>
+<li>For private content between chirpers, look at <code>publishEncryptedJson</code> and <code>readEncrypted</code> in the reference, backed by <a href="../rfcs/0004-encrypted-device-access.html">JOLT-RFC-0004</a>.</li>
+</ul>
         <footer class="document-footer">
           <a href="../sdk/">← SDK overview</a>
-          <a href="https://github.com/alexanderwanyoike/jolt/tree/dev/sdks/js">SDK source ↗</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/guides/app-development.md">Canonical Markdown ↗</a>
         </footer>
       </article>
     </main>

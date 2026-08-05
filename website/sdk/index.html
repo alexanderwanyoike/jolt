@@ -99,9 +99,9 @@ const transport = new HttpTransport({
             <span class="sdk-column-label">Tauri · desktop shells</span>
             <p>Daemon calls go through audited Rust proxy commands, so the webview never needs network access. The <code>tauri-plugin-jolt</code> plugin ships those commands; wiring it up is three lines:</p>
             <ol class="sdk-steps">
-              <li><span>01</span>Add the crate and register it:<br /><code>.plugin(tauri_plugin_jolt::init())</code></li>
-              <li><span>02</span>Grant the <code>jolt:default</code> capability in your Tauri capabilities file.</li>
-              <li><span>03</span>Construct the transport:<br /><code>new TauriTransport({ plugin: true })</code></li>
+              <li><span>01</span><div>Add the crate and register it:<br /><code>.plugin(tauri_plugin_jolt::init())</code></div></li>
+              <li><span>02</span><div>Grant the <code>jolt:default</code> capability in your Tauri capabilities file.</div></li>
+              <li><span>03</span><div>Construct the transport:<br /><code>new TauriTransport({ plugin: true })</code></div></li>
             </ol>
           </div>
         </div>

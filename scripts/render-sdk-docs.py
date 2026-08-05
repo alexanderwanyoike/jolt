@@ -13,6 +13,21 @@ import hashlib
 import json
 import re
 
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import get_lexer_by_name
+
+# Pygments has no TSX lexer; the TypeScript lexer handles the JSX subset fine.
+_LEXER_ALIASES = {"ts": "typescript", "tsx": "typescript", "jsx": "typescript"}
+_FORMATTER = HtmlFormatter(nowrap=True)
+
+
+def highlight_code(code: str, lang: str) -> str:
+    if lang == "text":
+        return escape(code)
+    lexer = get_lexer_by_name(_LEXER_ALIASES.get(lang, lang))
+    return highlight(code, lexer, _FORMATTER).rstrip("\n")
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "sdks" / "js" / "docs" / "api.json"
 OUTPUT = ROOT / "website" / "sdk" / "reference.html"
@@ -159,9 +174,10 @@ def render_markdown(md: str) -> str:
         if not chunk.strip():
             continue
         if chunk.startswith("```"):
+            lang = re.match(r"^```(\w*)", chunk).group(1) or "ts"
             body = re.sub(r"^```[^\n]*\n", "", chunk)
             body = re.sub(r"\n?```$", "", body)
-            html.append(f'<pre class="doc-code"><code>{escape(body)}</code></pre>')
+            html.append(f'<pre class="doc-code"><code>{highlight_code(body, lang)}</code></pre>')
             continue
         for block in re.split(r"\n\s*\n", chunk):
             lines = [line for line in block.splitlines() if line.strip()]
