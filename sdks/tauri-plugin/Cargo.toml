@@ -6,6 +6,9 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/alexanderwanyoike/jolt"
 links = "tauri-plugin-jolt"
+readme = "README.md"
+keywords = ["tauri", "plugin", "jolt", "p2p"]
+categories = ["gui", "network-programming"]
 
 [dependencies]
 tauri = { version = "2" }
