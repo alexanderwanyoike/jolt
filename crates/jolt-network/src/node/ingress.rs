@@ -1,5 +1,11 @@
+use jolt_store::PersistedIngressRecord;
+
 use crate::command::{IngressRecord, IngressStatus};
 use crate::error::NetworkError;
+
+/// Persisted queues are capped at the newest records by arrival time so a
+/// flooded or long-lived queue cannot grow the file without bound.
+const MAX_PERSISTED_INGRESS_RECORDS: usize = 1024;
 
 #[derive(Default)]
 pub(super) struct IngressQueue {
@@ -7,6 +13,62 @@ pub(super) struct IngressQueue {
 }
 
 impl IngressQueue {
+    /// Rebuild the queue from disk, dropping records whose envelope has
+    /// expired. Decided records are kept so accept/reject cannot be replayed
+    /// after a restart.
+    pub(super) fn from_persisted(persisted: Vec<PersistedIngressRecord>, now: u64) -> Self {
+        let records = persisted
+            .into_iter()
+            .filter(|record| record.expires_at.is_none_or(|expires_at| expires_at > now))
+            .map(|record| IngressRecord {
+                ingress_id: record.ingress_id,
+                receiver_id: record.receiver_id,
+                sender_identity: record.sender_identity,
+                recipient_identity: record.recipient_identity,
+                schema_hint: record.schema_hint,
+                status: match record.status.as_str() {
+                    "accepted" => IngressStatus::Accepted,
+                    "rejected" => IngressStatus::Rejected,
+                    _ => IngressStatus::Pending,
+                },
+                received_at: record.received_at,
+                expires_at: record.expires_at,
+                size: record.encrypted_object.len() as u64,
+                encrypted_object: record.encrypted_object,
+                accepted_at: record.accepted_at,
+                rejected_at: record.rejected_at,
+            })
+            .collect();
+        Self { records }
+    }
+
+    pub(super) fn to_persisted(&self) -> Vec<PersistedIngressRecord> {
+        let mut records: Vec<&IngressRecord> = self.records.iter().collect();
+        records.sort_by_key(|record| std::cmp::Reverse(record.received_at));
+        records.truncate(MAX_PERSISTED_INGRESS_RECORDS);
+        records
+            .into_iter()
+            .map(|record| PersistedIngressRecord {
+                ingress_id: record.ingress_id.clone(),
+                receiver_id: record.receiver_id.clone(),
+                sender_identity: record.sender_identity.clone(),
+                recipient_identity: record.recipient_identity.clone(),
+                schema_hint: record.schema_hint.clone(),
+                status: match record.status {
+                    IngressStatus::Pending => "pending",
+                    IngressStatus::Accepted => "accepted",
+                    IngressStatus::Rejected => "rejected",
+                }
+                .to_string(),
+                received_at: record.received_at,
+                expires_at: record.expires_at,
+                encrypted_object: record.encrypted_object.clone(),
+                accepted_at: record.accepted_at,
+                rejected_at: record.rejected_at,
+            })
+            .collect()
+    }
+
     pub(super) fn push(&mut self, record: IngressRecord) {
         self.records.push(record);
     }
