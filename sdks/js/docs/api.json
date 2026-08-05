@@ -73,7 +73,7 @@
 							"fileName": "src/index.ts",
 							"line": 74,
 							"character": 14,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/index.ts#L74"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/index.ts#L74"
 						}
 					],
 					"target": 417
@@ -132,7 +132,7 @@
 									"fileName": "src/operations.ts",
 									"line": 31,
 									"character": 12,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L31"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L31"
 								}
 							],
 							"type": {
@@ -155,7 +155,7 @@
 													"fileName": "src/operations.ts",
 													"line": 32,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L32"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L32"
 												}
 											],
 											"type": {
@@ -174,7 +174,7 @@
 													"fileName": "src/operations.ts",
 													"line": 33,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L33"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L33"
 												}
 											],
 											"type": {
@@ -193,7 +193,7 @@
 													"fileName": "src/operations.ts",
 													"line": 34,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L34"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L34"
 												}
 											],
 											"type": {
@@ -228,7 +228,7 @@
 													"fileName": "src/operations.ts",
 													"line": 38,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L38"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L38"
 												}
 											],
 											"type": {
@@ -262,7 +262,7 @@
 													"fileName": "src/operations.ts",
 													"line": 36,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L36"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L36"
 												}
 											],
 											"type": {
@@ -288,7 +288,7 @@
 											"fileName": "src/operations.ts",
 											"line": 31,
 											"character": 29,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L31"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L31"
 										}
 									]
 								}
@@ -305,7 +305,7 @@
 									"fileName": "src/operations.ts",
 									"line": 285,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L285"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L285"
 								}
 							],
 							"signatures": [
@@ -328,7 +328,7 @@
 											"fileName": "src/operations.ts",
 											"line": 285,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L285"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L285"
 										}
 									],
 									"parameters": [
@@ -414,7 +414,7 @@
 									"fileName": "src/operations.ts",
 									"line": 125,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L125"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L125"
 								}
 							],
 							"signatures": [
@@ -455,7 +455,7 @@
 											"fileName": "src/operations.ts",
 											"line": 125,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L125"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L125"
 										}
 									],
 									"parameters": [
@@ -552,7 +552,7 @@
 									"fileName": "src/operations.ts",
 									"line": 221,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L221"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L221"
 								}
 							],
 							"signatures": [
@@ -575,7 +575,7 @@
 											"fileName": "src/operations.ts",
 											"line": 221,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L221"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L221"
 										}
 									],
 									"parameters": [
@@ -661,7 +661,7 @@
 									"fileName": "src/operations.ts",
 									"line": 144,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L144"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L144"
 								}
 							],
 							"signatures": [
@@ -684,7 +684,7 @@
 											"fileName": "src/operations.ts",
 											"line": 144,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L144"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L144"
 										}
 									],
 									"parameters": [
@@ -784,7 +784,7 @@
 									"fileName": "src/operations.ts",
 									"line": 211,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L211"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L211"
 								}
 							],
 							"signatures": [
@@ -807,7 +807,7 @@
 											"fileName": "src/operations.ts",
 											"line": 211,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L211"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L211"
 										}
 									],
 									"parameters": [
@@ -893,7 +893,7 @@
 									"fileName": "src/operations.ts",
 									"line": 69,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L69"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L69"
 								}
 							],
 							"signatures": [
@@ -916,7 +916,7 @@
 											"fileName": "src/operations.ts",
 											"line": 69,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L69"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L69"
 										}
 									],
 									"parameters": [
@@ -991,7 +991,7 @@
 									"fileName": "src/operations.ts",
 									"line": 60,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L60"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L60"
 								}
 							],
 							"signatures": [
@@ -1022,7 +1022,7 @@
 											"fileName": "src/operations.ts",
 											"line": 60,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L60"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L60"
 										}
 									],
 									"parameters": [
@@ -1097,7 +1097,7 @@
 									"fileName": "src/operations.ts",
 									"line": 78,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L78"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L78"
 								}
 							],
 							"signatures": [
@@ -1120,7 +1120,7 @@
 											"fileName": "src/operations.ts",
 											"line": 78,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L78"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L78"
 										}
 									],
 									"parameters": [
@@ -1184,7 +1184,7 @@
 									"fileName": "src/operations.ts",
 									"line": 262,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L262"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L262"
 								}
 							],
 							"signatures": [
@@ -1207,7 +1207,7 @@
 											"fileName": "src/operations.ts",
 											"line": 262,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L262"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L262"
 										}
 									],
 									"parameters": [
@@ -1285,7 +1285,7 @@
 									"fileName": "src/operations.ts",
 									"line": 231,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L231"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L231"
 								}
 							],
 							"signatures": [
@@ -1308,7 +1308,7 @@
 											"fileName": "src/operations.ts",
 											"line": 231,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L231"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L231"
 										}
 									],
 									"parameters": [
@@ -1386,7 +1386,7 @@
 									"fileName": "src/operations.ts",
 									"line": 271,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L271"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L271"
 								}
 							],
 							"signatures": [
@@ -1409,7 +1409,7 @@
 											"fileName": "src/operations.ts",
 											"line": 271,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L271"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L271"
 										}
 									],
 									"parameters": [
@@ -1495,7 +1495,7 @@
 									"fileName": "src/operations.ts",
 									"line": 102,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L102"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L102"
 								}
 							],
 							"signatures": [
@@ -1518,7 +1518,7 @@
 											"fileName": "src/operations.ts",
 											"line": 102,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L102"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L102"
 										}
 									],
 									"parameters": [
@@ -1610,7 +1610,7 @@
 																	"fileName": "src/operations.ts",
 																	"line": 107,
 																	"character": 10,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L107"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L107"
 																}
 															],
 															"type": {
@@ -1629,7 +1629,7 @@
 																	"fileName": "src/operations.ts",
 																	"line": 107,
 																	"character": 28,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L107"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L107"
 																}
 															],
 															"type": {
@@ -1652,7 +1652,7 @@
 															"fileName": "src/operations.ts",
 															"line": 107,
 															"character": 8,
-															"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L107"
+															"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L107"
 														}
 													]
 												}
@@ -1705,7 +1705,7 @@
 									"fileName": "src/operations.ts",
 									"line": 180,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L180"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L180"
 								}
 							],
 							"signatures": [
@@ -1736,7 +1736,7 @@
 											"fileName": "src/operations.ts",
 											"line": 180,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L180"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L180"
 										}
 									],
 									"parameters": [
@@ -1828,7 +1828,7 @@
 																	"fileName": "src/operations.ts",
 																	"line": 185,
 																	"character": 10,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L185"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L185"
 																}
 															],
 															"type": {
@@ -1847,7 +1847,7 @@
 																	"fileName": "src/operations.ts",
 																	"line": 185,
 																	"character": 28,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L185"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L185"
 																}
 															],
 															"type": {
@@ -1873,7 +1873,7 @@
 															"fileName": "src/operations.ts",
 															"line": 185,
 															"character": 8,
-															"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L185"
+															"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L185"
 														}
 													]
 												}
@@ -1926,7 +1926,7 @@
 									"fileName": "src/operations.ts",
 									"line": 159,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L159"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L159"
 								}
 							],
 							"signatures": [
@@ -1957,7 +1957,7 @@
 											"fileName": "src/operations.ts",
 											"line": 159,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L159"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L159"
 										}
 									],
 									"parameters": [
@@ -2068,7 +2068,7 @@
 									"fileName": "src/operations.ts",
 									"line": 83,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L83"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L83"
 								}
 							],
 							"signatures": [
@@ -2091,7 +2091,7 @@
 											"fileName": "src/operations.ts",
 											"line": 83,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L83"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L83"
 										}
 									],
 									"parameters": [
@@ -2188,7 +2188,7 @@
 									"fileName": "src/operations.ts",
 									"line": 299,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L299"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L299"
 								}
 							],
 							"signatures": [
@@ -2211,7 +2211,7 @@
 											"fileName": "src/operations.ts",
 											"line": 299,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L299"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L299"
 										}
 									],
 									"parameters": [
@@ -2297,7 +2297,7 @@
 									"fileName": "src/operations.ts",
 									"line": 42,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L42"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L42"
 								}
 							],
 							"signatures": [
@@ -2320,7 +2320,7 @@
 											"fileName": "src/operations.ts",
 											"line": 42,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L42"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L42"
 										}
 									],
 									"parameters": [
@@ -2397,7 +2397,7 @@
 									"fileName": "src/operations.ts",
 									"line": 201,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L201"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L201"
 								}
 							],
 							"signatures": [
@@ -2428,7 +2428,7 @@
 											"fileName": "src/operations.ts",
 											"line": 201,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L201"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L201"
 										}
 									],
 									"parameters": [
@@ -2514,7 +2514,7 @@
 									"fileName": "src/operations.ts",
 									"line": 244,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L244"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L244"
 								}
 							],
 							"signatures": [
@@ -2553,7 +2553,7 @@
 											"fileName": "src/operations.ts",
 											"line": 244,
 											"character": 16,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L244"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L244"
 										}
 									],
 									"parameters": [
@@ -2607,7 +2607,7 @@
 																	"fileName": "src/operations.ts",
 																	"line": 247,
 																	"character": 28,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L247"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L247"
 																}
 															],
 															"type": {
@@ -2631,7 +2631,7 @@
 																	"fileName": "src/operations.ts",
 																	"line": 247,
 																	"character": 55,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L247"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L247"
 																}
 															],
 															"type": {
@@ -2650,7 +2650,7 @@
 																	"fileName": "src/operations.ts",
 																	"line": 247,
 																	"character": 9,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L247"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L247"
 																}
 															],
 															"type": {
@@ -2674,7 +2674,7 @@
 															"fileName": "src/operations.ts",
 															"line": 247,
 															"character": 7,
-															"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L247"
+															"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L247"
 														}
 													]
 												}
@@ -2754,7 +2754,7 @@
 							"fileName": "src/operations.ts",
 							"line": 1,
 							"character": 0,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/operations.ts#L1"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/operations.ts#L1"
 						}
 					]
 				},
@@ -2802,7 +2802,7 @@
 									"fileName": "src/errors.ts",
 									"line": 25,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L25"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L25"
 								}
 							],
 							"signatures": [
@@ -2817,7 +2817,7 @@
 											"fileName": "src/errors.ts",
 											"line": 25,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L25"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L25"
 										}
 									],
 									"parameters": [
@@ -2860,7 +2860,7 @@
 																	"fileName": "src/errors.ts",
 																	"line": 25,
 																	"character": 74,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L25"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L25"
 																}
 															],
 															"type": {
@@ -2881,7 +2881,7 @@
 																	"fileName": "src/errors.ts",
 																	"line": 25,
 																	"character": 59,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L25"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L25"
 																}
 															],
 															"type": {
@@ -2902,7 +2902,7 @@
 																	"fileName": "src/errors.ts",
 																	"line": 25,
 																	"character": 42,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L25"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L25"
 																}
 															],
 															"type": {
@@ -2926,7 +2926,7 @@
 															"fileName": "src/errors.ts",
 															"line": 25,
 															"character": 40,
-															"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L25"
+															"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L25"
 														}
 													]
 												}
@@ -2975,7 +2975,7 @@
 									"fileName": "src/errors.ts",
 									"line": 23,
 									"character": 11,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L23"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L23"
 								}
 							],
 							"type": {
@@ -3040,7 +3040,7 @@
 									"fileName": "src/errors.ts",
 									"line": 21,
 									"character": 11,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L21"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L21"
 								}
 							],
 							"type": {
@@ -3149,7 +3149,7 @@
 									"fileName": "src/errors.ts",
 									"line": 19,
 									"character": 11,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L19"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L19"
 								}
 							],
 							"type": {
@@ -3183,7 +3183,7 @@
 							"fileName": "src/errors.ts",
 							"line": 17,
 							"character": 13,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L17"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L17"
 						}
 					],
 					"extendedTypes": [
@@ -3234,7 +3234,7 @@
 									"fileName": "src/errors.ts",
 									"line": 39,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L39"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L39"
 								}
 							],
 							"signatures": [
@@ -3249,7 +3249,7 @@
 											"fileName": "src/errors.ts",
 											"line": 39,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L39"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L39"
 										}
 									],
 									"parameters": [
@@ -3292,7 +3292,7 @@
 																	"fileName": "src/errors.ts",
 																	"line": 39,
 																	"character": 42,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L39"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L39"
 																}
 															],
 															"type": {
@@ -3314,7 +3314,7 @@
 															"fileName": "src/errors.ts",
 															"line": 39,
 															"character": 40,
-															"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L39"
+															"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L39"
 														}
 													]
 												}
@@ -3470,7 +3470,7 @@
 							"fileName": "src/errors.ts",
 							"line": 38,
 							"character": 13,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L38"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L38"
 						}
 					],
 					"extendedTypes": [
@@ -3511,7 +3511,7 @@
 									"fileName": "src/client.ts",
 									"line": 98,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L98"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L98"
 								}
 							],
 							"signatures": [
@@ -3534,7 +3534,7 @@
 											"fileName": "src/client.ts",
 											"line": 98,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L98"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L98"
 										}
 									],
 									"parameters": [
@@ -3610,7 +3610,7 @@
 									"fileName": "src/client.ts",
 									"line": 96,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L96"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L96"
 								}
 							],
 							"signatures": [
@@ -3641,7 +3641,7 @@
 											"fileName": "src/client.ts",
 											"line": 96,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L96"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L96"
 										}
 									],
 									"parameters": [
@@ -3718,7 +3718,7 @@
 							"fileName": "src/client.ts",
 							"line": 94,
 							"character": 17,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L94"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L94"
 						}
 					]
 				},
@@ -3748,7 +3748,7 @@
 									"fileName": "src/client.ts",
 									"line": 125,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L125"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L125"
 								}
 							],
 							"signatures": [
@@ -3771,7 +3771,7 @@
 											"fileName": "src/client.ts",
 											"line": 125,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L125"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L125"
 										}
 									],
 									"parameters": [
@@ -3825,7 +3825,7 @@
 									"fileName": "src/client.ts",
 									"line": 112,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L112"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L112"
 								}
 							],
 							"signatures": [
@@ -3874,7 +3874,7 @@
 											"fileName": "src/client.ts",
 											"line": 112,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L112"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L112"
 										}
 									],
 									"parameters": [
@@ -3961,7 +3961,7 @@
 									"fileName": "src/client.ts",
 									"line": 119,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L119"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L119"
 								}
 							],
 							"signatures": [
@@ -3992,7 +3992,7 @@
 											"fileName": "src/client.ts",
 											"line": 119,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L119"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L119"
 										}
 									],
 									"typeParameters": [
@@ -4110,7 +4110,7 @@
 							"fileName": "src/client.ts",
 							"line": 106,
 							"character": 17,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L106"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L106"
 						}
 					]
 				},
@@ -4140,7 +4140,7 @@
 									"fileName": "src/client.ts",
 									"line": 148,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L148"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L148"
 								}
 							],
 							"signatures": [
@@ -4155,7 +4155,7 @@
 											"fileName": "src/client.ts",
 											"line": 148,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L148"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L148"
 										}
 									],
 									"parameters": [
@@ -4215,7 +4215,7 @@
 									"fileName": "src/client.ts",
 									"line": 145,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L145"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L145"
 								}
 							],
 							"signatures": [
@@ -4230,7 +4230,7 @@
 											"fileName": "src/client.ts",
 											"line": 145,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L145"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L145"
 										}
 									],
 									"parameters": [
@@ -4284,7 +4284,7 @@
 									"fileName": "src/client.ts",
 									"line": 147,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L147"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L147"
 								}
 							],
 							"signatures": [
@@ -4315,7 +4315,7 @@
 											"fileName": "src/client.ts",
 											"line": 147,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L147"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L147"
 										}
 									],
 									"parameters": [
@@ -4375,7 +4375,7 @@
 									"fileName": "src/client.ts",
 									"line": 149,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L149"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L149"
 								}
 							],
 							"signatures": [
@@ -4390,7 +4390,7 @@
 											"fileName": "src/client.ts",
 											"line": 149,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L149"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L149"
 										}
 									],
 									"parameters": [
@@ -4450,7 +4450,7 @@
 									"fileName": "src/client.ts",
 									"line": 139,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L139"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L139"
 								}
 							],
 							"signatures": [
@@ -4489,7 +4489,7 @@
 											"fileName": "src/client.ts",
 											"line": 139,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L139"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L139"
 										}
 									],
 									"parameters": [
@@ -4580,7 +4580,7 @@
 							"fileName": "src/client.ts",
 							"line": 133,
 							"character": 17,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L133"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L133"
 						}
 					]
 				},
@@ -4610,7 +4610,7 @@
 									"fileName": "src/client.ts",
 									"line": 74,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L74"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L74"
 								}
 							],
 							"signatures": [
@@ -4633,7 +4633,7 @@
 											"fileName": "src/client.ts",
 											"line": 74,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L74"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L74"
 										}
 									],
 									"parameters": [
@@ -4706,7 +4706,7 @@
 									"fileName": "src/client.ts",
 									"line": 79,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L79"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L79"
 								}
 							],
 							"signatures": [
@@ -4745,7 +4745,7 @@
 											"fileName": "src/client.ts",
 											"line": 79,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L79"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L79"
 										}
 									],
 									"typeParameters": [
@@ -4858,7 +4858,7 @@
 									"fileName": "src/client.ts",
 									"line": 84,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L84"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L84"
 								}
 							],
 							"signatures": [
@@ -4881,7 +4881,7 @@
 											"fileName": "src/client.ts",
 											"line": 84,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L84"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L84"
 										}
 									],
 									"typeParameters": [
@@ -5021,7 +5021,7 @@
 							"fileName": "src/client.ts",
 							"line": 72,
 							"character": 17,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L72"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L72"
 						}
 					]
 				},
@@ -5051,7 +5051,7 @@
 									"fileName": "src/client.ts",
 									"line": 165,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L165"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L165"
 								}
 							],
 							"signatures": [
@@ -5074,7 +5074,7 @@
 											"fileName": "src/client.ts",
 											"line": 165,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L165"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L165"
 										}
 									],
 									"parameters": [
@@ -5125,7 +5125,7 @@
 									"fileName": "src/client.ts",
 									"line": 160,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L160"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L160"
 								}
 							],
 							"signatures": [
@@ -5148,7 +5148,7 @@
 											"fileName": "src/client.ts",
 											"line": 160,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L160"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L160"
 										}
 									],
 									"parameters": [
@@ -5210,7 +5210,7 @@
 									"fileName": "src/client.ts",
 									"line": 167,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L167"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L167"
 								}
 							],
 							"signatures": [
@@ -5233,7 +5233,7 @@
 											"fileName": "src/client.ts",
 											"line": 167,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L167"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L167"
 										}
 									],
 									"parameters": [
@@ -5284,7 +5284,7 @@
 									"fileName": "src/client.ts",
 									"line": 155,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L155"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L155"
 								}
 							],
 							"signatures": [
@@ -5307,7 +5307,7 @@
 											"fileName": "src/client.ts",
 											"line": 155,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L155"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L155"
 										}
 									],
 									"parameters": [
@@ -5377,7 +5377,7 @@
 							"fileName": "src/client.ts",
 							"line": 153,
 							"character": 17,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L153"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L153"
 						}
 					]
 				},
@@ -5427,7 +5427,7 @@
 									"fileName": "src/transport.ts",
 									"line": 59,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L59"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L59"
 								}
 							],
 							"signatures": [
@@ -5466,7 +5466,7 @@
 											"fileName": "src/transport.ts",
 											"line": 59,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L59"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L59"
 										}
 									],
 									"typeParameters": [
@@ -5551,7 +5551,7 @@
 									"fileName": "src/transport.ts",
 									"line": 61,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L61"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L61"
 								}
 							],
 							"signatures": [
@@ -5590,7 +5590,7 @@
 											"fileName": "src/transport.ts",
 											"line": 61,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L61"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L61"
 										}
 									],
 									"typeParameters": [
@@ -5677,7 +5677,7 @@
 							"fileName": "src/transport.ts",
 							"line": 57,
 							"character": 17,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L57"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L57"
 						}
 					],
 					"implementedBy": [
@@ -5712,7 +5712,7 @@
 							"fileName": "src/transport.ts",
 							"line": 18,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L18"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L18"
 						}
 					],
 					"type": {
@@ -5756,7 +5756,7 @@
 							"fileName": "src/wire.ts",
 							"line": 127,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L127"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L127"
 						}
 					],
 					"type": {
@@ -5779,7 +5779,7 @@
 											"fileName": "src/wire.ts",
 											"line": 129,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L129"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L129"
 										}
 									],
 									"type": {
@@ -5798,7 +5798,7 @@
 											"fileName": "src/wire.ts",
 											"line": 132,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L132"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L132"
 										}
 									],
 									"type": {
@@ -5817,7 +5817,7 @@
 											"fileName": "src/wire.ts",
 											"line": 130,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L130"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L130"
 										}
 									],
 									"type": {
@@ -5836,7 +5836,7 @@
 											"fileName": "src/wire.ts",
 											"line": 131,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L131"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L131"
 										}
 									],
 									"type": {
@@ -5855,7 +5855,7 @@
 											"fileName": "src/wire.ts",
 											"line": 133,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L133"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L133"
 										}
 									],
 									"type": {
@@ -5874,7 +5874,7 @@
 											"fileName": "src/wire.ts",
 											"line": 128,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L128"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L128"
 										}
 									],
 									"type": {
@@ -5901,7 +5901,7 @@
 									"fileName": "src/wire.ts",
 									"line": 127,
 									"character": 31,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L127"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L127"
 								}
 							]
 						}
@@ -5934,7 +5934,7 @@
 							"fileName": "src/wire.ts",
 							"line": 66,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L66"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L66"
 						}
 					],
 					"type": {
@@ -5957,7 +5957,7 @@
 											"fileName": "src/wire.ts",
 											"line": 67,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L67"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L67"
 										}
 									],
 									"type": {
@@ -5976,7 +5976,7 @@
 											"fileName": "src/wire.ts",
 											"line": 68,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L68"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L68"
 										}
 									],
 									"type": {
@@ -6001,7 +6001,7 @@
 									"fileName": "src/wire.ts",
 									"line": 66,
 									"character": 40,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L66"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L66"
 								}
 							]
 						}
@@ -6026,7 +6026,7 @@
 							"fileName": "src/wire.ts",
 							"line": 63,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L63"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L63"
 						}
 					],
 					"type": {
@@ -6082,7 +6082,7 @@
 							"fileName": "src/wire.ts",
 							"line": 72,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L72"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L72"
 						}
 					],
 					"type": {
@@ -6105,7 +6105,7 @@
 											"fileName": "src/wire.ts",
 											"line": 78,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L78"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L78"
 										}
 									],
 									"type": {
@@ -6129,7 +6129,7 @@
 											"fileName": "src/wire.ts",
 											"line": 79,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L79"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L79"
 										}
 									],
 									"type": {
@@ -6159,7 +6159,7 @@
 											"fileName": "src/wire.ts",
 											"line": 77,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L77"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L77"
 										}
 									],
 									"type": {
@@ -6187,7 +6187,7 @@
 											"fileName": "src/wire.ts",
 											"line": 73,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L73"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L73"
 										}
 									],
 									"type": {
@@ -6208,7 +6208,7 @@
 											"fileName": "src/wire.ts",
 											"line": 74,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L74"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L74"
 										}
 									],
 									"type": {
@@ -6238,7 +6238,7 @@
 											"fileName": "src/wire.ts",
 											"line": 75,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L75"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L75"
 										}
 									],
 									"type": {
@@ -6266,7 +6266,7 @@
 											"fileName": "src/wire.ts",
 											"line": 76,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L76"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L76"
 										}
 									],
 									"type": {
@@ -6296,7 +6296,7 @@
 									"fileName": "src/wire.ts",
 									"line": 72,
 									"character": 39,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L72"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L72"
 								}
 							]
 						}
@@ -6347,7 +6347,7 @@
 							"fileName": "src/transport.ts",
 							"line": 26,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L26"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L26"
 						}
 					],
 					"type": {
@@ -6372,7 +6372,7 @@
 											"fileName": "src/transport.ts",
 											"line": 27,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L27"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L27"
 										}
 									],
 									"type": {
@@ -6398,7 +6398,7 @@
 											"fileName": "src/transport.ts",
 											"line": 28,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L28"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L28"
 										}
 									],
 									"type": {
@@ -6421,7 +6421,7 @@
 									"fileName": "src/transport.ts",
 									"line": 26,
 									"character": 26,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L26"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L26"
 								}
 							]
 						}
@@ -6454,7 +6454,7 @@
 							"fileName": "src/wire.ts",
 							"line": 83,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L83"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L83"
 						}
 					],
 					"type": {
@@ -6477,7 +6477,7 @@
 											"fileName": "src/wire.ts",
 											"line": 86,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L86"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L86"
 										}
 									],
 									"type": {
@@ -6496,7 +6496,7 @@
 											"fileName": "src/wire.ts",
 											"line": 87,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L87"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L87"
 										}
 									],
 									"type": {
@@ -6517,7 +6517,7 @@
 											"fileName": "src/wire.ts",
 											"line": 91,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L91"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L91"
 										}
 									],
 									"type": {
@@ -6545,7 +6545,7 @@
 											"fileName": "src/wire.ts",
 											"line": 89,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L89"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L89"
 										}
 									],
 									"type": {
@@ -6569,7 +6569,7 @@
 											"fileName": "src/wire.ts",
 											"line": 88,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L88"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L88"
 										}
 									],
 									"type": {
@@ -6599,7 +6599,7 @@
 											"fileName": "src/wire.ts",
 											"line": 92,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L92"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L92"
 										}
 									],
 									"type": {
@@ -6627,7 +6627,7 @@
 											"fileName": "src/wire.ts",
 											"line": 84,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L84"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L84"
 										}
 									],
 									"type": {
@@ -6648,7 +6648,7 @@
 											"fileName": "src/wire.ts",
 											"line": 85,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L85"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L85"
 										}
 									],
 									"type": {
@@ -6676,7 +6676,7 @@
 											"fileName": "src/wire.ts",
 											"line": 90,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L90"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L90"
 										}
 									],
 									"type": {
@@ -6708,7 +6708,7 @@
 									"fileName": "src/wire.ts",
 									"line": 83,
 									"character": 32,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L83"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L83"
 								}
 							]
 						}
@@ -6741,7 +6741,7 @@
 							"fileName": "src/client.ts",
 							"line": 50,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L50"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L50"
 						}
 					],
 					"typeParameters": [
@@ -6766,7 +6766,7 @@
 									"fileName": "src/client.ts",
 									"line": 50,
 									"character": 25,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L50"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L50"
 								}
 							],
 							"signatures": [
@@ -6837,7 +6837,7 @@
 							"fileName": "src/wire.ts",
 							"line": 118,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L118"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L118"
 						}
 					],
 					"type": {
@@ -6860,7 +6860,7 @@
 											"fileName": "src/wire.ts",
 											"line": 119,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L119"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L119"
 										}
 									],
 									"type": {
@@ -6879,7 +6879,7 @@
 											"fileName": "src/wire.ts",
 											"line": 123,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L123"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L123"
 										}
 									],
 									"type": {
@@ -6898,7 +6898,7 @@
 											"fileName": "src/wire.ts",
 											"line": 120,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L120"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L120"
 										}
 									],
 									"type": {
@@ -6917,7 +6917,7 @@
 											"fileName": "src/wire.ts",
 											"line": 121,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L121"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L121"
 										}
 									],
 									"type": {
@@ -6939,7 +6939,7 @@
 											"fileName": "src/wire.ts",
 											"line": 122,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L122"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L122"
 										}
 									],
 									"type": {
@@ -6965,7 +6965,7 @@
 									"fileName": "src/wire.ts",
 									"line": 118,
 									"character": 39,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L118"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L118"
 								}
 							]
 						}
@@ -6998,7 +6998,7 @@
 							"fileName": "src/wire.ts",
 							"line": 111,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L111"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L111"
 						}
 					],
 					"type": {
@@ -7021,7 +7021,7 @@
 											"fileName": "src/wire.ts",
 											"line": 114,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L114"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L114"
 										}
 									],
 									"type": {
@@ -7040,7 +7040,7 @@
 											"fileName": "src/wire.ts",
 											"line": 112,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L112"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L112"
 										}
 									],
 									"type": {
@@ -7062,7 +7062,7 @@
 											"fileName": "src/wire.ts",
 											"line": 113,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L113"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L113"
 										}
 									],
 									"type": {
@@ -7086,7 +7086,7 @@
 									"fileName": "src/wire.ts",
 									"line": 111,
 									"character": 31,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L111"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L111"
 								}
 							]
 						}
@@ -7119,7 +7119,7 @@
 							"fileName": "src/wire.ts",
 							"line": 30,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L30"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L30"
 						}
 					],
 					"type": {
@@ -7151,7 +7151,7 @@
 													"fileName": "src/wire.ts",
 													"line": 31,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L31"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L31"
 												}
 											],
 											"type": {
@@ -7173,7 +7173,7 @@
 											"fileName": "src/wire.ts",
 											"line": 30,
 											"character": 57,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L30"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L30"
 										}
 									]
 								}
@@ -7200,7 +7200,7 @@
 							"fileName": "src/client.ts",
 							"line": 61,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L61"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L61"
 						}
 					],
 					"type": {
@@ -7223,7 +7223,7 @@
 											"fileName": "src/client.ts",
 											"line": 64,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L64"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L64"
 										}
 									],
 									"type": {
@@ -7242,7 +7242,7 @@
 											"fileName": "src/client.ts",
 											"line": 67,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L67"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L67"
 										}
 									],
 									"type": {
@@ -7261,7 +7261,7 @@
 											"fileName": "src/client.ts",
 											"line": 65,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L65"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L65"
 										}
 									],
 									"type": {
@@ -7280,7 +7280,7 @@
 											"fileName": "src/client.ts",
 											"line": 66,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L66"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L66"
 										}
 									],
 									"type": {
@@ -7299,7 +7299,7 @@
 											"fileName": "src/client.ts",
 											"line": 68,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L68"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L68"
 										}
 									],
 									"type": {
@@ -7318,7 +7318,7 @@
 											"fileName": "src/client.ts",
 											"line": 62,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L62"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L62"
 										}
 									],
 									"type": {
@@ -7337,7 +7337,7 @@
 											"fileName": "src/client.ts",
 											"line": 63,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L63"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L63"
 										}
 									],
 									"type": {
@@ -7365,7 +7365,7 @@
 									"fileName": "src/client.ts",
 									"line": 61,
 									"character": 31,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L61"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L61"
 								}
 							]
 						}
@@ -7398,7 +7398,7 @@
 							"fileName": "src/wire.ts",
 							"line": 56,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L56"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L56"
 						}
 					],
 					"type": {
@@ -7421,7 +7421,7 @@
 											"fileName": "src/wire.ts",
 											"line": 58,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L58"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L58"
 										}
 									],
 									"type": {
@@ -7440,7 +7440,7 @@
 											"fileName": "src/wire.ts",
 											"line": 57,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L57"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L57"
 										}
 									],
 									"type": {
@@ -7462,7 +7462,7 @@
 											"fileName": "src/wire.ts",
 											"line": 59,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L59"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L59"
 										}
 									],
 									"type": {
@@ -7486,7 +7486,7 @@
 									"fileName": "src/wire.ts",
 									"line": 56,
 									"character": 26,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L56"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L56"
 								}
 							]
 						}
@@ -7511,7 +7511,7 @@
 							"fileName": "src/wire.ts",
 							"line": 96,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L96"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L96"
 						}
 					],
 					"type": {
@@ -7536,7 +7536,7 @@
 											"fileName": "src/wire.ts",
 											"line": 106,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L106"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L106"
 										}
 									],
 									"type": {
@@ -7566,7 +7566,7 @@
 											"fileName": "src/wire.ts",
 											"line": 104,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L104"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L104"
 										}
 									],
 									"type": {
@@ -7594,7 +7594,7 @@
 											"fileName": "src/wire.ts",
 											"line": 97,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L97"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L97"
 										}
 									],
 									"type": {
@@ -7613,7 +7613,7 @@
 											"fileName": "src/wire.ts",
 											"line": 103,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L103"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L103"
 										}
 									],
 									"type": {
@@ -7632,7 +7632,7 @@
 											"fileName": "src/wire.ts",
 											"line": 98,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L98"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L98"
 										}
 									],
 									"type": {
@@ -7651,7 +7651,7 @@
 											"fileName": "src/wire.ts",
 											"line": 100,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L100"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L100"
 										}
 									],
 									"type": {
@@ -7672,7 +7672,7 @@
 											"fileName": "src/wire.ts",
 											"line": 107,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L107"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L107"
 										}
 									],
 									"type": {
@@ -7702,7 +7702,7 @@
 											"fileName": "src/wire.ts",
 											"line": 101,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L101"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L101"
 										}
 									],
 									"type": {
@@ -7730,7 +7730,7 @@
 											"fileName": "src/wire.ts",
 											"line": 99,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L99"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L99"
 										}
 									],
 									"type": {
@@ -7749,7 +7749,7 @@
 											"fileName": "src/wire.ts",
 											"line": 105,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L105"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L105"
 										}
 									],
 									"type": {
@@ -7768,7 +7768,7 @@
 											"fileName": "src/wire.ts",
 											"line": 102,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L102"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L102"
 										}
 									],
 									"type": {
@@ -7813,7 +7813,7 @@
 									"fileName": "src/wire.ts",
 									"line": 96,
 									"character": 28,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L96"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L96"
 								}
 							]
 						}
@@ -7838,7 +7838,7 @@
 							"fileName": "src/client.ts",
 							"line": 171,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L171"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L171"
 						}
 					],
 					"type": {
@@ -7904,7 +7904,7 @@
 													"fileName": "src/client.ts",
 													"line": 177,
 													"character": 13,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L177"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L177"
 												}
 											],
 											"type": {
@@ -7928,7 +7928,7 @@
 											"fileName": "src/client.ts",
 											"line": 175,
 											"character": 19,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L175"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L175"
 										}
 									]
 								}
@@ -7965,7 +7965,7 @@
 							"fileName": "src/client.ts",
 							"line": 181,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L181"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L181"
 						}
 					],
 					"type": {
@@ -7996,7 +7996,7 @@
 											"fileName": "src/client.ts",
 											"line": 187,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L187"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L187"
 										}
 									],
 									"type": {
@@ -8012,7 +8012,7 @@
 													"fileName": "src/client.ts",
 													"line": 187,
 													"character": 19,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L187"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L187"
 												}
 											],
 											"signatures": [
@@ -8042,7 +8042,7 @@
 											"fileName": "src/client.ts",
 											"line": 182,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L182"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L182"
 										}
 									],
 									"type": {
@@ -8067,7 +8067,7 @@
 									"fileName": "src/client.ts",
 									"line": 181,
 									"character": 32,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L181"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L181"
 								}
 							]
 						}
@@ -8096,7 +8096,7 @@
 							"fileName": "src/wire.ts",
 							"line": 12,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L12"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L12"
 						}
 					],
 					"type": {
@@ -8119,7 +8119,7 @@
 											"fileName": "src/wire.ts",
 											"line": 16,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L16"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L16"
 										}
 									],
 									"type": {
@@ -8140,7 +8140,7 @@
 											"fileName": "src/wire.ts",
 											"line": 17,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L17"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L17"
 										}
 									],
 									"type": {
@@ -8159,7 +8159,7 @@
 											"fileName": "src/wire.ts",
 											"line": 14,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L14"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L14"
 										}
 									],
 									"type": {
@@ -8178,7 +8178,7 @@
 											"fileName": "src/wire.ts",
 											"line": 13,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L13"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L13"
 										}
 									],
 									"type": {
@@ -8197,7 +8197,7 @@
 											"fileName": "src/wire.ts",
 											"line": 15,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L15"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L15"
 										}
 									],
 									"type": {
@@ -8223,7 +8223,7 @@
 									"fileName": "src/wire.ts",
 									"line": 12,
 									"character": 25,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L12"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L12"
 								}
 							]
 						}
@@ -8256,7 +8256,7 @@
 							"fileName": "src/wire.ts",
 							"line": 35,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L35"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L35"
 						}
 					],
 					"type": {
@@ -8281,7 +8281,7 @@
 											"fileName": "src/wire.ts",
 											"line": 39,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L39"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L39"
 										}
 									],
 									"type": {
@@ -8309,7 +8309,7 @@
 											"fileName": "src/wire.ts",
 											"line": 36,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L36"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L36"
 										}
 									],
 									"type": {
@@ -8330,7 +8330,7 @@
 											"fileName": "src/wire.ts",
 											"line": 40,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L40"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L40"
 										}
 									],
 									"type": {
@@ -8360,7 +8360,7 @@
 											"fileName": "src/wire.ts",
 											"line": 38,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L38"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L38"
 										}
 									],
 									"type": {
@@ -8388,7 +8388,7 @@
 											"fileName": "src/wire.ts",
 											"line": 41,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L41"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L41"
 										}
 									],
 									"type": {
@@ -8407,7 +8407,7 @@
 											"fileName": "src/wire.ts",
 											"line": 37,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L37"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L37"
 										}
 									],
 									"type": {
@@ -8434,7 +8434,7 @@
 									"fileName": "src/wire.ts",
 									"line": 35,
 									"character": 31,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L35"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L35"
 								}
 							]
 						}
@@ -8467,7 +8467,7 @@
 							"fileName": "src/wire.ts",
 							"line": 21,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L21"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L21"
 						}
 					],
 					"type": {
@@ -8492,7 +8492,7 @@
 											"fileName": "src/wire.ts",
 											"line": 25,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L25"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L25"
 										}
 									],
 									"type": {
@@ -8520,7 +8520,7 @@
 											"fileName": "src/wire.ts",
 											"line": 22,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L22"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L22"
 										}
 									],
 									"type": {
@@ -8541,7 +8541,7 @@
 											"fileName": "src/wire.ts",
 											"line": 26,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L26"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L26"
 										}
 									],
 									"type": {
@@ -8571,7 +8571,7 @@
 											"fileName": "src/wire.ts",
 											"line": 24,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L24"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L24"
 										}
 									],
 									"type": {
@@ -8599,7 +8599,7 @@
 											"fileName": "src/wire.ts",
 											"line": 23,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L23"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L23"
 										}
 									],
 									"type": {
@@ -8625,7 +8625,7 @@
 									"fileName": "src/wire.ts",
 									"line": 21,
 									"character": 30,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L21"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L21"
 								}
 							]
 						}
@@ -8650,7 +8650,7 @@
 							"fileName": "src/client.ts",
 							"line": 38,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L38"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L38"
 						}
 					],
 					"type": {
@@ -8673,7 +8673,7 @@
 											"fileName": "src/client.ts",
 											"line": 42,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L42"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L42"
 										}
 									],
 									"type": {
@@ -8701,7 +8701,7 @@
 											"fileName": "src/client.ts",
 											"line": 39,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L39"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L39"
 										}
 									],
 									"type": {
@@ -8720,7 +8720,7 @@
 											"fileName": "src/client.ts",
 											"line": 40,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L40"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L40"
 										}
 									],
 									"type": {
@@ -8739,7 +8739,7 @@
 											"fileName": "src/client.ts",
 											"line": 41,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L41"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L41"
 										}
 									],
 									"type": {
@@ -8764,7 +8764,7 @@
 									"fileName": "src/client.ts",
 									"line": 38,
 									"character": 28,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L38"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L38"
 								}
 							]
 						}
@@ -8797,7 +8797,7 @@
 							"fileName": "src/client.ts",
 							"line": 32,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L32"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L32"
 						}
 					],
 					"type": {
@@ -8820,7 +8820,7 @@
 											"fileName": "src/client.ts",
 											"line": 33,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L33"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L33"
 										}
 									],
 									"type": {
@@ -8839,7 +8839,7 @@
 											"fileName": "src/client.ts",
 											"line": 34,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L34"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L34"
 										}
 									],
 									"type": {
@@ -8862,7 +8862,7 @@
 									"fileName": "src/client.ts",
 									"line": 32,
 									"character": 24,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L32"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L32"
 								}
 							]
 						}
@@ -8903,7 +8903,7 @@
 							"fileName": "src/wire.ts",
 							"line": 45,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L45"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L45"
 						}
 					],
 					"type": {
@@ -8926,7 +8926,7 @@
 											"fileName": "src/wire.ts",
 											"line": 46,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L46"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L46"
 										}
 									],
 									"type": {
@@ -8945,7 +8945,7 @@
 											"fileName": "src/wire.ts",
 											"line": 50,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L50"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L50"
 										}
 									],
 									"type": {
@@ -8964,7 +8964,7 @@
 											"fileName": "src/wire.ts",
 											"line": 47,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L47"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L47"
 										}
 									],
 									"type": {
@@ -8983,7 +8983,7 @@
 											"fileName": "src/wire.ts",
 											"line": 49,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L49"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L49"
 										}
 									],
 									"type": {
@@ -9002,7 +9002,7 @@
 											"fileName": "src/wire.ts",
 											"line": 48,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L48"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L48"
 										}
 									],
 									"type": {
@@ -9021,7 +9021,7 @@
 											"fileName": "src/wire.ts",
 											"line": 51,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L51"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L51"
 										}
 									],
 									"type": {
@@ -9043,7 +9043,7 @@
 											"fileName": "src/wire.ts",
 											"line": 52,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L52"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L52"
 										}
 									],
 									"type": {
@@ -9071,7 +9071,7 @@
 									"fileName": "src/wire.ts",
 									"line": 45,
 									"character": 30,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/wire.ts#L45"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/wire.ts#L45"
 								}
 							]
 						}
@@ -9096,7 +9096,7 @@
 							"fileName": "src/transport.ts",
 							"line": 32,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L32"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L32"
 						}
 					],
 					"type": {
@@ -9138,7 +9138,7 @@
 													"fileName": "src/transport.ts",
 													"line": 37,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L37"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L37"
 												}
 											],
 											"type": {
@@ -9159,7 +9159,7 @@
 													"fileName": "src/transport.ts",
 													"line": 33,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L33"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L33"
 												}
 											],
 											"type": {
@@ -9201,7 +9201,7 @@
 													"fileName": "src/transport.ts",
 													"line": 35,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L35"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L35"
 												}
 											],
 											"type": {
@@ -9234,7 +9234,7 @@
 											"fileName": "src/transport.ts",
 											"line": 32,
 											"character": 45,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L32"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L32"
 										}
 									]
 								}
@@ -9261,7 +9261,7 @@
 							"fileName": "src/transport.ts",
 							"line": 41,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L41"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L41"
 						}
 					],
 					"type": {
@@ -9293,7 +9293,7 @@
 													"fileName": "src/transport.ts",
 													"line": 45,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L45"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L45"
 												}
 											],
 											"type": {
@@ -9317,7 +9317,7 @@
 													"fileName": "src/transport.ts",
 													"line": 46,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L46"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L46"
 												}
 											],
 											"type": {
@@ -9336,7 +9336,7 @@
 													"fileName": "src/transport.ts",
 													"line": 47,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L47"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L47"
 												}
 											],
 											"type": {
@@ -9363,7 +9363,7 @@
 													"fileName": "src/transport.ts",
 													"line": 44,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L44"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L44"
 												}
 											],
 											"type": {
@@ -9382,7 +9382,7 @@
 													"fileName": "src/transport.ts",
 													"line": 42,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L42"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L42"
 												}
 											],
 											"type": {
@@ -9408,7 +9408,7 @@
 											"fileName": "src/transport.ts",
 											"line": 41,
 											"character": 44,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport.ts#L41"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport.ts#L41"
 										}
 									]
 								}
@@ -9435,7 +9435,7 @@
 							"fileName": "src/client.ts",
 							"line": 53,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L53"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L53"
 						}
 					],
 					"typeParameters": [
@@ -9467,7 +9467,7 @@
 											"fileName": "src/client.ts",
 											"line": 57,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L57"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L57"
 										}
 									],
 									"type": {
@@ -9486,7 +9486,7 @@
 											"fileName": "src/client.ts",
 											"line": 56,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L56"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L56"
 										}
 									],
 									"type": {
@@ -9505,7 +9505,7 @@
 											"fileName": "src/client.ts",
 											"line": 54,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L54"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L54"
 										}
 									],
 									"type": {
@@ -9526,7 +9526,7 @@
 											"fileName": "src/client.ts",
 											"line": 55,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L55"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L55"
 										}
 									],
 									"type": {
@@ -9554,7 +9554,7 @@
 									"fileName": "src/client.ts",
 									"line": 53,
 									"character": 27,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L53"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L53"
 								}
 							]
 						}
@@ -9571,7 +9571,7 @@
 							"fileName": "src/errors.ts",
 							"line": 50,
 							"character": 16,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L50"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L50"
 						}
 					],
 					"signatures": [
@@ -9594,7 +9594,7 @@
 									"fileName": "src/errors.ts",
 									"line": 50,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/errors.ts#L50"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/errors.ts#L50"
 								}
 							],
 							"parameters": [
@@ -9628,7 +9628,7 @@
 							"fileName": "src/client.ts",
 							"line": 227,
 							"character": 16,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L227"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L227"
 						}
 					],
 					"signatures": [
@@ -9661,7 +9661,7 @@
 									"fileName": "src/client.ts",
 									"line": 227,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L227"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L227"
 								}
 							],
 							"parameters": [
@@ -9699,7 +9699,7 @@
 							"fileName": "src/client.ts",
 							"line": 201,
 							"character": 16,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L201"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L201"
 						}
 					],
 					"signatures": [
@@ -9722,7 +9722,7 @@
 									"fileName": "src/client.ts",
 									"line": 201,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L201"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L201"
 								}
 							],
 							"parameters": [
@@ -9756,7 +9756,7 @@
 							"fileName": "src/client.ts",
 							"line": 191,
 							"character": 16,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L191"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L191"
 						}
 					],
 					"signatures": [
@@ -9789,7 +9789,7 @@
 									"fileName": "src/client.ts",
 									"line": 191,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L191"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L191"
 								}
 							],
 							"parameters": [
@@ -9825,7 +9825,7 @@
 							"fileName": "src/client.ts",
 							"line": 196,
 							"character": 16,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L196"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L196"
 						}
 					],
 					"signatures": [
@@ -9866,7 +9866,7 @@
 									"fileName": "src/client.ts",
 									"line": 196,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/client.ts#L196"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/client.ts#L196"
 								}
 							],
 							"parameters": [
@@ -9969,7 +9969,7 @@
 					"fileName": "src/index.ts",
 					"line": 1,
 					"character": 0,
-					"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/index.ts#L1"
+					"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/index.ts#L1"
 				}
 			]
 		},
@@ -10019,7 +10019,7 @@
 							"fileName": "src/testing.ts",
 							"line": 301,
 							"character": 9,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L301"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L301"
 						}
 					],
 					"target": 100
@@ -10053,7 +10053,7 @@
 							"fileName": "src/testing.ts",
 							"line": 42,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L42"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L42"
 						}
 					],
 					"type": {
@@ -10094,7 +10094,7 @@
 											"fileName": "src/testing.ts",
 											"line": 44,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L44"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L44"
 										}
 									],
 									"type": {
@@ -10123,7 +10123,7 @@
 											"fileName": "src/testing.ts",
 											"line": 50,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L50"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L50"
 										}
 									],
 									"type": {
@@ -10168,7 +10168,7 @@
 											"fileName": "src/testing.ts",
 											"line": 46,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L46"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L46"
 										}
 									],
 									"type": {
@@ -10203,7 +10203,7 @@
 											"fileName": "src/testing.ts",
 											"line": 48,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L48"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L48"
 										}
 									],
 									"type": {
@@ -10227,7 +10227,7 @@
 											"fileName": "src/testing.ts",
 											"line": 55,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L55"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L55"
 										}
 									],
 									"signatures": [
@@ -10250,7 +10250,7 @@
 													"fileName": "src/testing.ts",
 													"line": 55,
 													"character": 2,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L55"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L55"
 												}
 											],
 											"parameters": [
@@ -10280,7 +10280,7 @@
 																			"fileName": "src/testing.ts",
 																			"line": 57,
 																			"character": 4,
-																			"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L57"
+																			"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L57"
 																		}
 																	],
 																	"type": {
@@ -10301,7 +10301,7 @@
 																			"fileName": "src/testing.ts",
 																			"line": 58,
 																			"character": 4,
-																			"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L58"
+																			"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L58"
 																		}
 																	],
 																	"type": {
@@ -10320,7 +10320,7 @@
 																			"fileName": "src/testing.ts",
 																			"line": 56,
 																			"character": 4,
-																			"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L56"
+																			"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L56"
 																		}
 																	],
 																	"type": {
@@ -10344,7 +10344,7 @@
 																	"fileName": "src/testing.ts",
 																	"line": 55,
 																	"character": 24,
-																	"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L55"
+																	"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L55"
 																}
 															]
 														}
@@ -10383,7 +10383,7 @@
 									"fileName": "src/testing.ts",
 									"line": 42,
 									"character": 23,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L42"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L42"
 								}
 							]
 						}
@@ -10408,7 +10408,7 @@
 							"fileName": "src/testing.ts",
 							"line": 35,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L35"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L35"
 						}
 					],
 					"type": {
@@ -10431,7 +10431,7 @@
 											"fileName": "src/testing.ts",
 											"line": 38,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L38"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L38"
 										}
 									],
 									"type": {
@@ -10450,7 +10450,7 @@
 											"fileName": "src/testing.ts",
 											"line": 37,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L37"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L37"
 										}
 									],
 									"type": {
@@ -10469,7 +10469,7 @@
 											"fileName": "src/testing.ts",
 											"line": 36,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L36"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L36"
 										}
 									],
 									"type": {
@@ -10493,7 +10493,7 @@
 									"fileName": "src/testing.ts",
 									"line": 35,
 									"character": 27,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L35"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L35"
 								}
 							]
 						}
@@ -10510,7 +10510,7 @@
 							"fileName": "src/testing.ts",
 							"line": 76,
 							"character": 16,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L76"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L76"
 						}
 					],
 					"signatures": [
@@ -10537,7 +10537,7 @@
 									"fileName": "src/testing.ts",
 									"line": 76,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L76"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L76"
 								}
 							],
 							"parameters": [
@@ -10589,7 +10589,7 @@
 					"fileName": "src/testing.ts",
 					"line": 1,
 					"character": 0,
-					"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/testing.ts#L1"
+					"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/testing.ts#L1"
 				}
 			]
 		},
@@ -10684,7 +10684,7 @@
 									"fileName": "src/transport-http.ts",
 									"line": 48,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L48"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L48"
 								}
 							],
 							"signatures": [
@@ -10699,7 +10699,7 @@
 											"fileName": "src/transport-http.ts",
 											"line": 48,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L48"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L48"
 										}
 									],
 									"parameters": [
@@ -10738,7 +10738,7 @@
 									"fileName": "src/transport-http.ts",
 									"line": 66,
 									"character": 8,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L66"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L66"
 								}
 							],
 							"signatures": [
@@ -10777,7 +10777,7 @@
 											"fileName": "src/transport-http.ts",
 											"line": 66,
 											"character": 8,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L66"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L66"
 										}
 									],
 									"typeParameters": [
@@ -10871,7 +10871,7 @@
 									"fileName": "src/transport-http.ts",
 									"line": 82,
 									"character": 8,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L82"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L82"
 								}
 							],
 							"signatures": [
@@ -10910,7 +10910,7 @@
 											"fileName": "src/transport-http.ts",
 											"line": 82,
 											"character": 8,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L82"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L82"
 										}
 									],
 									"typeParameters": [
@@ -11005,7 +11005,7 @@
 									"fileName": "src/transport-http.ts",
 									"line": 62,
 									"character": 9,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L62"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L62"
 								}
 							],
 							"signatures": [
@@ -11044,7 +11044,7 @@
 											"fileName": "src/transport-http.ts",
 											"line": 62,
 											"character": 9,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L62"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L62"
 										}
 									],
 									"parameters": [
@@ -11118,7 +11118,7 @@
 							"fileName": "src/transport-http.ts",
 							"line": 44,
 							"character": 13,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L44"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L44"
 						}
 					],
 					"implementedTypes": [
@@ -11159,7 +11159,7 @@
 							"fileName": "src/transport-http.ts",
 							"line": 23,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L23"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L23"
 						}
 					],
 					"type": {
@@ -11200,7 +11200,7 @@
 											"fileName": "src/transport-http.ts",
 											"line": 33,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L33"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L33"
 										}
 									],
 									"type": {
@@ -11223,7 +11223,7 @@
 															"fileName": "src/transport-http.ts",
 															"line": 33,
 															"character": 12,
-															"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L33"
+															"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L33"
 														}
 													],
 													"type": {
@@ -11242,7 +11242,7 @@
 															"fileName": "src/transport-http.ts",
 															"line": 33,
 															"character": 25,
-															"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L33"
+															"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L33"
 														}
 													],
 													"type": {
@@ -11265,7 +11265,7 @@
 													"fileName": "src/transport-http.ts",
 													"line": 33,
 													"character": 10,
-													"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L33"
+													"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L33"
 												}
 											]
 										}
@@ -11316,7 +11316,7 @@
 											"fileName": "src/transport-http.ts",
 											"line": 28,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L28"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L28"
 										}
 									],
 									"type": {
@@ -11345,7 +11345,7 @@
 											"fileName": "src/transport-http.ts",
 											"line": 35,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L35"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L35"
 										}
 									],
 									"type": {
@@ -11369,7 +11369,7 @@
 									"fileName": "src/transport-http.ts",
 									"line": 23,
 									"character": 35,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L23"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L23"
 								}
 							]
 						}
@@ -11395,7 +11395,7 @@
 					"fileName": "src/transport-http.ts",
 					"line": 1,
 					"character": 0,
-					"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-http.ts#L1"
+					"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-http.ts#L1"
 				}
 			]
 		},
@@ -11448,7 +11448,7 @@
 									"fileName": "src/transport-tauri.ts",
 									"line": 73,
 									"character": 2,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L73"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L73"
 								}
 							],
 							"signatures": [
@@ -11463,7 +11463,7 @@
 											"fileName": "src/transport-tauri.ts",
 											"line": 73,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L73"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L73"
 										}
 									],
 									"parameters": [
@@ -11502,7 +11502,7 @@
 									"fileName": "src/transport-tauri.ts",
 									"line": 77,
 									"character": 8,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L77"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L77"
 								}
 							],
 							"signatures": [
@@ -11541,7 +11541,7 @@
 											"fileName": "src/transport-tauri.ts",
 											"line": 77,
 											"character": 8,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L77"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L77"
 										}
 									],
 									"typeParameters": [
@@ -11635,7 +11635,7 @@
 									"fileName": "src/transport-tauri.ts",
 									"line": 91,
 									"character": 8,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L91"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L91"
 								}
 							],
 							"signatures": [
@@ -11674,7 +11674,7 @@
 											"fileName": "src/transport-tauri.ts",
 											"line": 91,
 											"character": 8,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L91"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L91"
 										}
 									],
 									"typeParameters": [
@@ -11777,7 +11777,7 @@
 							"fileName": "src/transport-tauri.ts",
 							"line": 70,
 							"character": 13,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L70"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L70"
 						}
 					],
 					"implementedTypes": [
@@ -11818,7 +11818,7 @@
 							"fileName": "src/transport-tauri.ts",
 							"line": 56,
 							"character": 12,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L56"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L56"
 						}
 					],
 					"type": {
@@ -11883,7 +11883,7 @@
 											"fileName": "src/transport-tauri.ts",
 											"line": 63,
 											"character": 2,
-											"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L63"
+											"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L63"
 										}
 									],
 									"type": {
@@ -11905,7 +11905,7 @@
 									"fileName": "src/transport-tauri.ts",
 									"line": 56,
 									"character": 36,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L56"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L56"
 								}
 							]
 						}
@@ -11922,7 +11922,7 @@
 							"fileName": "src/transport-tauri.ts",
 							"line": 46,
 							"character": 16,
-							"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L46"
+							"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L46"
 						}
 					],
 					"signatures": [
@@ -11955,7 +11955,7 @@
 									"fileName": "src/transport-tauri.ts",
 									"line": 46,
 									"character": 16,
-									"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L46"
+									"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L46"
 								}
 							],
 							"type": {
@@ -11991,7 +11991,7 @@
 					"fileName": "src/transport-tauri.ts",
 					"line": 1,
 					"character": 0,
-					"url": "https://github.com/alexanderwanyoike/jolt/blob/78c50e5546f6aaa3b88f0fa89e474bdb4a620110/sdks/js/src/transport-tauri.ts#L1"
+					"url": "https://github.com/alexanderwanyoike/jolt/blob/ab11c04c6f446bdd3bb29226cbfb69f42eefbb09/sdks/js/src/transport-tauri.ts#L1"
 				}
 			]
 		}
