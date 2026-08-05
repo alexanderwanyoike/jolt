@@ -7,9 +7,9 @@
  * same in the browser, Node.js, and Tauri.
  *
  * Ship transports:
- * - `@jolt/sdk/transport-http`: fetch-based, for browsers and Node.js.
- * - `@jolt/sdk/transport-tauri`: Tauri `invoke`-based, for desktop shells.
- * - `@jolt/sdk/testing`: an in-memory fake daemon for tests.
+ * - `jolt-sdk/transport-http`: fetch-based, for browsers and Node.js.
+ * - `jolt-sdk/transport-tauri`: Tauri `invoke`-based, for desktop shells.
+ * - `jolt-sdk/testing`: an in-memory fake daemon for tests.
  *
  * @module
  */

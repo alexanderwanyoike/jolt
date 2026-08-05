@@ -37,7 +37,10 @@ export type HttpTransportOptions = {
 
 const DEFAULT_DAEMON_URL = "http://127.0.0.1:9862";
 
-/** {@inheritDoc HttpTransportOptions} */
+/**
+ * The fetch-based transport: reaches the daemon directly by URL, or through
+ * dev-server proxy paths via {@link HttpTransport.viteProxy}.
+ */
 export class HttpTransport implements JoltTransport {
   private readonly bases: { app: string; daemon: string };
   private readonly defaultTimeoutMs?: number;

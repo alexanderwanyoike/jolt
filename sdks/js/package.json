@@ -1,5 +1,5 @@
 {
-  "name": "@jolt/sdk",
+  "name": "jolt-sdk",
   "version": "0.1.0",
   "description": "TypeScript SDK for building applications on the Jolt network: typed daemon operations, sessions, publish/read, append/enumerate, encryption, and recipient-controlled ingress.",
   "license": "MIT",

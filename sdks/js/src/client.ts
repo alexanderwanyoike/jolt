@@ -10,7 +10,7 @@
  *
  * The interfaces ({@link JoltSdk}, {@link JoltEncryptedSdk},
  * {@link JoltIngressSdk}, {@link JoltAppendSdk}) are intentionally small so
- * tests can fake exactly the capability a feature uses; `@jolt/sdk/testing`
+ * tests can fake exactly the capability a feature uses; `jolt-sdk/testing`
  * ships a ready-made in-memory implementation.
  *
  * @module

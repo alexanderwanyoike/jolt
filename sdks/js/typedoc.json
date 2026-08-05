@@ -4,5 +4,5 @@
   "json": "docs/api.json",
   "excludeInternal": true,
   "readme": "README.md",
-  "name": "@jolt/sdk"
+  "name": "jolt-sdk"
 }
