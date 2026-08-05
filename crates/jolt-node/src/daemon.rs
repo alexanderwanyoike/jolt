@@ -40,17 +40,36 @@ pub fn clear_daemon_info(config: &NodeConfig) {
     let _ = std::fs::remove_file(port_path(config));
 }
 
-/// Check if a process with the given PID is still running.
-fn is_pid_alive(pid: u32) -> bool {
+/// A live pid only counts as the daemon when the process behind it really is
+/// a `jolt start` process. PIDs recycle: after a crash or SIGKILL the
+/// recorded pid can belong to an unrelated process, and treating it as the
+/// daemon left `jolt start` refusing forever behind a stale pid file (#207).
+fn is_pid_a_jolt_daemon(pid: u32) -> bool {
     let mut system = System::new();
-    system.refresh_processes(ProcessesToUpdate::Some(&[Pid::from_u32(pid)]), true);
-    system.process(Pid::from_u32(pid)).is_some()
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
+        true,
+        ProcessRefreshKind::nothing()
+            .with_cmd(UpdateKind::Always)
+            .without_tasks(),
+    );
+    let Some(process) = system.process(Pid::from_u32(pid)) else {
+        return false;
+    };
+    let args = process
+        .cmd()
+        .iter()
+        .map(|arg| arg.to_string_lossy())
+        .collect::<Vec<_>>();
+    let args = args.iter().map(|arg| arg.as_ref()).collect::<Vec<_>>();
+    daemon_info_from_process_args(pid, &args).is_some()
 }
 
-/// Check if the daemon is actually running (PID alive + port file exists).
+/// Check if the daemon is actually running: the recorded pid must be alive
+/// AND belong to a jolt daemon process.
 pub fn is_daemon_running(config: &NodeConfig) -> bool {
     if let Some(info) = read_daemon_info(config) {
-        is_pid_alive(info.pid)
+        is_pid_a_jolt_daemon(info.pid)
     } else {
         false
     }
@@ -59,7 +78,7 @@ pub fn is_daemon_running(config: &NodeConfig) -> bool {
 pub fn find_running_daemons(config: &NodeConfig) -> Vec<DaemonInfo> {
     let mut daemons = Vec::new();
     if let Some(info) = read_daemon_info(config) {
-        if is_pid_alive(info.pid) {
+        if is_pid_a_jolt_daemon(info.pid) {
             daemons.push(info);
         }
     }
@@ -147,6 +166,29 @@ fn executable_name(program: &str) -> Option<&str> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn recycled_pid_of_foreign_process_is_not_the_daemon() {
+        // A pid file left behind by a crash can point at a live pid that now
+        // belongs to an unrelated process. That must not read as "daemon is
+        // running", or `jolt start` refuses forever (#207).
+        let dir = tempdir().unwrap();
+        let config = NodeConfig::with_base_dir(dir.path().to_path_buf());
+        let mut foreign = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep");
+
+        write_daemon_info(&config, foreign.id(), 9862).unwrap();
+        let running = is_daemon_running(&config);
+
+        let _ = foreign.kill();
+        let _ = foreign.wait();
+        assert!(
+            !running,
+            "a live non-jolt process behind the pid file must not count as the daemon"
+        );
+    }
 
     #[test]
     fn test_daemon_info_write_read_roundtrip() {

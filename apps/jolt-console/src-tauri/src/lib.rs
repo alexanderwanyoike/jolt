@@ -99,7 +99,7 @@ async fn daemon_lifecycle_start(
 async fn daemon_lifecycle_stop(
     lifecycle: tauri::State<'_, Mutex<DaemonLifecycleManager>>,
 ) -> Result<DaemonLifecycleReport, String> {
-    stop_owned_daemon(&lifecycle)?;
+    stop_any_daemon(&lifecycle)?;
     lifecycle_report(&lifecycle).await
 }
 
@@ -107,8 +107,29 @@ async fn daemon_lifecycle_stop(
 async fn daemon_lifecycle_restart(
     lifecycle: tauri::State<'_, Mutex<DaemonLifecycleManager>>,
 ) -> Result<DaemonLifecycleReport, String> {
-    stop_owned_daemon(&lifecycle)?;
+    stop_any_daemon(&lifecycle)?;
     daemon_lifecycle_start(lifecycle).await
+}
+
+/// Stop the daemon whether or not this console instance spawned it. Since the
+/// daemon survives console restarts (#207), the console is often attached to
+/// a daemon it does not own; `jolt stop` handles that via the pid file.
+fn stop_any_daemon(lifecycle: &Mutex<DaemonLifecycleManager>) -> Result<(), String> {
+    if stop_owned_daemon(lifecycle).is_ok() {
+        return Ok(());
+    }
+    let program = configured_daemon_binary().unwrap_or_else(default_sidecar_path);
+    let output = Command::new(&program)
+        .arg("stop")
+        .output()
+        .map_err(|error| format!("failed to run {} stop: {error}", program.display()))?;
+    if !output.status.success() {
+        return Err(format!(
+            "jolt stop failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -312,17 +333,16 @@ fn stop_owned_daemon(lifecycle: &Mutex<DaemonLifecycleManager>) -> Result<(), St
     Ok(())
 }
 
-fn cleanup_owned_daemon_on_exit(lifecycle: &Mutex<DaemonLifecycleManager>) {
-    let Some(mut child) = lifecycle
-        .lock()
-        .ok()
-        .and_then(|mut manager| manager.child.take())
-    else {
-        return;
-    };
-
-    let _ = child.kill();
-    let _ = child.wait();
+fn detach_owned_daemon_on_exit(lifecycle: &Mutex<DaemonLifecycleManager>) {
+    // The daemon deliberately outlives the console window (#207). Closing the
+    // console used to kill the network stack underneath every running jolt
+    // app; now the daemon keeps running and the next console start reattaches
+    // through the health probe. The explicit Stop button still terminates it.
+    if let Ok(mut manager) = lifecycle.lock() {
+        if let Some(child) = manager.child.take() {
+            drop(child);
+        }
+    }
 }
 
 fn daemon_base_url() -> String {
@@ -523,7 +543,7 @@ pub fn run() {
         .expect("failed to build Jolt Console")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                cleanup_owned_daemon_on_exit(&app_handle.state::<Mutex<DaemonLifecycleManager>>());
+                detach_owned_daemon_on_exit(&app_handle.state::<Mutex<DaemonLifecycleManager>>());
             }
         });
 }
@@ -562,16 +582,19 @@ mod tests {
     }
 
     #[test]
-    fn exit_cleanup_without_console_owned_child_is_a_noop() {
+    fn exit_detach_without_console_owned_child_is_a_noop() {
         let lifecycle = Mutex::new(DaemonLifecycleManager::default());
 
-        cleanup_owned_daemon_on_exit(&lifecycle);
+        detach_owned_daemon_on_exit(&lifecycle);
 
         assert!(lifecycle.lock().unwrap().child.is_none());
     }
 
     #[test]
-    fn exit_cleanup_stops_console_owned_child() {
+    fn exit_detach_leaves_console_owned_child_running() {
+        // Closing the console must not take the daemon down with it (#207):
+        // every jolt app depends on the daemon staying up. The child is
+        // released, not killed; a later console start reattaches to it.
         let child = long_running_child();
         let pid = child.id();
         let lifecycle = Mutex::new(DaemonLifecycleManager {
@@ -580,10 +603,15 @@ mod tests {
             log_path: None,
         });
 
-        cleanup_owned_daemon_on_exit(&lifecycle);
+        detach_owned_daemon_on_exit(&lifecycle);
 
         assert!(lifecycle.lock().unwrap().child.is_none());
-        assert!(!process_is_running(pid));
+        assert!(
+            process_is_running(pid),
+            "the daemon must survive the console exiting"
+        );
+
+        let _ = Command::new("kill").arg(pid.to_string()).status();
     }
 
     #[test]
