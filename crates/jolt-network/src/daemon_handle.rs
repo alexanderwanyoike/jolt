@@ -290,6 +290,31 @@ impl DaemonHandle {
         receive_result(rx).await
     }
 
+    /// Deliver a recipient-controlled ingress envelope to a remote recipient's
+    /// daemon over p2p. Fails when the peer cannot be reached or rejects the
+    /// envelope; callers must also verify the returned record's
+    /// `recipient_identity` names the identity they intended to reach.
+    pub async fn send_ingress_to_peer(
+        &self,
+        peer_id: String,
+        receiver_id: String,
+        encrypted_object: Vec<u8>,
+        expires_at: Option<u64>,
+    ) -> Result<IngressRecord, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::SendIngressToPeer {
+                peer_id,
+                receiver_id,
+                encrypted_object,
+                expires_at,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
     /// List locally pending ingress envelopes.
     pub async fn list_pending_ingress(&self) -> Result<Vec<IngressRecord>, NetworkError> {
         let (tx, rx) = oneshot::channel();

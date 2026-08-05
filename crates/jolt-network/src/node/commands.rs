@@ -253,6 +253,28 @@ impl NetworkNode {
                 let result = self.submit_ingress(receiver_id, encrypted_object, expires_at);
                 let _ = response_tx.send(result);
             }
+            DaemonCommand::SendIngressToPeer {
+                peer_id,
+                receiver_id,
+                encrypted_object,
+                expires_at,
+                response_tx,
+            } => match peer_id.parse::<libp2p::PeerId>() {
+                Ok(peer) => {
+                    self.send_ingress_to_peer(
+                        &peer,
+                        receiver_id,
+                        encrypted_object,
+                        expires_at,
+                        response_tx,
+                    );
+                }
+                Err(e) => {
+                    let _ = response_tx.send(Err(NetworkError::InvalidInput(format!(
+                        "invalid recipient ingress peer id {peer_id}: {e}"
+                    ))));
+                }
+            },
             DaemonCommand::ListPendingIngress { response_tx } => {
                 let _ = response_tx.send(Ok(self.list_pending_ingress()));
             }

@@ -87,6 +87,7 @@ impl NetworkNode {
             local_encryption_key,
             local_encryption_key_published: false,
             pending_ingress: IngressQueue::default(),
+            pending_ingress_submits: HashMap::new(),
         };
 
         // Rebuild this node's own append-record (device-writer) state from disk

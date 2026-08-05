@@ -6,8 +6,8 @@ use jolt_core::verify_update_log_for_identity;
 use crate::behaviour::JoltBehaviourEvent;
 use crate::error::NetworkError;
 use crate::protocol::{
-    ContentResponse, DeviceWriterSyncResponse, RelayExchangeRequest, RelayExchangeResponse,
-    UpdateLogRequest, UpdateLogResponse,
+    ContentResponse, DeviceWriterSyncResponse, IngressSubmitResponse, RelayExchangeRequest,
+    RelayExchangeResponse, UpdateLogRequest, UpdateLogResponse,
 };
 
 use super::{unix_now, NetworkNode, PeerConnectionInfo};
@@ -665,6 +665,82 @@ impl NetworkNode {
                 }
                 self.mark_relay_peer_failure(&peer);
                 debug!("Outbound relay exchange failed: {error}");
+            }
+
+            // --- Ingress Submit ---
+            SwarmEvent::Behaviour(JoltBehaviourEvent::IngressSubmit(
+                request_response::Event::Message {
+                    message:
+                        request_response::Message::Request {
+                            request, channel, ..
+                        },
+                    peer,
+                    ..
+                },
+            )) => {
+                // A remote sender delivering an envelope for our identity. The
+                // same validation as the trusted HTTP submit route applies:
+                // signature must verify and the envelope must name the local
+                // identity as a recipient, or it is rejected.
+                let response =
+                    match self.submit_ingress(request.receiver_id, request.encrypted_object, request.expires_at)
+                    {
+                        Ok(record) => {
+                            info!(
+                                "Queued p2p ingress envelope {} from peer {peer}",
+                                record.ingress_id
+                            );
+                            IngressSubmitResponse::Accepted { record }
+                        }
+                        Err(e) => {
+                            warn!("Rejected p2p ingress envelope from peer {peer}: {e}");
+                            IngressSubmitResponse::Rejected {
+                                error: e.to_string(),
+                            }
+                        }
+                    };
+                if let Err(e) = self
+                    .swarm
+                    .behaviour_mut()
+                    .ingress_submit
+                    .send_response(channel, response)
+                {
+                    warn!("Failed to send ingress-submit response: {e:?}");
+                }
+            }
+
+            SwarmEvent::Behaviour(JoltBehaviourEvent::IngressSubmit(
+                request_response::Event::Message {
+                    message:
+                        request_response::Message::Response {
+                            request_id,
+                            response,
+                        },
+                    ..
+                },
+            )) => {
+                if let Some(tx) = self.pending_ingress_submits.remove(&request_id) {
+                    let result = match response {
+                        IngressSubmitResponse::Accepted { record } => Ok(record),
+                        IngressSubmitResponse::Rejected { error } => Err(NetworkError::Protocol(
+                            format!("recipient rejected ingress envelope: {error}"),
+                        )),
+                    };
+                    let _ = tx.send(result);
+                }
+            }
+
+            SwarmEvent::Behaviour(JoltBehaviourEvent::IngressSubmit(
+                request_response::Event::OutboundFailure {
+                    request_id, error, ..
+                },
+            )) => {
+                warn!("Outbound ingress-submit request failed: {error}");
+                if let Some(tx) = self.pending_ingress_submits.remove(&request_id) {
+                    let _ = tx.send(Err(NetworkError::Protocol(format!(
+                        "could not deliver ingress envelope to recipient: {error}"
+                    ))));
+                }
             }
 
             // --- Identify ---
