@@ -1,0 +1,52 @@
+{
+  "name": "@jolt/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for building applications on the Jolt network: typed daemon operations, sessions, publish/read, append/enumerate, encryption, and recipient-controlled ingress.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexanderwanyoike/jolt.git",
+    "directory": "sdks/js"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./transport-http": {
+      "types": "./dist/transport-http.d.ts",
+      "default": "./dist/transport-http.js"
+    },
+    "./transport-tauri": {
+      "types": "./dist/transport-tauri.d.ts",
+      "default": "./dist/transport-tauri.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "docs": "typedoc",
+    "pack:release": "npm run build && npm pack"
+  },
+  "peerDependencies": {
+    "@tauri-apps/api": ">=2"
+  },
+  "peerDependenciesMeta": {
+    "@tauri-apps/api": { "optional": true }
+  },
+  "devDependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "typedoc": "^0.26.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
