@@ -20,6 +20,7 @@ pub struct ContentStore {
     update_logs_dir: PathBuf,
     device_writer_logs_dir: PathBuf,
     home_relay_pins_path: PathBuf,
+    ingress_queue_path: PathBuf,
     local_identity_encryption_keypair_path: PathBuf,
     discovered_peer_hints_path: PathBuf,
     relay_records_path: PathBuf,
@@ -49,6 +50,25 @@ pub struct PublishedContentEntry {
 pub struct PersistedDeviceWriterLog {
     pub authority_records: Vec<DeviceAuthorizationRecord>,
     pub device_log: Vec<DeviceWriterLogEntry>,
+}
+
+/// One recipient-controlled ingress envelope as persisted to disk, including
+/// its encrypted bytes. Decided (accepted/rejected) records persist too so a
+/// decision cannot be replayed after a restart. Status is a plain string to
+/// keep this crate independent of jolt-network's IngressStatus enum.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PersistedIngressRecord {
+    pub ingress_id: String,
+    pub receiver_id: String,
+    pub sender_identity: String,
+    pub recipient_identity: String,
+    pub schema_hint: Option<String>,
+    pub status: String,
+    pub received_at: u64,
+    pub expires_at: Option<u64>,
+    pub encrypted_object: Vec<u8>,
+    pub accepted_at: Option<u64>,
+    pub rejected_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,6 +118,7 @@ impl ContentStore {
         let update_logs_dir = base_dir.join("update_logs");
         let device_writer_logs_dir = base_dir.join("device_writer_logs");
         let home_relay_pins_path = base_dir.join("home_relay_pins.json");
+        let ingress_queue_path = base_dir.join("ingress_queue.json");
         let local_identity_encryption_keypair_path =
             base_dir.join("local_identity_encryption_keypair.json");
         let discovered_peer_hints_path = base_dir.join("discovered_peer_hints.json");
@@ -123,6 +144,7 @@ impl ContentStore {
             update_logs_dir,
             device_writer_logs_dir,
             home_relay_pins_path,
+            ingress_queue_path,
             local_identity_encryption_keypair_path,
             discovered_peer_hints_path,
             relay_records_path,
@@ -356,6 +378,28 @@ impl ContentStore {
         let record =
             serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))?;
         Ok(Some(record))
+    }
+
+    /// Persist the recipient-controlled ingress queue. Ingress envelopes are
+    /// the network's friend requests and messages awaiting review; before this
+    /// they lived only in daemon memory and every restart silently dropped
+    /// them (jolt#194). Written atomically via a temp file.
+    pub fn save_ingress_queue(&self, records: &[PersistedIngressRecord]) -> Result<(), StoreError> {
+        let tmp_path = self.ingress_queue_path.with_extension("json.tmp");
+        let json = serde_json::to_string(records)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        std::fs::write(&tmp_path, json)?;
+        std::fs::rename(tmp_path, &self.ingress_queue_path)?;
+        Ok(())
+    }
+
+    /// Load the persisted ingress queue; an absent file is an empty queue.
+    pub fn load_ingress_queue(&self) -> Result<Vec<PersistedIngressRecord>, StoreError> {
+        if !self.ingress_queue_path.exists() {
+            return Ok(Vec::new());
+        }
+        let json = std::fs::read_to_string(&self.ingress_queue_path)?;
+        serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))
     }
 
     /// Persist a successful owner-directed home relay pin.

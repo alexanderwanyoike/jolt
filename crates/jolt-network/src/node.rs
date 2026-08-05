@@ -305,7 +305,19 @@ impl NetworkNode {
             rejected_at: None,
         };
         self.pending_ingress.push(record.clone());
+        self.persist_ingress_queue();
         Ok(record)
+    }
+
+    /// Best-effort write-through of the ingress queue (#194). A failed write
+    /// must not fail the submit/decide path; it only costs restart durability.
+    fn persist_ingress_queue(&self) {
+        if let Err(e) = self
+            .store
+            .save_ingress_queue(&self.pending_ingress.to_persisted())
+        {
+            tracing::warn!("Failed to persist ingress queue: {e}");
+        }
     }
 
     fn list_pending_ingress(&self) -> Vec<IngressRecord> {
@@ -361,7 +373,9 @@ impl NetworkNode {
     }
 
     fn accept_ingress(&mut self, ingress_id: &str) -> Result<IngressRecord, NetworkError> {
-        self.pending_ingress.accept(ingress_id, unix_now())
+        let record = self.pending_ingress.accept(ingress_id, unix_now())?;
+        self.persist_ingress_queue();
+        Ok(record)
     }
 
     fn open_ingress(
@@ -373,7 +387,9 @@ impl NetworkNode {
     }
 
     fn reject_ingress(&mut self, ingress_id: &str) -> Result<IngressRecord, NetworkError> {
-        self.pending_ingress.reject(ingress_id, unix_now())
+        let record = self.pending_ingress.reject(ingress_id, unix_now())?;
+        self.persist_ingress_queue();
+        Ok(record)
     }
 
     /// Request content from connected peers by ContentId.
