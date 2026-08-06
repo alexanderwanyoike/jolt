@@ -142,7 +142,7 @@ grep -Fq 'yarn add jolt-sdk' <(sed 's/<[^>]*>//g' website/sdk/index.html) || {
 }
 
 required_rfc_library_contract=(
-  'Protocol series · seven Internet-Drafts'
+  'Protocol series · seven experimental drafts'
   '0001-0007'
   '0002-device-authority.html'
   '0003-device-writer-logs.html'
@@ -203,7 +203,7 @@ if rows != expected:
 
 index = Path("website/rfcs/index.html").read_text(encoding="utf-8")
 for number, implementation in expected.items():
-    marker = f"Internet-Draft · {implementation}"
+    marker = f"Experimental Draft · {implementation}"
     if marker not in index:
         raise SystemExit(f"RFC {number} index badge is not derived from canonical status: {marker}")
 

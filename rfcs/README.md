@@ -42,10 +42,10 @@ product behavior normally do not need an RFC.
 
 | RFC | Title | Status | Implementation |
 |---|---|---|---|
-| [0001](0001-core-protocol.md) | Jolt Signed Path Records and Resolution | Internet-Draft | Implemented with known gaps |
-| [0002](0002-device-authority.md) | Device Authorization and Revocation | Internet-Draft | Implemented v1 |
-| [0003](0003-device-writer-logs.md) | Per-Device Writer Logs and Deterministic Merge | Internet-Draft | Implemented v1 |
-| [0004](0004-encrypted-device-access.md) | Encrypted Objects and Private Device Access | Internet-Draft | Envelope and daemon operations implemented; device-key custody experimental |
-| [0005](0005-community-membership.md) | Community Identities and Membership | Internet-Draft | Design only |
-| [0006](0006-community-app-indexes.md) | Community-Scoped App Indexes and Local Discovery | Internet-Draft | Design only |
-| [0007](0007-app-sessions.md) | Capability-Scoped Local App Sessions | Internet-Draft | Implemented v0 |
+| [0001](0001-core-protocol.md) | Jolt Signed Path Records and Resolution | Experimental Draft | Implemented with known gaps |
+| [0002](0002-device-authority.md) | Device Authorization and Revocation | Experimental Draft | Implemented v1 |
+| [0003](0003-device-writer-logs.md) | Per-Device Writer Logs and Deterministic Merge | Experimental Draft | Implemented v1 |
+| [0004](0004-encrypted-device-access.md) | Encrypted Objects and Private Device Access | Experimental Draft | Envelope and daemon operations implemented; device-key custody experimental |
+| [0005](0005-community-membership.md) | Community Identities and Membership | Experimental Draft | Design only |
+| [0006](0006-community-app-indexes.md) | Community-Scoped App Indexes and Local Discovery | Experimental Draft | Design only |
+| [0007](0007-app-sessions.md) | Capability-Scoped Local App Sessions | Experimental Draft | Implemented v0 |

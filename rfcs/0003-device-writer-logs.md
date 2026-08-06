@@ -6,7 +6,7 @@
 Jolt Project                                                JOLT-RFC-0003
 Request for Comments: 0003                                  August 2026
 Category: Experimental
-Status: Internet-Draft
+Status: Experimental Draft
 Updates: JOLT-RFC-0001
 Obsoletes: none
 ```
