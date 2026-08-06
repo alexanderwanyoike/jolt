@@ -150,3 +150,4 @@ If the other side is offline, nothing breaks: chirps are served by whichever nod
 - [JOLT-RFC-0007](../rfcs/0007-app-sessions.html) specifies the session and capability model Chirp just used, including the grants this guide did not need: `inventory`, `pin:own`, `encrypt`, and `decrypt`.
 - [JOLT-RFC-0003](../rfcs/0003-device-writer-logs.html) explains why append records from several devices merge deterministically, which is what made `publishAppend` safe to call from anywhere.
 - For private content between chirpers, look at `publishEncryptedJson` and `readEncrypted` in the reference, backed by [JOLT-RFC-0004](../rfcs/0004-encrypted-device-access.html).
+- Want your content reachable while your machines sleep? [Run your own relay](run-a-relay.html); it takes ten minutes and a small VPS.

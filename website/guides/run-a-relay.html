@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="Run your own Jolt relay on any Linux server: install the binary, one systemd unit, one open UDP port, and point your nodes at it." />
+    <meta property="og:title" content="Jolt Guide | Running a Relay" />
+    <meta property="og:description" content="Run your own Jolt relay on any Linux server: install the binary, one systemd unit, one open UDP port, and point your nodes at it." />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Jolt" />
+    <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="jolt-guide-source-sha256" content="1f9350c5eb2143a0c2af3b9a18599369155a39c9fa1bc5bafe4d229555e9e1c3" />
+    <title>Jolt Guide | Running a Relay</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="../docs.css" />
+  </head>
+  <body class="doc-page">
+    <aside class="doc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>guide 02</small></span></a>
+      <dl>
+        <div><dt>Role</dt><dd>Bootstrap relay</dd></div><div><dt>Host</dt><dd>Any Linux box</dd></div><div><dt>Footprint</dt><dd>One binary, one UDP port</dd></div>
+      </dl>
+      <nav aria-label="Guide contents">
+        <ul class="toc"><li class="toc-module"><a href="#1-what-you-need">1 · What you need</a></li><li class="toc-module"><a href="#2-install-the-binary">2 · Install the binary</a></li><li class="toc-module"><a href="#3-a-user-and-a-data-directory">3 · A user and a data directory</a></li><li class="toc-module"><a href="#4-the-systemd-unit">4 · The systemd unit</a></li><li class="toc-module"><a href="#5-open-the-port">5 · Open the port</a></li><li class="toc-module"><a href="#6-verify-and-get-your-relay-address">6 · Verify and get your relay address</a></li><li class="toc-module"><a href="#7-point-your-nodes-at-it">7 · Point your nodes at it</a></li><li class="toc-module"><a href="#8-operations">8 · Operations</a></li><li class="toc-module"><a href="#where-to-go-next">Where to go next</a></li></ul>
+      </nav>
+    </aside>
+    <main class="doc-main">
+      <article class="doc-document">
+        <header class="doc-title">
+          <p>JOLT OPERATIONS GUIDE · 02</p>
+          <h1>Running a Relay</h1>
+          <p class="doc-lede">A relay is an always-on Jolt node on a public address. It helps other nodes find each other (discovery), carries traffic between peers whose NATs refuse to hole-punch (availability), and can hold pinned content so your stuff stays fetchable while your laptop sleeps. Every step on this page is taken from the relay that bootstraps the Jolt network today, a single small VPS.</p>
+<p>Two things a relay can never do, by construction: it cannot read encrypted content (envelopes are sealed to their recipients, per <a href="../rfcs/0004-encrypted-device-access.html">JOLT-RFC-0004</a>), and it cannot impersonate anyone (every record is signed by its owner's key, per <a href="../rfcs/0001-core-protocol.html">JOLT-RFC-0001</a>). Running a relay is infrastructure, not authority.</p>
+
+        </header>
+        <h2 id="1-what-you-need">1 · What you need</h2>
+<ul>
+<li>A Linux server with a public IPv4 address. The production relay is the smallest Hetzner cloud box; anything with ~512 MB of RAM is comfortable.</li>
+<li>One inbound UDP port (this guide uses 4001).</li>
+<li>Ten minutes.</li>
+</ul>
+<h2 id="2-install-the-binary">2 · Install the binary</h2>
+<p>Grab the latest release binary and verify it:</p>
+<pre class="doc-code"><code>curl<span class="w"> </span>-sLO<span class="w"> </span>https://github.com/alexanderwanyoike/jolt/releases/latest/download/jolt-linux-x86_64
+curl<span class="w"> </span>-sLO<span class="w"> </span>https://github.com/alexanderwanyoike/jolt/releases/latest/download/jolt-linux-x86_64.sha256
+sha256sum<span class="w"> </span>-c<span class="w"> </span>&lt;<span class="o">(</span>awk<span class="w"> </span><span class="s1">&#39;{print $1&quot;  jolt-linux-x86_64&quot;}&#39;</span><span class="w"> </span>jolt-linux-x86_64.sha256<span class="o">)</span>
+sudo<span class="w"> </span>install<span class="w"> </span>-m<span class="w"> </span><span class="m">755</span><span class="w"> </span>jolt-linux-x86_64<span class="w"> </span>/usr/local/bin/jolt
+jolt<span class="w"> </span>--version</code></pre>
+<h2 id="3-a-user-and-a-data-directory">3 · A user and a data directory</h2>
+<p>The relay runs as an unprivileged user with its own state directory:</p>
+<pre class="doc-code"><code>sudo<span class="w"> </span>useradd<span class="w"> </span>--system<span class="w"> </span>--home<span class="w"> </span>/var/lib/jolt-relay<span class="w"> </span>--shell<span class="w"> </span>/usr/sbin/nologin<span class="w"> </span>jolt
+sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/var/lib/jolt-relay
+sudo<span class="w"> </span>chown<span class="w"> </span>jolt:jolt<span class="w"> </span>/var/lib/jolt-relay</code></pre>
+<h2 id="4-the-systemd-unit">4 · The systemd unit</h2>
+<p>This is the production unit, verbatim apart from the name. The flags that matter: <code>--p2p-port 4001</code> fixes the port so your firewall rule and your multiaddr stay true, <code>--no-mdns</code> turns off LAN discovery (meaningless in a datacenter), and the API stays bound to localhost so only you can talk to it.</p>
+<figure class="code-figure"><figcaption><span>/etc/systemd/system/jolt-relay.service</span><span>ini</span></figcaption><pre class="doc-code"><code><span class="k">[Unit]</span>
+<span class="na">Description</span><span class="o">=</span><span class="s">Jolt relay node</span>
+<span class="na">Wants</span><span class="o">=</span><span class="s">network-online.target</span>
+<span class="na">After</span><span class="o">=</span><span class="s">network-online.target</span>
+<span class="na">StartLimitIntervalSec</span><span class="o">=</span><span class="s">300</span>
+<span class="na">StartLimitBurst</span><span class="o">=</span><span class="s">10</span>
+
+<span class="k">[Service]</span>
+<span class="na">Type</span><span class="o">=</span><span class="s">simple</span>
+<span class="na">User</span><span class="o">=</span><span class="s">jolt</span>
+<span class="na">Group</span><span class="o">=</span><span class="s">jolt</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">XDG_DATA_HOME=/var/lib/jolt-relay</span>
+<span class="na">WorkingDirectory</span><span class="o">=</span><span class="s">/var/lib/jolt-relay</span>
+<span class="na">ExecStart</span><span class="o">=</span><span class="s">/usr/local/bin/jolt start --api-bind 127.0.0.1 --api-port 9862 --p2p-port 4001 --no-mdns</span>
+<span class="na">Restart</span><span class="o">=</span><span class="s">on-failure</span>
+<span class="na">RestartSec</span><span class="o">=</span><span class="s">5s</span>
+<span class="na">StandardOutput</span><span class="o">=</span><span class="s">journal</span>
+<span class="na">StandardError</span><span class="o">=</span><span class="s">journal</span>
+<span class="na">LogRateLimitIntervalSec</span><span class="o">=</span><span class="s">30s</span>
+<span class="na">LogRateLimitBurst</span><span class="o">=</span><span class="s">1000</span>
+<span class="na">NoNewPrivileges</span><span class="o">=</span><span class="s">true</span>
+<span class="na">PrivateTmp</span><span class="o">=</span><span class="s">true</span>
+<span class="na">ProtectSystem</span><span class="o">=</span><span class="s">strict</span>
+<span class="na">ProtectHome</span><span class="o">=</span><span class="s">true</span>
+<span class="na">ReadWritePaths</span><span class="o">=</span><span class="s">/var/lib/jolt-relay</span>
+
+<span class="k">[Install]</span>
+<span class="na">WantedBy</span><span class="o">=</span><span class="s">multi-user.target</span></code></pre></figure>
+<p>Enable and start it:</p>
+<pre class="doc-code"><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload
+sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>--now<span class="w"> </span>jolt-relay.service</code></pre>
+<h2 id="5-open-the-port">5 · Open the port</h2>
+<p>Only the P2P port is public. The HTTP API stays on localhost.</p>
+<pre class="doc-code"><code>sudo<span class="w"> </span>ufw<span class="w"> </span>allow<span class="w"> </span><span class="m">4001</span>/udp<span class="w"> </span>comment<span class="w"> </span><span class="s2">&quot;Jolt relay P2P&quot;</span></code></pre>
+<h2 id="6-verify-and-get-your-relay-address">6 · Verify and get your relay address</h2>
+<p>The daemon's status endpoint tells you it is healthy and gives you the peer id you need:</p>
+<pre class="doc-code"><code>curl<span class="w"> </span>-s<span class="w"> </span>http://127.0.0.1:9862/api/v1/status<span class="w"> </span><span class="p">|</span><span class="w"> </span>python3<span class="w"> </span>-m<span class="w"> </span>json.tool</code></pre>
+<p>Look for <code>"peer_id"</code>. Your relay's multiaddr is:</p>
+<pre class="doc-code"><code>/ip4/YOUR.SERVER.IP/udp/4001/quic-v1/p2p/YOUR_PEER_ID</code></pre>
+<h2 id="7-point-your-nodes-at-it">7 · Point your nodes at it</h2>
+<p>On each machine that should use your relay, add it persistently:</p>
+<pre class="doc-code"><code>jolt<span class="w"> </span>bootstrap<span class="w"> </span>add<span class="w"> </span>/ip4/YOUR.SERVER.IP/udp/4001/quic-v1/p2p/YOUR_PEER_ID
+jolt<span class="w"> </span>bootstrap<span class="w"> </span>list</code></pre>
+<p><code>bootstrap list</code> shows configured, built-in, and effective relays; adding yours does not remove the default one, so your nodes get both. For a one-off run (or to test before committing), the same multiaddr works as a start flag:</p>
+<pre class="doc-code"><code>jolt<span class="w"> </span>start<span class="w"> </span>--bootstrap<span class="w"> </span>/ip4/YOUR.SERVER.IP/udp/4001/quic-v1/p2p/YOUR_PEER_ID</code></pre>
+<h2 id="8-operations">8 · Operations</h2>
+<ul>
+<li><strong>Logs</strong>: <code>journalctl -u jolt-relay.service -f</code>. The unit rate-limits log bursts so a chatty peer cannot fill your disk.</li>
+<li><strong>Updating</strong>: stop the service before replacing the binary, then start it again. Never overwrite a running binary in place.</li>
+</ul>
+<pre class="doc-code"><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>stop<span class="w"> </span>jolt-relay.service
+sudo<span class="w"> </span>install<span class="w"> </span>-m<span class="w"> </span><span class="m">755</span><span class="w"> </span>jolt-linux-x86_64<span class="w"> </span>/usr/local/bin/jolt
+sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>jolt-relay.service</code></pre>
+<ul>
+<li><strong>Health</strong>: the status endpoint is cheap to poll; <code>connected_peers</code> tells you whether anyone is using you. A relay that has just restarted takes a minute to re-establish peer connections.</li>
+<li><strong>Footprint</strong>: the production relay idles at a few tens of MB of RAM and negligible CPU. Disk grows only with pinned content.</li>
+</ul>
+<h2 id="where-to-go-next">Where to go next</h2>
+<ul>
+<li>The <a href="../rfcs/">protocol series</a> specifies what relays can and cannot see; <a href="../rfcs/0001-core-protocol.html">JOLT-RFC-0001</a> covers resolution and <a href="../rfcs/0004-encrypted-device-access.html">JOLT-RFC-0004</a> covers why encrypted objects stay sealed.</li>
+<li>Build something on the network with the <a href="app-development.html">app development guide</a> and the <a href="../sdk/">Jolt SDK</a>.</li>
+<li>Problems? <a href="https://github.com/alexanderwanyoike/jolt/issues">Open an issue</a>; relay reports from real networks are exactly the feedback the project wants.</li>
+</ul>
+        <footer class="document-footer">
+          <a href="../sdk/">← SDK overview</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/guides/run-a-relay.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>

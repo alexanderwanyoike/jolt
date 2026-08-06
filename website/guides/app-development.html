@@ -11,7 +11,7 @@
     <meta property="og:site_name" content="Jolt" />
     <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="jolt-guide-source-sha256" content="62ccb10337c0c4fb89b36143492ab91dd196aa5d257f179678f21d5614cd04e5" />
+    <meta name="jolt-guide-source-sha256" content="b0c2212435cc1ed9cae3cafdc02c987ea24bb08531996f9cafa8016c9ec83756" />
     <title>Jolt Guide | Building Chirp</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -21,9 +21,7 @@
     <aside class="doc-sidebar">
       <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>guide 01</small></span></a>
       <dl>
-        <div><dt>App</dt><dd>Chirp</dd></div>
-        <div><dt>Stack</dt><dd>Tauri 2 · React</dd></div>
-        <div><dt>SDK</dt><dd>jolt-sdk</dd></div>
+        <div><dt>App</dt><dd>Chirp</dd></div><div><dt>Stack</dt><dd>Tauri 2 · React</dd></div><div><dt>SDK</dt><dd>jolt-sdk</dd></div>
       </dl>
       <nav aria-label="Guide contents">
         <ul class="toc"><li class="toc-module"><a href="#why-every-jolt-app-is-social">Why every Jolt app is social</a></li><li class="toc-module"><a href="#1-scaffold-a-tauri-react-app">1 · Scaffold a Tauri + React app</a></li><li class="toc-module"><a href="#2-add-jolt-sdk-and-tauri-plugin-jolt">2 · Add jolt-sdk and tauri-plugin-jolt</a></li><li class="toc-module"><a href="#3-request-a-scoped-session">3 · Request a scoped session</a></li><li class="toc-module"><a href="#4-publish-chirps-assemble-timelines">4 · Publish chirps, assemble timelines</a></li><li class="toc-module"><a href="#5-follow-requests-over-ingress">5 · Follow requests over ingress</a></li><li class="toc-module"><a href="#6-the-ui">6 · The UI</a></li><li class="toc-module"><a href="#7-test-it-all-with-the-fake">7 · Test it all with the fake</a></li><li class="toc-module"><a href="#8-run-it-with-a-friend">8 · Run it with a friend</a></li><li class="toc-module"><a href="#where-to-go-next">Where to go next</a></li></ul>
@@ -520,6 +518,7 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <li><a href="../rfcs/0007-app-sessions.html">JOLT-RFC-0007</a> specifies the session and capability model Chirp just used, including the grants this guide did not need: <code>inventory</code>, <code>pin:own</code>, <code>encrypt</code>, and <code>decrypt</code>.</li>
 <li><a href="../rfcs/0003-device-writer-logs.html">JOLT-RFC-0003</a> explains why append records from several devices merge deterministically, which is what made <code>publishAppend</code> safe to call from anywhere.</li>
 <li>For private content between chirpers, look at <code>publishEncryptedJson</code> and <code>readEncrypted</code> in the reference, backed by <a href="../rfcs/0004-encrypted-device-access.html">JOLT-RFC-0004</a>.</li>
+<li>Want your content reachable while your machines sleep? <a href="run-a-relay.html">Run your own relay</a>; it takes ten minutes and a small VPS.</li>
 </ul>
         <footer class="document-footer">
           <a href="../sdk/">← SDK overview</a>
