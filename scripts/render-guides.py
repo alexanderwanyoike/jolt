@@ -73,9 +73,15 @@ def render(source_path: Path) -> str:
     meta = dict(
         line.split(": ", 1) for line in header.group("meta").splitlines() if ": " in line
     )
-    for field in ("Guide", "App", "Stack", "SDK", "Description"):
+    for field in ("Guide", "Description"):
         if field not in meta:
             raise SystemExit(f"{source_path.name} meta block is missing {field}")
+    kicker = meta.get("Kicker", "JOLT APP DEVELOPMENT GUIDE")
+    facts = {
+        key: value
+        for key, value in meta.items()
+        if key not in ("Guide", "Description", "Kicker")
+    }
     body = source[header.end():]
 
     blocks: list[str] = []
@@ -146,9 +152,7 @@ def render(source_path: Path) -> str:
     <aside class="doc-sidebar">
       <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>guide {escape(meta["Guide"])}</small></span></a>
       <dl>
-        <div><dt>App</dt><dd>{escape(meta["App"])}</dd></div>
-        <div><dt>Stack</dt><dd>{escape(meta["Stack"])}</dd></div>
-        <div><dt>SDK</dt><dd>{escape(meta["SDK"])}</dd></div>
+        {"".join(f'<div><dt>{escape(key)}</dt><dd>{escape(value)}</dd></div>' for key, value in facts.items())}
       </dl>
       <nav aria-label="Guide contents">
         <ul class="toc">{toc_entries}</ul>
@@ -157,7 +161,7 @@ def render(source_path: Path) -> str:
     <main class="doc-main">
       <article class="doc-document">
         <header class="doc-title">
-          <p>JOLT APP DEVELOPMENT GUIDE · {escape(meta["Guide"])}</p>
+          <p>{escape(kicker)} · {escape(meta["Guide"])}</p>
           <h1>{escape(title)}</h1>
           {lede}
         </header>
