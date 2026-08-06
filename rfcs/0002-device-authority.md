@@ -6,7 +6,7 @@
 Jolt Project                                                JOLT-RFC-0002
 Request for Comments: 0002                                  August 2026
 Category: Experimental
-Status: Internet-Draft
+Status: Experimental Draft
 Updates: none
 Obsoletes: none
 ```
@@ -18,7 +18,7 @@ its authority, encoding, revocation, and migration rules. It is not an IETF
 publication. Distribution of this memo is unlimited.
 
 The v1 record format described here is implemented, but this document remains
-an Internet-Draft until the compatibility surface is accepted. Implementations
+an experimental draft until the compatibility surface is accepted. Implementations
 MUST NOT infer that implementation status freezes unresolved semantics.
 
 ### Abstract

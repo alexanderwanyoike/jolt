@@ -6,7 +6,7 @@
 Jolt Project                                                JOLT-RFC-NNNN
 Request for Comments: NNNN                                  Month YYYY
 Category: Experimental
-Status: Internet-Draft
+Status: Experimental Draft
 Updates: none
 Obsoletes: none
 ```

@@ -31,7 +31,7 @@ def render(source_path: Path) -> tuple[str, str]:
     number = header.group("number")
     title = header.group("title")
     memo = header.group("memo")
-    status = memo_field(memo, "Status", "Internet-Draft")
+    status = memo_field(memo, "Status", "Experimental Draft")
     category = memo_field(memo, "Category", "Experimental")
     published = memo_date(memo)
     body = source[header.end():]
