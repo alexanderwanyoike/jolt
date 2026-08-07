@@ -172,6 +172,15 @@ pub struct NetworkNode {
     /// Device-writer sync waiters parked until a provider is discovered for an
     /// identity, keyed by identity.
     pending_device_writer_waiters: HashMap<IdentityId, Vec<resolution::DeviceWriterSyncWaiter>>,
+    /// Active provider discovery queries, coalesced by identity so concurrent
+    /// resolve paths share one DHT and relay lookup.
+    active_update_log_provider_queries: HashMap<IdentityId, libp2p::kad::QueryId>,
+    /// Most recent stale-while-revalidate update-log attempt for each remote
+    /// identity. Entries older than the refresh interval are pruned lazily.
+    cached_update_log_refreshes: HashMap<IdentityId, Instant>,
+    /// Most recent opportunistic device-writer warm-up for each remote
+    /// identity. Explicit enumerations are never throttled by this cache.
+    device_writer_refreshes: HashMap<IdentityId, Instant>,
     /// Providers discovered via DHT: content_id string -> provider PeerIds
     discovered_providers: HashMap<String, Vec<libp2p::PeerId>>,
     /// Verified update logs by owner identity.
@@ -249,6 +258,10 @@ const IDENTITY_PROVIDER_QUERY_LIMIT: u16 = 8;
 const IDENTITY_PROVIDER_QUERY_TTL: u8 = 3;
 const IDENTITY_PROVIDER_QUERY_TIMEOUT: Duration = Duration::from_secs(8);
 const SEEN_IDENTITY_PROVIDER_QUERY_TTL: Duration = Duration::from_secs(30);
+/// Cache hits answer immediately, then refresh identity state at most once per
+/// interval. This bounds background network work by active identities rather
+/// than by the number of paths applications open.
+const CACHED_IDENTITY_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
 /// A daemon loop iteration slower than this starves queued API commands and is
 /// worth naming in the logs (issue #187).
