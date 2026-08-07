@@ -124,6 +124,20 @@ pub enum DaemonCommand {
         content_id: String,
         response_tx: oneshot::Sender<Result<PinRequest, NetworkError>>,
     },
+    ReserveRelayPin {
+        owner: String,
+        items: Vec<RelayPinItem>,
+        response_tx: oneshot::Sender<Result<u64, NetworkError>>,
+    },
+    CommitRelayPin {
+        reservation_id: u64,
+        items: Vec<RelayPinItem>,
+        response_tx: oneshot::Sender<Result<(), NetworkError>>,
+    },
+    CancelRelayPin {
+        reservation_id: u64,
+        response_tx: oneshot::Sender<Result<(), NetworkError>>,
+    },
     RecordHomeRelayPin {
         content_id: String,
         path: Option<String>,
@@ -159,6 +173,12 @@ pub enum DaemonCommand {
     Shutdown {
         response_tx: oneshot::Sender<()>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelayPinItem {
+    pub content_id: String,
+    pub size: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

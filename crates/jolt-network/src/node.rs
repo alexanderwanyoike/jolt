@@ -11,6 +11,7 @@ mod ingress;
 mod inventory;
 mod providers;
 mod publishing;
+mod relay_pin_policy;
 mod relays;
 mod resolution;
 mod status;
@@ -31,7 +32,7 @@ use jolt_core::{
 #[cfg(test)]
 use jolt_core::{EncryptedObjectRecipient, IdentityHeadHint, RelayRecord, RelayRecordCapability};
 use jolt_identity::NodeIdentity;
-use jolt_store::ContentStore;
+use jolt_store::{ContentStore, RelayPinRecord};
 
 use crate::behaviour::{JoltBehaviour, JoltBehaviourEvent};
 use crate::command::{
@@ -56,6 +57,11 @@ use crate::protocol::{
 struct PendingUpdateLogPin {
     identity: IdentityId,
     response_tx: oneshot::Sender<Result<u64, NetworkError>>,
+}
+
+struct RelayPinReservation {
+    owner: String,
+    items: Vec<crate::command::RelayPinItem>,
 }
 
 struct CachedDeviceWriterState {
@@ -212,6 +218,10 @@ pub struct NetworkNode {
     bootstrap_relay: bool,
     /// User-selected home relay for delegated availability.
     home_relay: Option<HomeRelayConfig>,
+    relay_pin_policy: crate::config::RelayPinPolicy,
+    relay_pin_records: Vec<RelayPinRecord>,
+    relay_pin_reservations: HashMap<u64, RelayPinReservation>,
+    next_relay_pin_reservation_id: u64,
     /// Local X25519 keypair used to decrypt envelopes addressed to this identity.
     local_encryption_key: Option<(IdentityEncryptionKey, IdentityEncryptionPrivateKey)>,
     /// Whether this daemon start has published the local encryption key record.

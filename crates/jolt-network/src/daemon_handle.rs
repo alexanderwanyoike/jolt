@@ -472,6 +472,52 @@ impl DaemonHandle {
         receive_result(rx).await
     }
 
+    pub async fn reserve_relay_pin(
+        &self,
+        owner: String,
+        items: Vec<crate::command::RelayPinItem>,
+    ) -> Result<u64, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::ReserveRelayPin {
+                owner,
+                items,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    pub async fn commit_relay_pin(
+        &self,
+        reservation_id: u64,
+        items: Vec<crate::command::RelayPinItem>,
+    ) -> Result<(), NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::CommitRelayPin {
+                reservation_id,
+                items,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    pub async fn cancel_relay_pin(&self, reservation_id: u64) -> Result<(), NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::CancelRelayPin {
+                reservation_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
     /// Record that the configured home relay accepted a pin for local content.
     pub async fn record_home_relay_pin(
         &self,

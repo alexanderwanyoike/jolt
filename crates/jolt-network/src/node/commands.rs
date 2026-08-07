@@ -405,15 +405,61 @@ impl NetworkNode {
                         let update_log_content_id =
                             self.publish_update_log_snapshot(&self.identity.identity_id())?;
 
-                        PinRequest::with_update_log(
+                        let content_size = self
+                            .store
+                            .get_content(&content_id)
+                            .map(|content| content.data.len() as u64)
+                            .ok_or_else(|| {
+                                NetworkError::Protocol(format!(
+                                    "published content disappeared: {content_id}"
+                                ))
+                            })?;
+                        let update_log = update_log_content_id
+                            .map(|update_log_id| {
+                                self.store
+                                    .get_content(&update_log_id.to_string())
+                                    .map(|content| (update_log_id, content.data.len() as u64))
+                                    .ok_or_else(|| {
+                                        NetworkError::Protocol(
+                                            "published update log snapshot disappeared".to_string(),
+                                        )
+                                    })
+                            })
+                            .transpose()?;
+
+                        PinRequest::with_declared_sizes(
                             self.identity.public_key_bytes(),
                             parsed,
-                            update_log_content_id,
+                            content_size,
+                            update_log,
                             |bytes| self.identity.sign(bytes),
                         )
                         .map_err(|e| NetworkError::Protocol(e.to_string()))
                     });
                 let _ = response_tx.send(result);
+            }
+            DaemonCommand::ReserveRelayPin {
+                owner,
+                items,
+                response_tx,
+            } => {
+                let result = self.reserve_relay_pin(owner, items);
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::CommitRelayPin {
+                reservation_id,
+                items,
+                response_tx,
+            } => {
+                let result = self.commit_relay_pin(reservation_id, items);
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::CancelRelayPin {
+                reservation_id,
+                response_tx,
+            } => {
+                self.relay_pin_reservations.remove(&reservation_id);
+                let _ = response_tx.send(Ok(()));
             }
             DaemonCommand::RecordHomeRelayPin {
                 content_id,

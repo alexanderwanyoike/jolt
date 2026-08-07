@@ -5,6 +5,7 @@ mod config;
 mod daemon;
 
 use clap::Parser;
+use jolt_network::RelayPinPolicy;
 use tracing_subscriber::EnvFilter;
 
 use cli::{
@@ -31,15 +32,34 @@ async fn main() -> anyhow::Result<()> {
             no_mdns,
             p2p_port,
             transport,
+            pin_allow,
+            pin_quota_bytes,
+            pin_capacity_bytes,
         } => {
+            let relay_pin_policy = RelayPinPolicy {
+                allowed_identities: pin_allow
+                    .iter()
+                    .map(|identity| {
+                        identity
+                            .strip_suffix(".jolt")
+                            .unwrap_or(identity)
+                            .to_string()
+                    })
+                    .collect(),
+                per_identity_quota_bytes: pin_quota_bytes,
+                total_capacity_bytes: pin_capacity_bytes,
+            };
             commands::start::run(
                 api_port,
                 &api_bind,
                 bootstrap,
-                no_bootstrap,
-                no_mdns,
-                p2p_port,
                 transport,
+                commands::start::NetworkStartOptions {
+                    no_bootstrap,
+                    no_mdns,
+                    p2p_port,
+                    relay_pin_policy,
+                },
             )
             .await?
         }

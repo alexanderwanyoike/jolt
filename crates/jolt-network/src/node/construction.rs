@@ -55,6 +55,9 @@ impl NetworkNode {
             })?,
             crate::node::unix_now(),
         );
+        let relay_pin_records = store.load_relay_pin_records().map_err(|e| {
+            NetworkError::Protocol(format!("failed to load relay pin accounting: {e}"))
+        })?;
 
         let mut node = Self {
             swarm: built.swarm,
@@ -93,6 +96,10 @@ impl NetworkNode {
             last_bootstrap_error: None,
             bootstrap_relay: config.bootstrap_relay,
             home_relay: config.home_relay,
+            relay_pin_policy: config.relay_pin_policy,
+            relay_pin_records,
+            relay_pin_reservations: HashMap::new(),
+            next_relay_pin_reservation_id: 1,
             local_encryption_key,
             local_encryption_key_published: false,
             pending_ingress,

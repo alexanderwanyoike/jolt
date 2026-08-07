@@ -26,6 +26,10 @@ pub struct PinRequestBody {
     pub content_id: ContentId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub update_log_content_id: Option<ContentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_log_size: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +63,34 @@ impl PinRequest {
             owner_public_key: owner_public_key.into(),
             content_id,
             update_log_content_id,
+            content_size: None,
+            update_log_size: None,
+        };
+        validate_owner_public_key(&body.owner_public_key)?;
+        let signature = signer(&body.canonical_bytes());
+        validate_signature_len(&signature)?;
+        Ok(Self { body, signature })
+    }
+
+    pub fn with_declared_sizes<F>(
+        owner_public_key: impl Into<Vec<u8>>,
+        content_id: ContentId,
+        content_size: u64,
+        update_log: Option<(ContentId, u64)>,
+        signer: F,
+    ) -> Result<Self, PinRequestError>
+    where
+        F: FnOnce(&[u8]) -> Vec<u8>,
+    {
+        let (update_log_content_id, update_log_size) = update_log
+            .map(|(content_id, size)| (Some(content_id), Some(size)))
+            .unwrap_or((None, None));
+        let body = PinRequestBody {
+            owner_public_key: owner_public_key.into(),
+            content_id,
+            update_log_content_id,
+            content_size: Some(content_size),
+            update_log_size,
         };
         validate_owner_public_key(&body.owner_public_key)?;
         let signature = signer(&body.canonical_bytes());
@@ -97,6 +129,13 @@ impl PinRequestBody {
                 put_string(&mut bytes, &content_id.to_string());
             }
             None => bytes.push(0),
+        }
+        // Preserve the v1 bytes exactly for old requests. Size-aware requests
+        // add a tagged extension so the declarations are owner-signed.
+        if self.content_size.is_some() || self.update_log_size.is_some() {
+            bytes.extend_from_slice(b"jolt:pin-request:sizes:v1\0");
+            put_optional_u64(&mut bytes, self.content_size);
+            put_optional_u64(&mut bytes, self.update_log_size);
         }
         bytes
     }
@@ -148,6 +187,16 @@ fn put_string(bytes: &mut Vec<u8>, value: &str) {
 fn put_bytes(bytes: &mut Vec<u8>, value: &[u8]) {
     bytes.extend_from_slice(&(value.len() as u64).to_be_bytes());
     bytes.extend_from_slice(value);
+}
+
+fn put_optional_u64(bytes: &mut Vec<u8>, value: Option<u64>) {
+    match value {
+        Some(value) => {
+            bytes.push(1);
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        None => bytes.push(0),
+    }
 }
 
 #[cfg(test)]
@@ -246,5 +295,47 @@ mod tests {
 
         assert_eq!(parsed, request);
         parsed.verify().unwrap();
+    }
+
+    #[test]
+    fn declared_sizes_are_signed_and_round_trip_over_json() {
+        let owner = signing_key();
+        let content_id = ContentId::from_bytes(b"content to pin");
+        let update_log_id = ContentId::from_bytes(b"update log");
+        let mut request = PinRequest::with_declared_sizes(
+            public_key(&owner),
+            content_id,
+            14,
+            Some((update_log_id, 10)),
+            |bytes| sign(&owner, bytes),
+        )
+        .unwrap();
+
+        let json = serde_json::to_string(&request).unwrap();
+        let parsed: PinRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.body.content_size, Some(14));
+        assert_eq!(parsed.body.update_log_size, Some(10));
+        parsed.verify().unwrap();
+
+        request.body.content_size = Some(13);
+        assert_eq!(request.verify(), Err(PinRequestError::InvalidSignature));
+    }
+
+    #[test]
+    fn legacy_request_signature_remains_valid_without_size_fields() {
+        let owner = signing_key();
+        let request = PinRequest::new(
+            public_key(&owner),
+            ContentId::from_bytes(b"legacy content"),
+            |bytes| sign(&owner, bytes),
+        )
+        .unwrap();
+
+        assert_eq!(request.body.content_size, None);
+        assert_eq!(request.body.update_log_size, None);
+        assert!(!serde_json::to_string(&request)
+            .unwrap()
+            .contains("content_size"));
+        request.verify().unwrap();
     }
 }

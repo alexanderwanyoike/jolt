@@ -12,9 +12,10 @@ pub use command::{
     AppendRecordInfo, CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
     EncryptedObjectResponse, FetchResult, IngressRecord, IngressStatus, NodeStatus,
     PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
-    PublishedContentInfo, PublishedRelayInfo, RelayDiagnoseIdentityResponse, ResolveResponse,
+    PublishedContentInfo, PublishedRelayInfo, RelayDiagnoseIdentityResponse, RelayPinItem,
+    ResolveResponse,
 };
-pub use config::{HomeRelayCapability, HomeRelayConfig, NetworkConfig};
+pub use config::{HomeRelayCapability, HomeRelayConfig, NetworkConfig, RelayPinPolicy};
 pub use daemon_handle::DaemonHandle;
 pub use error::{DiscoveryFailureCode, NetworkError};
 pub use libp2p::Multiaddr;

@@ -13,14 +13,19 @@ use crate::cli::TransportMode;
 use crate::config::{NodeConfig, NodeSettings};
 use crate::daemon;
 
+pub struct NetworkStartOptions {
+    pub no_bootstrap: bool,
+    pub no_mdns: bool,
+    pub p2p_port: u16,
+    pub relay_pin_policy: jolt_network::RelayPinPolicy,
+}
+
 pub async fn run(
     api_port: u16,
     api_bind: &str,
     bootstrap: Vec<String>,
-    no_bootstrap: bool,
-    no_mdns: bool,
-    p2p_port: u16,
     transport: TransportMode,
+    options: NetworkStartOptions,
 ) -> Result<()> {
     let config = NodeConfig::default_dirs();
     config.ensure_dirs()?;
@@ -57,9 +62,7 @@ pub async fn run(
         &bootstrap,
         &builtin_bootstrap,
         &learned_relay_bootstrap,
-        p2p_port,
-        no_mdns,
-        no_bootstrap,
+        &options,
     );
     let published_ids: Vec<String> = store.published_ids();
 
@@ -73,7 +76,7 @@ pub async fn run(
         }
         TransportMode::Tcp => {
             let mut node = NetworkNode::new_tcp(identity, store, net_config)?;
-            node.listen_on(&format!("/ip4/0.0.0.0/tcp/{p2p_port}"))?;
+            node.listen_on(&format!("/ip4/0.0.0.0/tcp/{}", options.p2p_port))?;
             node
         }
     };
@@ -94,7 +97,7 @@ pub async fn run(
     }
 
     // Bootstrap into DHT (must happen before daemon loop starts so swarm has peers)
-    if !no_bootstrap && !effective_bootstrap.is_empty() {
+    if !options.no_bootstrap && !effective_bootstrap.is_empty() {
         let addrs: Vec<Multiaddr> = effective_bootstrap
             .iter()
             .filter_map(|s| s.parse().ok())
@@ -127,7 +130,7 @@ pub async fn run(
     let pid = std::process::id();
     daemon::write_daemon_info(&config, pid, api_port)?;
 
-    if no_mdns {
+    if options.no_mdns {
         info!("mDNS discovery disabled");
     } else {
         info!("mDNS discovery active on LAN");
@@ -208,11 +211,9 @@ fn build_network_config(
     cli_bootstrap: &[String],
     builtin_bootstrap: &[String],
     learned_relay_bootstrap: &[String],
-    p2p_port: u16,
-    no_mdns: bool,
-    no_bootstrap: bool,
+    options: &NetworkStartOptions,
 ) -> (NetworkConfig, Vec<String>) {
-    let effective_bootstrap = if no_bootstrap {
+    let effective_bootstrap = if options.no_bootstrap {
         Vec::new()
     } else {
         let mut relays = settings.effective_bootstrap_relays(cli_bootstrap, builtin_bootstrap);
@@ -224,12 +225,13 @@ fn build_network_config(
         relays
     };
     let mut net_config = NetworkConfig::default();
-    net_config.enable_mdns = !no_mdns;
-    net_config.p2p_port = p2p_port;
+    net_config.enable_mdns = !options.no_mdns;
+    net_config.p2p_port = options.p2p_port;
     net_config.configured_bootstrap_relays = settings.bootstrap_relays.clone();
     net_config.effective_bootstrap_relays = effective_bootstrap.clone();
     net_config.bootstrap_relay = settings.bootstrap_relay;
     net_config.home_relay = settings.home_relay.clone();
+    net_config.relay_pin_policy = options.relay_pin_policy.clone();
     net_config.bootstrap_peers = effective_bootstrap
         .iter()
         .filter_map(|s| s.parse().ok())
@@ -256,6 +258,15 @@ mod tests {
     const BUILTIN: &str =
         "/dns4/bootstrap.jolt.test/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
 
+    fn options(p2p_port: u16, no_mdns: bool, no_bootstrap: bool) -> NetworkStartOptions {
+        NetworkStartOptions {
+            no_bootstrap,
+            no_mdns,
+            p2p_port,
+            relay_pin_policy: jolt_network::RelayPinPolicy::default(),
+        }
+    }
+
     #[test]
     fn build_network_config_uses_configured_and_cli_bootstrap_relays() {
         let settings = NodeSettings {
@@ -272,8 +283,13 @@ mod tests {
         let cli = vec![CLI.to_string()];
         let builtins = vec![BUILTIN.to_string()];
 
-        let (config, effective) =
-            build_network_config(&settings, &cli, &builtins, &[], 4001, false, false);
+        let (config, effective) = build_network_config(
+            &settings,
+            &cli,
+            &builtins,
+            &[],
+            &options(4001, false, false),
+        );
 
         assert_eq!(effective, vec![CONFIGURED.to_string(), CLI.to_string()]);
         assert_eq!(config.bootstrap_peers.len(), 2);
@@ -298,7 +314,7 @@ mod tests {
         let learned = vec![BUILTIN.to_string(), CONFIGURED.to_string()];
 
         let (config, effective) =
-            build_network_config(&settings, &[], &[], &learned, 4001, false, false);
+            build_network_config(&settings, &[], &[], &learned, &options(4001, false, false));
 
         assert_eq!(effective, vec![CONFIGURED.to_string(), BUILTIN.to_string()]);
         assert_eq!(
@@ -314,7 +330,7 @@ mod tests {
         let builtins = vec![BUILTIN.to_string()];
 
         let (config, effective) =
-            build_network_config(&settings, &[], &builtins, &[], 0, false, false);
+            build_network_config(&settings, &[], &builtins, &[], &options(0, false, false));
 
         assert_eq!(effective, vec![BUILTIN.to_string()]);
         assert_eq!(config.bootstrap_peers.len(), 1);
@@ -330,7 +346,8 @@ mod tests {
             home_relay: None,
         };
 
-        let (config, _) = build_network_config(&settings, &[], &[], &[], 4001, true, false);
+        let (config, _) =
+            build_network_config(&settings, &[], &[], &[], &options(4001, true, false));
 
         assert!(!config.enable_mdns);
     }
@@ -346,13 +363,38 @@ mod tests {
         let builtins = vec![BUILTIN.to_string()];
         let learned = vec![CLI.to_string()];
 
-        let (config, effective) =
-            build_network_config(&settings, &[], &builtins, &learned, 4001, false, true);
+        let (config, effective) = build_network_config(
+            &settings,
+            &[],
+            &builtins,
+            &learned,
+            &options(4001, false, true),
+        );
 
         assert!(effective.is_empty());
         assert!(config.effective_bootstrap_relays.is_empty());
         assert!(config.bootstrap_peers.is_empty());
         assert_eq!(config.configured_bootstrap_relays, vec![CONFIGURED]);
+    }
+
+    #[test]
+    fn build_network_config_applies_relay_pin_policy() {
+        let owner = "jolt1exampleowner".to_string();
+        let mut options = options(0, false, true);
+        options
+            .relay_pin_policy
+            .allowed_identities
+            .insert(owner.clone());
+        options.relay_pin_policy.per_identity_quota_bytes = Some(1_024);
+        options.relay_pin_policy.total_capacity_bytes = Some(8_192);
+        let (config, _) = build_network_config(&NodeSettings::default(), &[], &[], &[], &options);
+
+        assert!(config.relay_pin_policy.is_allowed(&owner));
+        assert_eq!(
+            config.relay_pin_policy.per_identity_quota_bytes,
+            Some(1_024)
+        );
+        assert_eq!(config.relay_pin_policy.total_capacity_bytes, Some(8_192));
     }
 
     #[test]
