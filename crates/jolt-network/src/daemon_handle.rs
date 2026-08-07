@@ -461,10 +461,20 @@ impl DaemonHandle {
 
     /// Create an owner-signed request for a relay to pin locally published content.
     pub async fn create_pin_request(&self, content_id: String) -> Result<PinRequest, NetworkError> {
+        self.create_pin_request_for_relay(content_id, true).await
+    }
+
+    /// Create a pin request matching the target relay's negotiated capabilities.
+    pub async fn create_pin_request_for_relay(
+        &self,
+        content_id: String,
+        include_declared_sizes: bool,
+    ) -> Result<PinRequest, NetworkError> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
             .send(DaemonCommand::CreatePinRequest {
                 content_id,
+                include_declared_sizes,
                 response_tx: tx,
             })
             .await
@@ -475,12 +485,29 @@ impl DaemonHandle {
     pub async fn reserve_relay_pin(
         &self,
         owner: String,
-        items: Vec<crate::command::RelayPinItem>,
+        request: crate::command::RelayPinRequestItems,
     ) -> Result<u64, NetworkError> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
             .send(DaemonCommand::ReserveRelayPin {
                 owner,
+                request,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    pub async fn validate_relay_pin(
+        &self,
+        reservation_id: u64,
+        items: Vec<crate::command::RelayPinItem>,
+    ) -> Result<(), NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::ValidateRelayPin {
+                reservation_id,
                 items,
                 response_tx: tx,
             })

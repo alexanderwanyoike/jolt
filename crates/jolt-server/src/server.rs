@@ -233,6 +233,10 @@ pub fn build_router_with_stores(
             get(routes::home_relay::availability),
         )
         .route("/api/v1/home-relay/pins", post(routes::home_relay::pin))
+        .route(
+            "/api/v1/relay/capabilities",
+            get(routes::relay::capabilities),
+        )
         .route("/api/v1/relay/pins", post(routes::relay::create_pin))
         .route(
             "/api/v1/relay/pins/{content_id}",

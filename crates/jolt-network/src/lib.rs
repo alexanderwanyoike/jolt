@@ -13,7 +13,7 @@ pub use command::{
     EncryptedObjectResponse, FetchResult, IngressRecord, IngressStatus, NodeStatus,
     PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
     PublishedContentInfo, PublishedRelayInfo, RelayDiagnoseIdentityResponse, RelayPinItem,
-    ResolveResponse,
+    RelayPinRequestItems, ResolveResponse,
 };
 pub use config::{HomeRelayCapability, HomeRelayConfig, NetworkConfig, RelayPinPolicy};
 pub use daemon_handle::DaemonHandle;

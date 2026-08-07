@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use jolt_network::HomeRelayConfig;
+use jolt_network::{HomeRelayConfig, RelayPinPolicy};
 
 #[derive(Clone)]
 pub struct NodeConfig {
@@ -23,6 +23,8 @@ pub struct NodeSettings {
     pub bootstrap_relay: bool,
     #[serde(default)]
     pub home_relay: Option<HomeRelayConfig>,
+    #[serde(default)]
+    pub relay_pin_policy: RelayPinPolicy,
 }
 
 impl Default for NodeSettings {
@@ -32,6 +34,7 @@ impl Default for NodeSettings {
             use_builtin_bootstrap_relays: true,
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: RelayPinPolicy::default(),
         }
     }
 }
@@ -161,7 +164,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let config = NodeConfig::with_base_dir(dir.path().to_path_buf());
         config.ensure_dirs().unwrap();
-        let settings = NodeSettings {
+        let mut settings = NodeSettings {
             bootstrap_relays: vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWExample".to_string()],
             use_builtin_bootstrap_relays: false,
             bootstrap_relay: true,
@@ -171,7 +174,14 @@ mod tests {
                 capability: jolt_network::HomeRelayCapability::Pinning,
                 api_url: Some("http://127.0.0.1:9863".to_string()),
             }),
+            relay_pin_policy: RelayPinPolicy::default(),
         };
+        settings
+            .relay_pin_policy
+            .allowed_identities
+            .insert("jolt1allowed".to_string());
+        settings.relay_pin_policy.per_identity_quota_bytes = Some(1_024);
+        settings.relay_pin_policy.total_capacity_bytes = Some(8_192);
 
         config.save_settings(&settings).unwrap();
         let loaded = config.load_settings().unwrap();
@@ -196,6 +206,7 @@ mod tests {
             use_builtin_bootstrap_relays: true,
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: RelayPinPolicy::default(),
         };
         let cli = vec!["/ip4/127.0.0.1/tcp/4002/p2p/12D3Cli".to_string()];
         let defaults = vec!["/dns4/bootstrap.jolt.test/tcp/4001/p2p/12D3Default".to_string()];

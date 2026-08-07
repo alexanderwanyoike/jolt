@@ -17,7 +17,7 @@ pub struct NetworkStartOptions {
     pub no_bootstrap: bool,
     pub no_mdns: bool,
     pub p2p_port: u16,
-    pub relay_pin_policy: jolt_network::RelayPinPolicy,
+    pub relay_pin_policy_override: Option<jolt_network::RelayPinPolicy>,
 }
 
 pub async fn run(
@@ -46,7 +46,11 @@ pub async fn run(
     let identity_peer_id = identity.peer_id().to_string();
     let local_identity_address = identity.jolt_address().to_string();
     let local_identity = identity.identity_id();
-    let settings = config.load_settings()?;
+    let mut settings = config.load_settings()?;
+    if let Some(policy) = &options.relay_pin_policy_override {
+        settings.relay_pin_policy = policy.clone();
+        config.save_settings(&settings)?;
+    }
     let builtin_bootstrap = default_bootstrap_peers();
 
     let store = ContentStore::open(&config.content_store_dir, CacheConfig::default())?;
@@ -231,7 +235,7 @@ fn build_network_config(
     net_config.effective_bootstrap_relays = effective_bootstrap.clone();
     net_config.bootstrap_relay = settings.bootstrap_relay;
     net_config.home_relay = settings.home_relay.clone();
-    net_config.relay_pin_policy = options.relay_pin_policy.clone();
+    net_config.relay_pin_policy = settings.relay_pin_policy.clone();
     net_config.bootstrap_peers = effective_bootstrap
         .iter()
         .filter_map(|s| s.parse().ok())
@@ -263,7 +267,7 @@ mod tests {
             no_bootstrap,
             no_mdns,
             p2p_port,
-            relay_pin_policy: jolt_network::RelayPinPolicy::default(),
+            relay_pin_policy_override: None,
         }
     }
 
@@ -279,6 +283,7 @@ mod tests {
                 capability: jolt_network::HomeRelayCapability::Pinning,
                 api_url: Some("http://127.0.0.1:9862".to_string()),
             }),
+            relay_pin_policy: jolt_network::RelayPinPolicy::default(),
         };
         let cli = vec![CLI.to_string()];
         let builtins = vec![BUILTIN.to_string()];
@@ -310,6 +315,7 @@ mod tests {
             use_builtin_bootstrap_relays: false,
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: jolt_network::RelayPinPolicy::default(),
         };
         let learned = vec![BUILTIN.to_string(), CONFIGURED.to_string()];
 
@@ -344,6 +350,7 @@ mod tests {
             use_builtin_bootstrap_relays: false,
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: jolt_network::RelayPinPolicy::default(),
         };
 
         let (config, _) =
@@ -359,6 +366,7 @@ mod tests {
             use_builtin_bootstrap_relays: true,
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: jolt_network::RelayPinPolicy::default(),
         };
         let builtins = vec![BUILTIN.to_string()];
         let learned = vec![CLI.to_string()];
@@ -380,14 +388,15 @@ mod tests {
     #[test]
     fn build_network_config_applies_relay_pin_policy() {
         let owner = "jolt1exampleowner".to_string();
-        let mut options = options(0, false, true);
-        options
+        let options = options(0, false, true);
+        let mut settings = NodeSettings::default();
+        settings
             .relay_pin_policy
             .allowed_identities
             .insert(owner.clone());
-        options.relay_pin_policy.per_identity_quota_bytes = Some(1_024);
-        options.relay_pin_policy.total_capacity_bytes = Some(8_192);
-        let (config, _) = build_network_config(&NodeSettings::default(), &[], &[], &[], &options);
+        settings.relay_pin_policy.per_identity_quota_bytes = Some(1_024);
+        settings.relay_pin_policy.total_capacity_bytes = Some(8_192);
+        let (config, _) = build_network_config(&settings, &[], &[], &[], &options);
 
         assert!(config.relay_pin_policy.is_allowed(&owner));
         assert_eq!(

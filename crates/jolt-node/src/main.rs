@@ -35,8 +35,13 @@ async fn main() -> anyhow::Result<()> {
             pin_allow,
             pin_quota_bytes,
             pin_capacity_bytes,
+            pin_policy_reset,
         } => {
-            let relay_pin_policy = RelayPinPolicy {
+            let relay_pin_policy_override = (pin_policy_reset
+                || !pin_allow.is_empty()
+                || pin_quota_bytes.is_some()
+                || pin_capacity_bytes.is_some())
+            .then(|| RelayPinPolicy {
                 allowed_identities: pin_allow
                     .iter()
                     .map(|identity| {
@@ -48,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
                     .collect(),
                 per_identity_quota_bytes: pin_quota_bytes,
                 total_capacity_bytes: pin_capacity_bytes,
-            };
+            });
             commands::start::run(
                 api_port,
                 &api_bind,
@@ -58,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
                     no_bootstrap,
                     no_mdns,
                     p2p_port,
-                    relay_pin_policy,
+                    relay_pin_policy_override,
                 },
             )
             .await?

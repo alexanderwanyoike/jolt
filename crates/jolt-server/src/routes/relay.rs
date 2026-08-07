@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::Json;
 use jolt_core::{PinRequest, UpdateLogEntry};
-use jolt_network::{NetworkError, RelayPinItem};
+use jolt_network::{NetworkError, RelayPinItem, RelayPinRequestItems};
 use serde::{Deserialize, Serialize};
 
 use crate::error::ApiError;
@@ -21,6 +21,17 @@ pub struct RelayPinStatusResponse {
     pub content_id: String,
     pub pinned: bool,
     pub size: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RelayCapabilitiesResponse {
+    pub pin_request_versions: Vec<String>,
+}
+
+pub async fn capabilities() -> Json<RelayCapabilitiesResponse> {
+    Json(RelayCapabilitiesResponse {
+        pin_request_versions: vec!["v1".to_string(), "v1-signed-sizes".to_string()],
+    })
 }
 
 pub async fn create_pin(
@@ -47,10 +58,10 @@ pub async fn create_pin(
     let owner = owner_identity.to_string();
     let content_id = request.body.content_id.to_string();
 
-    let declared_items = declared_pin_items(&request)?;
+    let requested_items = requested_pin_items(&request)?;
     let reservation_id = state
         .daemon
-        .reserve_relay_pin(owner.clone(), declared_items)
+        .reserve_relay_pin(owner.clone(), requested_items)
         .await?;
 
     let prepared = async {
@@ -94,24 +105,39 @@ pub async fn create_pin(
     };
     if let Err(error) = state
         .daemon
-        .commit_relay_pin(reservation_id, actual_items)
+        .validate_relay_pin(reservation_id, actual_items.clone())
         .await
     {
         let _ = state.daemon.cancel_relay_pin(reservation_id).await;
         return Err(ApiError(error));
     }
 
-    let latest_sequence = if let Some((update_log_content_id, _, entries)) = update_log {
-        let latest_sequence = state
+    let finalized = async {
+        let latest_sequence = if let Some((update_log_content_id, _, entries)) = update_log {
+            let latest_sequence = state
+                .daemon
+                .store_update_log(owner_identity.clone(), entries)
+                .await?;
+            state.daemon.pin(update_log_content_id.to_string()).await?;
+            latest_sequence
+        } else {
+            state.daemon.pin_update_log(owner_identity).await?
+        };
+        state.daemon.pin(content_id.clone()).await?;
+        state
             .daemon
-            .store_update_log(owner_identity.clone(), entries)
+            .commit_relay_pin(reservation_id, actual_items)
             .await?;
-        state.daemon.pin(update_log_content_id.to_string()).await?;
-        latest_sequence
-    } else {
-        state.daemon.pin_update_log(owner_identity).await?
+        Ok::<_, NetworkError>(latest_sequence)
+    }
+    .await;
+    let latest_sequence = match finalized {
+        Ok(sequence) => sequence,
+        Err(error) => {
+            let _ = state.daemon.cancel_relay_pin(reservation_id).await;
+            return Err(ApiError(error));
+        }
     };
-    state.daemon.pin(content_id.clone()).await?;
 
     Ok(Json(RelayPinResponse {
         status: "pinned".to_string(),
@@ -122,27 +148,37 @@ pub async fn create_pin(
     }))
 }
 
-fn declared_pin_items(request: &PinRequest) -> Result<Vec<RelayPinItem>, ApiError> {
+fn requested_pin_items(request: &PinRequest) -> Result<RelayPinRequestItems, ApiError> {
     match (
         request.body.content_size,
         request.body.update_log_content_id.as_ref(),
         request.body.update_log_size,
     ) {
-        (None, _, None) => Ok(Vec::new()),
-        (Some(content_size), None, None) => Ok(vec![RelayPinItem {
-            content_id: request.body.content_id.to_string(),
-            size: content_size,
-        }]),
-        (Some(content_size), Some(update_log_content_id), Some(update_log_size)) => Ok(vec![
-            RelayPinItem {
+        (None, update_log_content_id, None) => {
+            let mut content_ids = vec![request.body.content_id.to_string()];
+            if let Some(update_log_content_id) = update_log_content_id {
+                content_ids.push(update_log_content_id.to_string());
+            }
+            Ok(RelayPinRequestItems::Legacy(content_ids))
+        }
+        (Some(content_size), None, None) => {
+            Ok(RelayPinRequestItems::Declared(vec![RelayPinItem {
                 content_id: request.body.content_id.to_string(),
                 size: content_size,
-            },
-            RelayPinItem {
-                content_id: update_log_content_id.to_string(),
-                size: update_log_size,
-            },
-        ]),
+            }]))
+        }
+        (Some(content_size), Some(update_log_content_id), Some(update_log_size)) => {
+            Ok(RelayPinRequestItems::Declared(vec![
+                RelayPinItem {
+                    content_id: request.body.content_id.to_string(),
+                    size: content_size,
+                },
+                RelayPinItem {
+                    content_id: update_log_content_id.to_string(),
+                    size: update_log_size,
+                },
+            ]))
+        }
         _ => Err(ApiError(NetworkError::InvalidInput(
             "invalid pin request: incomplete signed size declarations".to_string(),
         ))),

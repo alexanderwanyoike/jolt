@@ -52,6 +52,10 @@ pub enum Commands {
         /// Maximum total bytes accepted through the relay pin API.
         #[arg(long)]
         pin_capacity_bytes: Option<u64>,
+
+        /// Clear the persisted relay pin allowlist and quota policy.
+        #[arg(long)]
+        pin_policy_reset: bool,
     },
 
     /// Stop the running daemon

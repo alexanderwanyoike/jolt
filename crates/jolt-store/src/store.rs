@@ -297,6 +297,36 @@ impl ContentStore {
             || self.cache_index.entries.contains_key(content_id)
     }
 
+    /// Return content length without reading the content bytes or mutating
+    /// cache access metadata.
+    pub fn content_size(&self, content_id: &str) -> Option<u64> {
+        if let Some(path) = self.published_content.get(content_id) {
+            return std::fs::metadata(path).ok().map(|metadata| metadata.len());
+        }
+        self.cache_index
+            .entries
+            .get(content_id)
+            .map(|entry| entry.size)
+    }
+
+    /// Whether a cached item is currently pinned.
+    pub fn is_pinned(&self, content_id: &str) -> bool {
+        self.cache_index
+            .entries
+            .get(content_id)
+            .is_some_and(|entry| entry.pinned)
+    }
+
+    /// Total bytes represented by the in-memory pinned cache index.
+    pub fn pinned_size(&self) -> u64 {
+        self.cache_index
+            .entries
+            .values()
+            .filter(|entry| entry.pinned)
+            .map(|entry| entry.size)
+            .sum()
+    }
+
     /// List all published content IDs.
     pub fn published_ids(&self) -> Vec<String> {
         self.published_content.keys().cloned().collect()

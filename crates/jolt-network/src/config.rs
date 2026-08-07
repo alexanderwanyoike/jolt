@@ -2,7 +2,7 @@ use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-#[derive(Debug, Clone, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RelayPinPolicy {
     pub allowed_identities: HashSet<String>,
     pub per_identity_quota_bytes: Option<u64>,
