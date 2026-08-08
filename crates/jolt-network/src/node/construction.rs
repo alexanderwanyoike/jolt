@@ -55,9 +55,6 @@ impl NetworkNode {
             })?,
             crate::node::unix_now(),
         );
-        let relay_pin_records = store.load_relay_pin_records().map_err(|e| {
-            NetworkError::Protocol(format!("failed to load relay pin accounting: {e}"))
-        })?;
 
         let mut node = Self {
             swarm: built.swarm,
@@ -95,12 +92,8 @@ impl NetworkNode {
             relay_mesh_exploration_cursor: 0,
             last_bootstrap_error: None,
             bootstrap_relay: config.bootstrap_relay,
-            home_relay: config.home_relay,
             relay_pin_policy: config.relay_pin_policy,
-            relay_pin_records,
-            relay_pin_reservations: HashMap::new(),
-            next_relay_pin_reservation_id: 1,
-            relay_pin_reservation_ttl: super::RELAY_PIN_RESERVATION_TTL,
+            home_relay: config.home_relay,
             local_encryption_key,
             local_encryption_key_published: false,
             pending_ingress,
@@ -111,9 +104,6 @@ impl NetworkNode {
         // so posts/accepted-reply refs published before a restart still
         // enumerate and are served to peers.
         node.load_persisted_local_device_writer_log()?;
-        // Pin state is authoritative. A crash between pin/unpin and accounting
-        // persistence must not leave stale quota charged after restart.
-        node.reconcile_relay_pin_records()?;
 
         Ok(node)
     }

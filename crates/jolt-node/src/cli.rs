@@ -45,15 +45,7 @@ pub enum Commands {
         #[arg(long)]
         pin_allow: Vec<String>,
 
-        /// Maximum relay-pinned bytes per allowed identity.
-        #[arg(long)]
-        pin_quota_bytes: Option<u64>,
-
-        /// Maximum total bytes accepted through the relay pin API.
-        #[arg(long)]
-        pin_capacity_bytes: Option<u64>,
-
-        /// Clear the persisted relay pin allowlist and quota policy.
+        /// Clear the persisted relay pin allowlist before applying --pin-allow entries.
         #[arg(long)]
         pin_policy_reset: bool,
     },
@@ -419,29 +411,25 @@ mod tests {
     }
 
     #[test]
-    fn parse_start_with_relay_pin_policy() {
+    fn parse_start_with_relay_pin_allowlist_update() {
         let cli = Cli::parse_from([
             "jolt",
             "start",
             "--pin-allow",
-            "owner-a.jolt",
+            "alice.jolt",
             "--pin-allow",
-            "owner-b",
-            "--pin-quota-bytes",
-            "1024",
-            "--pin-capacity-bytes",
-            "8192",
+            "bob",
+            "--pin-policy-reset",
         ]);
+
         match cli.command {
             Commands::Start {
                 pin_allow,
-                pin_quota_bytes,
-                pin_capacity_bytes,
+                pin_policy_reset,
                 ..
             } => {
-                assert_eq!(pin_allow, vec!["owner-a.jolt", "owner-b"]);
-                assert_eq!(pin_quota_bytes, Some(1_024));
-                assert_eq!(pin_capacity_bytes, Some(8_192));
+                assert_eq!(pin_allow, vec!["alice.jolt", "bob"]);
+                assert!(pin_policy_reset);
             }
             _ => panic!("expected Start command"),
         }

@@ -24,7 +24,6 @@ pub struct ContentStore {
     local_identity_encryption_keypair_path: PathBuf,
     discovered_peer_hints_path: PathBuf,
     relay_records_path: PathBuf,
-    relay_pin_records_path: PathBuf,
     cache_index: CacheIndex,
     cache_config: CacheConfig,
     /// In-memory index of published content: content_id -> path to content file
@@ -85,14 +84,6 @@ pub struct HomeRelayPinRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RelayPinRecord {
-    pub owner: String,
-    pub content_id: String,
-    pub size: u64,
-    pub pinned_at: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiscoveredPeerHint {
     pub multiaddr: String,
     pub source: String,
@@ -132,7 +123,6 @@ impl ContentStore {
             base_dir.join("local_identity_encryption_keypair.json");
         let discovered_peer_hints_path = base_dir.join("discovered_peer_hints.json");
         let relay_records_path = base_dir.join("relay_records.json");
-        let relay_pin_records_path = base_dir.join("relay_pin_records.json");
 
         std::fs::create_dir_all(&published_dir)?;
         std::fs::create_dir_all(&cache_dir)?;
@@ -158,7 +148,6 @@ impl ContentStore {
             local_identity_encryption_keypair_path,
             discovered_peer_hints_path,
             relay_records_path,
-            relay_pin_records_path,
             cache_index,
             cache_config: config,
             published_content,
@@ -297,36 +286,6 @@ impl ContentStore {
             || self.cache_index.entries.contains_key(content_id)
     }
 
-    /// Return content length without reading the content bytes or mutating
-    /// cache access metadata.
-    pub fn content_size(&self, content_id: &str) -> Option<u64> {
-        if let Some(path) = self.published_content.get(content_id) {
-            return std::fs::metadata(path).ok().map(|metadata| metadata.len());
-        }
-        self.cache_index
-            .entries
-            .get(content_id)
-            .map(|entry| entry.size)
-    }
-
-    /// Whether a cached item is currently pinned.
-    pub fn is_pinned(&self, content_id: &str) -> bool {
-        self.cache_index
-            .entries
-            .get(content_id)
-            .is_some_and(|entry| entry.pinned)
-    }
-
-    /// Total bytes represented by the in-memory pinned cache index.
-    pub fn pinned_size(&self) -> u64 {
-        self.cache_index
-            .entries
-            .values()
-            .filter(|entry| entry.pinned)
-            .map(|entry| entry.size)
-            .sum()
-    }
-
     /// List all published content IDs.
     pub fn published_ids(&self) -> Vec<String> {
         self.published_content.keys().cloned().collect()
@@ -427,8 +386,8 @@ impl ContentStore {
     /// them (jolt#194). Written atomically via a temp file.
     pub fn save_ingress_queue(&self, records: &[PersistedIngressRecord]) -> Result<(), StoreError> {
         let tmp_path = self.ingress_queue_path.with_extension("json.tmp");
-        let json =
-            serde_json::to_string(records).map_err(|e| StoreError::Serialization(e.to_string()))?;
+        let json = serde_json::to_string(records)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
         std::fs::write(&tmp_path, json)?;
         std::fs::rename(tmp_path, &self.ingress_queue_path)?;
         Ok(())
@@ -461,25 +420,6 @@ impl ContentStore {
             return Ok(Vec::new());
         }
         let json = std::fs::read_to_string(&self.home_relay_pins_path)?;
-        serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))
-    }
-
-    /// Persist relay-side owner accounting atomically.
-    pub fn save_relay_pin_records(&self, records: &[RelayPinRecord]) -> Result<(), StoreError> {
-        let tmp_path = self.relay_pin_records_path.with_extension("json.tmp");
-        let json = serde_json::to_string_pretty(records)
-            .map_err(|e| StoreError::Serialization(e.to_string()))?;
-        std::fs::write(&tmp_path, json)?;
-        std::fs::rename(tmp_path, &self.relay_pin_records_path)?;
-        Ok(())
-    }
-
-    /// Load relay-side owner accounting; an absent file means no prior pins.
-    pub fn load_relay_pin_records(&self) -> Result<Vec<RelayPinRecord>, StoreError> {
-        if !self.relay_pin_records_path.exists() {
-            return Ok(Vec::new());
-        }
-        let json = std::fs::read_to_string(&self.relay_pin_records_path)?;
         serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))
     }
 
@@ -1657,33 +1597,5 @@ mod tests {
         assert!(store.has_content(&id_a), "pinned should survive");
         assert!(!store.has_content(&id_b), "unpinned should be evicted");
         assert!(store.has_content(&id_c));
-    }
-
-    #[test]
-    fn relay_pin_accounting_upserts_and_survives_reopen() {
-        let dir = tempdir().unwrap();
-        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-        let content_id = ContentId::from_bytes(b"accounted content").to_string();
-        let owner = "owner-a".to_string();
-        store
-            .save_relay_pin_records(&[RelayPinRecord {
-                owner: owner.clone(),
-                content_id: content_id.clone(),
-                size: 17,
-                pinned_at: 1,
-            }])
-            .unwrap();
-        drop(store);
-
-        let reopened = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-        assert_eq!(
-            reopened.load_relay_pin_records().unwrap(),
-            vec![RelayPinRecord {
-                owner,
-                content_id,
-                size: 17,
-                pinned_at: 1,
-            }]
-        );
     }
 }

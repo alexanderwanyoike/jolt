@@ -11,7 +11,6 @@ mod ingress;
 mod inventory;
 mod providers;
 mod publishing;
-mod relay_pin_policy;
 mod relays;
 mod resolution;
 mod status;
@@ -32,7 +31,7 @@ use jolt_core::{
 #[cfg(test)]
 use jolt_core::{EncryptedObjectRecipient, IdentityHeadHint, RelayRecord, RelayRecordCapability};
 use jolt_identity::NodeIdentity;
-use jolt_store::{ContentStore, RelayPinRecord};
+use jolt_store::ContentStore;
 
 use crate::behaviour::{JoltBehaviour, JoltBehaviourEvent};
 use crate::command::{
@@ -57,14 +56,6 @@ use crate::protocol::{
 struct PendingUpdateLogPin {
     identity: IdentityId,
     response_tx: oneshot::Sender<Result<u64, NetworkError>>,
-}
-
-struct RelayPinReservation {
-    owner: String,
-    request: crate::command::RelayPinRequestItems,
-    owner_reserved_bytes: u64,
-    total_reserved_bytes: u64,
-    expires_at: Instant,
 }
 
 struct CachedDeviceWriterState {
@@ -219,13 +210,10 @@ pub struct NetworkNode {
     last_bootstrap_error: Option<String>,
     /// Whether this node is intentionally acting as a bootstrap/discovery relay.
     bootstrap_relay: bool,
+    /// Operator allowlist for accepting owner-signed relay pin requests.
+    relay_pin_policy: crate::config::RelayPinPolicy,
     /// User-selected home relay for delegated availability.
     home_relay: Option<HomeRelayConfig>,
-    relay_pin_policy: crate::config::RelayPinPolicy,
-    relay_pin_records: Vec<RelayPinRecord>,
-    relay_pin_reservations: HashMap<u64, RelayPinReservation>,
-    next_relay_pin_reservation_id: u64,
-    relay_pin_reservation_ttl: Duration,
     /// Local X25519 keypair used to decrypt envelopes addressed to this identity.
     local_encryption_key: Option<(IdentityEncryptionKey, IdentityEncryptionPrivateKey)>,
     /// Whether this daemon start has published the local encryption key record.
@@ -263,7 +251,6 @@ const IDENTITY_PROVIDER_QUERY_LIMIT: u16 = 8;
 const IDENTITY_PROVIDER_QUERY_TTL: u8 = 3;
 const IDENTITY_PROVIDER_QUERY_TIMEOUT: Duration = Duration::from_secs(8);
 const SEEN_IDENTITY_PROVIDER_QUERY_TTL: Duration = Duration::from_secs(30);
-const RELAY_PIN_RESERVATION_TTL: Duration = Duration::from_secs(120);
 
 /// A daemon loop iteration slower than this starves queued API commands and is
 /// worth naming in the logs (issue #187).
@@ -590,7 +577,6 @@ impl NetworkNode {
                     self.check_device_writer_sync_timeouts();
                     self.check_identity_provider_forward_timeouts();
                     self.check_identity_diagnosis_timeouts();
-                    self.prune_expired_relay_pin_reservations();
 
                     // Send content requests for providers that have connected
                     let ready = self.fetch_manager.ready_to_request();
@@ -688,11 +674,6 @@ impl NetworkNode {
     /// Set the fetch timeout for the daemon's fetch manager.
     pub fn set_fetch_timeout(&mut self, timeout: Duration) {
         self.fetch_manager = FetchManager::with_timeout(timeout);
-    }
-
-    /// Override how long an abandoned relay pin request holds reserved quota.
-    pub fn set_relay_pin_reservation_ttl(&mut self, timeout: Duration) {
-        self.relay_pin_reservation_ttl = timeout;
     }
 }
 

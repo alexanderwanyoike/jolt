@@ -40,6 +40,20 @@ impl Default for NodeSettings {
 }
 
 impl NodeSettings {
+    pub fn update_relay_pin_allowlist(&mut self, identities: &[String], reset: bool) {
+        if reset {
+            self.relay_pin_policy.allowed_identities.clear();
+        }
+        self.relay_pin_policy
+            .allowed_identities
+            .extend(identities.iter().map(|identity| {
+                identity
+                    .strip_suffix(".jolt")
+                    .unwrap_or(identity)
+                    .to_string()
+            }));
+    }
+
     pub fn effective_bootstrap_relays(
         &self,
         cli_bootstrap_relays: &[String],
@@ -164,7 +178,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let config = NodeConfig::with_base_dir(dir.path().to_path_buf());
         config.ensure_dirs().unwrap();
-        let mut settings = NodeSettings {
+        let settings = NodeSettings {
             bootstrap_relays: vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWExample".to_string()],
             use_builtin_bootstrap_relays: false,
             bootstrap_relay: true,
@@ -176,12 +190,6 @@ mod tests {
             }),
             relay_pin_policy: RelayPinPolicy::default(),
         };
-        settings
-            .relay_pin_policy
-            .allowed_identities
-            .insert("jolt1allowed".to_string());
-        settings.relay_pin_policy.per_identity_quota_bytes = Some(1_024);
-        settings.relay_pin_policy.total_capacity_bytes = Some(8_192);
 
         config.save_settings(&settings).unwrap();
         let loaded = config.load_settings().unwrap();
@@ -197,6 +205,38 @@ mod tests {
         let settings = config.load_settings().unwrap();
 
         assert_eq!(settings, NodeSettings::default());
+    }
+
+    #[test]
+    fn relay_pin_allowlist_updates_preserve_existing_identities() {
+        let mut settings = NodeSettings::default();
+        settings
+            .relay_pin_policy
+            .allowed_identities
+            .insert("alice".to_string());
+
+        settings.update_relay_pin_allowlist(&["bob.jolt".to_string()], false);
+
+        assert_eq!(
+            settings.relay_pin_policy.allowed_identities,
+            ["alice".to_string(), "bob".to_string()].into()
+        );
+    }
+
+    #[test]
+    fn relay_pin_allowlist_reset_is_explicit() {
+        let mut settings = NodeSettings::default();
+        settings
+            .relay_pin_policy
+            .allowed_identities
+            .insert("alice".to_string());
+
+        settings.update_relay_pin_allowlist(&["bob.jolt".to_string()], true);
+
+        assert_eq!(
+            settings.relay_pin_policy.allowed_identities,
+            ["bob".to_string()].into()
+        );
     }
 
     #[test]

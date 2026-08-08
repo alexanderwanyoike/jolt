@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration, Instant};
 
 use crate::error::ApiError;
-use crate::routes::relay::{RelayCapabilitiesResponse, RelayPinResponse, RelayPinStatusResponse};
+use crate::routes::relay::{RelayPinResponse, RelayPinStatusResponse};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -66,13 +66,11 @@ pub async fn pin(
 
     ensure_connected_to_relay(&state, &relay).await?;
 
-    let client = reqwest::Client::new();
-    let include_declared_sizes = relay_supports_signed_sizes(&client, &api_url).await?;
     let pin_request = state
         .daemon
-        .create_pin_request_for_relay(request.content_id.clone(), include_declared_sizes)
+        .create_pin_request(request.content_id.clone())
         .await?;
-    let relay_response = client
+    let relay_response = reqwest::Client::new()
         .post(format!(
             "{}/api/v1/relay/pins",
             api_url.trim_end_matches('/')
@@ -121,45 +119,6 @@ pub async fn pin(
         latest_sequence: pinned.latest_sequence,
         size: pinned.size,
     }))
-}
-
-async fn relay_supports_signed_sizes(
-    client: &reqwest::Client,
-    api_url: &str,
-) -> Result<bool, ApiError> {
-    let response = client
-        .get(format!(
-            "{}/api/v1/relay/capabilities",
-            api_url.trim_end_matches('/')
-        ))
-        .send()
-        .await
-        .map_err(|e| {
-            ApiError(NetworkError::Protocol(format!(
-                "home relay capability request failed: {e}"
-            )))
-        })?;
-    if response.status() == reqwest::StatusCode::NOT_FOUND {
-        return Ok(false);
-    }
-    if !response.status().is_success() {
-        return Err(ApiError(NetworkError::Protocol(format!(
-            "home relay capability request failed with status {}",
-            response.status()
-        ))));
-    }
-    let capabilities = response
-        .json::<RelayCapabilitiesResponse>()
-        .await
-        .map_err(|e| {
-            ApiError(NetworkError::Protocol(format!(
-                "home relay returned invalid capabilities: {e}"
-            )))
-        })?;
-    Ok(capabilities
-        .pin_request_versions
-        .iter()
-        .any(|version| *version == "v1-signed-sizes"))
 }
 
 pub async fn availability(

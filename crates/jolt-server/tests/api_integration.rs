@@ -16,8 +16,7 @@ use jolt_store::{CacheConfig, ContentStore};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
 static NEXT_TEST_PORT: AtomicU16 = AtomicU16::new(20_000);
 
@@ -327,17 +326,6 @@ fn relay_config_for(owner: &NodeIdentity) -> NetworkConfig {
         .relay_pin_policy
         .allowed_identities
         .insert(owner.identity_id().to_string());
-    config
-}
-
-fn limited_relay_config_for(
-    owner: &NodeIdentity,
-    quota: Option<u64>,
-    capacity: Option<u64>,
-) -> NetworkConfig {
-    let mut config = relay_config_for(owner);
-    config.relay_pin_policy.per_identity_quota_bytes = quota;
-    config.relay_pin_policy.total_capacity_bytes = capacity;
     config
 }
 
@@ -4482,7 +4470,6 @@ async fn test_offline_publisher_content_is_resolved_and_fetched_through_relay() 
     let bob_p2p = free_tcp_port();
 
     let alice_identity = NodeIdentity::generate();
-    alice_identity.save(alice_dir.path()).unwrap();
     let relay_identity = NodeIdentity::generate();
     let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
     let mut relay = NetworkNode::new_tcp(
@@ -4500,6 +4487,7 @@ async fn test_offline_publisher_content_is_resolved_and_fetched_through_relay() 
         .parse()
         .unwrap();
 
+    alice_identity.save(alice_dir.path()).unwrap();
     let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
     let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, no_mdns_config()).unwrap();
     alice
@@ -5236,106 +5224,36 @@ async fn test_home_relay_pin_endpoint_reports_missing_home_relay() {
 }
 
 #[tokio::test]
-async fn test_home_relay_pin_falls_back_to_legacy_signature_for_old_relay_api() {
-    let relay_dir = tempfile::tempdir().unwrap();
-    let alice_dir = tempfile::tempdir().unwrap();
-    let relay_p2p = free_tcp_port();
-    let alice_p2p = free_tcp_port();
-    let alice_identity = NodeIdentity::generate();
+async fn test_relay_pin_request_is_denied_when_allowlist_is_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut node = NetworkNode::new_tcp(NodeIdentity::generate(), store, relay_config()).unwrap();
+    node.set_fetch_timeout(std::time::Duration::from_millis(20));
+    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
 
-    let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
-    let mut relay = NetworkNode::new_tcp(
-        NodeIdentity::generate(),
-        relay_store,
-        relay_config_for(&alice_identity),
+    let owner = NodeIdentity::generate();
+    let request = PinRequest::new(
+        owner.public_key_bytes(),
+        ContentId::from_bytes(b"content denied before fetch"),
+        |bytes| owner.sign(bytes),
     )
     .unwrap();
-    relay
-        .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
+    let response = reqwest::Client::new()
+        .post(format!("{}/api/v1/relay/pins", base_url(port)))
+        .json(&request)
+        .send()
+        .await
         .unwrap();
-    let (_relay_api, relay_handle, _relay_dir) =
-        start_test_server_from_node(relay, relay_dir).await;
-    let relay_peer = relay_handle.status().await.unwrap().peer_id;
-    let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
 
-    let captured = Arc::new(Mutex::new(None::<PinRequest>));
-    let old_relay_app = axum::Router::new().route(
-        "/api/v1/relay/pins",
-        axum::routing::post({
-            let captured = captured.clone();
-            move |axum::Json(request): axum::Json<PinRequest>| {
-                let captured = captured.clone();
-                async move {
-                    let owner = request.owner_identity().unwrap().to_string();
-                    let content_id = request.body.content_id.to_string();
-                    *captured.lock().await = Some(request);
-                    axum::Json(serde_json::json!({
-                        "status": "pinned",
-                        "owner": owner,
-                        "content_id": content_id,
-                        "latest_sequence": 0,
-                        "size": 0
-                    }))
-                }
-            }
-        }),
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        body["error"],
+        "relay pin denied: identity is not allowlisted"
     );
-    let old_relay_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let old_relay_addr = old_relay_listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::serve(old_relay_listener, old_relay_app)
-            .await
-            .unwrap();
-    });
+    assert_eq!(handle.cache_stats().await.unwrap().pinned_items, 0);
 
-    let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
-    let mut alice_config = no_mdns_config();
-    alice_config.home_relay = Some(HomeRelayConfig {
-        peer_id: relay_peer,
-        multiaddr: relay_multiaddr,
-        capability: HomeRelayCapability::Pinning,
-        api_url: Some(format!("http://{old_relay_addr}")),
-    });
-    let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, alice_config).unwrap();
-    alice
-        .listen_on(&format!("/ip4/127.0.0.1/tcp/{alice_p2p}"))
-        .unwrap();
-    let (alice_api, alice_handle, _alice_dir) = start_test_server_from_node(alice, alice_dir).await;
-
-    let client = reqwest::Client::new();
-    let publish_response = client
-        .post(format!("{}/api/v1/publish", base_url(alice_api)))
-        .multipart(
-            reqwest::multipart::Form::new().part(
-                "file",
-                reqwest::multipart::Part::bytes(b"legacy relay compatibility".to_vec())
-                    .file_name("legacy.txt"),
-            ),
-        )
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(publish_response.status(), 200);
-    let published: serde_json::Value = publish_response.json().await.unwrap();
-    let content_id = published["content_id"].as_str().unwrap();
-
-    let pin_response = client
-        .post(format!("{}/api/v1/home-relay/pins", base_url(alice_api)))
-        .json(&serde_json::json!({ "content_id": content_id }))
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(pin_response.status(), 200);
-    let request = captured.lock().await.clone().expect("old relay saw no pin");
-    assert_eq!(request.body.content_size, None);
-    assert_eq!(request.body.update_log_size, None);
-    request
-        .verify()
-        .expect("fallback request must retain the legacy v1 signature");
-
-    alice_handle.shutdown().await.ok();
-    relay_handle.shutdown().await.ok();
+    handle.shutdown().await.ok();
 }
 
 #[tokio::test]
@@ -5405,136 +5323,6 @@ async fn test_home_relay_pin_endpoint_requires_relay_api_url() {
 }
 
 #[tokio::test]
-async fn test_relay_capabilities_advertise_legacy_and_signed_size_requests() {
-    let (port, handle, _dir) = start_test_server().await;
-
-    let response = reqwest::Client::new()
-        .get(format!("{}/api/v1/relay/capabilities", base_url(port)))
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), 200);
-    let body: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(body["pin_request_versions"][0], "v1");
-    assert_eq!(body["pin_request_versions"][1], "v1-signed-sizes");
-    handle.shutdown().await.ok();
-}
-
-#[tokio::test]
-async fn test_relay_pin_request_rejects_owner_quota_before_fetch() {
-    let dir = tempfile::tempdir().unwrap();
-    let relay_identity = NodeIdentity::generate();
-    let owner = NodeIdentity::generate();
-    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-    let config = limited_relay_config_for(&owner, Some(4), Some(100));
-    let node = NetworkNode::new_tcp(relay_identity, store, config).unwrap();
-    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
-    let request = PinRequest::with_declared_sizes(
-        owner.public_key_bytes(),
-        ContentId::from_bytes(b"too large for owner"),
-        5,
-        None,
-        |bytes| owner.sign(bytes),
-    )
-    .unwrap();
-
-    let response = reqwest::Client::new()
-        .post(format!("{}/api/v1/relay/pins", base_url(port)))
-        .json(&request)
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), 400);
-    let body: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(body["error"], "relay pin denied: identity quota exceeded");
-    assert_eq!(handle.cache_stats().await.unwrap().pinned_items, 0);
-    handle.shutdown().await.ok();
-}
-
-#[tokio::test]
-async fn test_relay_pin_request_rejects_total_capacity_before_fetch() {
-    let dir = tempfile::tempdir().unwrap();
-    let relay_identity = NodeIdentity::generate();
-    let owner = NodeIdentity::generate();
-    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-    let config = limited_relay_config_for(&owner, Some(100), Some(4));
-    let node = NetworkNode::new_tcp(relay_identity, store, config).unwrap();
-    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
-    let request = PinRequest::with_declared_sizes(
-        owner.public_key_bytes(),
-        ContentId::from_bytes(b"too large for relay"),
-        5,
-        None,
-        |bytes| owner.sign(bytes),
-    )
-    .unwrap();
-
-    let response = reqwest::Client::new()
-        .post(format!("{}/api/v1/relay/pins", base_url(port)))
-        .json(&request)
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), 400);
-    let body: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(body["error"], "relay pin denied: relay capacity exceeded");
-    assert_eq!(handle.cache_stats().await.unwrap().pinned_items, 0);
-    handle.shutdown().await.ok();
-}
-
-#[tokio::test]
-async fn test_relay_pin_reservation_expires_after_http_client_disconnect() {
-    let dir = tempfile::tempdir().unwrap();
-    let owner = NodeIdentity::generate();
-    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-    let config = limited_relay_config_for(&owner, Some(5), Some(100));
-    let mut node = NetworkNode::new_tcp(NodeIdentity::generate(), store, config).unwrap();
-    node.set_fetch_timeout(std::time::Duration::from_millis(500));
-    node.set_relay_pin_reservation_ttl(std::time::Duration::from_millis(100));
-    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
-    let first_request = PinRequest::with_declared_sizes(
-        owner.public_key_bytes(),
-        ContentId::from_bytes(b"abandoned request"),
-        5,
-        None,
-        |bytes| owner.sign(bytes),
-    )
-    .unwrap();
-    let later_request = PinRequest::with_declared_sizes(
-        owner.public_key_bytes(),
-        ContentId::from_bytes(b"request after disconnect"),
-        5,
-        None,
-        |bytes| owner.sign(bytes),
-    )
-    .unwrap();
-    let url = format!("{}/api/v1/relay/pins", base_url(port));
-    let client = reqwest::Client::new();
-    let abandoned = tokio::spawn({
-        let client = client.clone();
-        let url = url.clone();
-        async move { client.post(url).json(&first_request).send().await }
-    });
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let while_reserved = client.post(&url).json(&later_request).send().await.unwrap();
-    assert_eq!(while_reserved.status(), 400);
-    let body: serde_json::Value = while_reserved.json().await.unwrap();
-    assert_eq!(body["error"], "relay pin denied: identity quota exceeded");
-    abandoned.abort();
-
-    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
-    let after_expiry = client.post(url).json(&later_request).send().await.unwrap();
-    let body: serde_json::Value = after_expiry.json().await.unwrap();
-    assert_ne!(body["error"], "relay pin denied: identity quota exceeded");
-
-    handle.shutdown().await.ok();
-}
-
-#[tokio::test]
 async fn test_relay_pin_request_rejects_tampered_owner_signature() {
     let dir = tempfile::tempdir().unwrap();
     let relay_identity = NodeIdentity::generate();
@@ -5567,39 +5355,6 @@ async fn test_relay_pin_request_rejects_tampered_owner_signature() {
         .contains("invalid signature"));
     let stats = handle.cache_stats().await.unwrap();
     assert_eq!(stats.pinned_items, 0);
-
-    handle.shutdown().await.ok();
-}
-
-#[tokio::test]
-async fn test_relay_pin_request_is_denied_when_allowlist_is_empty() {
-    let dir = tempfile::tempdir().unwrap();
-    let relay_identity = NodeIdentity::generate();
-    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-    let node = NetworkNode::new_tcp(relay_identity, store, relay_config()).unwrap();
-    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
-
-    let owner = NodeIdentity::generate();
-    let request = PinRequest::new(
-        owner.public_key_bytes(),
-        ContentId::from_bytes(b"content denied before fetch"),
-        |bytes| owner.sign(bytes),
-    )
-    .unwrap();
-    let response = reqwest::Client::new()
-        .post(format!("{}/api/v1/relay/pins", base_url(port)))
-        .json(&request)
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), 400);
-    let body: serde_json::Value = response.json().await.unwrap();
-    assert!(body["error"]
-        .as_str()
-        .unwrap()
-        .contains("identity is not allowlisted"));
-    assert_eq!(handle.cache_stats().await.unwrap().pinned_items, 0);
 
     handle.shutdown().await.ok();
 }

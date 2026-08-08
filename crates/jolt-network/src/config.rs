@@ -1,12 +1,11 @@
 use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RelayPinPolicy {
-    pub allowed_identities: HashSet<String>,
-    pub per_identity_quota_bytes: Option<u64>,
-    pub total_capacity_bytes: Option<u64>,
+    #[serde(default)]
+    pub allowed_identities: BTreeSet<String>,
 }
 
 impl RelayPinPolicy {
@@ -53,7 +52,7 @@ pub struct NetworkConfig {
     pub bootstrap_relay: bool,
     /// User-selected home relay for delegated availability.
     pub home_relay: Option<HomeRelayConfig>,
-    /// Operator policy for accepting owner-signed relay pin requests.
+    /// Operator allowlist for accepting owner-signed relay pin requests.
     pub relay_pin_policy: RelayPinPolicy,
 }
 
@@ -108,11 +107,6 @@ mod tests {
 
     #[test]
     fn relay_pin_policy_defaults_to_denying_every_identity() {
-        let owner = "jolt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
-        let policy = RelayPinPolicy::default();
-
-        assert!(!policy.is_allowed(owner));
-        assert_eq!(policy.per_identity_quota_bytes, None);
-        assert_eq!(policy.total_capacity_bytes, None);
+        assert!(!RelayPinPolicy::default().is_allowed("alice"));
     }
 }

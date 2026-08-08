@@ -100,6 +100,10 @@ pub enum DaemonCommand {
     GetStatus {
         response_tx: oneshot::Sender<NodeStatus>,
     },
+    RelayPinAllowed {
+        owner: String,
+        response_tx: oneshot::Sender<bool>,
+    },
     SignLocalIdentity {
         payload: Vec<u8>,
         response_tx: oneshot::Sender<Vec<u8>>,
@@ -122,27 +126,7 @@ pub enum DaemonCommand {
     },
     CreatePinRequest {
         content_id: String,
-        include_declared_sizes: bool,
         response_tx: oneshot::Sender<Result<PinRequest, NetworkError>>,
-    },
-    ReserveRelayPin {
-        owner: String,
-        request: RelayPinRequestItems,
-        response_tx: oneshot::Sender<Result<u64, NetworkError>>,
-    },
-    ValidateRelayPin {
-        reservation_id: u64,
-        items: Vec<RelayPinItem>,
-        response_tx: oneshot::Sender<Result<(), NetworkError>>,
-    },
-    CommitRelayPin {
-        reservation_id: u64,
-        items: Vec<RelayPinItem>,
-        response_tx: oneshot::Sender<Result<(), NetworkError>>,
-    },
-    CancelRelayPin {
-        reservation_id: u64,
-        response_tx: oneshot::Sender<Result<(), NetworkError>>,
     },
     RecordHomeRelayPin {
         content_id: String,
@@ -179,27 +163,6 @@ pub enum DaemonCommand {
     Shutdown {
         response_tx: oneshot::Sender<()>,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RelayPinItem {
-    pub content_id: String,
-    pub size: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RelayPinRequestItems {
-    Declared(Vec<RelayPinItem>),
-    Legacy(Vec<String>),
-}
-
-impl RelayPinRequestItems {
-    pub fn content_ids(&self) -> Vec<&str> {
-        match self {
-            Self::Declared(items) => items.iter().map(|item| item.content_id.as_str()).collect(),
-            Self::Legacy(content_ids) => content_ids.iter().map(String::as_str).collect(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
