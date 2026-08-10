@@ -1,6 +1,6 @@
 use anyhow::Result;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, warn};
 
 use jolt_core::LiveReachabilityEndpoint;
 use jolt_identity::NodeIdentity;
@@ -45,8 +45,13 @@ pub async fn run(
     let local_identity = identity.identity_id();
     let mut settings = config.load_settings()?;
     if pin_policy_reset || !pin_allow.is_empty() {
-        settings.update_relay_pin_allowlist(&pin_allow, pin_policy_reset);
+        settings.update_relay_pin_allowlist(&pin_allow, pin_policy_reset)?;
         config.save_settings(&settings)?;
+    }
+    if settings.bootstrap_relay && settings.relay_pin_policy.allowed_identities.is_empty() {
+        warn!(
+            "Relay pin allowlist is empty; discovery remains enabled, but all relay pin requests will be denied"
+        );
     }
     let builtin_bootstrap = default_bootstrap_peers();
 

@@ -143,6 +143,31 @@ start_node alice "$ALICE_API" "$ALICE_P2P" "$BASE/alice-initial.log" --no-bootst
 alice_identity="$(status_field "$ALICE_API" identity_address)"
 stop_node alice
 
+echo "==> Rejecting a copied content address as an allowlist identity"
+if XDG_DATA_HOME="$BASE/relay" "$BIN" start \
+  --api-port "$RELAY_API" \
+  --p2p-port "$RELAY_P2P" \
+  --transport tcp \
+  --no-mdns \
+  --no-bootstrap \
+  --pin-allow "$alice_identity/canary/alice" \
+  > "$BASE/relay-invalid-identity.log" 2>&1; then
+  echo "Path-bearing allowlist identity unexpectedly started the relay" >&2
+  exit 1
+fi
+grep -q "allowlist entry must be an identity, not a content path" \
+  "$BASE/relay-invalid-identity.log"
+if grep -q "$alice_identity/canary/alice" "$BASE/relay/jolt/config.json"; then
+  echo "Invalid allowlist identity was persisted" >&2
+  exit 1
+fi
+
+echo "==> Proving an empty relay allowlist is visible to the operator"
+start_node relay "$RELAY_API" "$RELAY_P2P" "$BASE/relay-default-deny.log" --no-bootstrap
+grep -q "Relay pin allowlist is empty; discovery remains enabled, but all relay pin requests will be denied" \
+  "$BASE/relay-default-deny.log"
+stop_node relay
+
 echo "==> Starting a default-deny relay with Alice allowlisted"
 start_node relay "$RELAY_API" "$RELAY_P2P" "$BASE/relay.log" \
   --no-bootstrap \

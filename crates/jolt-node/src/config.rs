@@ -1,7 +1,10 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 
+use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 
+use jolt_core::IdentityId;
 use jolt_network::{HomeRelayConfig, RelayPinPolicy};
 
 #[derive(Clone)]
@@ -40,18 +43,17 @@ impl Default for NodeSettings {
 }
 
 impl NodeSettings {
-    pub fn update_relay_pin_allowlist(&mut self, identities: &[String], reset: bool) {
+    pub fn update_relay_pin_allowlist(&mut self, identities: &[String], reset: bool) -> Result<()> {
+        let identities = identities
+            .iter()
+            .map(|identity| canonical_relay_pin_identity(identity))
+            .collect::<Result<Vec<_>>>()?;
+
         if reset {
             self.relay_pin_policy.allowed_identities.clear();
         }
-        self.relay_pin_policy
-            .allowed_identities
-            .extend(identities.iter().map(|identity| {
-                identity
-                    .strip_suffix(".jolt")
-                    .unwrap_or(identity)
-                    .to_string()
-            }));
+        self.relay_pin_policy.allowed_identities.extend(identities);
+        Ok(())
     }
 
     pub fn effective_bootstrap_relays(
@@ -80,6 +82,19 @@ impl NodeSettings {
 
         relays
     }
+}
+
+fn canonical_relay_pin_identity(raw: &str) -> Result<String> {
+    if raw.contains('/') {
+        bail!(
+            "relay pin allowlist entry must be an identity, not a content path: {raw}; use <identity>.jolt"
+        );
+    }
+
+    let label = raw.strip_suffix(".jolt").unwrap_or(raw);
+    IdentityId::from_str(label)
+        .map(|identity| identity.to_string())
+        .map_err(|error| anyhow!("invalid relay pin identity '{raw}': {error}"))
 }
 
 fn default_use_builtin_bootstrap_relays() -> bool {
@@ -146,6 +161,12 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    fn identity_label() -> String {
+        jolt_identity::NodeIdentity::generate()
+            .identity_id()
+            .to_string()
+    }
+
     #[test]
     fn ensure_dirs_creates_directories() {
         let dir = tempdir().unwrap();
@@ -209,34 +230,69 @@ mod tests {
 
     #[test]
     fn relay_pin_allowlist_updates_preserve_existing_identities() {
+        let alice = identity_label();
+        let bob = identity_label();
         let mut settings = NodeSettings::default();
         settings
             .relay_pin_policy
             .allowed_identities
-            .insert("alice".to_string());
+            .insert(alice.clone());
 
-        settings.update_relay_pin_allowlist(&["bob.jolt".to_string()], false);
+        settings
+            .update_relay_pin_allowlist(&[format!("{bob}.jolt")], false)
+            .unwrap();
 
         assert_eq!(
             settings.relay_pin_policy.allowed_identities,
-            ["alice".to_string(), "bob".to_string()].into()
+            [alice, bob].into()
         );
     }
 
     #[test]
     fn relay_pin_allowlist_reset_is_explicit() {
+        let alice = identity_label();
+        let bob = identity_label();
+        let mut settings = NodeSettings::default();
+        settings.relay_pin_policy.allowed_identities.insert(alice);
+
+        settings
+            .update_relay_pin_allowlist(&[format!("{bob}.jolt")], true)
+            .unwrap();
+
+        assert_eq!(settings.relay_pin_policy.allowed_identities, [bob].into());
+    }
+
+    #[test]
+    fn relay_pin_allowlist_rejects_path_bearing_identity_without_mutating_policy() {
+        let existing = identity_label();
+        let requested = identity_label();
         let mut settings = NodeSettings::default();
         settings
             .relay_pin_policy
             .allowed_identities
-            .insert("alice".to_string());
+            .insert(existing.clone());
 
-        settings.update_relay_pin_allowlist(&["bob.jolt".to_string()], true);
+        let result =
+            settings.update_relay_pin_allowlist(&[format!("{requested}.jolt/canary/alice")], true);
 
+        assert!(result.is_err());
         assert_eq!(
             settings.relay_pin_policy.allowed_identities,
-            ["bob".to_string()].into()
+            [existing].into()
         );
+    }
+
+    #[test]
+    fn relay_pin_allowlist_rejects_non_canonical_identity() {
+        let identity = identity_label().to_ascii_uppercase();
+        let mut settings = NodeSettings::default();
+
+        let error = settings
+            .update_relay_pin_allowlist(&[identity], false)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("invalid relay pin identity"));
+        assert!(settings.relay_pin_policy.allowed_identities.is_empty());
     }
 
     #[test]
