@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -44,15 +45,22 @@ impl Default for NodeSettings {
 
 impl NodeSettings {
     pub fn update_relay_pin_allowlist(&mut self, identities: &[String], reset: bool) -> Result<()> {
-        let identities = identities
-            .iter()
-            .map(|identity| canonical_relay_pin_identity(identity))
-            .collect::<Result<Vec<_>>>()?;
+        let identities = canonical_relay_pin_identities(identities.iter().map(String::as_str))?;
 
         if reset {
             self.relay_pin_policy.allowed_identities.clear();
         }
         self.relay_pin_policy.allowed_identities.extend(identities);
+        Ok(())
+    }
+
+    fn canonicalize_relay_pin_allowlist(&mut self) -> Result<()> {
+        self.relay_pin_policy.allowed_identities = canonical_relay_pin_identities(
+            self.relay_pin_policy
+                .allowed_identities
+                .iter()
+                .map(String::as_str),
+        )?;
         Ok(())
     }
 
@@ -82,6 +90,15 @@ impl NodeSettings {
 
         relays
     }
+}
+
+fn canonical_relay_pin_identities<'a>(
+    identities: impl IntoIterator<Item = &'a str>,
+) -> Result<BTreeSet<String>> {
+    identities
+        .into_iter()
+        .map(canonical_relay_pin_identity)
+        .collect()
 }
 
 fn canonical_relay_pin_identity(raw: &str) -> Result<String> {
@@ -141,7 +158,14 @@ impl NodeConfig {
 
     pub fn load_settings(&self) -> std::io::Result<NodeSettings> {
         match std::fs::read_to_string(&self.settings_path) {
-            Ok(raw) => serde_json::from_str(&raw).map_err(std::io::Error::other),
+            Ok(raw) => {
+                let mut settings: NodeSettings =
+                    serde_json::from_str(&raw).map_err(std::io::Error::other)?;
+                settings
+                    .canonicalize_relay_pin_allowlist()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+                Ok(settings)
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(NodeSettings::default()),
             Err(e) => Err(e),
         }
@@ -226,6 +250,56 @@ mod tests {
         let settings = config.load_settings().unwrap();
 
         assert_eq!(settings, NodeSettings::default());
+    }
+
+    #[test]
+    fn load_settings_canonicalizes_manually_configured_root_identity() {
+        let dir = tempdir().unwrap();
+        let config = NodeConfig::with_base_dir(dir.path().to_path_buf());
+        config.ensure_dirs().unwrap();
+        let identity = identity_label();
+        std::fs::write(
+            &config.settings_path,
+            serde_json::json!({
+                "relay_pin_policy": {
+                    "allowed_identities": [format!("{identity}.jolt")]
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let settings = config.load_settings().unwrap();
+
+        assert_eq!(
+            settings.relay_pin_policy.allowed_identities,
+            [identity].into()
+        );
+    }
+
+    #[test]
+    fn load_settings_rejects_manually_configured_content_path() {
+        let dir = tempdir().unwrap();
+        let config = NodeConfig::with_base_dir(dir.path().to_path_buf());
+        config.ensure_dirs().unwrap();
+        let identity = identity_label();
+        std::fs::write(
+            &config.settings_path,
+            serde_json::json!({
+                "relay_pin_policy": {
+                    "allowed_identities": [format!("{identity}.jolt/canary")]
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let error = config.load_settings().unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(error
+            .to_string()
+            .contains("allowlist entry must be an identity"));
     }
 
     #[test]
