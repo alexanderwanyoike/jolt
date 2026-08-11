@@ -45,6 +45,11 @@ pub async fn create_pin(
         )))
     })?;
     let owner = owner_identity.to_string();
+    if !state.daemon.relay_pin_allowed(owner.clone()).await? {
+        return Err(ApiError(NetworkError::InvalidInput(
+            "relay pin denied: identity is not allowlisted".to_string(),
+        )));
+    }
     let content_id = request.body.content_id.to_string();
 
     let latest_sequence = if let Some(update_log_content_id) = request.body.update_log_content_id {

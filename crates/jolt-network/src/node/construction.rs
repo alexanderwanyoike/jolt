@@ -95,6 +95,7 @@ impl NetworkNode {
             relay_mesh_exploration_cursor: 0,
             last_bootstrap_error: None,
             bootstrap_relay: config.bootstrap_relay,
+            relay_pin_policy: config.relay_pin_policy,
             home_relay: config.home_relay,
             local_encryption_key,
             local_encryption_key_published: false,

@@ -31,6 +31,8 @@ async fn main() -> anyhow::Result<()> {
             no_mdns,
             p2p_port,
             transport,
+            pin_allow,
+            pin_policy_reset,
         } => {
             commands::start::run(
                 api_port,
@@ -40,6 +42,8 @@ async fn main() -> anyhow::Result<()> {
                 no_mdns,
                 p2p_port,
                 transport,
+                pin_allow,
+                pin_policy_reset,
             )
             .await?
         }

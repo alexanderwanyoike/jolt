@@ -100,6 +100,10 @@ pub enum DaemonCommand {
     GetStatus {
         response_tx: oneshot::Sender<NodeStatus>,
     },
+    RelayPinAllowed {
+        owner: String,
+        response_tx: oneshot::Sender<bool>,
+    },
     SignLocalIdentity {
         payload: Vec<u8>,
         response_tx: oneshot::Sender<Vec<u8>>,

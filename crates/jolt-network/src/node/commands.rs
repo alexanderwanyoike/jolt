@@ -308,6 +308,9 @@ impl NetworkNode {
             DaemonCommand::GetStatus { response_tx } => {
                 let _ = response_tx.send(self.build_status());
             }
+            DaemonCommand::RelayPinAllowed { owner, response_tx } => {
+                let _ = response_tx.send(self.relay_pin_policy.is_allowed(&owner));
+            }
             DaemonCommand::SignLocalIdentity {
                 payload,
                 response_tx,

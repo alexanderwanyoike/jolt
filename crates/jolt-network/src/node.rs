@@ -219,6 +219,8 @@ pub struct NetworkNode {
     last_bootstrap_error: Option<String>,
     /// Whether this node is intentionally acting as a bootstrap/discovery relay.
     bootstrap_relay: bool,
+    /// Operator allowlist for accepting owner-signed relay pin requests.
+    relay_pin_policy: crate::config::RelayPinPolicy,
     /// User-selected home relay for delegated availability.
     home_relay: Option<HomeRelayConfig>,
     /// Local X25519 keypair used to decrypt envelopes addressed to this identity.

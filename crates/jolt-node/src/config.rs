@@ -1,8 +1,11 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 
+use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 
-use jolt_network::HomeRelayConfig;
+use jolt_core::IdentityId;
+use jolt_network::{HomeRelayConfig, RelayPinPolicy};
 
 #[derive(Clone)]
 pub struct NodeConfig {
@@ -23,6 +26,8 @@ pub struct NodeSettings {
     pub bootstrap_relay: bool,
     #[serde(default)]
     pub home_relay: Option<HomeRelayConfig>,
+    #[serde(default)]
+    pub relay_pin_policy: RelayPinPolicy,
 }
 
 impl Default for NodeSettings {
@@ -32,11 +37,25 @@ impl Default for NodeSettings {
             use_builtin_bootstrap_relays: true,
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: RelayPinPolicy::default(),
         }
     }
 }
 
 impl NodeSettings {
+    pub fn update_relay_pin_allowlist(&mut self, identities: &[String], reset: bool) -> Result<()> {
+        let identities = identities
+            .iter()
+            .map(|identity| canonical_relay_pin_identity(identity))
+            .collect::<Result<Vec<_>>>()?;
+
+        if reset {
+            self.relay_pin_policy.allowed_identities.clear();
+        }
+        self.relay_pin_policy.allowed_identities.extend(identities);
+        Ok(())
+    }
+
     pub fn effective_bootstrap_relays(
         &self,
         cli_bootstrap_relays: &[String],
@@ -63,6 +82,19 @@ impl NodeSettings {
 
         relays
     }
+}
+
+fn canonical_relay_pin_identity(raw: &str) -> Result<String> {
+    if raw.contains('/') {
+        bail!(
+            "relay pin allowlist entry must be an identity, not a content path: {raw}; use <identity>.jolt"
+        );
+    }
+
+    let label = raw.strip_suffix(".jolt").unwrap_or(raw);
+    IdentityId::from_str(label)
+        .map(|identity| identity.to_string())
+        .map_err(|error| anyhow!("invalid relay pin identity '{raw}': {error}"))
 }
 
 fn default_use_builtin_bootstrap_relays() -> bool {
@@ -129,6 +161,12 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    fn identity_label() -> String {
+        jolt_identity::NodeIdentity::generate()
+            .identity_id()
+            .to_string()
+    }
+
     #[test]
     fn ensure_dirs_creates_directories() {
         let dir = tempdir().unwrap();
@@ -171,6 +209,7 @@ mod tests {
                 capability: jolt_network::HomeRelayCapability::Pinning,
                 api_url: Some("http://127.0.0.1:9863".to_string()),
             }),
+            relay_pin_policy: RelayPinPolicy::default(),
         };
 
         config.save_settings(&settings).unwrap();
@@ -190,12 +229,80 @@ mod tests {
     }
 
     #[test]
+    fn relay_pin_allowlist_updates_preserve_existing_identities() {
+        let alice = identity_label();
+        let bob = identity_label();
+        let mut settings = NodeSettings::default();
+        settings
+            .relay_pin_policy
+            .allowed_identities
+            .insert(alice.clone());
+
+        settings
+            .update_relay_pin_allowlist(&[format!("{bob}.jolt")], false)
+            .unwrap();
+
+        assert_eq!(
+            settings.relay_pin_policy.allowed_identities,
+            [alice, bob].into()
+        );
+    }
+
+    #[test]
+    fn relay_pin_allowlist_reset_is_explicit() {
+        let alice = identity_label();
+        let bob = identity_label();
+        let mut settings = NodeSettings::default();
+        settings.relay_pin_policy.allowed_identities.insert(alice);
+
+        settings
+            .update_relay_pin_allowlist(&[format!("{bob}.jolt")], true)
+            .unwrap();
+
+        assert_eq!(settings.relay_pin_policy.allowed_identities, [bob].into());
+    }
+
+    #[test]
+    fn relay_pin_allowlist_rejects_path_bearing_identity_without_mutating_policy() {
+        let existing = identity_label();
+        let requested = identity_label();
+        let mut settings = NodeSettings::default();
+        settings
+            .relay_pin_policy
+            .allowed_identities
+            .insert(existing.clone());
+
+        let result =
+            settings.update_relay_pin_allowlist(&[format!("{requested}.jolt/canary/alice")], true);
+
+        assert!(result.is_err());
+        assert_eq!(
+            settings.relay_pin_policy.allowed_identities,
+            [existing].into()
+        );
+    }
+
+    #[test]
+    fn relay_pin_allowlist_rejects_non_canonical_identity() {
+        let identity = identity_label().to_ascii_uppercase();
+        let mut settings = NodeSettings::default();
+
+        let error = settings
+            .update_relay_pin_allowlist(&[identity], false)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("invalid relay pin identity"));
+        assert!(settings.relay_pin_policy.allowed_identities.is_empty());
+    }
+
+    #[test]
     fn effective_bootstrap_relays_use_explicit_then_defaults() {
         let settings = NodeSettings {
             bootstrap_relays: vec!["/ip4/127.0.0.1/tcp/4001/p2p/12D3Configured".to_string()],
             use_builtin_bootstrap_relays: true,
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: RelayPinPolicy::default(),
         };
         let cli = vec!["/ip4/127.0.0.1/tcp/4002/p2p/12D3Cli".to_string()];
         let defaults = vec!["/dns4/bootstrap.jolt.test/tcp/4001/p2p/12D3Default".to_string()];
