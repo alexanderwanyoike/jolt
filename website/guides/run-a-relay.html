@@ -11,7 +11,7 @@
     <meta property="og:site_name" content="Jolt" />
     <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="jolt-guide-source-sha256" content="25c29615e0b3bc34771b2241c17cf6455b474c681482e33a0d8c27d6f1cdbede" />
+    <meta name="jolt-guide-source-sha256" content="9192c792c462c31e16cc691bd16fdf99d157e8f7fd8631e6a80360e17ac35900" />
     <title>Jolt Guide | Running a Relay</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -96,6 +96,14 @@ relay has the same safe default.</p>
 every start keeps the unit file authoritative:</p>
 <pre class="doc-code"><code><span class="c1"># Replace this example identity with the owner&#39;s identity_address.</span>
 <span class="na">ExecStart</span><span class="o">=</span><span class="s">/usr/local/bin/jolt start --api-bind 127.0.0.1 --api-port 9862 --p2p-port 4001 --no-mdns --pin-policy-reset --pin-allow ackrlr4v36e3b3v3vcg2fdjzijng6lho46nk2bg6awssvu3x6zcq.jolt</span></code></pre>
+<p>After editing the unit, restart it and check that the relay stayed up:</p>
+<pre class="doc-code"><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload
+sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>jolt-relay.service
+sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>--no-pager<span class="w"> </span>jolt-relay.service</code></pre>
+<p>An invalid allowlist identity makes startup fail rather than silently weakening
+the policy. The status output (or <code>journalctl -u jolt-relay.service</code>) shows the
+validation error; check it after every policy change so <code>Restart=on-failure</code>
+does not leave the relay crash-looping unnoticed.</p>
 <p>Use a bare identity or its root <code>.jolt</code> address. A published content address
 such as <code>aliceidentity.jolt/photos/one</code> is rejected because the policy grants
 an entire identity, not an individual path. The relay's own identity is not
