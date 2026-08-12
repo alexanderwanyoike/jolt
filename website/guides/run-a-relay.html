@@ -11,7 +11,7 @@
     <meta property="og:site_name" content="Jolt" />
     <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="jolt-guide-source-sha256" content="1f9350c5eb2143a0c2af3b9a18599369155a39c9fa1bc5bafe4d229555e9e1c3" />
+    <meta name="jolt-guide-source-sha256" content="9192c792c462c31e16cc691bd16fdf99d157e8f7fd8631e6a80360e17ac35900" />
     <title>Jolt Guide | Running a Relay</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -87,6 +87,35 @@ sudo<span class="w"> </span>chown<span class="w"> </span>jolt:jolt<span class="w
 <p>Enable and start it:</p>
 <pre class="doc-code"><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload
 sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>--now<span class="w"> </span>jolt-relay.service</code></pre>
+<h3 id="pinning-is-default-deny">Pinning is default-deny</h3>
+<p>The unit above is a discovery-only relay: with no pin allowlist, it rejects
+every pin request and logs that decision at startup. Upgrading an existing
+relay has the same safe default.</p>
+<p>To accept pins, add the exact root identity of each trusted owner to
+<code>ExecStart</code>. For a systemd-managed relay, resetting and rebuilding the list on
+every start keeps the unit file authoritative:</p>
+<pre class="doc-code"><code><span class="c1"># Replace this example identity with the owner&#39;s identity_address.</span>
+<span class="na">ExecStart</span><span class="o">=</span><span class="s">/usr/local/bin/jolt start --api-bind 127.0.0.1 --api-port 9862 --p2p-port 4001 --no-mdns --pin-policy-reset --pin-allow ackrlr4v36e3b3v3vcg2fdjzijng6lho46nk2bg6awssvu3x6zcq.jolt</span></code></pre>
+<p>After editing the unit, restart it and check that the relay stayed up:</p>
+<pre class="doc-code"><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload
+sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>jolt-relay.service
+sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>--no-pager<span class="w"> </span>jolt-relay.service</code></pre>
+<p>An invalid allowlist identity makes startup fail rather than silently weakening
+the policy. The status output (or <code>journalctl -u jolt-relay.service</code>) shows the
+validation error; check it after every policy change so <code>Restart=on-failure</code>
+does not leave the relay crash-looping unnoticed.</p>
+<p>Use a bare identity or its root <code>.jolt</code> address. A published content address
+such as <code>aliceidentity.jolt/photos/one</code> is rejected because the policy grants
+an entire identity, not an individual path. The relay's own identity is not
+implicitly trusted; a node acting as its own home relay must include the
+<code>identity_address</code> reported by <code>/api/v1/status</code> explicitly.</p>
+<p>The allowlist is a trust boundary, not a storage quota. An allowed identity can
+consume the relay's available pin storage, and old update-log snapshots are not
+yet reclaimed automatically. Only allow identities you trust until quota and
+retention accounting are designed separately.</p>
+<p>This guide keeps the HTTP API on localhost. Do not expose the whole
+unauthenticated API publicly merely to make remote pinning reachable; use a
+trusted tunnel or an authenticated reverse proxy when remote access is needed.</p>
 <h2 id="5-open-the-port">5 · Open the port</h2>
 <p>Only the P2P port is public. The HTTP API stays on localhost.</p>
 <pre class="doc-code"><code>sudo<span class="w"> </span>ufw<span class="w"> </span>allow<span class="w"> </span><span class="m">4001</span>/udp<span class="w"> </span>comment<span class="w"> </span><span class="s2">&quot;Jolt relay P2P&quot;</span></code></pre>

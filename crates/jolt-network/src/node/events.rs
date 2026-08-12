@@ -783,7 +783,9 @@ impl NetworkNode {
             // --- Kademlia ---
             SwarmEvent::Behaviour(JoltBehaviourEvent::Kademlia(event)) => {
                 match event {
-                    libp2p::kad::Event::OutboundQueryProgressed { result, .. } => {
+                    libp2p::kad::Event::OutboundQueryProgressed {
+                        id, result, step, ..
+                    } => {
                         match result {
                             libp2p::kad::QueryResult::Bootstrap(Ok(ok)) => {
                                 info!("DHT bootstrap step: {} remaining", ok.num_remaining);
@@ -868,6 +870,10 @@ impl NetworkNode {
                                 warn!("DHT get_providers error: {e:?}");
                             }
                             _ => {}
+                        }
+                        if step.last {
+                            self.active_update_log_provider_queries
+                                .retain(|_, query_id| *query_id != id);
                         }
                     }
                     libp2p::kad::Event::RoutingUpdated { peer, .. } => {

@@ -40,6 +40,14 @@ pub enum Commands {
         /// P2P transport to use. iroh is the real-network default; tcp is for local demos/tests.
         #[arg(long, value_enum, default_value_t = TransportMode::Iroh)]
         transport: TransportMode,
+
+        /// Identity allowed to request relay pins (repeatable). No entries means deny all.
+        #[arg(long)]
+        pin_allow: Vec<String>,
+
+        /// Clear the persisted relay pin allowlist before applying --pin-allow entries.
+        #[arg(long)]
+        pin_policy_reset: bool,
     },
 
     /// Stop the running daemon
@@ -398,6 +406,31 @@ mod tests {
         let cli = Cli::parse_from(["jolt", "start", "--no-mdns"]);
         match cli.command {
             Commands::Start { no_mdns, .. } => assert!(no_mdns),
+            _ => panic!("expected Start command"),
+        }
+    }
+
+    #[test]
+    fn parse_start_with_relay_pin_allowlist_update() {
+        let cli = Cli::parse_from([
+            "jolt",
+            "start",
+            "--pin-allow",
+            "alice.jolt",
+            "--pin-allow",
+            "bob",
+            "--pin-policy-reset",
+        ]);
+
+        match cli.command {
+            Commands::Start {
+                pin_allow,
+                pin_policy_reset,
+                ..
+            } => {
+                assert_eq!(pin_allow, vec!["alice.jolt", "bob"]);
+                assert!(pin_policy_reset);
+            }
             _ => panic!("expected Start command"),
         }
     }

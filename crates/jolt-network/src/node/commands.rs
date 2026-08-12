@@ -175,13 +175,7 @@ impl NetworkNode {
 
                 if let Some(response) = fallback_response.clone() {
                     let _ = response_tx.send(Ok(response));
-                    if self.should_refresh_cached_resolution(&identity) {
-                        self.find_update_log_providers(&identity);
-                        if let Some(provider) = self.take_discovered_update_log_provider(&identity)
-                        {
-                            self.request_daemon_refresh_from_provider(address, &provider);
-                        }
-                    }
+                    self.begin_cached_update_log_refresh(address);
                     return;
                 }
 
@@ -313,6 +307,9 @@ impl NetworkNode {
             }
             DaemonCommand::GetStatus { response_tx } => {
                 let _ = response_tx.send(self.build_status());
+            }
+            DaemonCommand::RelayPinAllowed { owner, response_tx } => {
+                let _ = response_tx.send(self.relay_pin_policy.is_allowed(&owner));
             }
             DaemonCommand::SignLocalIdentity {
                 payload,

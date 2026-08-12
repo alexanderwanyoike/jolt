@@ -393,6 +393,19 @@ impl DaemonHandle {
         receive_plain(rx).await
     }
 
+    /// Check the relay operator's persisted pin allowlist.
+    pub async fn relay_pin_allowed(&self, owner: String) -> Result<bool, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::RelayPinAllowed {
+                owner,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_plain(rx).await
+    }
+
     /// Ask the daemon's local identity key to sign protocol authority bytes.
     pub async fn sign_local_identity(&self, payload: Vec<u8>) -> Result<Vec<u8>, NetworkError> {
         let (tx, rx) = oneshot::channel();

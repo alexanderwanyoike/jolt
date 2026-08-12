@@ -215,9 +215,15 @@ impl NetworkNode {
 
     /// Query the DHT for providers of an identity's update log.
     pub fn find_update_log_providers(&mut self, identity: &IdentityId) -> libp2p::kad::QueryId {
+        if let Some(query_id) = self.active_update_log_provider_queries.get(identity) {
+            return *query_id;
+        }
+
         let key =
             libp2p::kad::RecordKey::new(&Self::update_log_provider_key(identity).into_bytes());
         let query_id = self.swarm.behaviour_mut().kademlia.get_providers(key);
+        self.active_update_log_provider_queries
+            .insert(identity.clone(), query_id);
         self.start_identity_provider_relay_query(identity);
         query_id
     }
@@ -260,5 +266,20 @@ mod tests {
         assert!(node
             .take_discovered_update_log_provider(&identity)
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn concurrent_update_log_provider_discovery_is_coalesced_per_identity() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let identity = NodeIdentity::generate().identity_id();
+
+        let first = node.find_update_log_providers(&identity);
+        let second = node.find_update_log_providers(&identity);
+
+        assert_eq!(
+            first, second,
+            "one identity should have only one active DHT and relay discovery"
+        );
     }
 }

@@ -14,7 +14,7 @@ pub use command::{
     PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
     PublishedContentInfo, PublishedRelayInfo, RelayDiagnoseIdentityResponse, ResolveResponse,
 };
-pub use config::{HomeRelayCapability, HomeRelayConfig, NetworkConfig};
+pub use config::{HomeRelayCapability, HomeRelayConfig, NetworkConfig, RelayPinPolicy};
 pub use daemon_handle::DaemonHandle;
 pub use error::{DiscoveryFailureCode, NetworkError};
 pub use libp2p::Multiaddr;

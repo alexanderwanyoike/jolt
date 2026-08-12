@@ -1,5 +1,18 @@
 use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RelayPinPolicy {
+    #[serde(default)]
+    pub allowed_identities: BTreeSet<String>,
+}
+
+impl RelayPinPolicy {
+    pub fn is_allowed(&self, identity: &str) -> bool {
+        self.allowed_identities.contains(identity)
+    }
+}
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -39,6 +52,8 @@ pub struct NetworkConfig {
     pub bootstrap_relay: bool,
     /// User-selected home relay for delegated availability.
     pub home_relay: Option<HomeRelayConfig>,
+    /// Operator allowlist for accepting owner-signed relay pin requests.
+    pub relay_pin_policy: RelayPinPolicy,
 }
 
 impl Default for NetworkConfig {
@@ -52,6 +67,7 @@ impl Default for NetworkConfig {
             effective_bootstrap_relays: Vec::new(),
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: RelayPinPolicy::default(),
         }
     }
 }
@@ -68,6 +84,7 @@ impl NetworkConfig {
             effective_bootstrap_relays: Vec::new(),
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: RelayPinPolicy::default(),
         }
     }
 }
@@ -85,5 +102,11 @@ mod tests {
         assert!(config.effective_bootstrap_relays.is_empty());
         assert!(!config.bootstrap_relay);
         assert!(config.home_relay.is_none());
+        assert!(config.relay_pin_policy.allowed_identities.is_empty());
+    }
+
+    #[test]
+    fn relay_pin_policy_defaults_to_denying_every_identity() {
+        assert!(!RelayPinPolicy::default().is_allowed("alice"));
     }
 }

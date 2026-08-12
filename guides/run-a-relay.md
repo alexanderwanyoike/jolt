@@ -83,6 +83,49 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now jolt-relay.service
 ```
 
+### Pinning is default-deny
+
+The unit above is a discovery-only relay: with no pin allowlist, it rejects
+every pin request and logs that decision at startup. Upgrading an existing
+relay has the same safe default.
+
+To accept pins, add the exact root identity of each trusted owner to
+`ExecStart`. For a systemd-managed relay, resetting and rebuilding the list on
+every start keeps the unit file authoritative:
+
+```ini
+# Replace this example identity with the owner's identity_address.
+ExecStart=/usr/local/bin/jolt start --api-bind 127.0.0.1 --api-port 9862 --p2p-port 4001 --no-mdns --pin-policy-reset --pin-allow ackrlr4v36e3b3v3vcg2fdjzijng6lho46nk2bg6awssvu3x6zcq.jolt
+```
+
+After editing the unit, restart it and check that the relay stayed up:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart jolt-relay.service
+sudo systemctl status --no-pager jolt-relay.service
+```
+
+An invalid allowlist identity makes startup fail rather than silently weakening
+the policy. The status output (or `journalctl -u jolt-relay.service`) shows the
+validation error; check it after every policy change so `Restart=on-failure`
+does not leave the relay crash-looping unnoticed.
+
+Use a bare identity or its root `.jolt` address. A published content address
+such as `aliceidentity.jolt/photos/one` is rejected because the policy grants
+an entire identity, not an individual path. The relay's own identity is not
+implicitly trusted; a node acting as its own home relay must include the
+`identity_address` reported by `/api/v1/status` explicitly.
+
+The allowlist is a trust boundary, not a storage quota. An allowed identity can
+consume the relay's available pin storage, and old update-log snapshots are not
+yet reclaimed automatically. Only allow identities you trust until quota and
+retention accounting are designed separately.
+
+This guide keeps the HTTP API on localhost. Do not expose the whole
+unauthenticated API publicly merely to make remote pinning reachable; use a
+trusted tunnel or an authenticated reverse proxy when remote access is needed.
+
 ## 5 · Open the port
 
 Only the P2P port is public. The HTTP API stays on localhost.

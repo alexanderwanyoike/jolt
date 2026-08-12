@@ -320,6 +320,15 @@ fn relay_config() -> NetworkConfig {
     }
 }
 
+fn relay_config_for(owner: &NodeIdentity) -> NetworkConfig {
+    let mut config = relay_config();
+    config
+        .relay_pin_policy
+        .allowed_identities
+        .insert(owner.identity_id().to_string());
+    config
+}
+
 fn relay_record(identity: &NodeIdentity, observed_at: u64, expires_at: u64) -> RelayRecord {
     RelayRecord::new(
         identity.public_key_bytes(),
@@ -4460,9 +4469,15 @@ async fn test_offline_publisher_content_is_resolved_and_fetched_through_relay() 
     let alice_p2p = free_tcp_port();
     let bob_p2p = free_tcp_port();
 
+    let alice_identity = NodeIdentity::generate();
     let relay_identity = NodeIdentity::generate();
     let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
-    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    let mut relay = NetworkNode::new_tcp(
+        relay_identity,
+        relay_store,
+        relay_config_for(&alice_identity),
+    )
+    .unwrap();
     relay
         .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
         .unwrap();
@@ -4472,7 +4487,6 @@ async fn test_offline_publisher_content_is_resolved_and_fetched_through_relay() 
         .parse()
         .unwrap();
 
-    let alice_identity = NodeIdentity::generate();
     alice_identity.save(alice_dir.path()).unwrap();
     let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
     let mut alice = NetworkNode::new_tcp(alice_identity, alice_store, no_mdns_config()).unwrap();
@@ -4577,9 +4591,15 @@ async fn test_home_relay_pin_endpoint_pins_published_content_for_offline_fetch()
     let alice_p2p = free_tcp_port();
     let bob_p2p = free_tcp_port();
 
+    let alice_identity = NodeIdentity::generate();
     let relay_identity = NodeIdentity::generate();
     let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
-    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    let mut relay = NetworkNode::new_tcp(
+        relay_identity,
+        relay_store,
+        relay_config_for(&alice_identity),
+    )
+    .unwrap();
     relay
         .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
         .unwrap();
@@ -4588,7 +4608,6 @@ async fn test_home_relay_pin_endpoint_pins_published_content_for_offline_fetch()
     let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
     let relay_addr: Multiaddr = relay_multiaddr.parse().unwrap();
 
-    let alice_identity = NodeIdentity::generate();
     let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
     let mut alice_config = no_mdns_config();
     alice_config.home_relay = Some(HomeRelayConfig {
@@ -4723,9 +4742,15 @@ async fn test_published_inventory_tracks_relay_backed_and_stale_path_state() {
     let relay_p2p = free_tcp_port();
     let alice_p2p = free_tcp_port();
 
+    let alice_identity = NodeIdentity::generate();
     let relay_identity = NodeIdentity::generate();
     let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
-    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    let mut relay = NetworkNode::new_tcp(
+        relay_identity,
+        relay_store,
+        relay_config_for(&alice_identity),
+    )
+    .unwrap();
     relay
         .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
         .unwrap();
@@ -4733,7 +4758,6 @@ async fn test_published_inventory_tracks_relay_backed_and_stale_path_state() {
     let relay_peer = relay_handle.status().await.unwrap().peer_id;
     let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
 
-    let alice_identity = NodeIdentity::generate();
     let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
     let mut alice_config = no_mdns_config();
     alice_config.home_relay = Some(HomeRelayConfig {
@@ -4896,9 +4920,15 @@ async fn test_home_relay_availability_reports_healthy_pin() {
     let relay_p2p = free_tcp_port();
     let alice_p2p = free_tcp_port();
 
+    let alice_identity = NodeIdentity::generate();
     let relay_identity = NodeIdentity::generate();
     let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
-    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    let mut relay = NetworkNode::new_tcp(
+        relay_identity,
+        relay_store,
+        relay_config_for(&alice_identity),
+    )
+    .unwrap();
     relay
         .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
         .unwrap();
@@ -4906,7 +4936,6 @@ async fn test_home_relay_availability_reports_healthy_pin() {
     let relay_peer = relay_handle.status().await.unwrap().peer_id;
     let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
 
-    let alice_identity = NodeIdentity::generate();
     let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
     let mut alice_config = no_mdns_config();
     alice_config.home_relay = Some(HomeRelayConfig {
@@ -4976,9 +5005,15 @@ async fn test_home_relay_availability_reports_missing_pin() {
     let relay_p2p = free_tcp_port();
     let alice_p2p = free_tcp_port();
 
+    let alice_identity = NodeIdentity::generate();
     let relay_identity = NodeIdentity::generate();
     let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
-    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    let mut relay = NetworkNode::new_tcp(
+        relay_identity,
+        relay_store,
+        relay_config_for(&alice_identity),
+    )
+    .unwrap();
     relay
         .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
         .unwrap();
@@ -4986,7 +5021,6 @@ async fn test_home_relay_availability_reports_missing_pin() {
     let relay_peer = relay_handle.status().await.unwrap().peer_id;
     let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
 
-    let alice_identity = NodeIdentity::generate();
     let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
     let mut alice_config = no_mdns_config();
     alice_config.home_relay = Some(HomeRelayConfig {
@@ -5063,9 +5097,15 @@ async fn test_home_relay_availability_reports_unreachable_relay_without_breaking
     let relay_p2p = free_tcp_port();
     let alice_p2p = free_tcp_port();
 
+    let alice_identity = NodeIdentity::generate();
     let relay_identity = NodeIdentity::generate();
     let relay_store = ContentStore::open(relay_dir.path(), CacheConfig::default()).unwrap();
-    let mut relay = NetworkNode::new_tcp(relay_identity, relay_store, relay_config()).unwrap();
+    let mut relay = NetworkNode::new_tcp(
+        relay_identity,
+        relay_store,
+        relay_config_for(&alice_identity),
+    )
+    .unwrap();
     relay
         .listen_on(&format!("/ip4/127.0.0.1/tcp/{relay_p2p}"))
         .unwrap();
@@ -5073,7 +5113,6 @@ async fn test_home_relay_availability_reports_unreachable_relay_without_breaking
     let relay_peer = relay_handle.status().await.unwrap().peer_id;
     let relay_multiaddr = format!("/ip4/127.0.0.1/tcp/{relay_p2p}/p2p/{relay_peer}");
 
-    let alice_identity = NodeIdentity::generate();
     let alice_store = ContentStore::open(alice_dir.path(), CacheConfig::default()).unwrap();
     let mut alice_config = no_mdns_config();
     alice_config.home_relay = Some(HomeRelayConfig {
@@ -5180,6 +5219,39 @@ async fn test_home_relay_pin_endpoint_reports_missing_home_relay() {
         .as_str()
         .unwrap()
         .contains("home relay is not configured"));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_relay_pin_request_is_denied_when_allowlist_is_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut node = NetworkNode::new_tcp(NodeIdentity::generate(), store, relay_config()).unwrap();
+    node.set_fetch_timeout(std::time::Duration::from_millis(20));
+    let (port, handle, _dir) = start_test_server_from_node(node, dir).await;
+
+    let owner = NodeIdentity::generate();
+    let request = PinRequest::new(
+        owner.public_key_bytes(),
+        ContentId::from_bytes(b"content denied before fetch"),
+        |bytes| owner.sign(bytes),
+    )
+    .unwrap();
+    let response = reqwest::Client::new()
+        .post(format!("{}/api/v1/relay/pins", base_url(port)))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        body["error"],
+        "relay pin denied: identity is not allowlisted"
+    );
+    assert_eq!(handle.cache_stats().await.unwrap().pinned_items, 0);
 
     handle.shutdown().await.ok();
 }

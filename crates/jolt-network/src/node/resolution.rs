@@ -334,18 +334,27 @@ impl NetworkNode {
     /// response is verified and merged, or when discovery/sync gives up.
     pub(super) fn begin_device_writer_sync(&mut self, waiter: DeviceWriterSyncWaiter) {
         let identity = waiter.identity().clone();
+        let is_background_refresh = matches!(&waiter, DeviceWriterSyncWaiter::Refresh { .. });
 
-        // If a sync for this identity is already in flight, just park the waiter
-        // so it is answered when that request resolves.
+        // Explicit enumerations wait for an in-flight sync. Background refresh
+        // waiters carry no response, so accumulating one per cache hit only
+        // wastes memory and work.
         let sync_in_flight = self
             .pending_device_writer_syncs
             .values()
             .any(|pending| pending.identity == identity);
         if sync_in_flight {
+            if is_background_refresh {
+                return;
+            }
             self.pending_device_writer_waiters
                 .entry(identity)
                 .or_default()
                 .push(waiter);
+            return;
+        }
+
+        if is_background_refresh && !self.mark_device_writer_refresh_if_due(&identity) {
             return;
         }
 
@@ -376,6 +385,42 @@ impl NetworkNode {
         if let Some(provider) = provider {
             self.request_device_writer_sync_from_provider(identity, &provider);
         }
+    }
+
+    /// Refresh a cached legacy update log without making each path resolution
+    /// perform its own provider lookup and sync. The cached response has already
+    /// been returned to the caller when this method runs.
+    pub(super) fn begin_cached_update_log_refresh(&mut self, address: JoltAddress) {
+        let identity = address.identity().clone();
+        if !self.should_refresh_cached_resolution(&identity)
+            || !Self::mark_refresh_if_due(&mut self.cached_update_log_refreshes, &identity)
+        {
+            return;
+        }
+
+        self.find_update_log_providers(&identity);
+        if let Some(provider) = self.take_discovered_update_log_provider(&identity) {
+            self.request_daemon_refresh_from_provider(address, &provider);
+        }
+    }
+
+    fn mark_device_writer_refresh_if_due(&mut self, identity: &IdentityId) -> bool {
+        Self::mark_refresh_if_due(&mut self.device_writer_refreshes, identity)
+    }
+
+    fn mark_refresh_if_due(
+        refreshes: &mut HashMap<IdentityId, Instant>,
+        identity: &IdentityId,
+    ) -> bool {
+        let now = Instant::now();
+        refreshes.retain(|_, refreshed_at| {
+            now.saturating_duration_since(*refreshed_at) < super::CACHED_IDENTITY_REFRESH_INTERVAL
+        });
+        if refreshes.contains_key(identity) {
+            return false;
+        }
+        refreshes.insert(identity.clone(), now);
+        true
     }
 
     pub(super) fn request_device_writer_sync_from_provider(
@@ -608,7 +653,8 @@ fn device_log_is_newer(candidate: &[DeviceWriterLogEntry], known: &[DeviceWriter
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
 
     use jolt_core::{
         ContentId, DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
@@ -826,6 +872,141 @@ mod tests {
             .unwrap();
         assert_eq!(refreshed.content_id, new_content_id.to_string());
         assert_eq!(refreshed.latest_sequence, 1);
+    }
+
+    #[tokio::test]
+    async fn repeated_cached_resolves_coalesce_background_identity_refreshes() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let owner = NodeIdentity::generate();
+        let identity = owner.identity_id();
+        let content_id = ContentId::from_bytes(b"cached content");
+        let entry = UpdateLogEntry::genesis(
+            owner.public_key_bytes(),
+            UpdateAction::SetPath {
+                path: "/posts/1".to_string(),
+                content_id: content_id.clone(),
+            },
+            |bytes| owner.sign(bytes),
+        )
+        .unwrap();
+        let address = JoltAddress::new(identity.clone(), "/posts/1").unwrap();
+        let provider = libp2p::PeerId::random();
+        let key = NetworkNode::update_log_provider_key(&identity);
+
+        node.store_verified_update_log(identity.clone(), vec![entry])
+            .unwrap();
+
+        for _ in 0..3 {
+            // Relay discovery can report the same provider again after the
+            // resolve path consumes it from the shared candidate pool.
+            let providers = node.discovered_providers.entry(key.clone()).or_default();
+            if !providers.contains(&provider) {
+                providers.push(provider);
+            }
+
+            let (tx, rx) = oneshot::channel();
+            node.handle_command(DaemonCommand::Resolve {
+                address: address.to_string(),
+                response_tx: tx,
+            });
+            let resolved = rx.await.unwrap().unwrap();
+            assert_eq!(resolved.content_id, content_id.to_string());
+            assert_eq!(resolved.source, "cache");
+        }
+
+        assert_eq!(
+            node.pending_daemon_resolutions.len(),
+            1,
+            "one identity should have at most one background update-log refresh"
+        );
+        assert_eq!(node.pending_device_writer_syncs.len(), 1);
+        assert_eq!(
+            node.pending_device_writer_waiters
+                .get(&identity)
+                .map(Vec::len),
+            Some(1),
+            "duplicate cache hits must not accumulate no-op refresh waiters"
+        );
+    }
+
+    #[tokio::test]
+    async fn cached_resolve_does_not_immediately_retry_empty_device_writer_sync() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let owner = NodeIdentity::generate();
+        let identity = owner.identity_id();
+        let content_id = ContentId::from_bytes(b"legacy cached content");
+        let entry = UpdateLogEntry::genesis(
+            owner.public_key_bytes(),
+            UpdateAction::SetPath {
+                path: "/posts/1".to_string(),
+                content_id,
+            },
+            |bytes| owner.sign(bytes),
+        )
+        .unwrap();
+        let address = JoltAddress::new(identity.clone(), "/posts/1").unwrap();
+        let provider = libp2p::PeerId::random();
+        let key = NetworkNode::update_log_provider_key(&identity);
+
+        node.store_verified_update_log(identity.clone(), vec![entry])
+            .unwrap();
+        node.discovered_providers
+            .insert(key.clone(), vec![provider]);
+
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::Resolve {
+            address: address.to_string(),
+            response_tx: tx,
+        });
+        rx.await.unwrap().unwrap();
+
+        deliver_device_writer_sync_response(&mut node, provider, Vec::new(), Vec::new());
+        assert!(node.pending_device_writer_syncs.is_empty());
+
+        // A relay may advertise the legacy update-log provider again. The
+        // empty device-writer response is still fresh knowledge and should not
+        // trigger another sync for every path opened under this identity.
+        node.discovered_providers
+            .entry(key)
+            .or_default()
+            .push(provider);
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::Resolve {
+            address: address.to_string(),
+            response_tx: tx,
+        });
+        rx.await.unwrap().unwrap();
+
+        assert!(
+            node.pending_device_writer_syncs.is_empty(),
+            "an empty device-writer response should suppress immediate retries"
+        );
+    }
+
+    #[test]
+    fn cached_identity_refresh_cooldown_expires() {
+        let identity = NodeIdentity::generate().identity_id();
+        let mut refreshes = HashMap::new();
+
+        assert!(NetworkNode::mark_refresh_if_due(
+            &mut refreshes,
+            &identity
+        ));
+        assert!(!NetworkNode::mark_refresh_if_due(
+            &mut refreshes,
+            &identity
+        ));
+
+        refreshes.insert(
+            identity.clone(),
+            Instant::now() - super::super::CACHED_IDENTITY_REFRESH_INTERVAL,
+        );
+        assert!(NetworkNode::mark_refresh_if_due(
+            &mut refreshes,
+            &identity
+        ));
     }
 
     #[tokio::test]

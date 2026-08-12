@@ -1,6 +1,6 @@
 use anyhow::Result;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, warn};
 
 use jolt_core::LiveReachabilityEndpoint;
 use jolt_identity::NodeIdentity;
@@ -21,6 +21,8 @@ pub async fn run(
     no_mdns: bool,
     p2p_port: u16,
     transport: TransportMode,
+    pin_allow: Vec<String>,
+    pin_policy_reset: bool,
 ) -> Result<()> {
     let config = NodeConfig::default_dirs();
     config.ensure_dirs()?;
@@ -41,7 +43,16 @@ pub async fn run(
     let identity_peer_id = identity.peer_id().to_string();
     let local_identity_address = identity.jolt_address().to_string();
     let local_identity = identity.identity_id();
-    let settings = config.load_settings()?;
+    let mut settings = config.load_settings()?;
+    if pin_policy_reset || !pin_allow.is_empty() {
+        settings.update_relay_pin_allowlist(&pin_allow, pin_policy_reset)?;
+        config.save_settings(&settings)?;
+    }
+    if settings.bootstrap_relay && settings.relay_pin_policy.allowed_identities.is_empty() {
+        warn!(
+            "Relay pin allowlist is empty; discovery remains enabled, but all relay pin requests will be denied"
+        );
+    }
     let builtin_bootstrap = default_bootstrap_peers();
 
     let store = ContentStore::open(&config.content_store_dir, CacheConfig::default())?;
@@ -230,6 +241,7 @@ fn build_network_config(
     net_config.effective_bootstrap_relays = effective_bootstrap.clone();
     net_config.bootstrap_relay = settings.bootstrap_relay;
     net_config.home_relay = settings.home_relay.clone();
+    net_config.relay_pin_policy = settings.relay_pin_policy.clone();
     net_config.bootstrap_peers = effective_bootstrap
         .iter()
         .filter_map(|s| s.parse().ok())
@@ -268,6 +280,7 @@ mod tests {
                 capability: jolt_network::HomeRelayCapability::Pinning,
                 api_url: Some("http://127.0.0.1:9862".to_string()),
             }),
+            relay_pin_policy: jolt_network::RelayPinPolicy::default(),
         };
         let cli = vec![CLI.to_string()];
         let builtins = vec![BUILTIN.to_string()];
@@ -294,6 +307,7 @@ mod tests {
             use_builtin_bootstrap_relays: false,
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: jolt_network::RelayPinPolicy::default(),
         };
         let learned = vec![BUILTIN.to_string(), CONFIGURED.to_string()];
 
@@ -328,6 +342,7 @@ mod tests {
             use_builtin_bootstrap_relays: false,
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: jolt_network::RelayPinPolicy::default(),
         };
 
         let (config, _) = build_network_config(&settings, &[], &[], &[], 4001, true, false);
@@ -342,6 +357,7 @@ mod tests {
             use_builtin_bootstrap_relays: true,
             bootstrap_relay: false,
             home_relay: None,
+            relay_pin_policy: jolt_network::RelayPinPolicy::default(),
         };
         let builtins = vec![BUILTIN.to_string()];
         let learned = vec![CLI.to_string()];
@@ -353,6 +369,20 @@ mod tests {
         assert!(config.effective_bootstrap_relays.is_empty());
         assert!(config.bootstrap_peers.is_empty());
         assert_eq!(config.configured_bootstrap_relays, vec![CONFIGURED]);
+    }
+
+    #[test]
+    fn build_network_config_applies_relay_pin_allowlist() {
+        let mut settings = NodeSettings::default();
+        settings
+            .relay_pin_policy
+            .allowed_identities
+            .insert("alice".to_string());
+
+        let (config, _) = build_network_config(&settings, &[], &[], &[], 0, false, true);
+
+        assert!(config.relay_pin_policy.is_allowed("alice"));
+        assert!(!config.relay_pin_policy.is_allowed("mallory"));
     }
 
     #[test]
