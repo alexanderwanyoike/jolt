@@ -3,6 +3,23 @@ import { describe, expect, it } from "vitest";
 import { createFakeJolt } from "../src/testing.js";
 
 describe("createFakeJolt", () => {
+  it("returns the complete local status shape used by applications", async () => {
+    const { client } = createFakeJolt("alice.jolt");
+
+    await expect(client.getStatus()).resolves.toMatchObject({
+      identity_address: "alice.jolt",
+      direct_peers: 0,
+      relayed_peers: 0,
+      active_relays: 0,
+      published_count: 0,
+      cached_count: 0,
+      bootstrap_state: "idle",
+      known_relay_count: 0,
+      connected_bootstrap_peers: 0,
+      home_relay: null,
+    });
+  });
+
   it("matches daemon compatibility evaluation for application tests", async () => {
     const { client } = createFakeJolt("alice.jolt", {
       appApi: 1,
@@ -54,6 +71,41 @@ describe("createFakeJolt", () => {
     expect(asPublic).toBeNull();
     expect(asEncrypted?.value.s).toBe(1);
     expect(encryptedRecipients.get("/app/secret")).toEqual(["alice.jolt"]);
+  });
+
+  it("matches encrypted open behavior for app tests", async () => {
+    const { client } = createFakeJolt("alice.jolt");
+    await client.publishEncryptedJson("/app/secret", { s: 1 }, ["alice.jolt"]);
+
+    const opened = await client.openEncrypted("alice.jolt/app/secret");
+
+    expect(opened).toMatchObject({
+      path: "/app/secret",
+      status: "decrypted",
+      accessStatus: "available",
+      contentType: "application/json",
+      decryptError: null,
+    });
+    expect(JSON.parse(new TextDecoder().decode(new Uint8Array(opened.bytes)))).toEqual({ s: 1 });
+  });
+
+  it("matches home-relay pin state transitions for app tests", async () => {
+    const { client } = createFakeJolt("alice.jolt");
+    const published = await client.publishJson("/app/public", { hello: "relay" });
+
+    await expect(client.listPublished()).resolves.toMatchObject([
+      { content_id: published.contentId, pin_state: "local_only" },
+    ]);
+    await expect(
+      client.pinHomeRelay(published.contentId, "/app/public")
+    ).resolves.toMatchObject({
+      status: "pinned",
+      contentId: published.contentId,
+      latestSequence: 0,
+    });
+    await expect(client.listPublished()).resolves.toMatchObject([
+      { content_id: published.contentId, pin_state: "relay_backed" },
+    ]);
   });
 
   it("records sends and delivers injected ingress through the review flow", async () => {

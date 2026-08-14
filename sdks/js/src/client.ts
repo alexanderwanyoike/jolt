@@ -9,7 +9,7 @@
  * projections.
  *
  * The interfaces ({@link JoltSdk}, {@link JoltEncryptedSdk},
- * {@link JoltIngressSdk}, {@link JoltAppendSdk}) are intentionally small so
+ * {@link JoltAvailabilitySdk}, {@link JoltIngressSdk}, {@link JoltAppendSdk}) are intentionally small so
  * tests can fake exactly the capability a feature uses; `jolt-sdk/testing`
  * ships a ready-made in-memory implementation.
  *
@@ -70,6 +70,28 @@ export type EnumeratedRecord = {
   entryHash: string;
 };
 
+/** Encrypted content plus the daemon's honest decrypt/access state. */
+export type OpenEncryptedResult = {
+  contentId: string;
+  path: string;
+  status: "decrypted" | "ciphertext";
+  accessStatus: "available" | "needs_rewrap" | "not_accessible";
+  bytes: number[];
+  size: number;
+  contentType: string | null;
+  decryptError: string | null;
+};
+
+/** Confirmation that a home relay accepted an availability request. */
+export type HomeRelayPinResult = {
+  status: string;
+  relay: string;
+  owner: string;
+  contentId: string;
+  latestSequence: number;
+  size: number;
+};
+
 /** Public publish and tolerant versioned reads. */
 export interface JoltSdk {
   /** Publish a JSON object at a signed path (last-writer-wins). */
@@ -123,8 +145,24 @@ export interface JoltEncryptedSdk {
     decode: Decoder<T>,
     options?: CallOptions
   ): Promise<Versioned<T> | null>;
+  /** Open encrypted content without hiding a ciphertext-only result. */
+  openEncrypted(
+    target: string,
+    path?: string,
+    options?: CallOptions
+  ): Promise<OpenEncryptedResult>;
   /** The local node's published inventory. */
   listPublished(options?: CallOptions): Promise<PublishedContent[]>;
+}
+
+/** Explicit application-owned requests for delegated content availability. */
+export interface JoltAvailabilitySdk {
+  /** Ask the configured home relay to retain one of this app's own publications. */
+  pinHomeRelay(
+    contentId: string,
+    path?: string,
+    options?: CallOptions
+  ): Promise<HomeRelayPinResult>;
 }
 
 /**
@@ -173,6 +211,7 @@ export interface JoltSessionSdk {
 export type JoltClient = JoltSdk &
   JoltAppendSdk &
   JoltEncryptedSdk &
+  JoltAvailabilitySdk &
   JoltIngressSdk &
   JoltSessionSdk &
   JoltCompatibilitySdk & {
@@ -342,8 +381,46 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
       return { ref, value, latestSequence: resolved.latest_sequence, contentId };
     },
 
+    async openEncrypted(target, path, call) {
+      const opened = await ops.openEncryptedTarget(
+        transport,
+        getSessionToken(),
+        target,
+        path,
+        call
+      );
+      return {
+        contentId: opened.content_id,
+        path: opened.path,
+        status: opened.status,
+        accessStatus: opened.access_status,
+        bytes: opened.status === "decrypted" ? opened.plaintext ?? [] : opened.ciphertext ?? [],
+        size: opened.size,
+        contentType: opened.content_type ?? null,
+        decryptError: opened.decrypt_error ?? null,
+      };
+    },
+
     async listPublished(call) {
       return ops.listPublished(transport, getSessionToken(), call);
+    },
+
+    async pinHomeRelay(contentId, path, call) {
+      const pinned = await ops.pinHomeRelay(
+        transport,
+        getSessionToken(),
+        contentId,
+        path,
+        call
+      );
+      return {
+        status: pinned.status,
+        relay: pinned.relay,
+        owner: pinned.owner,
+        contentId: pinned.content_id,
+        latestSequence: pinned.latest_sequence,
+        size: pinned.size,
+      };
     },
 
     async sendObject(recipient, path, body, call) {

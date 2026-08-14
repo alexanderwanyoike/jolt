@@ -21,8 +21,10 @@ import type {
   DecryptedIngress,
   EncryptedPublishResponse,
   FetchResult,
+  HomeRelayPinResponse,
   IngressRecord,
   NodeStatus,
+  OpenedEncryptedObject,
   PublishedContent,
   PublishResponse,
   ResolveResponse,
@@ -33,8 +35,8 @@ export type SessionRequest = {
   appId: string;
   appName: string;
   appOrigin: string;
-  /** The identity whose authority the session requests. */
-  identity: string;
+  /** The identity whose authority the session requests, or null for local identity discovery. */
+  identity: string | null;
   /** Requested capability strings, e.g. `publish:/myapp/*`. */
   capabilities: readonly string[];
 };
@@ -236,6 +238,21 @@ export function decryptEncryptedTarget(
   return transport.request("app", "/encrypted/decrypt", { token, json: { target }, ...options });
 }
 
+/** Open encrypted content, preserving ciphertext when this identity cannot decrypt it. */
+export function openEncryptedTarget(
+  transport: JoltTransport,
+  token: string,
+  target: string,
+  path?: string,
+  options?: CallOptions
+): Promise<OpenedEncryptedObject> {
+  return transport.request("app", "/encrypted/open", {
+    token,
+    json: { target, ...(path ? { path } : {}) },
+    ...options,
+  });
+}
+
 /** This node's published inventory. */
 export function listPublished(
   transport: JoltTransport,
@@ -243,6 +260,21 @@ export function listPublished(
   options?: CallOptions
 ): Promise<PublishedContent[]> {
   return transport.request("app", "/published", { token, ...options });
+}
+
+/** Ask the configured home relay to retain one of this app's own publications. */
+export function pinHomeRelay(
+  transport: JoltTransport,
+  token: string,
+  contentId: string,
+  path?: string,
+  options?: CallOptions
+): Promise<HomeRelayPinResponse> {
+  return transport.request("app", "/home-relay/pins", {
+    token,
+    json: { content_id: contentId, ...(path ? { path } : {}) },
+    ...options,
+  });
 }
 
 /**

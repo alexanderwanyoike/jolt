@@ -10,11 +10,34 @@
 
 /** `/api/v1/status`: the local daemon's identity and connectivity summary. */
 export type NodeStatus = {
+  daemon_version: string;
   peer_id: string;
   identity_address: string;
   uptime_secs: number;
   connected_peers: number;
-  daemon_version?: string;
+  direct_peers: number;
+  relayed_peers: number;
+  nat_type: string;
+  active_relays: number;
+  published_count: number;
+  cached_count: number;
+  listen_addresses: string[];
+  bootstrap_relay: boolean;
+  bootstrap_state: string;
+  configured_bootstrap_relays: string[];
+  configured_bootstrap_relay_count: number;
+  effective_bootstrap_relays: string[];
+  effective_bootstrap_relay_count: number;
+  known_relay_count: number;
+  connected_bootstrap_peers: number;
+  last_bootstrap_error: string | null;
+  home_relay: null | {
+    peer_id: string;
+    multiaddr: string;
+    capability: "unknown" | "discovery_only" | "pinning";
+    api_url?: string | null;
+  };
+  relay_record?: unknown | null;
 };
 
 /** `/app/v1/features`: generic behavior implemented by this App API. */
@@ -45,6 +68,23 @@ export type PublishedContent = {
   address?: string | null;
   local_sequence?: number | null;
   pin_state: string;
+  relay?: null | {
+    peer_id: string;
+    multiaddr: string;
+    api_url?: string | null;
+  };
+  pinned_content_id?: string | null;
+  pinned_sequence?: number | null;
+};
+
+/** Result of requesting availability from the configured home relay. */
+export type HomeRelayPinResponse = {
+  status: string;
+  relay: string;
+  owner: string;
+  content_id: string;
+  latest_sequence: number;
+  size: number;
 };
 
 /** Result of resolving a `.jolt` address (`/app/v1/resolve`). */
@@ -127,6 +167,19 @@ export type DecryptedEncryptedObject = {
   plaintext: number[];
   size: number;
   content_type: string;
+};
+
+/** Encrypted bytes opened with plaintext when this identity can decrypt them. */
+export type OpenedEncryptedObject = {
+  content_id: string;
+  path: string;
+  status: "decrypted" | "ciphertext";
+  access_status: "available" | "needs_rewrap" | "not_accessible";
+  plaintext?: number[] | null;
+  ciphertext?: number[] | null;
+  size: number;
+  content_type?: string | null;
+  decrypt_error?: string | null;
 };
 
 /** One device-writer append record as enumeration returns it (`/app/v1/enumerate`). */
