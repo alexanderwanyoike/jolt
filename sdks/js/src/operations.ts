@@ -13,6 +13,7 @@
 import type { CallOptions, JoltTransport } from "./transport.js";
 import type {
   AppendRecordInfo,
+  AppApiFeatureManifestResponse,
   AppSessionRequestResponse,
   AppSessionStatusResponse,
   CurrentAppSession,
@@ -77,6 +78,14 @@ export function getCurrentSession(
 /** Local daemon status: identity address, peer id, connectivity. */
 export function getStatus(transport: JoltTransport, options?: CallOptions): Promise<NodeStatus> {
   return transport.request("daemon", "/status", options);
+}
+
+/** Generic App API behavior advertised by the local daemon. */
+export function getAppApiFeatures(
+  transport: JoltTransport,
+  options?: CallOptions
+): Promise<AppApiFeatureManifestResponse> {
+  return transport.request("app", "/features", options);
 }
 
 /** Publish a JSON object at a signed path (last-writer-wins update log). */

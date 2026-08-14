@@ -10,15 +10,15 @@
  * #[tauri::command]
  * async fn daemon_request(base_path: String, path: String, method: String,
  *                         body: Option<Value>, session_token: Option<String>)
- *                         -> Result<Value, String>;
+ *                         -> Result<Value, SerializableDaemonError>;
  * #[tauri::command]
  * async fn daemon_publish_bytes(session_token: String, path: String,
  *                               bytes: Vec<u8>, file_name: String,
- *                               mime_type: String) -> Result<Value, String>;
+ *                               mime_type: String) -> Result<Value, SerializableDaemonError>;
  * #[tauri::command]
  * async fn daemon_append(session_token: String, path: String, bytes: Vec<u8>,
  *                        file_name: String, mime_type: String)
- *                        -> Result<Value, String>;
+ *                        -> Result<Value, SerializableDaemonError>;
  * ```
  *
  * See the app development guide for the full Rust implementation to copy.
@@ -28,7 +28,7 @@
 
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
-import { JoltApiError } from "./errors.js";
+import { JoltApiError, JoltTransportError } from "./errors.js";
 import type {
   ApiBase,
   JoltTransport,
@@ -84,7 +84,7 @@ export class TauriTransport implements JoltTransport {
         sessionToken: req.token ?? null,
       });
     } catch (error) {
-      throw toApiError(error);
+      throw toTransportError(error);
     }
   }
 
@@ -99,12 +99,50 @@ export class TauriTransport implements JoltTransport {
         mimeType: req.mimeType,
       });
     } catch (error) {
-      throw toApiError(error);
+      throw toTransportError(error);
     }
   }
 }
 
-/** Tauri commands reject with a plain string; normalize to the SDK error type. */
-function toApiError(error: unknown): JoltApiError {
-  return new JoltApiError(typeof error === "string" ? error : String(error), { body: error });
+/** Normalize structured plugin errors and legacy string errors into SDK errors. */
+function toTransportError(error: unknown): JoltApiError | JoltTransportError {
+  if (error && typeof error === "object" && "message" in error) {
+    const structured = error as {
+      kind?: unknown;
+      message: unknown;
+      status?: unknown;
+      code?: unknown;
+      body?: unknown;
+    };
+    if (typeof structured.message === "string") {
+      if (structured.kind === "transport" || structured.kind === "configuration") {
+        return new JoltTransportError(structured.message, { cause: error });
+      }
+      return new JoltApiError(structured.message, {
+        status: typeof structured.status === "number" ? structured.status : undefined,
+        code: typeof structured.code === "string" ? structured.code : undefined,
+        body: structured.body,
+      });
+    }
+  }
+  if (typeof error === "string") {
+    const legacyStatus = /^daemon returned (\d{3})(?:\s|$)/.exec(error);
+    return new JoltApiError(error, {
+      status: legacyStatus ? Number(legacyStatus[1]) : undefined,
+      body: error,
+    });
+  }
+  return new JoltApiError(describeUnknownError(error), { body: error });
+}
+
+function describeUnknownError(error: unknown): string {
+  if (error !== null && typeof error === "object") {
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized !== undefined) return serialized;
+    } catch {
+      // Fall through for circular or otherwise non-serializable rejection values.
+    }
+  }
+  return String(error);
 }

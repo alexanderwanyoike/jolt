@@ -3681,6 +3681,27 @@ async fn test_status_endpoint() {
 }
 
 #[tokio::test]
+async fn test_app_api_feature_manifest_is_public_and_generic() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{}/app/v1/features", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["app_api"], 1);
+    assert_eq!(body["features"], serde_json::json!({}));
+    assert!(body.get("daemon_version").is_none());
+    assert!(body.get("applications").is_none());
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_status_endpoint_reports_home_relay_config() {
     let dir = tempfile::tempdir().unwrap();
     let identity = NodeIdentity::generate();

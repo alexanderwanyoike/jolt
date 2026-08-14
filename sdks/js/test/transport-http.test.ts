@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { JoltApiError, JoltTransportError } from "../src/errors.js";
+import { createJoltClient } from "../src/client.js";
 import { HttpTransport } from "../src/transport-http.js";
 
 afterEach(() => {
@@ -17,6 +18,25 @@ function stubFetch(handler: (url: string, init?: RequestInit) => Response | Prom
 }
 
 describe("HttpTransport", () => {
+  it("produces the advertised compatibility result without a session token", async () => {
+    const calls = stubFetch(() =>
+      Response.json({ app_api: 1, features: { "data.documents": 1 } })
+    );
+    const client = createJoltClient({
+      transport: new HttpTransport({ daemonUrl: "http://127.0.0.1:9999" }),
+      getSessionToken: () => "secret",
+    });
+
+    await expect(
+      client.checkCompatibility({
+        appApi: 1,
+        requiredFeatures: { "data.documents": 1 },
+      })
+    ).resolves.toMatchObject({ status: "compatible" });
+    expect(calls[0]!.url).toBe("http://127.0.0.1:9999/app/v1/features");
+    expect(calls[0]!.init?.headers).toEqual({});
+  });
+
   it("derives app and daemon bases from the daemon url", async () => {
     const calls = stubFetch(() => Response.json({ ok: true }));
     const transport = new HttpTransport({ daemonUrl: "http://127.0.0.1:9999/" });

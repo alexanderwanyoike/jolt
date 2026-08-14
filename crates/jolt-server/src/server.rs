@@ -57,6 +57,7 @@ pub fn build_router_with_stores(
 
     Router::new()
         .route("/", get(routes::dashboard::console_entry))
+        .route("/app/v1/features", get(routes::app_features::get_features))
         .route(
             "/app/v1/sessions/request",
             post(routes::app_sessions::request_session),

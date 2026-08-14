@@ -17,6 +17,12 @@ export type NodeStatus = {
   daemon_version?: string;
 };
 
+/** `/app/v1/features`: generic behavior implemented by this App API. */
+export type AppApiFeatureManifestResponse = {
+  app_api: number;
+  features: Record<string, number>;
+};
+
 /** Result of a public publish (`/app/v1/publish`). */
 export type PublishResponse = {
   content_id: string;

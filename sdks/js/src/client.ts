@@ -17,6 +17,8 @@
  */
 
 import * as ops from "./operations.js";
+import { createCompatibilityChecker } from "./compatibility.js";
+import type { JoltCompatibilitySdk } from "./compatibility.js";
 import type { CallOptions, JoltTransport } from "./transport.js";
 import type {
   AppSessionRequestResponse,
@@ -172,7 +174,8 @@ export type JoltClient = JoltSdk &
   JoltAppendSdk &
   JoltEncryptedSdk &
   JoltIngressSdk &
-  JoltSessionSdk & {
+  JoltSessionSdk &
+  JoltCompatibilitySdk & {
     /** The transport backing this client, for operations the client does not wrap. */
     readonly transport: JoltTransport;
   };
@@ -226,6 +229,7 @@ function parseJsonBytes(bytes: number[]): unknown | undefined {
 /** Build a {@link JoltClient} over a transport and a session-token source. */
 export function createJoltClient(options: JoltClientOptions): JoltClient {
   const { transport, getSessionToken } = options;
+  const checkCompatibility = createCompatibilityChecker(transport);
 
   async function resolveDecode<T>(
     ref: Reference,
@@ -256,6 +260,8 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
 
   return {
     transport,
+
+    checkCompatibility,
 
     async publishJson(path, body, call) {
       const response = await ops.publishJson(transport, getSessionToken(), path, body, call);

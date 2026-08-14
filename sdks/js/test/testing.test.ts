@@ -3,6 +3,27 @@ import { describe, expect, it } from "vitest";
 import { createFakeJolt } from "../src/testing.js";
 
 describe("createFakeJolt", () => {
+  it("matches daemon compatibility evaluation for application tests", async () => {
+    const { client } = createFakeJolt("alice.jolt", {
+      appApi: 1,
+      features: { "data.documents": 1 },
+    });
+
+    const result = await client.checkCompatibility({
+      appApi: 1,
+      requiredFeatures: { "data.documents": 1 },
+      optionalFeatures: { "data.subscriptions": 1 },
+    });
+
+    expect(result.status).toBe("compatible");
+    expect(result.manifest).toEqual({
+      appApi: 1,
+      features: { "data.documents": 1 },
+      discovery: "advertised",
+    });
+    expect(result.optionalFeatures["data.subscriptions"]?.supported).toBe(false);
+  });
+
   it("round-trips public publish and read with sequences", async () => {
     const { client } = createFakeJolt("alice.jolt");
     await client.publishJson("/app/profile", { name: "Alice" });

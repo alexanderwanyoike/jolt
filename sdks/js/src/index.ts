@@ -60,6 +60,15 @@ export type {
   Versioned,
 } from "./client.js";
 
+export type {
+  AppApiFeatureManifest,
+  AppCompatibilityDeclaration,
+  AppCompatibilityResult,
+  CompatibilityCheckOptions,
+  ContractLevelCheck,
+  JoltCompatibilitySdk,
+} from "./compatibility.js";
+
 export { apiErrorMessage, JoltApiError, JoltTransportError } from "./errors.js";
 
 export type {
@@ -75,6 +84,7 @@ export type { SessionRequest } from "./operations.js";
 
 export type {
   AppendRecordInfo,
+  AppApiFeatureManifestResponse,
   AppSessionRequestResponse,
   AppSessionStatus,
   AppSessionStatusResponse,
