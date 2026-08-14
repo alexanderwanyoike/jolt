@@ -216,6 +216,31 @@ describe("createJoltClient", () => {
     expect(detail.mimeType).toBe("application/json");
   });
 
+  it("can request a session before the local identity is known", async () => {
+    const { transport, calls } = recordingTransport({
+      "/sessions/request": { request_id: "req_1", status: "pending" },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    await jolt.requestSession({
+      appId: "pastey.local",
+      appName: "Pastey",
+      appOrigin: "http://127.0.0.1:5174",
+      identity: null,
+      capabilities: ["publish:/pastes/*"],
+    });
+
+    expect(calls[0]).toMatchObject({
+      path: "/sessions/request",
+      detail: {
+        json: {
+          requested_identity: null,
+          requested_capabilities: ["publish:/pastes/*"],
+        },
+      },
+    });
+  });
+
   it("read resolves, fetches, and decodes; returns null when decode rejects", async () => {
     const body = { kind: "profile", name: "Alice" };
     const { transport } = recordingTransport({
@@ -280,6 +305,75 @@ describe("createJoltClient", () => {
     const send = calls[2]!.detail as { json: { recipient: string; encrypted_object: number[] } };
     expect(send.json.recipient).toBe("bob.jolt");
     expect(send.json.encrypted_object).toEqual([1, 2, 3]);
+  });
+
+  it("opens encrypted content without hiding a ciphertext-only result", async () => {
+    const { transport, calls } = recordingTransport({
+      "/encrypted/open": {
+        content_id: "cid_encrypted",
+        path: "/pastes/secret",
+        status: "ciphertext",
+        access_status: "not_accessible",
+        plaintext: null,
+        ciphertext: [1, 2, 3],
+        size: 3,
+        content_type: null,
+        decrypt_error: "no matching recipient key",
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    await expect(jolt.openEncrypted("alice.jolt/pastes/secret")).resolves.toEqual({
+      contentId: "cid_encrypted",
+      path: "/pastes/secret",
+      status: "ciphertext",
+      accessStatus: "not_accessible",
+      bytes: [1, 2, 3],
+      size: 3,
+      contentType: null,
+      decryptError: "no matching recipient key",
+    });
+    expect(calls[0]).toMatchObject({
+      kind: "request",
+      base: "app",
+      path: "/encrypted/open",
+      detail: {
+        token: "tok_test",
+        json: { target: "alice.jolt/pastes/secret" },
+      },
+    });
+  });
+
+  it("requests home-relay availability for the app's own publication", async () => {
+    const { transport, calls } = recordingTransport({
+      "/home-relay/pins": {
+        status: "pinned",
+        relay: "12D3KooWRelay",
+        owner: "alice.jolt",
+        content_id: "cid_public",
+        latest_sequence: 4,
+        size: 12,
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    await expect(jolt.pinHomeRelay("cid_public", "/pastes/hello")).resolves.toEqual({
+      status: "pinned",
+      relay: "12D3KooWRelay",
+      owner: "alice.jolt",
+      contentId: "cid_public",
+      latestSequence: 4,
+      size: 12,
+    });
+    expect(calls[0]).toMatchObject({
+      kind: "request",
+      base: "app",
+      path: "/home-relay/pins",
+      detail: {
+        token: "tok_test",
+        json: { content_id: "cid_public", path: "/pastes/hello" },
+      },
+    });
   });
 
   it("enumerate marshals wire records into camelCase", async () => {

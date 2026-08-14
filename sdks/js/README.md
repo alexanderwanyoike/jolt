@@ -99,6 +99,11 @@ projection. Failures from publishes and sends throw `JoltApiError` (the
 daemon answered with an error) or `JoltTransportError` (the daemon was
 unreachable); every operation accepts `{ signal, timeoutMs }`.
 
+Encrypted applications can use `openEncrypted()` when a ciphertext-only result
+must remain visible instead of collapsing to `null`. Delegated availability is
+an explicit app choice through `pinHomeRelay()`; the in-memory fake implements
+both contracts, including local-only to relay-backed inventory transitions.
+
 ## Testing your app
 
 ```ts

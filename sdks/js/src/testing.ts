@@ -88,6 +88,7 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
   const ingress = new Map<string, IngressRecord & { payload: unknown }>();
   const sent: RecordedSend[] = [];
   const encryptedRecipients = new Map<string, string[]>();
+  const homeRelayPins = new Set<string>();
   const appApiFeatures = {
     app_api: options.appApi ?? 1,
     features: { ...options.features },
@@ -209,6 +210,33 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
       return readStored(ref, decode, true);
     },
 
+    async openEncrypted(target, path) {
+      let match: [string, StoredPublication] | undefined;
+      if (target.startsWith(`${identity}/`)) {
+        const targetPath = target.slice(identity.length);
+        const record = published.get(targetPath);
+        if (record) match = [targetPath, record];
+      } else if (path) {
+        const record = published.get(path);
+        if (record?.contentId === target) match = [path, record];
+      }
+      if (!match || match[1].recipients === null) {
+        throw new Error(`encrypted publication not found: ${target}`);
+      }
+      const [openedPath, record] = match;
+      const bytes = Array.from(new TextEncoder().encode(JSON.stringify(record.body)));
+      return {
+        contentId: record.contentId,
+        path: openedPath,
+        status: "decrypted",
+        accessStatus: "available",
+        bytes,
+        size: bytes.length,
+        contentType: "application/json",
+        decryptError: null,
+      };
+    },
+
     async listPublished() {
       const items: PublishedContent[] = [];
       for (const [path, record] of published) {
@@ -218,10 +246,30 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
           path,
           address: `${identity}${path}`,
           local_sequence: record.seq,
-          pin_state: "pinned",
+          pin_state: homeRelayPins.has(record.contentId) ? "relay_backed" : "local_only",
         });
       }
       return items;
+    },
+
+    async pinHomeRelay(contentId, path) {
+      const match = [...published.entries()].find(
+        ([publishedPath, record]) =>
+          record.contentId === contentId && (!path || publishedPath === path)
+      );
+      if (!match) {
+        throw new Error(`published content not found: ${contentId}`);
+      }
+      const [, record] = match;
+      homeRelayPins.add(contentId);
+      return {
+        status: "pinned",
+        relay: "12D3KooWFakeRelay",
+        owner: identity,
+        contentId,
+        latestSequence: record.seq,
+        size: JSON.stringify(record.body).length,
+      };
     },
 
     async sendObject(recipient, path, body) {
@@ -282,10 +330,28 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
 
     async getStatus() {
       return {
+        daemon_version: "fake",
         peer_id: "12D3KooWFake",
         identity_address: identity,
         uptime_secs: 1,
         connected_peers: 0,
+        direct_peers: 0,
+        relayed_peers: 0,
+        nat_type: "unknown",
+        active_relays: 0,
+        published_count: published.size,
+        cached_count: 0,
+        listen_addresses: [],
+        bootstrap_relay: false,
+        bootstrap_state: "idle",
+        configured_bootstrap_relays: [],
+        configured_bootstrap_relay_count: 0,
+        effective_bootstrap_relays: [],
+        effective_bootstrap_relay_count: 0,
+        known_relay_count: 0,
+        connected_bootstrap_peers: 0,
+        last_bootstrap_error: null,
+        home_relay: null,
       };
     },
   };
