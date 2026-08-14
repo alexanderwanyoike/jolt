@@ -115,7 +115,7 @@ function toTransportError(error: unknown): JoltApiError | JoltTransportError {
       body?: unknown;
     };
     if (typeof structured.message === "string") {
-      if (structured.kind === "transport") {
+      if (structured.kind === "transport" || structured.kind === "configuration") {
         return new JoltTransportError(structured.message, { cause: error });
       }
       return new JoltApiError(structured.message, {
@@ -132,5 +132,17 @@ function toTransportError(error: unknown): JoltApiError | JoltTransportError {
       body: error,
     });
   }
-  return new JoltApiError(String(error), { body: error });
+  return new JoltApiError(describeUnknownError(error), { body: error });
+}
+
+function describeUnknownError(error: unknown): string {
+  if (error !== null && typeof error === "object") {
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized !== undefined) return serialized;
+    } catch {
+      // Fall through for circular or otherwise non-serializable rejection values.
+    }
+  }
+  return String(error);
 }

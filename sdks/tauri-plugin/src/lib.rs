@@ -213,11 +213,9 @@ async fn parse_response(
         } else {
             None
         };
-        if content_type.contains("application/json") {
-            if let Some(value) = parsed.as_ref() {
-                if let Some(error) = value.get("error").and_then(Value::as_str) {
-                    return Err(DaemonRequestError::api(status, error.to_string(), parsed));
-                }
+        if let Some(value) = parsed.as_ref() {
+            if let Some(error) = value.get("error").and_then(Value::as_str) {
+                return Err(DaemonRequestError::api(status, error.to_string(), parsed));
             }
         }
 

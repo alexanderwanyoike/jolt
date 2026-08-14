@@ -8,7 +8,7 @@ const tauri = vi.hoisted(() => ({
 vi.mock("@tauri-apps/api/core", () => tauri);
 
 import { createJoltClient } from "../src/client.js";
-import { JoltTransportError } from "../src/errors.js";
+import { JoltApiError, JoltTransportError } from "../src/errors.js";
 import { TauriTransport } from "../src/transport-tauri.js";
 
 beforeEach(() => {
@@ -89,5 +89,36 @@ describe("TauriTransport compatibility", () => {
     await expect(client.checkCompatibility({ appApi: 1 })).rejects.toBeInstanceOf(
       JoltTransportError
     );
+  });
+
+  it("classifies plugin configuration failures as transport errors", async () => {
+    tauri.invoke.mockRejectedValueOnce({
+      kind: "configuration",
+      message: "invalid daemon request path",
+      status: null,
+      code: null,
+      body: null,
+    });
+    const client = createJoltClient({
+      transport: new TauriTransport({ plugin: true }),
+      getSessionToken: () => "",
+    });
+
+    await expect(client.checkCompatibility({ appApi: 1 })).rejects.toBeInstanceOf(
+      JoltTransportError
+    );
+  });
+
+  it("preserves an object-shaped legacy rejection in the fallback error message", async () => {
+    tauri.invoke.mockRejectedValueOnce({ reason: "bridge rejected request" });
+    const client = createJoltClient({
+      transport: new TauriTransport(),
+      getSessionToken: () => "",
+    });
+
+    await expect(client.checkCompatibility({ appApi: 1 })).rejects.toMatchObject({
+      constructor: JoltApiError,
+      message: '{"reason":"bridge rejected request"}',
+    });
   });
 });

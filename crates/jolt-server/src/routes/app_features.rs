@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use axum::Json;
 use serde::Serialize;
 
+// Higher levels are strictly additive compatibility floors. Breaking App API
+// behavior requires a parallel `/app/vN` route rather than incrementing this.
 const APP_API_LEVEL: u32 = 1;
 
 #[derive(Debug, Serialize)]
