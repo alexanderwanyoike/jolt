@@ -1,17 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { connect, jolt } from "./jolt";
-import { follow, loadFollows, loadTimeline, postChirp } from "./chirp";
+import type { ChirpConnectResult } from "./jolt";
+import {
+  follow,
+  loadFollows,
+  loadTimeline,
+  postAvailableChirp,
+  postChirp,
+} from "./chirp";
 import type { TimelineEntry } from "./chirp";
 import { listFollowRequests, sendFollowRequest } from "./follows";
 import type { PendingFollow } from "./follows";
 import "./App.css";
 
 export default function App() {
-  const [me, setMe] = useState<string | null>(null);
+  const [connection, setConnection] = useState<ChirpConnectResult | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [inbox, setInbox] = useState<PendingFollow[]>([]);
   const [draft, setDraft] = useState("");
+  const [keepAvailable, setKeepAvailable] = useState(false);
   const [friend, setFriend] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -23,15 +31,35 @@ export default function App() {
 
   useEffect(() => {
     connect()
-      .then(async (identity) => {
-        setMe(identity);
-        await refresh(identity);
+      .then(async (result) => {
+        setConnection(result);
+        if (result.status === "ready") await refresh(result.identity);
       })
       .catch((cause) => setError(String(cause)));
   }, [refresh]);
 
   if (error) return <main className="chirp"><p className="error">{error}</p></main>;
-  if (!me) return <main className="chirp"><p>Waiting for approval in Jolt Console…</p></main>;
+  if (!connection) {
+    return <main className="chirp"><p>Checking Jolt and waiting for approval…</p></main>;
+  }
+  if (connection.status === "unavailable") {
+    return <main className="chirp"><h1>Jolt is unavailable</h1><p>{connection.message}</p></main>;
+  }
+  if (connection.status === "incompatible") {
+    return (
+      <main className="chirp">
+        <h1>Upgrade Jolt to run this Chirp release</h1>
+        <p>
+          Chirp needs App API {connection.requiredAppApi}; this Jolt daemon provides {" "}
+          {connection.availableAppApi ?? "no compatible App API"}.
+        </p>
+      </main>
+    );
+  }
+
+  const me = connection.identity;
+  const canKeepAvailable =
+    connection.homeRelayAvailability === "available" && connection.homeRelayAuthorized;
 
   const run = (action: () => Promise<void>) =>
     action().then(() => refresh(me)).catch((cause) => setError(String(cause)));
@@ -44,11 +72,16 @@ export default function App() {
       </header>
 
       <form
+        className="composer"
         onSubmit={(event) => {
           event.preventDefault();
           if (!draft.trim()) return;
           run(async () => {
-            await postChirp(jolt, draft.trim());
+            if (keepAvailable && canKeepAvailable) {
+              await postAvailableChirp(jolt, draft.trim());
+            } else {
+              await postChirp(jolt, draft.trim());
+            }
             setDraft("");
           });
         }}
@@ -59,6 +92,16 @@ export default function App() {
           placeholder="What's happening on the network?"
           maxLength={280}
         />
+        {canKeepAvailable && (
+          <label className="availability">
+            <input
+              type="checkbox"
+              checked={keepAvailable}
+              onChange={(event) => setKeepAvailable(event.target.checked)}
+            />
+            Keep this chirp available through my home relay
+          </label>
+        )}
         <button type="submit">Chirp</button>
       </form>
 

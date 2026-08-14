@@ -1,6 +1,12 @@
 import { createJoltClient } from "jolt-sdk";
 import { TauriTransport } from "jolt-sdk/transport-tauri";
 
+import {
+  capabilitiesFor,
+  checkChirpCompatibility,
+  type ChirpCompatibility,
+} from "./compatibility";
+
 const TOKEN_KEY = "chirp.session-token";
 let token = localStorage.getItem(TOKEN_KEY) ?? "";
 
@@ -9,24 +15,45 @@ export const jolt = createJoltClient({
   getSessionToken: () => token,
 });
 
-export const CAPABILITIES = [
-  "publish:/chirp/*", // write posts and the follow list
-  "publish:encrypted:/chirp/*", // keep the sender's copy of ingress objects
-  "resolve:public", // resolve .jolt addresses
-  "fetch:public", // fetch content by content id
-  "enumerate:self:/chirp/*", // list our own append records
-  "enumerate:any:/chirp/*", // list other identities' /chirp/ records
-  "ingress:send", // deliver follow requests
-  "ingress:read", // list and open our pending inbox
-  "ingress:decide", // accept or reject inbox envelopes
-];
+const HOME_RELAY_CAPABILITY = "pin:own:/chirp/*";
 
-export async function connect(): Promise<string> {
+export type ChirpConnection = Extract<ChirpCompatibility, { status: "ready" }> & {
+  identity: string;
+  homeRelayAuthorized: boolean;
+};
+
+export type ChirpConnectResult =
+  | ChirpConnection
+  | Exclude<ChirpCompatibility, { status: "ready" }>;
+
+function connected(
+  identity: string,
+  compatibility: Extract<ChirpCompatibility, { status: "ready" }>,
+  grantedCapabilities: string[]
+): ChirpConnection {
+  return {
+    ...compatibility,
+    identity,
+    homeRelayAuthorized: grantedCapabilities.includes(HOME_RELAY_CAPABILITY),
+  };
+}
+
+export async function connect(): Promise<ChirpConnectResult> {
+  const compatibility = await checkChirpCompatibility(jolt);
+  if (compatibility.status !== "ready") return compatibility;
+
+  const requestedCapabilities = capabilitiesFor(compatibility);
   const status = await jolt.getStatus();
   if (token) {
     try {
       const session = await jolt.getCurrentSession();
-      if (session.status === "active") return status.identity_address;
+      if (session.status === "active") {
+        return connected(
+          status.identity_address,
+          compatibility,
+          session.granted_capabilities
+        );
+      }
     } catch {
       token = ""; // stored token was revoked or expired; ask again
     }
@@ -37,7 +64,7 @@ export async function connect(): Promise<string> {
     appName: "Chirp",
     appOrigin: "tauri://chirp.example",
     identity: status.identity_address,
-    capabilities: CAPABILITIES,
+    capabilities: requestedCapabilities,
   });
 
   for (;;) {
@@ -48,7 +75,7 @@ export async function connect(): Promise<string> {
     if (s.session_token) {
       token = s.session_token;
       localStorage.setItem(TOKEN_KEY, token);
-      return status.identity_address;
+      return connected(status.identity_address, compatibility, s.capabilities);
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }

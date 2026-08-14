@@ -44,6 +44,8 @@ export type RecordedSend = {
 export type FakeJoltOptions = {
   appApi?: number;
   features?: Readonly<Record<string, number>>;
+  /** Model advertised discovery or a reachable daemon on the legacy v1 baseline. */
+  featureDiscovery?: "advertised" | "legacy";
 };
 
 /** Handle returned by {@link createFakeJolt}. */
@@ -89,10 +91,10 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
   const sent: RecordedSend[] = [];
   const encryptedRecipients = new Map<string, string[]>();
   const homeRelayPins = new Set<string>();
-  const appApiFeatures = {
-    app_api: options.appApi ?? 1,
-    features: { ...options.features },
-  };
+  const featureDiscovery = options.featureDiscovery ?? "advertised";
+  const appApiFeatures = featureDiscovery === "legacy"
+    ? { app_api: 1, features: {} }
+    : { app_api: options.appApi ?? 1, features: { ...options.features } };
 
   function store(path: string, body: unknown, recipients: string[] | null): StoredPublication {
     const seq = (published.get(path)?.seq ?? -1) + 1;
@@ -114,6 +116,15 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
       path,
       address: `${identity}${path}`,
     };
+  }
+
+  function publicationEntries(): Array<[string, StoredPublication]> {
+    return [
+      ...published.entries(),
+      ...[...appends.entries()].flatMap(([path, records]) =>
+        records.map((record): [string, StoredPublication] => [path, record])
+      ),
+    ];
   }
 
   function readStored<T>(
@@ -148,7 +159,11 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
     transport: unusedTransport,
 
     async checkCompatibility(declaration: AppCompatibilityDeclaration) {
-      return evaluateCompatibility(declaration, appApiFeatures);
+      return evaluateCompatibility(
+        declaration,
+        appApiFeatures,
+        featureDiscovery
+      );
     },
 
     async publishJson(path, body) {
@@ -239,7 +254,7 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
 
     async listPublished() {
       const items: PublishedContent[] = [];
-      for (const [path, record] of published) {
+      for (const [path, record] of publicationEntries()) {
         items.push({
           content_id: record.contentId,
           size: JSON.stringify(record.body).length,
@@ -253,7 +268,7 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
     },
 
     async pinHomeRelay(contentId, path) {
-      const match = [...published.entries()].find(
+      const match = publicationEntries().find(
         ([publishedPath, record]) =>
           record.contentId === contentId && (!path || publishedPath === path)
       );

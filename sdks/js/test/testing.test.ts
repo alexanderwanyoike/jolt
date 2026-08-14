@@ -41,6 +41,23 @@ describe("createFakeJolt", () => {
     expect(result.optionalFeatures["data.subscriptions"]?.supported).toBe(false);
   });
 
+  it("can model the Legacy App API Baseline in application fixtures", async () => {
+    const { client } = createFakeJolt("alice.jolt", {
+      featureDiscovery: "legacy",
+      appApi: 9,
+      features: { "data.documents": 3 },
+    });
+
+    const result = await client.checkCompatibility({ appApi: 1 });
+
+    expect(result.status).toBe("compatible");
+    expect(result.manifest).toEqual({
+      appApi: 1,
+      features: {},
+      discovery: "legacy",
+    });
+  });
+
   it("round-trips public publish and read with sequences", async () => {
     const { client } = createFakeJolt("alice.jolt");
     await client.publishJson("/app/profile", { name: "Alice" });
