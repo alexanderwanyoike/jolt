@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { createJoltClient, type JoltTransport } from "../src/index.js";
+import {
+  createJoltClient,
+  JoltApiError,
+  JoltTransportError,
+  type JoltTransport,
+} from "../src/index.js";
 
 /** A transport that records every call and replays canned responses. */
 function recordingTransport(responses: Record<string, unknown>) {
@@ -24,6 +29,176 @@ function recordingTransport(responses: Record<string, unknown>) {
 const token = () => "tok_test";
 
 describe("createJoltClient", () => {
+  it("evaluates required and optional App API feature levels", async () => {
+    const { transport, calls } = recordingTransport({
+      "/features": {
+        app_api: 1,
+        features: {
+          "data.documents": 2,
+          "data.subscriptions": 1,
+        },
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    const result = await jolt.checkCompatibility({
+      appApi: 1,
+      requiredFeatures: {
+        "data.documents": 1,
+        "data.tombstones": 1,
+      },
+      optionalFeatures: {
+        "data.subscriptions": 2,
+      },
+    });
+
+    expect(result).toEqual({
+      status: "incompatible",
+      manifest: {
+        appApi: 1,
+        features: {
+          "data.documents": 2,
+          "data.subscriptions": 1,
+        },
+        discovery: "advertised",
+      },
+      appApi: { requiredLevel: 1, availableLevel: 1, supported: true },
+      requiredFeatures: {
+        "data.documents": { requiredLevel: 1, availableLevel: 2, supported: true },
+        "data.tombstones": { requiredLevel: 1, availableLevel: null, supported: false },
+      },
+      optionalFeatures: {
+        "data.subscriptions": { requiredLevel: 2, availableLevel: 1, supported: false },
+      },
+    });
+    expect(calls.map(({ base, path }) => ({ base, path }))).toEqual([
+      { base: "app", path: "/features" },
+    ]);
+  });
+
+  it("keeps old apps compatible when daemon release metadata and features change", async () => {
+    const responses = {
+      "/features": {
+        app_api: 1,
+        daemon_version: "0.3.23",
+        features: { "data.documents": 1 },
+      },
+    };
+    const { transport } = recordingTransport(responses);
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const oldAppDeclaration = { appApi: 1 };
+
+    const beforeUpgrade = await jolt.checkCompatibility(oldAppDeclaration);
+    responses["/features"] = {
+      app_api: 1,
+      daemon_version: "9.0.0",
+      features: { "data.documents": 3 },
+    };
+    const afterUpgrade = await jolt.checkCompatibility(oldAppDeclaration, { refresh: true });
+
+    expect(beforeUpgrade.status).toBe("compatible");
+    expect(afterUpgrade.status).toBe("compatible");
+    expect(beforeUpgrade.appApi).toEqual(afterUpgrade.appApi);
+  });
+
+  it("treats missing feature discovery as the Legacy App API v1 Baseline", async () => {
+    const transport: JoltTransport = {
+      async request(): Promise<never> {
+        throw new JoltApiError("not found", { status: 404 });
+      },
+      async upload(): Promise<never> {
+        throw new Error("unused");
+      },
+    };
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    const result = await jolt.checkCompatibility({
+      appApi: 1,
+      requiredFeatures: { "data.documents": 1 },
+    });
+
+    expect(result.status).toBe("incompatible");
+    expect(result.manifest).toEqual({ appApi: 1, features: {}, discovery: "legacy" });
+    expect(result.appApi).toEqual({ requiredLevel: 1, availableLevel: 1, supported: true });
+    expect(result.requiredFeatures["data.documents"]).toEqual({
+      requiredLevel: 1,
+      availableLevel: null,
+      supported: false,
+    });
+  });
+
+  it("retains existing v1 operations when feature discovery selects the legacy baseline", async () => {
+    const transport: JoltTransport = {
+      async request(): Promise<never> {
+        throw new JoltApiError("not found", { status: 404 });
+      },
+      async upload<T>(): Promise<T> {
+        return {
+          content_id: "cid_legacy",
+          size: 2,
+          latest_sequence: 4,
+          path: "/legacy/post",
+        } as T;
+      },
+    };
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    await expect(jolt.checkCompatibility({ appApi: 1 })).resolves.toMatchObject({
+      status: "compatible",
+      manifest: { discovery: "legacy" },
+    });
+    await expect(jolt.publishJson("/legacy/post", { ok: true })).resolves.toMatchObject({
+      contentId: "cid_legacy",
+      latestSequence: 4,
+    });
+  });
+
+  it("caches one daemon manifest and refreshes it after reconnection", async () => {
+    const responses = {
+      "/features": { app_api: 1, features: { "data.documents": 1 } },
+    };
+    const { transport, calls } = recordingTransport(responses);
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const declaration = { appApi: 1, requiredFeatures: { "data.documents": 1 } };
+
+    await expect(jolt.checkCompatibility(declaration)).resolves.toMatchObject({
+      status: "compatible",
+    });
+    responses["/features"] = { app_api: 1, features: {} };
+
+    await expect(jolt.checkCompatibility(declaration)).resolves.toMatchObject({
+      status: "compatible",
+    });
+    await expect(
+      jolt.checkCompatibility(declaration, { refresh: true })
+    ).resolves.toMatchObject({ status: "incompatible" });
+    expect(calls.filter(({ path }) => path === "/features")).toHaveLength(2);
+  });
+
+  it("keeps transport unavailability distinct and retries discovery", async () => {
+    const unavailable = new JoltTransportError("daemon unavailable");
+    let calls = 0;
+    const transport: JoltTransport = {
+      async request<T>(): Promise<T> {
+        calls += 1;
+        if (calls === 1) throw unavailable;
+        return { app_api: 1, features: {} } as T;
+      },
+      async upload(): Promise<never> {
+        throw new Error("unused");
+      },
+    };
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const declaration = { appApi: 1 };
+
+    await expect(jolt.checkCompatibility(declaration)).rejects.toBe(unavailable);
+    await expect(jolt.checkCompatibility(declaration)).resolves.toMatchObject({
+      status: "compatible",
+      manifest: { discovery: "advertised" },
+    });
+    expect(calls).toBe(2);
+  });
+
   it("publishJson uploads multipart JSON and marshals the result", async () => {
     const { transport, calls } = recordingTransport({
       "/publish": { content_id: "cid_1", size: 2, latest_sequence: 4, path: "/a/p" },

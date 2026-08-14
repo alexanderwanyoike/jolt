@@ -64,6 +64,35 @@ const profile = await jolt.read(
 );
 ```
 
+## App API compatibility
+
+Applications declare the generic App API behavior they require; they do not
+compare Jolt daemon release versions. Check before activating an app update and
+whenever the app establishes a daemon connection:
+
+```ts
+const compatibility = await jolt.checkCompatibility({
+  appApi: 1,
+  requiredFeatures: {},
+  optionalFeatures: { "data.subscriptions": 1 },
+});
+
+if (compatibility.status === "incompatible") {
+  // Keep the installed app version and direct the user to upgrade Jolt.
+}
+
+if (!compatibility.optionalFeatures["data.subscriptions"]?.supported) {
+  // Use an explicit app-owned fallback or hide the optional feature.
+}
+```
+
+Feature discovery is unauthenticated and connection-scoped. Pass
+`{ refresh: true }` after daemon reconnection. A reachable older daemon without
+feature discovery is reported as the Legacy App API v1 Baseline; connection
+failure remains a `JoltTransportError`, not an incompatibility result. App API
+Features describe implemented behavior and remain separate from app-session
+authorization capabilities.
+
 Reads are tolerant: missing, unreachable, or undecodable content returns
 `null` instead of throwing, so one bad record never poisons an app
 projection. Failures from publishes and sends throw `JoltApiError` (the
@@ -75,7 +104,10 @@ unreachable); every operation accepts `{ signal, timeoutMs }`.
 ```ts
 import { createFakeJolt } from "jolt-sdk/testing";
 
-const { client, sent, deliverIngress } = createFakeJolt("alice.jolt");
+const { client, sent, deliverIngress } = createFakeJolt("alice.jolt", {
+  appApi: 1,
+  features: { "data.documents": 1 },
+});
 // client satisfies JoltClient and all of its sub-interfaces; sends are
 // recorded in `sent`, and deliverIngress() injects incoming envelopes.
 ```

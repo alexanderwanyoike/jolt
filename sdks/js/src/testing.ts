@@ -20,6 +20,8 @@ import type {
   Versioned,
 } from "./client.js";
 import { referenceKey } from "./client.js";
+import { evaluateCompatibility } from "./compatibility.js";
+import type { AppCompatibilityDeclaration } from "./compatibility.js";
 import type { CallOptions, JoltTransport } from "./transport.js";
 import type { IngressRecord, PublishedContent } from "./wire.js";
 
@@ -36,6 +38,12 @@ export type RecordedSend = {
   recipient: string;
   path: string;
   body: unknown;
+};
+
+/** App API behavior advertised by a deterministic fake daemon. */
+export type FakeJoltOptions = {
+  appApi?: number;
+  features?: Readonly<Record<string, number>>;
 };
 
 /** Handle returned by {@link createFakeJolt}. */
@@ -73,13 +81,17 @@ let fakeCounter = 0;
  * );
  * ```
  */
-export function createFakeJolt(identity: string): FakeJolt {
+export function createFakeJolt(identity: string, options: FakeJoltOptions = {}): FakeJolt {
   const published = new Map<string, StoredPublication>();
   const appends = new Map<string, StoredPublication[]>();
   const contentById = new Map<string, unknown>();
   const ingress = new Map<string, IngressRecord & { payload: unknown }>();
   const sent: RecordedSend[] = [];
   const encryptedRecipients = new Map<string, string[]>();
+  const appApiFeatures = {
+    app_api: options.appApi ?? 1,
+    features: { ...options.features },
+  };
 
   function store(path: string, body: unknown, recipients: string[] | null): StoredPublication {
     const seq = (published.get(path)?.seq ?? -1) + 1;
@@ -133,6 +145,10 @@ export function createFakeJolt(identity: string): FakeJolt {
 
   const client: JoltClient = {
     transport: unusedTransport,
+
+    async checkCompatibility(declaration: AppCompatibilityDeclaration) {
+      return evaluateCompatibility(declaration, appApiFeatures);
+    },
 
     async publishJson(path, body) {
       return toResult(store(path, body, null), path);
