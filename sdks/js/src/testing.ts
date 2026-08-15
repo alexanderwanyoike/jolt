@@ -41,12 +41,18 @@ export type RecordedSend = {
 };
 
 /** App API behavior advertised by a deterministic fake daemon. */
-export type FakeJoltOptions = {
-  appApi?: number;
-  features?: Readonly<Record<string, number>>;
-  /** Model advertised discovery or a reachable daemon on the legacy v1 baseline. */
-  featureDiscovery?: "advertised" | "legacy";
-};
+export type FakeJoltOptions =
+  | {
+      featureDiscovery?: "advertised";
+      appApi?: number;
+      features?: Readonly<Record<string, number>>;
+    }
+  | {
+      /** Model a reachable daemon on the exact Legacy App API v1 Baseline. */
+      featureDiscovery: "legacy";
+      appApi?: never;
+      features?: never;
+    };
 
 /** Handle returned by {@link createFakeJolt}. */
 export type FakeJolt = {

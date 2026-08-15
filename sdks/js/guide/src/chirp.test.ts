@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { JoltTransportError } from "jolt-sdk";
-import { createFakeJolt } from "jolt-sdk/testing";
+import { createFakeJolt, type FakeJoltOptions } from "jolt-sdk/testing";
 
 import {
   follow,
@@ -13,6 +13,7 @@ import {
   capabilitiesFor,
   checkChirpCompatibility,
   CHIRP_HOME_RELAY_FEATURE,
+  interpretChirpCompatibility,
 } from "./compatibility";
 import { listFollowRequests, sendFollowRequest } from "./follows";
 
@@ -77,6 +78,13 @@ describe("chirp", () => {
 });
 
 describe("Chirp compatibility", () => {
+  // @ts-expect-error A legacy fixture is always App API v1 with no advertised features.
+  const impossibleLegacyFixture: FakeJoltOptions = {
+    featureDiscovery: "legacy",
+    features: { "availability.home-relay-pin": 1 },
+  };
+  void impossibleLegacyFixture;
+
   it("keeps the Legacy App API Baseline usable with relay controls hidden", async () => {
     const { client } = createFakeJolt("alice.jolt", {
       featureDiscovery: "legacy",
@@ -125,6 +133,24 @@ describe("Chirp compatibility", () => {
     });
     await expect(checkChirpCompatibility(incompatible.client)).resolves.toMatchObject({
       status: "incompatible",
+    });
+  });
+
+  it("reports the required features responsible for incompatibility", async () => {
+    const { client } = createFakeJolt("alice.jolt", {
+      features: { "data.documents": 1 },
+    });
+    const result = await client.checkCompatibility({
+      appApi: 1,
+      requiredFeatures: { "data.documents": 2, "data.tombstones": 1 },
+    });
+
+    expect(interpretChirpCompatibility(result)).toMatchObject({
+      status: "incompatible",
+      missingRequiredFeatures: [
+        { feature: "data.documents", requiredLevel: 2, availableLevel: 1 },
+        { feature: "data.tombstones", requiredLevel: 1, availableLevel: null },
+      ],
     });
   });
 });

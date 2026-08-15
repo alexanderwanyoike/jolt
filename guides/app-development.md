@@ -31,7 +31,7 @@ yarn
 yarn tauri dev
 ```
 
-You should see the template window open. Everything Jolt-specific happens in two places: `src-tauri/` (one plugin registration) and `src/` (the SDK calls). By the end of this guide you will have touched exactly nine files:
+You should see the template window open. Everything Jolt-specific happens in two places: `src-tauri/` (one plugin registration) and `src/` (the SDK calls). By the end of this guide you will have touched exactly ten files:
 
 ```text
 chirp/
@@ -45,7 +45,8 @@ chirp/
     ├── chirp.ts                      # posts + timeline   (section 5)
     ├── follows.ts                    # ingress handshake  (section 6)
     ├── App.tsx                       # the UI             (section 7)
-    └── App.css                       # replace the scaffold's styles
+    ├── App.css                       # replace the scaffold's styles
+    └── chirp.test.ts                 # executable fixtures (section 8)
 ```
 
 ## 2 · Add jolt-sdk and tauri-plugin-jolt
@@ -111,13 +112,15 @@ Only after compatibility succeeds does Chirp declare who it is and exactly what 
 
 Run the app and call `connect()`. The request now sits pending on the daemon: open **Jolt Console → Apps**, find the pending "Chirp" request, review the capability list, and approve it. The poll loop picks up the token and Chirp is connected. The token is a bearer secret scoped to exactly these capabilities; if the user revokes the session in Console, every call starts failing with `JoltApiError` and `connect()` will request a fresh session on next launch.
 
+An existing active session does not gain new authorization merely because an upgraded daemon starts advertising the optional feature. Chirp keeps the relay control hidden until the user revokes that old session in Jolt Console, reconnects, and approves a new request containing `pin:own:/chirp/*`.
+
 ## 5 · Publish chirps, assemble timelines
 
 A chirp is an append record: `publishAppend` writes coexisting records that never overwrite each other, which is exactly what a feed of posts wants (and it keeps concurrent devices safe). Each chirp gets its own path under `/chirp/posts/`, and readers list them back with `enumerate`, never with resolve. The follow list is the opposite kind of data: a singleton settings-like object at `/chirp/follows`, updated with `publishJson` where last-writer-wins is fine. It is published under your identity, so any Chirp instance on any device sees the same list.
 
 @include sdks/js/guide/src/chirp.ts as src/chirp.ts
 
-Note the shape of these functions: each takes the narrow interface it needs (`JoltAppendSdk`, `JoltAvailabilitySdk`, `JoltSdk`) rather than the whole client, and the clock is injectable. `postAvailableChirp` composes publication with an explicit app-owned availability request; ordinary `postChirp` keeps the existing local-only behavior. Every client sub-interface is intentionally small so features declare exactly the contract they use; this pays off in section 8.
+Note the shape of these functions: each takes the narrow interface it needs (`JoltAppendSdk`, `JoltAvailabilitySdk`, `JoltSdk`) rather than the whole client, and the clock is injectable. `postAvailableChirp` composes publication with an explicit app-owned availability request; ordinary `postChirp` keeps the existing local-only behavior. Publication and relay pinning are not atomic: if the relay request fails, the chirp remains successfully published with local availability. Every client sub-interface is intentionally small so features declare exactly the contract they use; this pays off in section 8.
 
 Reads are tolerant: in `loadTimeline`, a record that is missing, unreachable, or not a valid chirp simply comes back `null` from `readContent` and is skipped, so one bad record never breaks the feed.
 
@@ -131,7 +134,7 @@ Following someone requires no permission: their posts are public, and `follow()`
 
 ## 7 · The UI
 
-One file ties it together. `App.tsx` checks compatibility and connects on mount, then renders four things: a composer that calls `postChirp` or the optional `postAvailableChirp`, a follow form that subscribes and says hello, the pending follow requests with accept and ignore buttons, and the timeline. Unavailable and incompatible Jolt states get different recovery copy before the social UI can mount. Every action ends by re-running `refresh`, so the UI is always a projection of daemon state; when Bob accepts Alice's request, Chirp accepts the envelope and follows back, so nothing lands in Bob's world without Bob's daemon holding it at the door first.
+One file ties it together. `App.tsx` checks compatibility and connects on mount, then renders four things: a composer that calls `postChirp` or the optional `postAvailableChirp`, a follow form that subscribes and says hello, the pending follow requests with accept and ignore buttons, and the timeline. Unavailable and incompatible Jolt states get different recovery copy and a **Check again** action before the social UI can mount. Every action ends by re-running `refresh`, so the UI is always a projection of daemon state; when Bob accepts Alice's request, Chirp accepts the envelope and follows back, so nothing lands in Bob's world without Bob's daemon holding it at the door first.
 
 @include sdks/js/guide/src/App.tsx as src/App.tsx
 

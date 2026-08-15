@@ -44,8 +44,6 @@ describe("createFakeJolt", () => {
   it("can model the Legacy App API Baseline in application fixtures", async () => {
     const { client } = createFakeJolt("alice.jolt", {
       featureDiscovery: "legacy",
-      appApi: 9,
-      features: { "data.documents": 3 },
     });
 
     const result = await client.checkCompatibility({ appApi: 1 });

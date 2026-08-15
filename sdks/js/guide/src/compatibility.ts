@@ -2,6 +2,7 @@ import {
   apiErrorMessage,
   JoltTransportError,
   type AppCompatibilityDeclaration,
+  type AppCompatibilityResult,
   type JoltCompatibilitySdk,
 } from "jolt-sdk";
 
@@ -24,6 +25,11 @@ export type ChirpCompatibility =
       status: "incompatible";
       requiredAppApi: number;
       availableAppApi: number | null;
+      missingRequiredFeatures: Array<{
+        feature: string;
+        requiredLevel: number;
+        availableLevel: number | null;
+      }>;
     }
   | { status: "unavailable"; message: string };
 
@@ -50,6 +56,35 @@ export function capabilitiesFor(compatibility: ChirpCompatibility): string[] {
   return [...BASE_CAPABILITIES];
 }
 
+/** Turn the complete SDK result into the small runtime state Chirp renders. */
+export function interpretChirpCompatibility(
+  result: AppCompatibilityResult
+): Exclude<ChirpCompatibility, { status: "unavailable" }> {
+  if (result.status === "incompatible") {
+    const missingRequiredFeatures = Object.entries(result.requiredFeatures)
+      .filter(([, check]) => !check.supported)
+      .map(([feature, check]) => ({
+        feature,
+        requiredLevel: check.requiredLevel,
+        availableLevel: check.availableLevel,
+      }));
+    return {
+      status: "incompatible",
+      requiredAppApi: result.appApi.requiredLevel,
+      availableAppApi: result.appApi.availableLevel,
+      missingRequiredFeatures,
+    };
+  }
+
+  return {
+    status: "ready",
+    discovery: result.manifest.discovery,
+    homeRelayAvailability: result.optionalFeatures[CHIRP_HOME_RELAY_FEATURE]?.supported
+      ? "available"
+      : "hidden",
+  };
+}
+
 /** Evaluate compatibility once when Chirp establishes its daemon connection. */
 export async function checkChirpCompatibility(
   jolt: JoltCompatibilitySdk
@@ -64,19 +99,5 @@ export async function checkChirpCompatibility(
     throw error;
   }
 
-  if (result.status === "incompatible") {
-    return {
-      status: "incompatible",
-      requiredAppApi: result.appApi.requiredLevel,
-      availableAppApi: result.appApi.availableLevel,
-    };
-  }
-
-  return {
-    status: "ready",
-    discovery: result.manifest.discovery,
-    homeRelayAvailability: result.optionalFeatures[CHIRP_HOME_RELAY_FEATURE]?.supported
-      ? "available"
-      : "hidden",
-  };
+  return interpretChirpCompatibility(result);
 }

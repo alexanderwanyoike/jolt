@@ -11,7 +11,7 @@
     <meta property="og:site_name" content="Jolt" />
     <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="jolt-guide-source-sha256" content="6443780109f3d7b06ac1d409e30b723d90c95d7479a6e3004271d2a9aa478670" />
+    <meta name="jolt-guide-source-sha256" content="3a72d4df1812ba8b54ecb08132cdb9f7f50690894d185cb8363889f839b79459" />
     <title>Jolt Guide | Building Chirp</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -46,7 +46,7 @@
 <span class="nb">cd</span><span class="w"> </span>chirp
 yarn
 yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
-<p>You should see the template window open. Everything Jolt-specific happens in two places: <code>src-tauri/</code> (one plugin registration) and <code>src/</code> (the SDK calls). By the end of this guide you will have touched exactly nine files:</p>
+<p>You should see the template window open. Everything Jolt-specific happens in two places: <code>src-tauri/</code> (one plugin registration) and <code>src/</code> (the SDK calls). By the end of this guide you will have touched exactly ten files:</p>
 <pre class="doc-code"><code>chirp/
 ├── src-tauri/
 │   ├── Cargo.toml                    # add one dependency
@@ -58,7 +58,8 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
     ├── chirp.ts                      # posts + timeline   (section 5)
     ├── follows.ts                    # ingress handshake  (section 6)
     ├── App.tsx                       # the UI             (section 7)
-    └── App.css                       # replace the scaffold&#x27;s styles</code></pre>
+    ├── App.css                       # replace the scaffold&#x27;s styles
+    └── chirp.test.ts                 # executable fixtures (section 8)</code></pre>
 <h2 id="2-add-jolt-sdk-and-tauri-plugin-jolt">2 · Add jolt-sdk and tauri-plugin-jolt</h2>
 <p>Add the SDK:</p>
 <pre class="doc-code"><code>yarn<span class="w"> </span>add<span class="w"> </span>jolt-sdk</code></pre>
@@ -86,6 +87,7 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <span class="w">  </span><span class="nx">apiErrorMessage</span><span class="p">,</span>
 <span class="w">  </span><span class="nx">JoltTransportError</span><span class="p">,</span>
 <span class="w">  </span><span class="kr">type</span><span class="w"> </span><span class="nx">AppCompatibilityDeclaration</span><span class="p">,</span>
+<span class="w">  </span><span class="kr">type</span><span class="w"> </span><span class="nx">AppCompatibilityResult</span><span class="p">,</span>
 <span class="w">  </span><span class="kr">type</span><span class="w"> </span><span class="nx">JoltCompatibilitySdk</span><span class="p">,</span>
 <span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk&quot;</span><span class="p">;</span>
 
@@ -108,6 +110,11 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <span class="w">      </span><span class="nx">status</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;incompatible&quot;</span><span class="p">;</span>
 <span class="w">      </span><span class="nx">requiredAppApi</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
 <span class="w">      </span><span class="nx">availableAppApi</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="w">      </span><span class="nx">missingRequiredFeatures</span><span class="o">:</span><span class="w"> </span><span class="kt">Array</span><span class="o">&lt;</span><span class="p">{</span>
+<span class="w">        </span><span class="nx">feature</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<span class="w">        </span><span class="nx">requiredLevel</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<span class="w">        </span><span class="nx">availableLevel</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="w">      </span><span class="p">}</span><span class="o">&gt;</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">status</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;unavailable&quot;</span><span class="p">;</span><span class="w"> </span><span class="nx">message</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">};</span>
 
@@ -134,6 +141,35 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="p">[...</span><span class="nx">BASE_CAPABILITIES</span><span class="p">];</span>
 <span class="p">}</span>
 
+<span class="cm">/** Turn the complete SDK result into the small runtime state Chirp renders. */</span>
+<span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">interpretChirpCompatibility</span><span class="p">(</span>
+<span class="w">  </span><span class="nx">result</span><span class="o">:</span><span class="w"> </span><span class="kt">AppCompatibilityResult</span>
+<span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">Exclude</span><span class="o">&lt;</span><span class="nx">ChirpCompatibility</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">status</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;unavailable&quot;</span><span class="w"> </span><span class="p">}</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">status</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;incompatible&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">missingRequiredFeatures</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">Object</span><span class="p">.</span><span class="nx">entries</span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">requiredFeatures</span><span class="p">)</span>
+<span class="w">      </span><span class="p">.</span><span class="nx">filter</span><span class="p">(([,</span><span class="w"> </span><span class="nx">check</span><span class="p">])</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="o">!</span><span class="nx">check</span><span class="p">.</span><span class="nx">supported</span><span class="p">)</span>
+<span class="w">      </span><span class="p">.</span><span class="nx">map</span><span class="p">(([</span><span class="nx">feature</span><span class="p">,</span><span class="w"> </span><span class="nx">check</span><span class="p">])</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">({</span>
+<span class="w">        </span><span class="nx">feature</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">requiredLevel</span><span class="o">:</span><span class="w"> </span><span class="kt">check.requiredLevel</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">availableLevel</span><span class="o">:</span><span class="w"> </span><span class="kt">check.availableLevel</span><span class="p">,</span>
+<span class="w">      </span><span class="p">}));</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nx">status</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;incompatible&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">requiredAppApi</span><span class="o">:</span><span class="w"> </span><span class="kt">result.appApi.requiredLevel</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">availableAppApi</span><span class="o">:</span><span class="w"> </span><span class="kt">result.appApi.availableLevel</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">missingRequiredFeatures</span><span class="p">,</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">status</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;ready&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">discovery</span><span class="o">:</span><span class="w"> </span><span class="kt">result.manifest.discovery</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">homeRelayAvailability</span><span class="o">:</span><span class="w"> </span><span class="kt">result.optionalFeatures</span><span class="p">[</span><span class="nx">CHIRP_HOME_RELAY_FEATURE</span><span class="p">]</span><span class="o">?</span><span class="p">.</span><span class="nx">supported</span>
+<span class="w">      </span><span class="o">?</span><span class="w"> </span><span class="s2">&quot;available&quot;</span>
+<span class="w">      </span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;hidden&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="p">};</span>
+<span class="p">}</span>
+
 <span class="cm">/** Evaluate compatibility once when Chirp establishes its daemon connection. */</span>
 <span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">checkChirpCompatibility</span><span class="p">(</span>
 <span class="w">  </span><span class="nx">jolt</span><span class="o">:</span><span class="w"> </span><span class="kt">JoltCompatibilitySdk</span>
@@ -148,21 +184,7 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <span class="w">    </span><span class="k">throw</span><span class="w"> </span><span class="nx">error</span><span class="p">;</span>
 <span class="w">  </span><span class="p">}</span>
 
-<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">status</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;incompatible&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nx">status</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;incompatible&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nx">requiredAppApi</span><span class="o">:</span><span class="w"> </span><span class="kt">result.appApi.requiredLevel</span><span class="p">,</span>
-<span class="w">      </span><span class="nx">availableAppApi</span><span class="o">:</span><span class="w"> </span><span class="kt">result.appApi.availableLevel</span><span class="p">,</span>
-<span class="w">    </span><span class="p">};</span>
-<span class="w">  </span><span class="p">}</span>
-
-<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nx">status</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;ready&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nx">discovery</span><span class="o">:</span><span class="w"> </span><span class="kt">result.manifest.discovery</span><span class="p">,</span>
-<span class="w">    </span><span class="nx">homeRelayAvailability</span><span class="o">:</span><span class="w"> </span><span class="kt">result.optionalFeatures</span><span class="p">[</span><span class="nx">CHIRP_HOME_RELAY_FEATURE</span><span class="p">]</span><span class="o">?</span><span class="p">.</span><span class="nx">supported</span>
-<span class="w">      </span><span class="o">?</span><span class="w"> </span><span class="s2">&quot;available&quot;</span>
-<span class="w">      </span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;hidden&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="p">};</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">interpretChirpCompatibility</span><span class="p">(</span><span class="nx">result</span><span class="p">);</span>
 <span class="p">}</span></code></pre></figure>
 <p>There are three runtime outcomes:</p>
 <ul>
@@ -257,6 +279,7 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span></code></pre></figure>
 <p>Run the app and call <code>connect()</code>. The request now sits pending on the daemon: open <strong>Jolt Console → Apps</strong>, find the pending "Chirp" request, review the capability list, and approve it. The poll loop picks up the token and Chirp is connected. The token is a bearer secret scoped to exactly these capabilities; if the user revokes the session in Console, every call starts failing with <code>JoltApiError</code> and <code>connect()</code> will request a fresh session on next launch.</p>
+<p>An existing active session does not gain new authorization merely because an upgraded daemon starts advertising the optional feature. Chirp keeps the relay control hidden until the user revokes that old session in Jolt Console, reconnects, and approves a new request containing <code>pin:own:/chirp/*</code>.</p>
 <h2 id="5-publish-chirps-assemble-timelines">5 · Publish chirps, assemble timelines</h2>
 <p>A chirp is an append record: <code>publishAppend</code> writes coexisting records that never overwrite each other, which is exactly what a feed of posts wants (and it keeps concurrent devices safe). Each chirp gets its own path under <code>/chirp/posts/</code>, and readers list them back with <code>enumerate</code>, never with resolve. The follow list is the opposite kind of data: a singleton settings-like object at <code>/chirp/follows</code>, updated with <code>publishJson</code> where last-writer-wins is fine. It is published under your identity, so any Chirp instance on any device sees the same list.</p>
 <figure class="code-figure"><figcaption><span>src/chirp.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">makeId</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk&quot;</span><span class="p">;</span>
@@ -348,7 +371,7 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <span class="w">    </span><span class="nx">identities</span><span class="o">:</span><span class="w"> </span><span class="p">[...</span><span class="nx">identities</span><span class="p">].</span><span class="nx">sort</span><span class="p">(),</span>
 <span class="w">  </span><span class="p">});</span>
 <span class="p">}</span></code></pre></figure>
-<p>Note the shape of these functions: each takes the narrow interface it needs (<code>JoltAppendSdk</code>, <code>JoltAvailabilitySdk</code>, <code>JoltSdk</code>) rather than the whole client, and the clock is injectable. <code>postAvailableChirp</code> composes publication with an explicit app-owned availability request; ordinary <code>postChirp</code> keeps the existing local-only behavior. Every client sub-interface is intentionally small so features declare exactly the contract they use; this pays off in section 8.</p>
+<p>Note the shape of these functions: each takes the narrow interface it needs (<code>JoltAppendSdk</code>, <code>JoltAvailabilitySdk</code>, <code>JoltSdk</code>) rather than the whole client, and the clock is injectable. <code>postAvailableChirp</code> composes publication with an explicit app-owned availability request; ordinary <code>postChirp</code> keeps the existing local-only behavior. Publication and relay pinning are not atomic: if the relay request fails, the chirp remains successfully published with local availability. Every client sub-interface is intentionally small so features declare exactly the contract they use; this pays off in section 8.</p>
 <p>Reads are tolerant: in <code>loadTimeline</code>, a record that is missing, unreachable, or not a valid chirp simply comes back <code>null</code> from <code>readContent</code> and is skipped, so one bad record never breaks the feed.</p>
 <h2 id="6-follow-requests-over-ingress">6 · Follow requests over ingress</h2>
 <p>Following someone requires no permission: their posts are public, and <code>follow()</code> above is enough to read them. What ingress adds is the social handshake, telling someone you exist without spam. On Jolt, one identity cannot write into another identity's state; the only way to hand an object to someone else is the <strong>recipient-controlled ingress door</strong>: the sender encrypts an object to the recipient and delivers it to the recipient's daemon, where it waits in a pending queue until the recipient's app opens it and decides.</p>
@@ -401,7 +424,7 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">pending</span><span class="p">;</span>
 <span class="p">}</span></code></pre></figure>
 <h2 id="7-the-ui">7 · The UI</h2>
-<p>One file ties it together. <code>App.tsx</code> checks compatibility and connects on mount, then renders four things: a composer that calls <code>postChirp</code> or the optional <code>postAvailableChirp</code>, a follow form that subscribes and says hello, the pending follow requests with accept and ignore buttons, and the timeline. Unavailable and incompatible Jolt states get different recovery copy before the social UI can mount. Every action ends by re-running <code>refresh</code>, so the UI is always a projection of daemon state; when Bob accepts Alice's request, Chirp accepts the envelope and follows back, so nothing lands in Bob's world without Bob's daemon holding it at the door first.</p>
+<p>One file ties it together. <code>App.tsx</code> checks compatibility and connects on mount, then renders four things: a composer that calls <code>postChirp</code> or the optional <code>postAvailableChirp</code>, a follow form that subscribes and says hello, the pending follow requests with accept and ignore buttons, and the timeline. Unavailable and incompatible Jolt states get different recovery copy and a <strong>Check again</strong> action before the social UI can mount. Every action ends by re-running <code>refresh</code>, so the UI is always a projection of daemon state; when Bob accepts Alice's request, Chirp accepts the envelope and follows back, so nothing lands in Bob's world without Bob's daemon holding it at the door first.</p>
 <figure class="code-figure"><figcaption><span>src/App.tsx</span><span>tsx</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">useCallback</span><span class="p">,</span><span class="w"> </span><span class="nx">useEffect</span><span class="p">,</span><span class="w"> </span><span class="nx">useState</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;react&quot;</span><span class="p">;</span>
 
 <span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">connect</span><span class="p">,</span><span class="w"> </span><span class="nx">jolt</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./jolt&quot;</span><span class="p">;</span>
@@ -433,30 +456,70 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <span class="w">    </span><span class="nx">setInbox</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">listFollowRequests</span><span class="p">(</span><span class="nx">jolt</span><span class="p">));</span>
 <span class="w">  </span><span class="p">},</span><span class="w"> </span><span class="p">[]);</span>
 
-<span class="w">  </span><span class="nx">useEffect</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nx">connect</span><span class="p">()</span>
-<span class="w">      </span><span class="p">.</span><span class="nx">then</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">(</span><span class="nx">result</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nx">setConnection</span><span class="p">(</span><span class="nx">result</span><span class="p">);</span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">status</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;ready&quot;</span><span class="p">)</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">refresh</span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">identity</span><span class="p">);</span>
-<span class="w">      </span><span class="p">})</span>
-<span class="w">      </span><span class="p">.</span><span class="k">catch</span><span class="p">((</span><span class="nx">cause</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">setError</span><span class="p">(</span><span class="nb">String</span><span class="p">(</span><span class="nx">cause</span><span class="p">)));</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">checkConnection</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useCallback</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">setConnection</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">setError</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
+<span class="w">    </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="kd">const</span><span class="w"> </span><span class="nx">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">connect</span><span class="p">();</span>
+<span class="w">      </span><span class="nx">setConnection</span><span class="p">(</span><span class="nx">result</span><span class="p">);</span>
+<span class="w">      </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">status</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;ready&quot;</span><span class="p">)</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">refresh</span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">identity</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="nx">cause</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nx">setError</span><span class="p">(</span><span class="nb">String</span><span class="p">(</span><span class="nx">cause</span><span class="p">));</span>
+<span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">},</span><span class="w"> </span><span class="p">[</span><span class="nx">refresh</span><span class="p">]);</span>
 
-<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">error</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp&quot;</span><span class="o">&gt;&lt;</span><span class="nx">p</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;error&quot;</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">error</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/p&gt;&lt;/main&gt;;</span>
+<span class="w">  </span><span class="nx">useEffect</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="ow">void</span><span class="w"> </span><span class="nx">checkConnection</span><span class="p">();</span>
+<span class="w">  </span><span class="p">},</span><span class="w"> </span><span class="p">[</span><span class="nx">checkConnection</span><span class="p">]);</span>
+
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span>
+<span class="w">      </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp&quot;</span><span class="o">&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">p</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;error&quot;</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">error</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/p&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">button</span><span class="w"> </span><span class="kr">type</span><span class="o">=</span><span class="s2">&quot;button&quot;</span><span class="w"> </span><span class="nx">onClick</span><span class="o">=</span><span class="p">{()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="ow">void</span><span class="w"> </span><span class="nx">checkConnection</span><span class="p">()}</span><span class="o">&gt;</span><span class="nx">Check</span><span class="w"> </span><span class="nx">again</span><span class="o">&lt;</span><span class="err">/button&gt;</span>
+<span class="w">      </span><span class="o">&lt;</span><span class="err">/main&gt;</span>
+<span class="w">    </span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
 <span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">connection</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp&quot;</span><span class="o">&gt;&lt;</span><span class="nx">p</span><span class="o">&gt;</span><span class="nx">Checking</span><span class="w"> </span><span class="nx">Jolt</span><span class="w"> </span><span class="nx">and</span><span class="w"> </span><span class="nx">waiting</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="nx">approval</span><span class="err">…</span><span class="o">&lt;</span><span class="err">/p&gt;&lt;/main&gt;;</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">connection</span><span class="p">.</span><span class="nx">status</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;unavailable&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp&quot;</span><span class="o">&gt;&lt;</span><span class="nx">h1</span><span class="o">&gt;</span><span class="nx">Jolt</span><span class="w"> </span><span class="nx">is</span><span class="w"> </span><span class="nx">unavailable</span><span class="o">&lt;</span><span class="err">/h1&gt;&lt;p&gt;{connection.message}&lt;/p&gt;&lt;/main&gt;;</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span>
+<span class="w">      </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp&quot;</span><span class="o">&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">h1</span><span class="o">&gt;</span><span class="nx">Jolt</span><span class="w"> </span><span class="nx">is</span><span class="w"> </span><span class="nx">unavailable</span><span class="o">&lt;</span><span class="err">/h1&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">p</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">connection</span><span class="p">.</span><span class="nx">message</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/p&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">button</span><span class="w"> </span><span class="kr">type</span><span class="o">=</span><span class="s2">&quot;button&quot;</span><span class="w"> </span><span class="nx">onClick</span><span class="o">=</span><span class="p">{()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="ow">void</span><span class="w"> </span><span class="nx">checkConnection</span><span class="p">()}</span><span class="o">&gt;</span><span class="nx">Check</span><span class="w"> </span><span class="nx">again</span><span class="o">&lt;</span><span class="err">/button&gt;</span>
+<span class="w">      </span><span class="o">&lt;</span><span class="err">/main&gt;</span>
+<span class="w">    </span><span class="p">);</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">connection</span><span class="p">.</span><span class="nx">status</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;incompatible&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">appApiMissing</span><span class="w"> </span><span class="o">=</span>
+<span class="w">      </span><span class="nx">connection</span><span class="p">.</span><span class="nx">availableAppApi</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span>
+<span class="w">      </span><span class="nx">connection</span><span class="p">.</span><span class="nx">availableAppApi</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="nx">connection</span><span class="p">.</span><span class="nx">requiredAppApi</span><span class="p">;</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span>
 <span class="w">      </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp&quot;</span><span class="o">&gt;</span>
 <span class="w">        </span><span class="o">&lt;</span><span class="nx">h1</span><span class="o">&gt;</span><span class="nx">Upgrade</span><span class="w"> </span><span class="nx">Jolt</span><span class="w"> </span><span class="nx">to</span><span class="w"> </span><span class="nx">run</span><span class="w"> </span><span class="k">this</span><span class="w"> </span><span class="nx">Chirp</span><span class="w"> </span><span class="nx">release</span><span class="o">&lt;</span><span class="err">/h1&gt;</span>
-<span class="w">        </span><span class="o">&lt;</span><span class="nx">p</span><span class="o">&gt;</span>
-<span class="w">          </span><span class="nx">Chirp</span><span class="w"> </span><span class="nx">needs</span><span class="w"> </span><span class="nx">App</span><span class="w"> </span><span class="nx">API</span><span class="w"> </span><span class="p">{</span><span class="nx">connection</span><span class="p">.</span><span class="nx">requiredAppApi</span><span class="p">};</span><span class="w"> </span><span class="k">this</span><span class="w"> </span><span class="nx">Jolt</span><span class="w"> </span><span class="nx">daemon</span><span class="w"> </span><span class="nx">provides</span><span class="w"> </span><span class="p">{</span><span class="s2">&quot; &quot;</span><span class="p">}</span>
-<span class="w">          </span><span class="p">{</span><span class="nx">connection</span><span class="p">.</span><span class="nx">availableAppApi</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="s2">&quot;no compatible App API&quot;</span><span class="p">}.</span>
-<span class="w">        </span><span class="o">&lt;</span><span class="err">/p&gt;</span>
+<span class="w">        </span><span class="p">{</span><span class="nx">appApiMissing</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span>
+<span class="w">          </span><span class="o">&lt;</span><span class="nx">p</span><span class="o">&gt;</span>
+<span class="w">            </span><span class="nx">Chirp</span><span class="w"> </span><span class="nx">needs</span><span class="w"> </span><span class="nx">App</span><span class="w"> </span><span class="nx">API</span><span class="w"> </span><span class="p">{</span><span class="nx">connection</span><span class="p">.</span><span class="nx">requiredAppApi</span><span class="p">};</span><span class="w"> </span><span class="k">this</span><span class="w"> </span><span class="nx">Jolt</span><span class="w"> </span><span class="nx">daemon</span><span class="w"> </span><span class="nx">provides</span><span class="w"> </span><span class="p">{</span><span class="s2">&quot; &quot;</span><span class="p">}</span>
+<span class="w">            </span><span class="p">{</span><span class="nx">connection</span><span class="p">.</span><span class="nx">availableAppApi</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="s2">&quot;no compatible App API&quot;</span><span class="p">}.</span>
+<span class="w">          </span><span class="o">&lt;</span><span class="err">/p&gt;</span>
+<span class="w">        </span><span class="p">)</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="p">(</span>
+<span class="w">          </span><span class="o">&lt;</span><span class="nx">p</span><span class="o">&gt;</span><span class="nx">The</span><span class="w"> </span><span class="nx">App</span><span class="w"> </span><span class="nx">API</span><span class="w"> </span><span class="nx">level</span><span class="w"> </span><span class="nx">is</span><span class="w"> </span><span class="nx">compatible</span><span class="p">,</span><span class="w"> </span><span class="nx">but</span><span class="w"> </span><span class="nx">Jolt</span><span class="w"> </span><span class="nx">is</span><span class="w"> </span><span class="nx">missing</span><span class="w"> </span><span class="nx">required</span><span class="w"> </span><span class="nx">behavior</span><span class="o">:&lt;</span><span class="err">/p&gt;</span>
+<span class="w">        </span><span class="p">)}</span>
+<span class="w">        </span><span class="p">{</span><span class="nx">connection</span><span class="p">.</span><span class="nx">missingRequiredFeatures</span><span class="p">.</span><span class="nx">length</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mf">0</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">(</span>
+<span class="w">          </span><span class="o">&lt;</span><span class="nx">ul</span><span class="o">&gt;</span>
+<span class="w">            </span><span class="p">{</span><span class="nx">connection</span><span class="p">.</span><span class="nx">missingRequiredFeatures</span><span class="p">.</span><span class="nx">map</span><span class="p">((</span><span class="nx">feature</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">(</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">li</span><span class="w"> </span><span class="nx">key</span><span class="o">=</span><span class="p">{</span><span class="nx">feature</span><span class="p">.</span><span class="nx">feature</span><span class="p">}</span><span class="o">&gt;</span>
+<span class="w">                </span><span class="p">{</span><span class="nx">feature</span><span class="p">.</span><span class="nx">feature</span><span class="p">}</span><span class="w"> </span><span class="nx">level</span><span class="w"> </span><span class="p">{</span><span class="nx">feature</span><span class="p">.</span><span class="nx">requiredLevel</span><span class="p">}</span><span class="w"> </span><span class="nx">required</span><span class="p">;</span><span class="w"> </span><span class="p">{</span><span class="s2">&quot; &quot;</span><span class="p">}</span>
+<span class="w">                </span><span class="p">{</span><span class="nx">feature</span><span class="p">.</span><span class="nx">availableLevel</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span>
+<span class="w">                  </span><span class="o">?</span><span class="w"> </span><span class="s2">&quot;not advertised&quot;</span>
+<span class="w">                  </span><span class="o">:</span><span class="w"> </span><span class="sb">`level </span><span class="si">${</span><span class="nx">feature</span><span class="p">.</span><span class="nx">availableLevel</span><span class="si">}</span><span class="sb"> available`</span><span class="p">}</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="err">/li&gt;</span>
+<span class="w">            </span><span class="p">))}</span>
+<span class="w">          </span><span class="o">&lt;</span><span class="err">/ul&gt;</span>
+<span class="w">        </span><span class="p">)}</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">button</span><span class="w"> </span><span class="kr">type</span><span class="o">=</span><span class="s2">&quot;button&quot;</span><span class="w"> </span><span class="nx">onClick</span><span class="o">=</span><span class="p">{()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="ow">void</span><span class="w"> </span><span class="nx">checkConnection</span><span class="p">()}</span><span class="o">&gt;</span><span class="nx">Check</span><span class="w"> </span><span class="nx">again</span><span class="o">&lt;</span><span class="err">/button&gt;</span>
 <span class="w">      </span><span class="o">&lt;</span><span class="err">/main&gt;</span>
 <span class="w">    </span><span class="p">);</span>
 <span class="w">  </span><span class="p">}</span>
@@ -640,7 +703,7 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <p>Because every Chirp function takes a client interface instead of reaching for a global, all of the flows above run against <code>createFakeJolt</code>: a deterministic in-memory implementation of the full <code>JoltClient</code> with no daemon and no network. Publishes land in an in-memory store, enumeration lists them back, sends are recorded, and <code>deliverIngress</code> injects incoming envelopes as if a remote sender delivered them. Add <code>vitest</code> (<code>yarn add -D vitest</code>) and drop this next to the code:</p>
 <figure class="code-figure"><figcaption><span>src/chirp.test.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">describe</span><span class="p">,</span><span class="w"> </span><span class="nx">expect</span><span class="p">,</span><span class="w"> </span><span class="nx">it</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;vitest&quot;</span><span class="p">;</span>
 <span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">JoltTransportError</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk&quot;</span><span class="p">;</span>
-<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/testing&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="p">,</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">FakeJoltOptions</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/testing&quot;</span><span class="p">;</span>
 
 <span class="k">import</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="nx">follow</span><span class="p">,</span>
@@ -653,6 +716,7 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <span class="w">  </span><span class="nx">capabilitiesFor</span><span class="p">,</span>
 <span class="w">  </span><span class="nx">checkChirpCompatibility</span><span class="p">,</span>
 <span class="w">  </span><span class="nx">CHIRP_HOME_RELAY_FEATURE</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">interpretChirpCompatibility</span><span class="p">,</span>
 <span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./compatibility&quot;</span><span class="p">;</span>
 <span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">listFollowRequests</span><span class="p">,</span><span class="w"> </span><span class="nx">sendFollowRequest</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./follows&quot;</span><span class="p">;</span>
 
@@ -717,6 +781,13 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <span class="p">});</span>
 
 <span class="nx">describe</span><span class="p">(</span><span class="s2">&quot;Chirp compatibility&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// @ts-expect-error A legacy fixture is always App API v1 with no advertised features.</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">impossibleLegacyFixture</span><span class="o">:</span><span class="w"> </span><span class="kt">FakeJoltOptions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">featureDiscovery</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;legacy&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">features</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="s2">&quot;availability.home-relay-pin&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="w"> </span><span class="p">},</span>
+<span class="w">  </span><span class="p">};</span>
+<span class="w">  </span><span class="ow">void</span><span class="w"> </span><span class="nx">impossibleLegacyFixture</span><span class="p">;</span>
+
 <span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;keeps the Legacy App API Baseline usable with relay controls hidden&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">client</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
 <span class="w">      </span><span class="nx">featureDiscovery</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;legacy&quot;</span><span class="p">,</span>
@@ -765,6 +836,24 @@ yarn<span class="w"> </span>tauri<span class="w"> </span>dev</code></pre>
 <span class="w">    </span><span class="p">});</span>
 <span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">expect</span><span class="p">(</span><span class="nx">checkChirpCompatibility</span><span class="p">(</span><span class="nx">incompatible</span><span class="p">.</span><span class="nx">client</span><span class="p">)).</span><span class="nx">resolves</span><span class="p">.</span><span class="nx">toMatchObject</span><span class="p">({</span>
 <span class="w">      </span><span class="nx">status</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;incompatible&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">});</span>
+<span class="w">  </span><span class="p">});</span>
+
+<span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;reports the required features responsible for incompatibility&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">client</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nx">features</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="s2">&quot;data.documents&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">});</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">checkCompatibility</span><span class="p">({</span>
+<span class="w">      </span><span class="nx">appApi</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">requiredFeatures</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="s2">&quot;data.documents&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">2</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;data.tombstones&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">});</span>
+
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">interpretChirpCompatibility</span><span class="p">(</span><span class="nx">result</span><span class="p">)).</span><span class="nx">toMatchObject</span><span class="p">({</span>
+<span class="w">      </span><span class="nx">status</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;incompatible&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">missingRequiredFeatures</span><span class="o">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nx">feature</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;data.documents&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">requiredLevel</span><span class="o">:</span><span class="w"> </span><span class="kt">2</span><span class="p">,</span><span class="w"> </span><span class="nx">availableLevel</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="w"> </span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nx">feature</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;data.tombstones&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">requiredLevel</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="p">,</span><span class="w"> </span><span class="nx">availableLevel</span><span class="o">:</span><span class="w"> </span><span class="kt">null</span><span class="w"> </span><span class="p">},</span>
+<span class="w">      </span><span class="p">],</span>
 <span class="w">    </span><span class="p">});</span>
 <span class="w">  </span><span class="p">});</span>
 <span class="p">});</span></code></pre></figure>

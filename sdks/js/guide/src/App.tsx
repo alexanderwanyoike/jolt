@@ -29,30 +29,70 @@ export default function App() {
     setInbox(await listFollowRequests(jolt));
   }, []);
 
-  useEffect(() => {
-    connect()
-      .then(async (result) => {
-        setConnection(result);
-        if (result.status === "ready") await refresh(result.identity);
-      })
-      .catch((cause) => setError(String(cause)));
+  const checkConnection = useCallback(async () => {
+    setConnection(null);
+    setError(null);
+    try {
+      const result = await connect();
+      setConnection(result);
+      if (result.status === "ready") await refresh(result.identity);
+    } catch (cause) {
+      setError(String(cause));
+    }
   }, [refresh]);
 
-  if (error) return <main className="chirp"><p className="error">{error}</p></main>;
+  useEffect(() => {
+    void checkConnection();
+  }, [checkConnection]);
+
+  if (error) {
+    return (
+      <main className="chirp">
+        <p className="error">{error}</p>
+        <button type="button" onClick={() => void checkConnection()}>Check again</button>
+      </main>
+    );
+  }
   if (!connection) {
     return <main className="chirp"><p>Checking Jolt and waiting for approval…</p></main>;
   }
   if (connection.status === "unavailable") {
-    return <main className="chirp"><h1>Jolt is unavailable</h1><p>{connection.message}</p></main>;
+    return (
+      <main className="chirp">
+        <h1>Jolt is unavailable</h1>
+        <p>{connection.message}</p>
+        <button type="button" onClick={() => void checkConnection()}>Check again</button>
+      </main>
+    );
   }
   if (connection.status === "incompatible") {
+    const appApiMissing =
+      connection.availableAppApi === null ||
+      connection.availableAppApi < connection.requiredAppApi;
     return (
       <main className="chirp">
         <h1>Upgrade Jolt to run this Chirp release</h1>
-        <p>
-          Chirp needs App API {connection.requiredAppApi}; this Jolt daemon provides {" "}
-          {connection.availableAppApi ?? "no compatible App API"}.
-        </p>
+        {appApiMissing ? (
+          <p>
+            Chirp needs App API {connection.requiredAppApi}; this Jolt daemon provides {" "}
+            {connection.availableAppApi ?? "no compatible App API"}.
+          </p>
+        ) : (
+          <p>The App API level is compatible, but Jolt is missing required behavior:</p>
+        )}
+        {connection.missingRequiredFeatures.length > 0 && (
+          <ul>
+            {connection.missingRequiredFeatures.map((feature) => (
+              <li key={feature.feature}>
+                {feature.feature} level {feature.requiredLevel} required; {" "}
+                {feature.availableLevel === null
+                  ? "not advertised"
+                  : `level ${feature.availableLevel} available`}
+              </li>
+            ))}
+          </ul>
+        )}
+        <button type="button" onClick={() => void checkConnection()}>Check again</button>
       </main>
     );
   }
