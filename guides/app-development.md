@@ -5,10 +5,10 @@ Guide: 01
 App: Chirp
 Stack: Tauri 2 · React
 SDK: jolt-sdk
-Description: Build Chirp, a minimal twitter-style app on Jolt with Tauri: scoped sessions, append records, timelines, follow requests over ingress, a working UI, and tests.
+Description: Build Chirp, a minimal twitter-style app on Jolt with Tauri: compatibility checks, scoped sessions, append records, timelines, follow requests over ingress, optional relay availability, a working UI, and tests.
 ```
 
-A minimal twitter-style app on Jolt, built with Tauri and React. By the end you will have a running desktop app that borrows the user's identity through a capability-scoped session, publishes signed posts, assembles a timeline from other people's nodes, exchanges follow requests through recipient-controlled ingress, and tests all of it against an in-memory fake. Requires a running [Jolt Console](../#download) and the [Jolt SDK](../sdk/).
+A minimal twitter-style app on Jolt, built with Tauri and React. By the end you will have a running desktop app that checks the generic App API behavior available through Jolt, borrows the user's identity through a capability-scoped session, publishes signed posts, assembles a timeline from other people's nodes, exchanges follow requests through recipient-controlled ingress, and tests all of it against an in-memory fake. Requires a running [Jolt Console](../#download) and the [Jolt SDK](../sdk/).
 
 Every code file on this page is lifted verbatim from [`sdks/js/guide`](https://github.com/alexanderwanyoike/jolt/tree/dev/sdks/js/guide) in the Jolt repository, where it is type-checked and unit-tested against the SDK on every change. If you follow along file by file, you end up with the same app.
 
@@ -31,7 +31,7 @@ yarn
 yarn tauri dev
 ```
 
-You should see the template window open. Everything Jolt-specific happens in two places: `src-tauri/` (one plugin registration) and `src/` (the SDK calls). By the end of this guide you will have touched exactly seven files:
+You should see the template window open. Everything Jolt-specific happens in two places: `src-tauri/` (one plugin registration) and `src/` (the SDK calls). By the end of this guide you will have touched exactly ten files:
 
 ```text
 chirp/
@@ -40,11 +40,13 @@ chirp/
 │   ├── capabilities/default.json     # add one permission
 │   └── src/lib.rs                    # add one line
 └── src/
-    ├── jolt.ts                       # client + session  (section 3)
-    ├── chirp.ts                      # posts + timeline  (section 4)
-    ├── follows.ts                    # ingress handshake (section 5)
-    ├── App.tsx                       # the UI            (section 6)
-    └── App.css                       # replace the scaffold's styles
+    ├── compatibility.ts              # app requirements  (section 3)
+    ├── jolt.ts                       # client + session   (section 4)
+    ├── chirp.ts                      # posts + timeline   (section 5)
+    ├── follows.ts                    # ingress handshake  (section 6)
+    ├── App.tsx                       # the UI             (section 7)
+    ├── App.css                       # replace the scaffold's styles
+    └── chirp.test.ts                 # executable fixtures (section 8)
 ```
 
 ## 2 · Add jolt-sdk and tauri-plugin-jolt
@@ -86,25 +88,43 @@ And one permission in `src-tauri/capabilities/default.json`, next to the default
 
 On the TypeScript side, the Tauri transport pairs with the plugin when you pass `{ plugin: true }`, which you will do in the next section. The plugin reaches the daemon at `http://127.0.0.1:9862`; set `JOLT_DAEMON_URL` to override it.
 
-## 3 · Request a scoped session
+## 3 · Declare what this Chirp release needs
 
-Chirp now declares who it is and exactly what it wants to do. Capabilities follow the grammar of [RFC 0007](../rfcs/0007-app-sessions.html): an action, optionally narrowed to a path scope with at most one trailing wildcard. Chirp asks for the full set it will use in this guide, and nothing more; the daemon will refuse any call outside the granted set, and the user can narrow the grant further at approval time.
+Jolt and Chirp release independently, so Chirp checks behavior rather than comparing daemon release numbers. This release needs App API v1 and no new required features: all of its core publishing, reading, enumeration, ingress, and session operations belong to the long-lived Legacy App API v1 Baseline. Home-relay pinning is separate and optional. If Jolt advertises that behavior, Chirp may show a "keep available" control; otherwise the control stays hidden and chirps retain their honest default of local-node availability.
+
+@include sdks/js/guide/src/compatibility.ts as src/compatibility.ts
+
+There are three runtime outcomes:
+
+- `ready` means the reachable daemon satisfies every required behavior. A reachable older daemon without feature discovery is still `ready` through the Legacy App API v1 Baseline; the SDK does not guess that it supports the optional feature.
+- `incompatible` means Jolt answered, but its advertised App API behavior cannot run this Chirp release. Chirp can now accurately ask the user to upgrade Jolt before it requests a session or writes data.
+- `unavailable` means the SDK could not reach Jolt. That is not evidence of incompatibility, so the app says to start or reconnect Jolt rather than making an upgrade claim.
+
+The declaration uses only public `jolt-sdk` exports and stable App API contract levels. It neither constructs daemon endpoints nor reads daemon SemVer. `checkCompatibility()` caches discovery for the connection; pass `{ refresh: true }` when reconnecting to a replaced daemon rather than polling it before every operation.
+
+Notice that the optional App API Feature and `pin:own:/chirp/*` are deliberately separate. The feature says the connected Jolt implements the generic home-relay pin contract. The capability says the user authorized this particular Chirp session to pin its own `/chirp/*` publications. Chirp shows the control only when both are true. Supporting an operation never grants an application permission to use it.
+
+## 4 · Request a scoped session
+
+Only after compatibility succeeds does Chirp declare who it is and exactly what it wants to do. Capabilities follow the grammar of [RFC 0007](../rfcs/0007-app-sessions.html): an action, optionally narrowed to a path scope with at most one trailing wildcard. Chirp asks for the baseline set it uses and conditionally requests home-relay pin permission when the optional behavior exists. The daemon refuses any call outside the granted set, and the user can narrow the grant further at approval time.
 
 @include sdks/js/guide/src/jolt.ts as src/jolt.ts
 
 Run the app and call `connect()`. The request now sits pending on the daemon: open **Jolt Console → Apps**, find the pending "Chirp" request, review the capability list, and approve it. The poll loop picks up the token and Chirp is connected. The token is a bearer secret scoped to exactly these capabilities; if the user revokes the session in Console, every call starts failing with `JoltApiError` and `connect()` will request a fresh session on next launch.
 
-## 4 · Publish chirps, assemble timelines
+An existing active session does not gain new authorization merely because an upgraded daemon starts advertising the optional feature. Chirp keeps the relay control hidden until the user revokes that old session in Jolt Console, reconnects, and approves a new request containing `pin:own:/chirp/*`.
+
+## 5 · Publish chirps, assemble timelines
 
 A chirp is an append record: `publishAppend` writes coexisting records that never overwrite each other, which is exactly what a feed of posts wants (and it keeps concurrent devices safe). Each chirp gets its own path under `/chirp/posts/`, and readers list them back with `enumerate`, never with resolve. The follow list is the opposite kind of data: a singleton settings-like object at `/chirp/follows`, updated with `publishJson` where last-writer-wins is fine. It is published under your identity, so any Chirp instance on any device sees the same list.
 
 @include sdks/js/guide/src/chirp.ts as src/chirp.ts
 
-Note the shape of these functions: each takes the narrow interface it needs (`JoltAppendSdk`, `JoltSdk`) rather than the whole client, and the clock is injectable. Every client sub-interface (`JoltSdk`, `JoltAppendSdk`, `JoltEncryptedSdk`, `JoltIngressSdk`) is intentionally small so features declare exactly the capability they use; this pays off in section 7.
+Note the shape of these functions: each takes the narrow interface it needs (`JoltAppendSdk`, `JoltAvailabilitySdk`, `JoltSdk`) rather than the whole client, and the clock is injectable. `postAvailableChirp` composes publication with an explicit app-owned availability request; ordinary `postChirp` keeps the existing local-only behavior. Publication and relay pinning are not atomic: if the relay request fails, the chirp remains successfully published with local availability. Every client sub-interface is intentionally small so features declare exactly the contract they use; this pays off in section 8.
 
 Reads are tolerant: in `loadTimeline`, a record that is missing, unreachable, or not a valid chirp simply comes back `null` from `readContent` and is skipped, so one bad record never breaks the feed.
 
-## 5 · Follow requests over ingress
+## 6 · Follow requests over ingress
 
 Following someone requires no permission: their posts are public, and `follow()` above is enough to read them. What ingress adds is the social handshake, telling someone you exist without spam. On Jolt, one identity cannot write into another identity's state; the only way to hand an object to someone else is the **recipient-controlled ingress door**: the sender encrypts an object to the recipient and delivers it to the recipient's daemon, where it waits in a pending queue until the recipient's app opens it and decides.
 
@@ -112,9 +132,9 @@ Following someone requires no permission: their posts are public, and `follow()`
 
 @include sdks/js/guide/src/follows.ts as src/follows.ts
 
-## 6 · The UI
+## 7 · The UI
 
-One file ties it together. `App.tsx` connects on mount, then renders four things: a composer that calls `postChirp`, a follow form that subscribes and says hello, the pending follow requests with accept and ignore buttons, and the timeline. Every action ends by re-running `refresh`, so the UI is always a projection of daemon state; when Bob accepts Alice's request, Chirp accepts the envelope and follows back, so nothing lands in Bob's world without Bob's daemon holding it at the door first.
+One file ties it together. `App.tsx` checks compatibility and connects on mount, then renders four things: a composer that calls `postChirp` or the optional `postAvailableChirp`, a follow form that subscribes and says hello, the pending follow requests with accept and ignore buttons, and the timeline. Unavailable and incompatible Jolt states get different recovery copy and a **Check again** action before the social UI can mount. Every action ends by re-running `refresh`, so the UI is always a projection of daemon state; when Bob accepts Alice's request, Chirp accepts the envelope and follows back, so nothing lands in Bob's world without Bob's daemon holding it at the door first.
 
 @include sdks/js/guide/src/App.tsx as src/App.tsx
 
@@ -124,7 +144,7 @@ Replace the scaffold's `src/App.css` with a small stylesheet (the scaffold's `ma
 
 Run `yarn tauri dev` again. Approve the session in Jolt Console when the window says it is waiting, and post your first chirp.
 
-## 7 · Test it all with the fake
+## 8 · Test it all with the fake
 
 Because every Chirp function takes a client interface instead of reaching for a global, all of the flows above run against `createFakeJolt`: a deterministic in-memory implementation of the full `JoltClient` with no daemon and no network. Publishes land in an in-memory store, enumeration lists them back, sends are recorded, and `deliverIngress` injects incoming envelopes as if a remote sender delivered them. Add `vitest` (`yarn add -D vitest`) and drop this next to the code:
 
@@ -132,7 +152,9 @@ Because every Chirp function takes a client interface instead of reaching for a 
 
 These tests exercise Chirp's schemas and flows, not cryptography: the fake simulates encryption by recording recipients and storing plaintext, which is exactly the right level for app tests. The same code runs unchanged against the real daemon because `createFakeJolt` satisfies `JoltClient` and every sub-interface.
 
-## 8 · Run it with a friend
+The compatibility fixtures are executable too. `featureDiscovery: "legacy"` models a reachable pre-discovery daemon and confirms that baseline Chirp stays usable with the optional control hidden. The default fake models current advertised discovery, and its `features` map can explicitly advertise home-relay pinning. A throwing `JoltTransportError` fixture proves that unavailability does not turn into an incompatible result. These are SDK results, not prose approximations or daemon-version guesses.
+
+## 9 · Run it with a friend
 
 The whole point of a Jolt app is that two installs of it form a network with no server in between. To see Chirp actually be social you need a second identity, either a friend running Jolt Console on their machine or your own second machine.
 

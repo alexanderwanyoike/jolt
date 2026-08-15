@@ -17,6 +17,24 @@
   margin: 1rem 0;
 }
 
+.chirp .composer {
+  flex-direction: column;
+}
+
+.chirp .composer button {
+  align-self: flex-end;
+}
+
+.chirp .availability {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chirp .availability input {
+  width: auto;
+}
+
 .chirp textarea,
 .chirp input {
   flex: 1;

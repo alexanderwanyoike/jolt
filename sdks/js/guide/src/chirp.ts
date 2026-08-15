@@ -1,5 +1,5 @@
 import { makeId } from "jolt-sdk";
-import type { JoltAppendSdk, JoltSdk } from "jolt-sdk";
+import type { JoltAppendSdk, JoltAvailabilitySdk, JoltSdk } from "jolt-sdk";
 
 export type Chirp = {
   kind: "chirp";
@@ -27,6 +27,17 @@ export async function postChirp(
   const id = makeId("chirp");
   const chirp: Chirp = { kind: "chirp", id, text, postedAt: now() };
   return jolt.publishAppend(`/chirp/posts/${id}`, chirp);
+}
+
+/** Publish, then explicitly request delegated availability from the home relay. */
+export async function postAvailableChirp(
+  jolt: JoltAppendSdk & JoltAvailabilitySdk,
+  text: string,
+  now: () => string = () => new Date().toISOString()
+) {
+  const published = await postChirp(jolt, text, now);
+  await jolt.pinHomeRelay(published.contentId, published.path ?? undefined);
+  return published;
 }
 
 export type TimelineEntry = { author: string; chirp: Chirp };
