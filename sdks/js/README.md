@@ -93,6 +93,21 @@ failure remains a `JoltTransportError`, not an incompatibility result. App API
 Features describe implemented behavior and remain separate from app-session
 authorization capabilities.
 
+Signed update manifests carry the declaration in its JSON wire shape. Decode
+that untrusted metadata before checking it; invalid App API levels or feature
+maps fail closed:
+
+```ts
+import { decodeAppCompatibilityDeclaration } from "jolt-sdk";
+
+const declaration = decodeAppCompatibilityDeclaration(
+  update.rawJson.app_compatibility
+);
+const prospectiveCompatibility = await jolt.checkCompatibility(declaration, {
+  refresh: true,
+});
+```
+
 Reads are tolerant: missing, unreachable, or undecodable content returns
 `null` instead of throwing, so one bad record never poisons an app
 projection. Failures from publishes and sends throw `JoltApiError` (the
