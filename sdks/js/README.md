@@ -108,6 +108,28 @@ const prospectiveCompatibility = await jolt.checkCompatibility(declaration, {
 });
 ```
 
+Compatibility checks throw when no honest result is available. Use the shared
+classifier to keep an unavailable attempt distinct from incompatibility while
+leaving recovery wording and presentation in the application:
+
+```ts
+import { isJoltUnavailableError } from "jolt-sdk";
+
+try {
+  await jolt.checkCompatibility(declaration, { refresh: true });
+} catch (error) {
+  if (isJoltUnavailableError(error)) {
+    // Show the app's unavailable state and offer its own retry flow.
+  } else {
+    throw error;
+  }
+}
+```
+
+The classifier accepts typed transport failures and browser host-gateway
+responses with status 500 or 502. It describes the failed attempt, not proof
+that a daemon process is offline, and does not hide arbitrary `TypeError`s.
+
 Reads are tolerant: missing, unreachable, or undecodable content returns
 `null` instead of throwing, so one bad record never poisons an app
 projection. Failures from publishes and sends throw `JoltApiError` (the

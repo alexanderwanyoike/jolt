@@ -74,7 +74,12 @@ export type {
 } from "./compatibility.js";
 export { decodeAppCompatibilityDeclaration } from "./compatibility.js";
 
-export { apiErrorMessage, JoltApiError, JoltTransportError } from "./errors.js";
+export {
+  apiErrorMessage,
+  isJoltUnavailableError,
+  JoltApiError,
+  JoltTransportError,
+} from "./errors.js";
 
 export type {
   ApiBase,
