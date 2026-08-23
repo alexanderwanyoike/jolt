@@ -1,6 +1,6 @@
 [package]
 name = "tauri-plugin-jolt"
-version = "0.1.0"
+version = "0.1.1"
 description = "Tauri plugin exposing the local Jolt daemon to app webviews through audited proxy commands"
 edition = "2021"
 license = "MIT"
@@ -12,7 +12,8 @@ categories = ["gui", "network-programming"]
 
 [dependencies]
 tauri = { version = "2" }
-reqwest = { version = "0.12", features = ["json", "multipart"] }
+# The plugin only proxies to the daemon's loopback HTTP endpoint.
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
