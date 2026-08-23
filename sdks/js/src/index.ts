@@ -66,11 +66,13 @@ export type {
 export type {
   AppApiFeatureManifest,
   AppCompatibilityDeclaration,
+  AppCompatibilityDeclarationWire,
   AppCompatibilityResult,
   CompatibilityCheckOptions,
   ContractLevelCheck,
   JoltCompatibilitySdk,
 } from "./compatibility.js";
+export { decodeAppCompatibilityDeclaration } from "./compatibility.js";
 
 export { apiErrorMessage, JoltApiError, JoltTransportError } from "./errors.js";
 

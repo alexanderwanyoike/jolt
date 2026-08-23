@@ -12,6 +12,47 @@ export type AppCompatibilityDeclaration = {
   optionalFeatures?: Readonly<Record<string, number>>;
 };
 
+/** JSON representation embedded in signed application update manifests. */
+export type AppCompatibilityDeclarationWire = {
+  app_api: number;
+  required_features: Readonly<Record<string, number>>;
+  optional_features: Readonly<Record<string, number>>;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function decodeFeatureMap(
+  value: unknown,
+  field: "required_features" | "optional_features"
+): Readonly<Record<string, number>> {
+  if (!isRecord(value) || !Object.values(value).every(isPositiveInteger)) {
+    throw new TypeError(
+      `App Compatibility Declaration ${field} must contain positive integers`
+    );
+  }
+  return { ...value } as Record<string, number>;
+}
+
+/** Decode signed update metadata into the transport-independent SDK shape. */
+export function decodeAppCompatibilityDeclaration(
+  value: unknown
+): AppCompatibilityDeclaration {
+  if (!isRecord(value) || !isPositiveInteger(value.app_api)) {
+    throw new TypeError("App Compatibility Declaration app_api must be a positive integer");
+  }
+  return {
+    appApi: value.app_api,
+    requiredFeatures: decodeFeatureMap(value.required_features, "required_features"),
+    optionalFeatures: decodeFeatureMap(value.optional_features, "optional_features"),
+  };
+}
+
 /** Compatibility call controls; refresh after daemon reconnection. */
 export type CompatibilityCheckOptions = CallOptions & {
   refresh?: boolean;
