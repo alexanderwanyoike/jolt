@@ -44,6 +44,21 @@ export class JoltTransportError extends Error {
 }
 
 /**
+ * Whether a failed Jolt operation should be presented as unavailable.
+ *
+ * Typed transport failures mean the daemon could not be reached. HTTP 500 and
+ * 502 also cover browser development proxies that could not complete the
+ * request. This classifies the attempt, not whether a daemon process exists.
+ */
+export function isJoltUnavailableError(error: unknown): boolean {
+  return (
+    error instanceof JoltTransportError ||
+    (error instanceof JoltApiError &&
+      (error.status === 500 || error.status === 502))
+  );
+}
+
+/**
  * Map any error thrown by the SDK to a short human-readable message suitable
  * for an app's error banner. Never throws.
  */
