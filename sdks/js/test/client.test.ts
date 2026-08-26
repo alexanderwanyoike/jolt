@@ -201,13 +201,25 @@ describe("createJoltClient", () => {
 
   it("publishJson uploads multipart JSON and marshals the result", async () => {
     const { transport, calls } = recordingTransport({
-      "/publish": { content_id: "cid_1", size: 2, latest_sequence: 4, path: "/a/p" },
+      "/publish": {
+        content_id: "cid_1",
+        size: 2,
+        latest_sequence: 4,
+        path: "/a/p",
+        revision: "revision_4",
+      },
     });
     const jolt = createJoltClient({ transport, getSessionToken: token });
 
     const result = await jolt.publishJson("/a/p", { x: 1 });
 
-    expect(result).toEqual({ contentId: "cid_1", latestSequence: 4, path: "/a/p", address: null });
+    expect(result).toEqual({
+      contentId: "cid_1",
+      latestSequence: 4,
+      path: "/a/p",
+      address: null,
+      revision: "revision_4",
+    });
     const call = calls[0]!;
     expect(call.kind).toBe("upload");
     const detail = call.detail as { token: string; path: string; mimeType: string };

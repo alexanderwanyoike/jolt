@@ -115,6 +115,30 @@ pub async fn read_local_record(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct LocalRecordUpdateRequest {
+    pub path: String,
+    pub revision: String,
+    pub mutation_id: String,
+    pub data: Vec<u8>,
+}
+
+pub async fn update_local_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<LocalRecordUpdateRequest>,
+) -> Result<Json<jolt_network::LocalRecordUpdate>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+    let path = normalize_path(&req.path)?;
+    require_path_capability(&session, "publish:", &path)?;
+    let updated = state
+        .daemon
+        .update_local_record(path, req.data, req.revision, req.mutation_id)
+        .await?;
+    Ok(Json(updated))
+}
+
+#[derive(Debug, Deserialize)]
 pub struct EncryptedPublishRequest {
     pub path: String,
     pub plaintext: Vec<u8>,

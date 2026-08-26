@@ -53,6 +53,7 @@ export type PublishResponse = {
   path?: string | null;
   address?: string | null;
   latest_sequence?: number | null;
+  revision?: string | null;
 };
 
 /** Successful compare-and-set write of one local stable record. */

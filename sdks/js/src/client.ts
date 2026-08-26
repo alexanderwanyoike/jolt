@@ -42,6 +42,8 @@ export type PublishResult = {
   latestSequence: number;
   path: string;
   address: string | null;
+  /** Opaque stable-record revision when the daemon bound a singleton path. */
+  revision?: string;
 };
 
 /**
@@ -287,6 +289,9 @@ function toPublishResult(response: PublishResponse, path: string): PublishResult
     latestSequence: response.latest_sequence ?? 0,
     path: response.path ?? path,
     address: response.address ?? null,
+    ...(response.revision === undefined || response.revision === null
+      ? {}
+      : { revision: response.revision }),
   };
 }
 

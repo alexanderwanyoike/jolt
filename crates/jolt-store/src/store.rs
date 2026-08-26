@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -50,6 +50,17 @@ pub struct PublishedContentEntry {
 pub struct PersistedDeviceWriterLog {
     pub authority_records: Vec<DeviceAuthorizationRecord>,
     pub device_log: Vec<DeviceWriterLogEntry>,
+    #[serde(default)]
+    pub record_mutations: BTreeMap<String, PersistedRecordMutation>,
+}
+
+/// Durable idempotency result for one successful local stable-record mutation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PersistedRecordMutation {
+    pub path: String,
+    pub observed_revision: String,
+    pub content_id: String,
+    pub result_revision: String,
 }
 
 /// One recipient-controlled ingress envelope as persisted to disk, including

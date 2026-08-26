@@ -16,6 +16,6 @@ pub struct AppApiFeatureManifest {
 pub async fn get_features() -> Json<AppApiFeatureManifest> {
     Json(AppApiFeatureManifest {
         app_api: APP_API_LEVEL,
-        features: BTreeMap::from([("data.records", 1)]),
+        features: BTreeMap::from([("data.records", 2)]),
     })
 }

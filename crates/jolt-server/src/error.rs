@@ -36,6 +36,11 @@ impl IntoResponse for ApiError {
             NetworkError::InvalidInput(e) => {
                 (StatusCode::BAD_REQUEST, "invalid_input", e.to_string())
             }
+            NetworkError::RecordConflict => (
+                StatusCode::CONFLICT,
+                "record_conflict",
+                "Record changed since it was read".to_string(),
+            ),
             NetworkError::VerificationFailed => (
                 StatusCode::BAD_GATEWAY,
                 "content_hash_mismatch",

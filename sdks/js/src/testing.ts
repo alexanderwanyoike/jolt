@@ -175,7 +175,11 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
     },
 
     async publishJson(path, body) {
-      return toResult(store(path, body, null), path);
+      const record = store(path, body, null);
+      return {
+        ...toResult(record, path),
+        revision: `revision_${record.seq}`,
+      };
     },
 
     async read(ref, decode) {

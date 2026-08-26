@@ -124,6 +124,13 @@ pub enum DaemonCommand {
         path: String,
         response_tx: oneshot::Sender<Option<LocalRecordInfo>>,
     },
+    UpdateLocalRecord {
+        path: String,
+        data: Vec<u8>,
+        revision: String,
+        mutation_id: String,
+        response_tx: oneshot::Sender<Result<LocalRecordUpdate, NetworkError>>,
+    },
     Pin {
         content_id: String,
         response_tx: oneshot::Sender<Result<(), NetworkError>>,
@@ -179,6 +186,8 @@ pub struct PublishResponse {
     pub address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,6 +213,14 @@ pub struct LocalRecordInfo {
     pub content_id: String,
     /// Opaque revision token; equal if and only if it names the same winning log entry.
     pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LocalRecordUpdate {
+    pub path: String,
+    pub content_id: String,
+    pub revision: String,
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

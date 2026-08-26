@@ -2547,6 +2547,7 @@ async fn test_app_reads_authoritative_local_record_state_across_restart() {
     assert_eq!(first_read["state"], "present");
     assert_eq!(first_read["path"], path);
     assert_eq!(first_read["content_id"], published["content_id"]);
+    assert_eq!(first_read["revision"], published["revision"]);
     assert_eq!(first_read["revision"].as_str().unwrap().len(), 64);
     assert_eq!(
         first_read["data"],
@@ -2583,11 +2584,174 @@ async fn test_app_reads_authoritative_local_record_state_across_restart() {
     );
     std::fs::write(content_path, stored).unwrap();
 
-    let revision = first_read["revision"].clone();
+    let updated = br#"{"version":1,"value":{"text":"Edited"}}"#;
+    let update_request = serde_json::json!({
+        "path": path,
+        "revision": first_read["revision"],
+        "mutation_id": "mut_record_update",
+        "data": updated.to_vec(),
+    });
+    let no_publish_token = approve_app_session(
+        &client,
+        first_port,
+        &identity,
+        &["resolve:public", "fetch:public"],
+    )
+    .await;
+    let denied_update = client
+        .post(format!("{}/app/v1/records/update", base_url(first_port)))
+        .bearer_auth(no_publish_token)
+        .json(&update_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied_update.status(), 403);
+
+    let successful_update = client
+        .post(format!("{}/app/v1/records/update", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&update_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(successful_update.status(), 200);
+    let successful_update: serde_json::Value = successful_update.json().await.unwrap();
+    assert_eq!(successful_update["path"], path);
+    assert_ne!(successful_update["revision"], first_read["revision"]);
+    assert_eq!(
+        successful_update["data"],
+        serde_json::Value::Array(
+            updated
+                .iter()
+                .copied()
+                .map(serde_json::Value::from)
+                .collect()
+        )
+    );
+
+    let retried_update = client
+        .post(format!("{}/app/v1/records/update", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&update_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retried_update.status(), 200);
+    assert_eq!(
+        retried_update.json::<serde_json::Value>().await.unwrap(),
+        successful_update
+    );
+
+    let reused_mutation_id = client
+        .post(format!("{}/app/v1/records/update", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": first_read["revision"],
+            "mutation_id": "mut_record_update",
+            "data": br#"{"version":1,"value":{"text":"Different request"}}"#.to_vec(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reused_mutation_id.status(), 400);
+    assert_eq!(
+        reused_mutation_id
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()["code"],
+        "invalid_input"
+    );
+
+    let stale_update = client
+        .post(format!("{}/app/v1/records/update", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": first_read["revision"],
+            "mutation_id": "mut_stale_update",
+            "data": br#"{"version":1,"value":{"text":"Stale"}}"#.to_vec(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(stale_update.status(), 409);
+    assert_eq!(
+        stale_update.json::<serde_json::Value>().await.unwrap()["code"],
+        "record_conflict"
+    );
+
+    let concurrent_a = serde_json::json!({
+        "path": path,
+        "revision": successful_update["revision"],
+        "mutation_id": "mut_concurrent_a",
+        "data": br#"{"version":1,"value":{"text":"Concurrent A"}}"#.to_vec(),
+    });
+    let concurrent_b = serde_json::json!({
+        "path": path,
+        "revision": successful_update["revision"],
+        "mutation_id": "mut_concurrent_b",
+        "data": br#"{"version":1,"value":{"text":"Concurrent B"}}"#.to_vec(),
+    });
+    let send_a = client
+        .post(format!("{}/app/v1/records/update", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&concurrent_a)
+        .send();
+    let send_b = client
+        .post(format!("{}/app/v1/records/update", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&concurrent_b)
+        .send();
+    let (response_a, response_b) = tokio::join!(send_a, send_b);
+    let response_a = response_a.unwrap();
+    let response_b = response_b.unwrap();
+    let statuses = [response_a.status(), response_b.status()];
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|status| status.as_u16() == 200)
+            .count(),
+        1
+    );
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|status| status.as_u16() == 409)
+            .count(),
+        1
+    );
+    let (winner_response, conflict_response) = if response_a.status() == 200 {
+        (response_a, response_b)
+    } else {
+        (response_b, response_a)
+    };
+    let concurrent_winner: serde_json::Value = winner_response.json().await.unwrap();
+    assert_eq!(
+        conflict_response.json::<serde_json::Value>().await.unwrap()["code"],
+        "record_conflict"
+    );
+
     first_handle.shutdown().await.ok();
 
     let (second_port, second_handle, _second_holder) =
         start_test_server_with_profile_dir(profile.path().to_path_buf()).await;
+    let retry_after_restart = client
+        .post(format!("{}/app/v1/records/update", base_url(second_port)))
+        .bearer_auth(&token)
+        .json(&update_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retry_after_restart.status(), 200);
+    assert_eq!(
+        retry_after_restart
+            .json::<serde_json::Value>()
+            .await
+            .unwrap(),
+        successful_update
+    );
+
     let after_restart = client
         .post(format!("{}/app/v1/records/read", base_url(second_port)))
         .bearer_auth(&token)
@@ -2599,9 +2763,9 @@ async fn test_app_reads_authoritative_local_record_state_across_restart() {
     let after_restart: serde_json::Value = after_restart.json().await.unwrap();
     assert_eq!(after_restart["state"], "present");
     assert_eq!(after_restart["path"], path);
-    assert_eq!(after_restart["content_id"], published["content_id"]);
-    assert_eq!(after_restart["revision"], revision);
-    assert_eq!(after_restart["data"], first_read["data"]);
+    assert_eq!(after_restart["content_id"], concurrent_winner["content_id"]);
+    assert_eq!(after_restart["revision"], concurrent_winner["revision"]);
+    assert_eq!(after_restart["data"], concurrent_winner["data"]);
 
     second_handle.shutdown().await.ok();
 }
@@ -3818,7 +3982,7 @@ async fn test_app_api_feature_manifest_is_public_and_generic() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["app_api"], 1);
-    assert_eq!(body["features"], serde_json::json!({ "data.records": 1 }));
+    assert_eq!(body["features"], serde_json::json!({ "data.records": 2 }));
     assert!(body.get("daemon_version").is_none());
     assert!(body.get("applications").is_none());
 
