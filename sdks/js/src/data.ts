@@ -551,7 +551,7 @@ function requirePathSegment(value: string, label: string): void {
 }
 
 type TestWorldState = {
-  readonly store: Map<string, object>;
+  readonly store: Map<string, StoredSchemaValue>;
   nextId: number;
 };
 
@@ -609,103 +609,6 @@ function missingItem<T extends object>(ref: Ref<T>): MissingItem<T> {
   });
 }
 
-function readTestItem<T extends object>(
-  schemaClass: SchemaClass<T>,
-  state: TestWorldState,
-  ref: Ref<T>,
-): Item<T> {
-  const value = state.store.get(testStoreKey(ref)) as T | undefined;
-  return value === undefined
-    ? missingItem(ref)
-    : presentItem(ref, parse(schemaClass, value));
-}
-
-type TestResourceViewOptions = {
-  readonly remote?: boolean;
-};
-
-function createTestCollection<T extends object, TAccess extends ResourceAccess>(
-  resource: BoundCollectionDefinition<T, TAccess>,
-  identity: Identity,
-  state: TestWorldState,
-  nextId: () => string,
-  options: TestResourceViewOptions = {},
-): CollectionResource<T, TAccess> {
-  const remote = options.remote ?? false;
-  const collection: CollectionReader<T>
-    & Partial<CollectionCreator<T>>
-    & Partial<CollectionRemoteReader<T>> = {
-    async get(ref) {
-      if (ref.identity !== identity || !ref.path.startsWith(`${resource.path}/`)) {
-        throw new TypeError("Collection reference does not belong to this Resource view");
-      }
-      return readTestItem(resource.schema, state, ref);
-    },
-  };
-  if (!remote && resource.access.create === true) {
-    collection.create = async (input) => {
-      const value = parse(resource.schema, input);
-      const ref = createRef<T>(identity, `${resource.path}/${nextId()}`);
-      state.store.set(testStoreKey(ref), value);
-      return presentItem(ref, parse(resource.schema, value));
-    };
-  }
-  if (!remote && resource.access.read === Read.AnyIdentity) {
-    collection.for = remoteIdentity => (
-      createTestCollection(resource, remoteIdentity, state, nextId, { remote: true })
-    );
-  }
-  return Object.freeze(collection) as CollectionResource<T, TAccess>;
-}
-
-function createTestDocument<T extends object, TAccess extends ResourceAccess>(
-  resource: BoundDocumentDefinition<T, TAccess>,
-  identity: Identity,
-  state: TestWorldState,
-  options: TestResourceViewOptions = {},
-): DocumentResource<T, TAccess> {
-  const remote = options.remote ?? false;
-  const ref = createRef<T>(identity, resource.path);
-  const document: DocumentReader<T>
-    & Partial<DocumentCreator<T>>
-    & Partial<DocumentRemoteReader<T>> = {
-    async get() {
-      return readTestItem(resource.schema, state, ref);
-    },
-  };
-  if (!remote && resource.access.create === true) {
-    document.getOrCreate = async (input) => {
-      const existing = readTestItem(resource.schema, state, ref);
-      if (existing.isPresent()) return existing;
-      const value = parse(resource.schema, input);
-      state.store.set(testStoreKey(ref), value);
-      return presentItem(ref, parse(resource.schema, value));
-    };
-  }
-  if (!remote && resource.access.read === Read.AnyIdentity) {
-    document.for = remoteIdentity => (
-      createTestDocument(resource, remoteIdentity, state, { remote: true })
-    );
-  }
-  return Object.freeze(document) as DocumentResource<T, TAccess>;
-}
-
-function createTestApp<TData extends AppDataDefinitions>(
-  data: BoundAppData<TData>,
-  options: AppTestOptions = {},
-  state: TestWorldState = createTestWorldState(),
-): AppInstance<TData> {
-  const identity = options.identity ?? "test.jolt";
-  const opaqueId = () => `jlt_${(++state.nextId).toString(36).padStart(12, "0")}`;
-
-  return Object.fromEntries(Object.entries(data).map(([name, resource]) => [
-    name,
-    resource[resourceDefinition] === ResourceKind.Collection
-      ? createTestCollection(resource, identity, state, opaqueId)
-      : createTestDocument(resource, identity, state),
-  ])) as AppInstance<TData>;
-}
-
 function decodeStoredSchemaValue(input: unknown): StoredSchemaValue | null {
   if (input === null || typeof input !== "object" || Array.isArray(input)) return null;
   const candidate = input as Record<string, unknown>;
@@ -734,25 +637,66 @@ function currentStoredValue<T extends object>(
   };
 }
 
-async function readConnectedItem<T extends object>(
-  resource: ResourceDefinition<T, ResourceAccess, ResourceKindValue>,
-  options: AppConnectOptions,
-  ref: Ref<T>,
-): Promise<Item<T>> {
-  const versioned = await options.client.read(ref, decodeStoredSchemaValue);
-  return versioned === null
-    ? missingItem(ref)
-    : presentItem(ref, resource.migrate(versioned.value));
+type DataBackend = {
+  readonly identity: Identity;
+  nextId(): string;
+  read<T extends object>(ref: Ref<T>): Promise<StoredSchemaValue | null>;
+  write<T extends object>(ref: Ref<T>, stored: StoredSchemaValue): Promise<void>;
+  for(identity: Identity): DataBackend;
+};
+
+function createTestBackend(state: TestWorldState, identity: Identity): DataBackend {
+  return {
+    identity,
+    nextId: () => `jlt_${(++state.nextId).toString(36).padStart(12, "0")}`,
+    async read(ref) {
+      return state.store.get(testStoreKey(ref)) ?? null;
+    },
+    async write(ref, stored) {
+      state.store.set(testStoreKey(ref), stored);
+    },
+    for: remoteIdentity => createTestBackend(state, remoteIdentity),
+  };
 }
 
-type ConnectedResourceViewOptions = {
+function createConnectedBackend(options: AppConnectOptions): DataBackend {
+  return {
+    identity: options.identity,
+    nextId: () => makeId("jlt"),
+    async read(ref) {
+      const versioned = await options.client.read(ref, value => ({ value }));
+      if (versioned === null) return null;
+      const stored = decodeStoredSchemaValue(versioned.value.value);
+      if (stored === null) {
+        throw new SchemaValidationError("$", "must be a versioned schema value");
+      }
+      return stored;
+    },
+    async write(ref, stored) {
+      await options.client.publishJson(ref.path, stored);
+    },
+    for: identity => createConnectedBackend({ ...options, identity }),
+  };
+}
+
+async function readItem<T extends object>(
+  resource: ResourceDefinition<T, ResourceAccess, ResourceKindValue>,
+  backend: DataBackend,
+  ref: Ref<T>,
+): Promise<Item<T>> {
+  const stored = await backend.read(ref);
+  if (stored === null) return missingItem(ref);
+  return presentItem(ref, resource.migrate(stored));
+}
+
+type ResourceViewOptions = {
   readonly remote?: boolean;
 };
 
-function createConnectedCollection<T extends object, TAccess extends ResourceAccess>(
+function createCollection<T extends object, TAccess extends ResourceAccess>(
   resource: BoundCollectionDefinition<T, TAccess>,
-  connection: AppConnectOptions,
-  options: ConnectedResourceViewOptions = {},
+  backend: DataBackend,
+  options: ResourceViewOptions = {},
 ): CollectionResource<T, TAccess> {
   const remote = options.remote ?? false;
   const collection: CollectionReader<T>
@@ -760,75 +704,86 @@ function createConnectedCollection<T extends object, TAccess extends ResourceAcc
     & Partial<CollectionRemoteReader<T>> = {
     async get(ref) {
       if (
-        ref.identity !== connection.identity
+        ref.identity !== backend.identity
         || !ref.path.startsWith(`${resource.path}/`)
       ) {
         throw new TypeError("Collection reference does not belong to this Resource view");
       }
-      return readConnectedItem(resource, connection, ref);
+      return readItem(resource, backend, ref);
     },
   };
   if (!remote && resource.access.create === true) {
     collection.create = async (input) => {
       const { stored, value } = currentStoredValue(resource.schema, input);
-      const ref = createRef<T>(connection.identity, `${resource.path}/${makeId("jlt")}`);
-      await connection.client.publishJson(ref.path, stored);
+      const ref = createRef<T>(backend.identity, `${resource.path}/${backend.nextId()}`);
+      await backend.write(ref, stored);
       return presentItem(ref, parse(resource.schema, value));
     };
   }
   if (!remote && resource.access.read === Read.AnyIdentity) {
-    collection.for = identity => createConnectedCollection(
+    collection.for = identity => createCollection(
       resource,
-      { ...connection, identity },
+      backend.for(identity),
       { remote: true },
     );
   }
   return Object.freeze(collection) as CollectionResource<T, TAccess>;
 }
 
-function createConnectedDocument<T extends object, TAccess extends ResourceAccess>(
+function createDocument<T extends object, TAccess extends ResourceAccess>(
   resource: BoundDocumentDefinition<T, TAccess>,
-  connection: AppConnectOptions,
-  options: ConnectedResourceViewOptions = {},
+  backend: DataBackend,
+  options: ResourceViewOptions = {},
 ): DocumentResource<T, TAccess> {
   const remote = options.remote ?? false;
-  const ref = createRef<T>(connection.identity, resource.path);
+  const ref = createRef<T>(backend.identity, resource.path);
   const document: DocumentReader<T>
     & Partial<DocumentCreator<T>>
     & Partial<DocumentRemoteReader<T>> = {
     async get() {
-      return readConnectedItem(resource, connection, ref);
+      return readItem(resource, backend, ref);
     },
   };
   if (!remote && resource.access.create === true) {
     document.getOrCreate = async (input) => {
-      const existing = await readConnectedItem(resource, connection, ref);
+      const existing = await readItem(resource, backend, ref);
       if (existing.isPresent()) return existing;
       const { stored, value } = currentStoredValue(resource.schema, input);
-      await connection.client.publishJson(ref.path, stored);
+      await backend.write(ref, stored);
       return presentItem(ref, parse(resource.schema, value));
     };
   }
   if (!remote && resource.access.read === Read.AnyIdentity) {
-    document.for = identity => createConnectedDocument(
+    document.for = identity => createDocument(
       resource,
-      { ...connection, identity },
+      backend.for(identity),
       { remote: true },
     );
   }
   return Object.freeze(document) as DocumentResource<T, TAccess>;
 }
 
-function createConnectedApp<TData extends AppDataDefinitions>(
+function createAppInstance<TData extends AppDataDefinitions>(
   data: BoundAppData<TData>,
-  connection: AppConnectOptions,
+  backend: DataBackend,
 ): AppInstance<TData> {
   return Object.fromEntries(Object.entries(data).map(([name, resource]) => [
     name,
     resource[resourceDefinition] === ResourceKind.Collection
-      ? createConnectedCollection(resource, connection)
-      : createConnectedDocument(resource, connection),
+      ? createCollection(resource, backend)
+      : createDocument(resource, backend),
   ])) as AppInstance<TData>;
+}
+
+function createTestApp<TData extends AppDataDefinitions>(
+  data: BoundAppData<TData>,
+  options: AppTestOptions = {},
+  state: TestWorldState = createTestWorldState(),
+): AppInstance<TData> {
+  return createAppInstance(
+    data,
+    createTestBackend(state, options.identity ?? "test.jolt"),
+  );
 }
 
 /** Composes Resource definitions into one application definition. */
@@ -873,7 +828,10 @@ export const App = {
       namespace: options.namespace,
       data,
       accessPlan,
-      connect: async connectOptions => createConnectedApp(data, connectOptions),
+      connect: async connectOptions => createAppInstance(
+        data,
+        createConnectedBackend(connectOptions),
+      ),
       test: testOptions => createTestApp(data, testOptions),
       testWorld: () => {
         const state = createTestWorldState();
