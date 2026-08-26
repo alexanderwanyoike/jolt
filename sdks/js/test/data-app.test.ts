@@ -310,9 +310,111 @@ describe("Data SDK applications", () => {
     const chirp = Chirp.test();
 
     expect("create" in chirp.posts).toBe(false);
-    if (false) {
-      // @ts-expect-error Read-only Resources do not expose create.
-      void chirp.posts.create;
+    expect("for" in chirp.posts).toBe(false);
+    expectTypeOf(chirp.posts).not.toHaveProperty("create");
+    expectTypeOf(chirp.posts).not.toHaveProperty("for");
+  });
+
+  it("reads or creates one stable Document Item", async () => {
+    @Schema({ version: 1 })
+    class FollowList {
+      @Field.array(Field.identity)
+      identities!: string[];
     }
+
+    const Follows = Document.create(FollowList, {
+      access: {
+        read: Read.AnyIdentity,
+        create: true,
+      },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { follows: Follows },
+    });
+    const chirp = Chirp.test({ identity: "alice.jolt" });
+
+    const missing = await chirp.follows.get();
+    expect(missing.state).toBe(State.Missing);
+
+    const created = await chirp.follows.getOrCreate({
+      identities: ["bob.jolt"],
+    });
+    expect(created.state).toBe(State.Present);
+    expect(created.ref).toEqual({
+      identity: "alice.jolt",
+      path: "/chirp/follows",
+    });
+
+    const read = await chirp.follows.get();
+    if (!read.isPresent()) throw new Error("expected a present follow list");
+    expect(read.value.identities).toEqual(["bob.jolt"]);
+  });
+
+  it("shares deterministic state across identities through read-only remote views", async () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    @Schema({ version: 1 })
+    class FollowList {
+      @Field.array(Field.identity)
+      identities!: string[];
+    }
+
+    const Posts = Collection.create(Post, {
+      access: {
+        read: Read.AnyIdentity,
+        create: true,
+      },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+    const Follows = Document.create(FollowList, {
+      access: {
+        read: Read.AnyIdentity,
+        create: true,
+      },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts, follows: Follows },
+    });
+
+    const world = Chirp.testWorld();
+    const alice = world.as("alice.jolt");
+    const bob = world.as("bob.jolt");
+    const created = await alice.posts.create({ text: "Hello Bob!" });
+    await alice.follows.getOrCreate({ identities: ["bob.jolt"] });
+
+    const alicePosts = bob.posts.for("alice.jolt");
+    expect("create" in alicePosts).toBe(false);
+    expectTypeOf(alicePosts).not.toHaveProperty("create");
+    const read = await alicePosts.get(created.ref);
+    if (!read.isPresent()) throw new Error("expected Alice's post");
+    expect(read.value.text).toBe("Hello Bob!");
+
+    const aliceFollows = bob.follows.for("alice.jolt");
+    expect("getOrCreate" in aliceFollows).toBe(false);
+    expectTypeOf(aliceFollows).not.toHaveProperty("getOrCreate");
+    const followList = await aliceFollows.get();
+    if (!followList.isPresent()) throw new Error("expected Alice's follow list");
+    expect(followList.value.identities).toEqual(["bob.jolt"]);
   });
 });

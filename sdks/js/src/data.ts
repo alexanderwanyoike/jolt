@@ -364,19 +364,60 @@ export type CollectionCreator<T extends object> = {
   create(value: T): Promise<PresentItem<T>>;
 };
 
+/** A read-only Collection view bound to another identity. */
+export type RemoteCollection<T extends object> = CollectionReader<T>;
+
+/** Remote Collection reads exposed only for AnyIdentity access. */
+export type CollectionRemoteReader<T extends object> = {
+  for(identity: Identity): RemoteCollection<T>;
+};
+
 /** A connected Collection surface derived from its access declaration. */
 export type CollectionResource<
   T extends object,
   TAccess extends ResourceAccess,
 > = CollectionReader<T> & (
   TAccess extends { readonly create: true } ? CollectionCreator<T> : object
+) & (
+  TAccess["read"] extends typeof Read.AnyIdentity ? CollectionRemoteReader<T> : object
+);
+
+/** Read operations shared by every connected Document surface. */
+export type DocumentReader<T extends object> = {
+  get(): Promise<Item<T>>;
+};
+
+/** Document creation exposed only when declared in Resource access. */
+export type DocumentCreator<T extends object> = {
+  getOrCreate(value: T): Promise<PresentItem<T>>;
+};
+
+/** A read-only Document view bound to another identity. */
+export type RemoteDocument<T extends object> = DocumentReader<T>;
+
+/** Remote Document reads exposed only for AnyIdentity access. */
+export type DocumentRemoteReader<T extends object> = {
+  for(identity: Identity): RemoteDocument<T>;
+};
+
+/** A connected Document surface derived from its access declaration. */
+export type DocumentResource<
+  T extends object,
+  TAccess extends ResourceAccess,
+> = DocumentReader<T> & (
+  TAccess extends { readonly create: true } ? DocumentCreator<T> : object
+) & (
+  TAccess["read"] extends typeof Read.AnyIdentity ? DocumentRemoteReader<T> : object
 );
 
 /** The connected Resource surface generated from one Resource definition. */
 export type AppResource<TDefinition> = TDefinition extends CollectionDefinition<
   infer TValue,
   infer TAccess
-> ? CollectionResource<TValue, TAccess> : object;
+> ? CollectionResource<TValue, TAccess>
+  : TDefinition extends DocumentDefinition<infer TValue, infer TAccess>
+    ? DocumentResource<TValue, TAccess>
+    : object;
 
 /** The direct named Resource surface returned by App.test or App.connect. */
 export type AppInstance<TData extends AppDataDefinitions> = {
@@ -388,6 +429,11 @@ export type AppTestOptions = {
   readonly identity?: Identity;
 };
 
+/** Shared deterministic state that can expose several identity-bound App views. */
+export type AppTestWorld<TData extends AppDataDefinitions> = {
+  as(identity: Identity): AppInstance<TData>;
+};
+
 /** A complete application definition with canonically bound Resources. */
 export type AppDefinition<TData extends AppDataDefinitions> = {
   readonly id: string;
@@ -395,6 +441,7 @@ export type AppDefinition<TData extends AppDataDefinitions> = {
   readonly namespace: string;
   readonly data: BoundAppData<TData>;
   test(options?: AppTestOptions): AppInstance<TData>;
+  testWorld(): AppTestWorld<TData>;
 };
 
 function requirePathSegment(value: string, label: string): void {
@@ -406,6 +453,15 @@ function requirePathSegment(value: string, label: string): void {
   ) {
     throw new TypeError(`${label} must be one valid path segment: ${value}`);
   }
+}
+
+type TestWorldState = {
+  readonly store: Map<string, object>;
+  nextId: number;
+};
+
+function createTestWorldState(): TestWorldState {
+  return { store: new Map(), nextId: 0 };
 }
 
 function testStoreKey(ref: Pick<Ref<object>, "identity" | "path">): string {
@@ -458,48 +514,100 @@ function missingItem<T extends object>(ref: Ref<T>): MissingItem<T> {
   });
 }
 
+function readTestItem<T extends object>(
+  schemaClass: SchemaClass<T>,
+  state: TestWorldState,
+  ref: Ref<T>,
+): Item<T> {
+  const value = state.store.get(testStoreKey(ref)) as T | undefined;
+  return value === undefined
+    ? missingItem(ref)
+    : presentItem(ref, parse(schemaClass, value));
+}
+
+type TestResourceViewOptions = {
+  readonly remote?: boolean;
+};
+
 function createTestCollection<T extends object, TAccess extends ResourceAccess>(
   resource: BoundCollectionDefinition<T, TAccess>,
   identity: Identity,
-  store: Map<string, object>,
+  state: TestWorldState,
   nextId: () => string,
+  options: TestResourceViewOptions = {},
 ): CollectionResource<T, TAccess> {
-  const collection: CollectionReader<T> & Partial<CollectionCreator<T>> = {
+  const remote = options.remote ?? false;
+  const collection: CollectionReader<T>
+    & Partial<CollectionCreator<T>>
+    & Partial<CollectionRemoteReader<T>> = {
     async get(ref) {
       if (ref.identity !== identity || !ref.path.startsWith(`${resource.path}/`)) {
         throw new TypeError("Collection reference does not belong to this Resource view");
       }
-      const value = store.get(testStoreKey(ref)) as T | undefined;
-      return value === undefined
-        ? missingItem(ref)
-        : presentItem(ref, parse(resource.schema, value));
+      return readTestItem(resource.schema, state, ref);
     },
   };
-  if (resource.access.create === true) {
+  if (!remote && resource.access.create === true) {
     collection.create = async (input) => {
       const value = parse(resource.schema, input);
       const ref = createRef<T>(identity, `${resource.path}/${nextId()}`);
-      store.set(testStoreKey(ref), value);
+      state.store.set(testStoreKey(ref), value);
       return presentItem(ref, parse(resource.schema, value));
     };
   }
+  if (!remote && resource.access.read === Read.AnyIdentity) {
+    collection.for = remoteIdentity => (
+      createTestCollection(resource, remoteIdentity, state, nextId, { remote: true })
+    );
+  }
   return Object.freeze(collection) as CollectionResource<T, TAccess>;
+}
+
+function createTestDocument<T extends object, TAccess extends ResourceAccess>(
+  resource: BoundDocumentDefinition<T, TAccess>,
+  identity: Identity,
+  state: TestWorldState,
+  options: TestResourceViewOptions = {},
+): DocumentResource<T, TAccess> {
+  const remote = options.remote ?? false;
+  const ref = createRef<T>(identity, resource.path);
+  const document: DocumentReader<T>
+    & Partial<DocumentCreator<T>>
+    & Partial<DocumentRemoteReader<T>> = {
+    async get() {
+      return readTestItem(resource.schema, state, ref);
+    },
+  };
+  if (!remote && resource.access.create === true) {
+    document.getOrCreate = async (input) => {
+      const existing = readTestItem(resource.schema, state, ref);
+      if (existing.isPresent()) return existing;
+      const value = parse(resource.schema, input);
+      state.store.set(testStoreKey(ref), value);
+      return presentItem(ref, parse(resource.schema, value));
+    };
+  }
+  if (!remote && resource.access.read === Read.AnyIdentity) {
+    document.for = remoteIdentity => (
+      createTestDocument(resource, remoteIdentity, state, { remote: true })
+    );
+  }
+  return Object.freeze(document) as DocumentResource<T, TAccess>;
 }
 
 function createTestApp<TData extends AppDataDefinitions>(
   data: BoundAppData<TData>,
   options: AppTestOptions = {},
+  state: TestWorldState = createTestWorldState(),
 ): AppInstance<TData> {
   const identity = options.identity ?? "test.jolt";
-  const store = new Map<string, object>();
-  let nextId = 0;
-  const opaqueId = () => `jlt_${(++nextId).toString(36).padStart(12, "0")}`;
+  const opaqueId = () => `jlt_${(++state.nextId).toString(36).padStart(12, "0")}`;
 
   return Object.fromEntries(Object.entries(data).map(([name, resource]) => [
     name,
     resource[resourceDefinition] === "collection"
-      ? createTestCollection(resource, identity, store, opaqueId)
-      : Object.freeze({}),
+      ? createTestCollection(resource, identity, state, opaqueId)
+      : createTestDocument(resource, identity, state),
   ])) as AppInstance<TData>;
 }
 
@@ -528,6 +636,12 @@ export const App = {
       namespace: options.namespace,
       data,
       test: testOptions => createTestApp(data, testOptions),
+      testWorld: () => {
+        const state = createTestWorldState();
+        return Object.freeze({
+          as: (identity: Identity) => createTestApp(data, { identity }, state),
+        });
+      },
     };
   },
 } as const;
