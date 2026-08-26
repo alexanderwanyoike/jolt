@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod commands;
@@ -31,7 +31,7 @@ use jolt_core::{
 #[cfg(test)]
 use jolt_core::{EncryptedObjectRecipient, IdentityHeadHint, RelayRecord, RelayRecordCapability};
 use jolt_identity::NodeIdentity;
-use jolt_store::ContentStore;
+use jolt_store::{ContentStore, PersistedRecordMutation};
 
 use crate::behaviour::{JoltBehaviour, JoltBehaviourEvent};
 use crate::command::{
@@ -191,6 +191,9 @@ pub struct NetworkNode {
     local_device_writer_logs: HashMap<IdentityId, Vec<DeviceWriterLogEntry>>,
     /// Local device authority records by owner identity.
     local_device_authority_records: HashMap<IdentityId, Vec<DeviceAuthorizationRecord>>,
+    /// Durable successful stable-record mutations, loaded once and carried
+    /// through the same atomic save as each local device-writer append.
+    local_record_mutations: HashMap<IdentityId, BTreeMap<String, PersistedRecordMutation>>,
     /// Signed, expiring identity-head hints learned through relay gossip.
     identity_head_hints: IdentityHeadHintBook,
     /// Connection quality tracking: peer -> connection info

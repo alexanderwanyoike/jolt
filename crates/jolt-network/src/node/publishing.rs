@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::Path;
 
 use libp2p::multiaddr::Protocol;
@@ -112,6 +112,7 @@ impl NetworkNode {
             address.path().to_string(),
             content_id.clone(),
             DeviceWriterPathMode::Singleton,
+            None,
         )?;
 
         Ok((content_id, address, latest_sequence, revision))
@@ -133,17 +134,11 @@ impl NetworkNode {
         let address = JoltAddress::new(identity.clone(), path)
             .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
         let proposed_content_id = ContentId::from_bytes(data).to_string();
-        let persisted = self.store.load_device_writer_log(&identity).map_err(|e| {
-            NetworkError::Protocol(format!(
-                "failed to load persisted device-writer log for {identity}: {e}"
-            ))
-        })?;
-        let mut record_mutations = persisted
-            .as_ref()
-            .map(|record| record.record_mutations.clone())
-            .unwrap_or_default();
-
-        if let Some(previous) = record_mutations.get(mutation_id) {
+        if let Some(previous) = self
+            .local_record_mutations
+            .get(&identity)
+            .and_then(|mutations| mutations.get(mutation_id))
+        {
             if previous.path != address.path()
                 || previous.observed_revision != observed_revision
                 || previous.content_id != proposed_content_id
@@ -174,90 +169,13 @@ impl NetworkNode {
         // Content is immutable and may safely remain unreferenced if the
         // subsequent durable log append fails.
         let content_id = self.publish_bytes(data)?;
-        let created_at = unix_now();
-        let operation = DeviceWriterOperation::set_path(
+        let (_, result_revision) = self.publish_local_device_writer_path(
+            identity,
             address.path().to_string(),
             content_id.clone(),
             DeviceWriterPathMode::Singleton,
-        );
-        let entry = match self
-            .local_device_writer_logs
-            .get(&identity)
-            .and_then(|entries| entries.last())
-        {
-            Some(previous) => previous
-                .append(operation, created_at, |bytes| self.identity.sign(bytes))
-                .map_err(|e| NetworkError::Protocol(e.to_string()))?,
-            None => DeviceWriterLogEntry::genesis(
-                identity.clone(),
-                LEGACY_ROOT_DEVICE_ID,
-                operation,
-                created_at,
-                |bytes| self.identity.sign(bytes),
-            )
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?,
-        };
-        let result_revision = entry.entry_hash().to_hex();
-        let mut device_log = self
-            .local_device_writer_logs
-            .get(&identity)
-            .cloned()
-            .unwrap_or_default();
-        device_log.push(entry);
-
-        let authority_records = match self.local_device_authority_records.get(&identity) {
-            Some(records) => records.clone(),
-            None => vec![DeviceAuthorizationRecord::genesis(
-                self.identity.public_key_bytes(),
-                identity.clone(),
-                DeviceAuthorizationOperation::authorize_device(
-                    LEGACY_ROOT_DEVICE_ID,
-                    self.identity.public_key_bytes(),
-                    vec!["identity:write".to_string()],
-                    Some("Legacy root device".to_string()),
-                    created_at,
-                ),
-                created_at,
-                |bytes| self.identity.sign(bytes),
-            )
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?],
-        };
-        record_mutations.insert(
-            mutation_id.to_string(),
-            PersistedRecordMutation {
-                path: address.path().to_string(),
-                observed_revision: observed_revision.to_string(),
-                content_id: content_id.to_string(),
-                result_revision: result_revision.clone(),
-            },
-        );
-
-        self.store
-            .save_device_writer_log(
-                &identity,
-                &PersistedDeviceWriterLog {
-                    authority_records: authority_records.clone(),
-                    device_log: device_log.clone(),
-                    record_mutations,
-                },
-            )
-            .map_err(|e| {
-                NetworkError::Protocol(format!(
-                    "failed to persist device-writer log for {identity}: {e}"
-                ))
-            })?;
-        self.store_verified_device_writer_logs(
-            identity.clone(),
-            authority_records.clone(),
-            vec![device_log.clone()],
+            Some((mutation_id, observed_revision)),
         )?;
-        self.local_device_authority_records
-            .insert(identity.clone(), authority_records);
-        self.local_device_writer_logs
-            .insert(identity.clone(), device_log);
-        if let Err(e) = self.announce_update_log_provider(&identity) {
-            debug!("Device-writer provider announcement skipped: {e}");
-        }
 
         Ok(LocalRecordUpdate {
             path: address.path().to_string(),
@@ -294,6 +212,7 @@ impl NetworkNode {
             address.path().to_string(),
             content_id.clone(),
             DeviceWriterPathMode::Append,
+            None,
         )?;
         Ok((content_id, address, device_sequence))
     }
@@ -304,9 +223,10 @@ impl NetworkNode {
         path: String,
         content_id: ContentId,
         mode: DeviceWriterPathMode,
+        record_mutation: Option<(&str, &str)>,
     ) -> Result<(u64, String), NetworkError> {
         let created_at = unix_now();
-        let operation = DeviceWriterOperation::set_path(path, content_id, mode);
+        let operation = DeviceWriterOperation::set_path(path.clone(), content_id.clone(), mode);
         let entry = match self
             .local_device_writer_logs
             .get(&identity)
@@ -325,8 +245,9 @@ impl NetworkNode {
             .map_err(|e| NetworkError::Protocol(e.to_string()))?,
         };
 
-        if !self.local_device_authority_records.contains_key(&identity) {
-            let record = DeviceAuthorizationRecord::genesis(
+        let authority_records = match self.local_device_authority_records.get(&identity) {
+            Some(records) => records.clone(),
+            None => vec![DeviceAuthorizationRecord::genesis(
                 self.identity.public_key_bytes(),
                 identity.clone(),
                 DeviceAuthorizationOperation::authorize_device(
@@ -339,51 +260,44 @@ impl NetworkNode {
                 created_at,
                 |bytes| self.identity.sign(bytes),
             )
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
-            self.local_device_authority_records
-                .insert(identity.clone(), vec![record]);
-        }
-        let authority_records = self
-            .local_device_authority_records
-            .get(&identity)
-            .cloned()
-            .ok_or_else(|| {
-                NetworkError::Protocol(format!(
-                    "No local device authority records cached for {identity}"
-                ))
-            })?;
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?],
+        };
         let device_sequence = entry.body.device_sequence;
         let revision = entry.entry_hash().to_hex();
-        let device_log = {
-            let entries = self
-                .local_device_writer_logs
-                .entry(identity.clone())
-                .or_default();
-            entries.push(entry);
-            entries.clone()
-        };
+        let mut device_log = self
+            .local_device_writer_logs
+            .get(&identity)
+            .cloned()
+            .unwrap_or_default();
+        device_log.push(entry);
+        let mut record_mutations = self
+            .local_record_mutations
+            .get(&identity)
+            .cloned()
+            .unwrap_or_default();
+        if let Some((mutation_id, observed_revision)) = record_mutation {
+            record_mutations.insert(
+                mutation_id.to_string(),
+                PersistedRecordMutation {
+                    path,
+                    observed_revision: observed_revision.to_string(),
+                    content_id: content_id.to_string(),
+                    result_revision: revision.clone(),
+                },
+            );
+        }
 
         // Persist the device-writer log before serving it. Append records live
         // only here (never the update log), so without this they would not
         // survive a daemon restart - the identity's own posts/accepted-reply
         // refs, and the records it serves to peers, would vanish.
-        let record_mutations = self
-            .store
-            .load_device_writer_log(&identity)
-            .map_err(|e| {
-                NetworkError::Protocol(format!(
-                    "failed to load persisted device-writer log for {identity}: {e}"
-                ))
-            })?
-            .map(|record| record.record_mutations)
-            .unwrap_or_else(BTreeMap::new);
         self.store
             .save_device_writer_log(
                 &identity,
                 &PersistedDeviceWriterLog {
                     authority_records: authority_records.clone(),
                     device_log: device_log.clone(),
-                    record_mutations,
+                    record_mutations: record_mutations.clone(),
                 },
             )
             .map_err(|e| {
@@ -394,9 +308,15 @@ impl NetworkNode {
 
         self.store_verified_device_writer_logs(
             identity.clone(),
-            authority_records,
-            vec![device_log],
+            authority_records.clone(),
+            vec![device_log.clone()],
         )?;
+        self.local_device_authority_records
+            .insert(identity.clone(), authority_records);
+        self.local_device_writer_logs
+            .insert(identity.clone(), device_log);
+        self.local_record_mutations
+            .insert(identity.clone(), record_mutations);
 
         // Announce this node as a provider for the identity so remote readers
         // can discover and sync the device-writer logs. Reuses the existing
@@ -597,7 +517,9 @@ impl NetworkNode {
         self.local_device_authority_records
             .insert(identity_id.clone(), record.authority_records);
         self.local_device_writer_logs
-            .insert(identity_id, record.device_log);
+            .insert(identity_id.clone(), record.device_log);
+        self.local_record_mutations
+            .insert(identity_id, record.record_mutations);
         Ok(())
     }
 
