@@ -2149,40 +2149,20 @@
 							"refersToTypeParameter": true
 						},
 						"extendsType": {
-							"type": "typeOperator",
-							"operator": "readonly",
+							"type": "reference",
 							"target": {
-								"type": "array",
-								"elementType": {
-									"type": "inferred",
-									"name": "TValue"
-								}
-							}
+								"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
+								"qualifiedName": "Date"
+							},
+							"name": "Date",
+							"package": "typescript"
 						},
 						"trueType": {
-							"type": "typeOperator",
-							"operator": "readonly",
-							"target": {
-								"type": "array",
-								"elementType": {
-									"type": "reference",
-									"target": 116,
-									"typeArguments": [
-										{
-											"type": "reference",
-											"target": {
-												"sourceFileName": "src/data.ts",
-												"qualifiedName": "TValue"
-											},
-											"name": "TValue",
-											"package": "jolt-sdk",
-											"refersToTypeParameter": true
-										}
-									],
-									"name": "ImmutableValue",
-									"package": "jolt-sdk"
-								}
-							}
+							"type": "reference",
+							"target": 117,
+							"name": "T",
+							"package": "jolt-sdk",
+							"refersToTypeParameter": true
 						},
 						"falseType": {
 							"type": "conditional",
@@ -2194,59 +2174,105 @@
 								"refersToTypeParameter": true
 							},
 							"extendsType": {
-								"type": "intrinsic",
-								"name": "object"
+								"type": "typeOperator",
+								"operator": "readonly",
+								"target": {
+									"type": "array",
+									"elementType": {
+										"type": "inferred",
+										"name": "TValue"
+									}
+								}
 							},
 							"trueType": {
-								"type": "mapped",
-								"parameter": "K",
-								"parameterType": {
-									"type": "typeOperator",
-									"operator": "keyof",
-									"target": {
+								"type": "typeOperator",
+								"operator": "readonly",
+								"target": {
+									"type": "array",
+									"elementType": {
 										"type": "reference",
-										"target": 117,
-										"name": "T",
-										"package": "jolt-sdk",
-										"refersToTypeParameter": true
-									}
-								},
-								"templateType": {
-									"type": "reference",
-									"target": 116,
-									"typeArguments": [
-										{
-											"type": "indexedAccess",
-											"indexType": {
+										"target": 116,
+										"typeArguments": [
+											{
 												"type": "reference",
 												"target": {
 													"sourceFileName": "src/data.ts",
-													"qualifiedName": "K"
+													"qualifiedName": "TValue"
 												},
-												"name": "K",
-												"package": "jolt-sdk",
-												"refersToTypeParameter": true
-											},
-											"objectType": {
-												"type": "reference",
-												"target": 117,
-												"name": "T",
+												"name": "TValue",
 												"package": "jolt-sdk",
 												"refersToTypeParameter": true
 											}
-										}
-									],
-									"name": "ImmutableValue",
-									"package": "jolt-sdk"
-								},
-								"readonlyModifier": "+"
+										],
+										"name": "ImmutableValue",
+										"package": "jolt-sdk"
+									}
+								}
 							},
 							"falseType": {
-								"type": "reference",
-								"target": 117,
-								"name": "T",
-								"package": "jolt-sdk",
-								"refersToTypeParameter": true
+								"type": "conditional",
+								"checkType": {
+									"type": "reference",
+									"target": 117,
+									"name": "T",
+									"package": "jolt-sdk",
+									"refersToTypeParameter": true
+								},
+								"extendsType": {
+									"type": "intrinsic",
+									"name": "object"
+								},
+								"trueType": {
+									"type": "mapped",
+									"parameter": "K",
+									"parameterType": {
+										"type": "typeOperator",
+										"operator": "keyof",
+										"target": {
+											"type": "reference",
+											"target": 117,
+											"name": "T",
+											"package": "jolt-sdk",
+											"refersToTypeParameter": true
+										}
+									},
+									"templateType": {
+										"type": "reference",
+										"target": 116,
+										"typeArguments": [
+											{
+												"type": "indexedAccess",
+												"indexType": {
+													"type": "reference",
+													"target": {
+														"sourceFileName": "src/data.ts",
+														"qualifiedName": "K"
+													},
+													"name": "K",
+													"package": "jolt-sdk",
+													"refersToTypeParameter": true
+												},
+												"objectType": {
+													"type": "reference",
+													"target": 117,
+													"name": "T",
+													"package": "jolt-sdk",
+													"refersToTypeParameter": true
+												}
+											}
+										],
+										"name": "ImmutableValue",
+										"package": "jolt-sdk"
+									},
+									"readonlyModifier": "+"
+								},
+								"falseType": {
+									"type": "reference",
+									"target": 117,
+									"name": "T",
+									"package": "jolt-sdk",
+									"refersToTypeParameter": true
+								}
 							}
 						}
 					}
