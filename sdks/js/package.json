@@ -27,6 +27,10 @@
     "./testing": {
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
+    },
+    "./data": {
+      "types": "./dist/data.d.ts",
+      "default": "./dist/data.js"
     }
   },
   "files": [
@@ -67,6 +71,9 @@
       ],
       "testing": [
         "./dist/testing.d.ts"
+      ],
+      "data": [
+        "./dist/data.d.ts"
       ]
     }
   }

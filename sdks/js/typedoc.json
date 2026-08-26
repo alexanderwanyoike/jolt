@@ -1,5 +1,5 @@
 {
-  "entryPoints": ["src/index.ts", "src/transport-http.ts", "src/transport-tauri.ts", "src/testing.ts"],
+  "entryPoints": ["src/index.ts", "src/data.ts", "src/transport-http.ts", "src/transport-tauri.ts", "src/testing.ts"],
   "out": "docs-html",
   "json": "docs/api.json",
   "excludeInternal": true,

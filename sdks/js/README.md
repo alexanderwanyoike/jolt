@@ -22,10 +22,15 @@ yarn add https://github.com/alexanderwanyoike/jolt/releases/latest/download/jolt
 
 | Import | What it is |
 |---|---|
+| `jolt-sdk/data` | High-level Schema Classes and typed application data APIs |
 | `jolt-sdk` | Types, typed errors, and `createJoltClient`: tolerant, domain-shaped operations |
 | `jolt-sdk/transport-http` | `fetch`-based transport for browsers and Node.js 18+ |
 | `jolt-sdk/transport-tauri` | Tauri `invoke`-based transport for desktop shells |
 | `jolt-sdk/testing` | `createFakeJolt`: a deterministic in-memory fake for tests |
+
+Schema Classes use NestJS-style TypeScript decorators. Enable
+`experimentalDecorators` in the application's `tsconfig.json` when using the
+`jolt-sdk/data` surface.
 
 ## Quick start
 

@@ -12,6 +12,7 @@ export default defineConfig({
       "jolt-sdk/transport-http": src("transport-http.ts"),
       "jolt-sdk/transport-tauri": src("transport-tauri.ts"),
       "jolt-sdk/testing": src("testing.ts"),
+      "jolt-sdk/data": src("data.ts"),
       "jolt-sdk": src("index.ts"),
     },
   },
