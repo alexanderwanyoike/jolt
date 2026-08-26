@@ -12,9 +12,9 @@ use jolt_core::{
     SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
-use jolt_store::{ContentStore, PersistedDeviceWriterLog};
+use jolt_store::{ContentStore, PersistedDeviceWriterLog, PersistedRecordMutation};
 
-use crate::command::PublishReachabilityResponse;
+use crate::command::{LocalRecordUpdate, PublishReachabilityResponse};
 use crate::error::NetworkError;
 
 use super::{unix_now, NetworkNode, RELAY_RECORD_TTL_SECS};
@@ -59,7 +59,7 @@ impl NetworkNode {
         &mut self,
         file_path: &Path,
         path: &str,
-    ) -> Result<(ContentId, JoltAddress, u64), NetworkError> {
+    ) -> Result<(ContentId, JoltAddress, u64, String), NetworkError> {
         let data = std::fs::read(file_path).map_err(NetworkError::Io)?;
         self.publish_bytes_at_path(&data, path)
     }
@@ -68,7 +68,7 @@ impl NetworkNode {
         &mut self,
         data: &[u8],
         path: &str,
-    ) -> Result<(ContentId, JoltAddress, u64), NetworkError> {
+    ) -> Result<(ContentId, JoltAddress, u64, String), NetworkError> {
         let identity = self.identity.identity_id();
         let address = JoltAddress::new(identity.clone(), path)
             .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
@@ -107,14 +107,82 @@ impl NetworkNode {
         if let Err(e) = self.refresh_local_identity_head_hint(&identity) {
             debug!("Identity-head hint refresh skipped: {e}");
         }
-        self.publish_local_device_writer_path(
+        let (_, revision) = self.publish_local_device_writer_path(
             identity.clone(),
             address.path().to_string(),
             content_id.clone(),
             DeviceWriterPathMode::Singleton,
+            None,
         )?;
 
-        Ok((content_id, address, latest_sequence))
+        Ok((content_id, address, latest_sequence, revision))
+    }
+
+    pub(super) fn update_local_record(
+        &mut self,
+        path: &str,
+        data: &[u8],
+        observed_revision: &str,
+        mutation_id: &str,
+    ) -> Result<LocalRecordUpdate, NetworkError> {
+        if mutation_id.is_empty() || mutation_id.len() > 256 {
+            return Err(NetworkError::InvalidInput(
+                "mutation_id must contain 1 to 256 bytes".to_string(),
+            ));
+        }
+        let identity = self.identity.identity_id();
+        let address = JoltAddress::new(identity.clone(), path)
+            .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        let proposed_content_id = ContentId::from_bytes(data).to_string();
+        if let Some(previous) = self
+            .local_record_mutations
+            .get(&identity)
+            .and_then(|mutations| mutations.get(mutation_id))
+        {
+            if previous.path != address.path()
+                || previous.observed_revision != observed_revision
+                || previous.content_id != proposed_content_id
+            {
+                return Err(NetworkError::InvalidInput(
+                    "mutation_id was already used for a different record mutation".to_string(),
+                ));
+            }
+            let stored = self
+                .store
+                .get_content(&previous.content_id)
+                .ok_or_else(|| NetworkError::ContentNotFound(previous.content_id.clone()))?;
+            return Ok(LocalRecordUpdate {
+                path: previous.path.clone(),
+                content_id: previous.content_id.clone(),
+                revision: previous.result_revision.clone(),
+                data: stored.data,
+            });
+        }
+
+        let current = self
+            .inspect_local_record(address.path())
+            .ok_or(NetworkError::RecordConflict)?;
+        if current.revision != observed_revision {
+            return Err(NetworkError::RecordConflict);
+        }
+
+        // Content is immutable and may safely remain unreferenced if the
+        // subsequent durable log append fails.
+        let content_id = self.publish_bytes(data)?;
+        let (_, result_revision) = self.publish_local_device_writer_path(
+            identity,
+            address.path().to_string(),
+            content_id.clone(),
+            DeviceWriterPathMode::Singleton,
+            Some((mutation_id, observed_revision)),
+        )?;
+
+        Ok(LocalRecordUpdate {
+            path: address.path().to_string(),
+            content_id: content_id.to_string(),
+            revision: result_revision,
+            data: data.to_vec(),
+        })
     }
 
     /// Publish a file as an append record bound to a path in this node's signed
@@ -139,11 +207,12 @@ impl NetworkNode {
         let address = JoltAddress::new(identity.clone(), path)
             .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
         let content_id = self.publish_bytes(data)?;
-        let device_sequence = self.publish_local_device_writer_path(
+        let (device_sequence, _) = self.publish_local_device_writer_path(
             identity,
             address.path().to_string(),
             content_id.clone(),
             DeviceWriterPathMode::Append,
+            None,
         )?;
         Ok((content_id, address, device_sequence))
     }
@@ -154,9 +223,10 @@ impl NetworkNode {
         path: String,
         content_id: ContentId,
         mode: DeviceWriterPathMode,
-    ) -> Result<u64, NetworkError> {
+        record_mutation: Option<(&str, &str)>,
+    ) -> Result<(u64, String), NetworkError> {
         let created_at = unix_now();
-        let operation = DeviceWriterOperation::set_path(path, content_id, mode);
+        let operation = DeviceWriterOperation::set_path(path.clone(), content_id.clone(), mode);
         let entry = match self
             .local_device_writer_logs
             .get(&identity)
@@ -175,8 +245,9 @@ impl NetworkNode {
             .map_err(|e| NetworkError::Protocol(e.to_string()))?,
         };
 
-        if !self.local_device_authority_records.contains_key(&identity) {
-            let record = DeviceAuthorizationRecord::genesis(
+        let authority_records = match self.local_device_authority_records.get(&identity) {
+            Some(records) => records.clone(),
+            None => vec![DeviceAuthorizationRecord::genesis(
                 self.identity.public_key_bytes(),
                 identity.clone(),
                 DeviceAuthorizationOperation::authorize_device(
@@ -189,28 +260,32 @@ impl NetworkNode {
                 created_at,
                 |bytes| self.identity.sign(bytes),
             )
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
-            self.local_device_authority_records
-                .insert(identity.clone(), vec![record]);
-        }
-        let authority_records = self
-            .local_device_authority_records
+            .map_err(|e| NetworkError::Protocol(e.to_string()))?],
+        };
+        let device_sequence = entry.body.device_sequence;
+        let revision = entry.entry_hash().to_hex();
+        let mut device_log = self
+            .local_device_writer_logs
             .get(&identity)
             .cloned()
-            .ok_or_else(|| {
-                NetworkError::Protocol(format!(
-                    "No local device authority records cached for {identity}"
-                ))
-            })?;
-        let device_sequence = entry.body.device_sequence;
-        let device_log = {
-            let entries = self
-                .local_device_writer_logs
-                .entry(identity.clone())
-                .or_default();
-            entries.push(entry);
-            entries.clone()
-        };
+            .unwrap_or_default();
+        device_log.push(entry);
+        let mut record_mutations = self
+            .local_record_mutations
+            .get(&identity)
+            .cloned()
+            .unwrap_or_default();
+        if let Some((mutation_id, observed_revision)) = record_mutation {
+            record_mutations.insert(
+                mutation_id.to_string(),
+                PersistedRecordMutation {
+                    path,
+                    observed_revision: observed_revision.to_string(),
+                    content_id: content_id.to_string(),
+                    result_revision: revision.clone(),
+                },
+            );
+        }
 
         // Persist the device-writer log before serving it. Append records live
         // only here (never the update log), so without this they would not
@@ -222,6 +297,7 @@ impl NetworkNode {
                 &PersistedDeviceWriterLog {
                     authority_records: authority_records.clone(),
                     device_log: device_log.clone(),
+                    record_mutations: record_mutations.clone(),
                 },
             )
             .map_err(|e| {
@@ -232,9 +308,15 @@ impl NetworkNode {
 
         self.store_verified_device_writer_logs(
             identity.clone(),
-            authority_records,
-            vec![device_log],
+            authority_records.clone(),
+            vec![device_log.clone()],
         )?;
+        self.local_device_authority_records
+            .insert(identity.clone(), authority_records);
+        self.local_device_writer_logs
+            .insert(identity.clone(), device_log);
+        self.local_record_mutations
+            .insert(identity.clone(), record_mutations);
 
         // Announce this node as a provider for the identity so remote readers
         // can discover and sync the device-writer logs. Reuses the existing
@@ -244,7 +326,7 @@ impl NetworkNode {
         if let Err(e) = self.announce_update_log_provider(&identity) {
             debug!("Device-writer provider announcement skipped: {e}");
         }
-        Ok(device_sequence)
+        Ok((device_sequence, revision))
     }
 
     pub(super) fn publish_reachability(
@@ -269,7 +351,7 @@ impl NetworkNode {
         .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
         let record_bytes =
             serde_json::to_vec(&record).map_err(|e| NetworkError::Protocol(e.to_string()))?;
-        let (content_id, address, latest_sequence) =
+        let (content_id, address, latest_sequence, _) =
             self.publish_bytes_at_path(&record_bytes, SIGNED_REACHABILITY_PATH)?;
         let record = VerifiedReachability {
             identity: identity.clone(),
@@ -435,7 +517,9 @@ impl NetworkNode {
         self.local_device_authority_records
             .insert(identity_id.clone(), record.authority_records);
         self.local_device_writer_logs
-            .insert(identity_id, record.device_log);
+            .insert(identity_id.clone(), record.device_log);
+        self.local_record_mutations
+            .insert(identity_id, record.record_mutations);
         Ok(())
     }
 

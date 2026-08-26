@@ -883,7 +883,10 @@ function createConnectedBackend(
       return backendRecord(record.bytes, record.revision);
     },
     async write(ref, stored) {
-      await options.client.publishJson(ref.path, stored);
+      const published = await options.client.publishJson(ref.path, stored);
+      if (published.revision !== undefined) {
+        return { stored, revision: published.revision };
+      }
       const record = await options.client.readRecord(ref);
       if (record.state === "missing") {
         throw new ItemUnavailableError(ref);

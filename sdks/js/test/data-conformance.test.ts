@@ -174,6 +174,64 @@ describe.each(implementations)("Data SDK $name conformance", ({ connect }) => {
 });
 
 describe("Data SDK client-backed content validation", () => {
+  it("creates from the publish revision without a follow-up record read", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    let recordReads = 0;
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        async publishJson(path, body) {
+          return {
+            ...await jolt.client.publishJson(path, body),
+            revision: "revision_0",
+          };
+        },
+        read: jolt.client.read,
+        updateRecord: jolt.client.updateRecord,
+        async readRecord() {
+          recordReads += 1;
+          throw new Error("create must not read back a successful publish");
+        },
+      },
+    });
+
+    const created = await chirp.posts.create({
+      text: "Hello!",
+      postedAt: new Date("2026-08-27T00:00:00.000Z"),
+    });
+
+    expect(created.state).toBe(State.Present);
+    expect(recordReads).toBe(0);
+  });
+
+  it("falls back to a strict record read when an older publish omits revision", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    let recordReads = 0;
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        async publishJson(path, body) {
+          const { revision: _, ...published } = await jolt.client.publishJson(path, body);
+          return published;
+        },
+        read: jolt.client.read,
+        updateRecord: jolt.client.updateRecord,
+        async readRecord(ref) {
+          recordReads += 1;
+          return jolt.client.readRecord(ref);
+        },
+      },
+    });
+
+    const created = await chirp.posts.create({
+      text: "Legacy host",
+      postedAt: new Date("2026-08-27T00:00:00.000Z"),
+    });
+
+    expect(created.state).toBe(State.Present);
+    expect(recordReads).toBe(1);
+  });
+
   it("updates migrated storage without retaining renamed legacy fields", async () => {
     const migrations = Migrations.create()
       .to(2, value => Migrations.rename(value, { message: "text" }));

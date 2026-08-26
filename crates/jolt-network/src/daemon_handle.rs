@@ -10,8 +10,8 @@ use jolt_core::{
 
 use crate::command::{
     AppendRecordInfo, CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
-    EncryptedObjectResponse, FetchResult, IngressRecord, LocalRecordInfo, NodeStatus,
-    PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
+    EncryptedObjectResponse, FetchResult, IngressRecord, LocalRecordInfo, LocalRecordUpdate,
+    NodeStatus, PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
     PublishedContentInfo, RelayDiagnoseIdentityResponse, ResolveResponse,
 };
 use crate::config::HomeRelayConfig;
@@ -473,6 +473,28 @@ impl DaemonHandle {
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
         receive_plain(rx).await
+    }
+
+    /// Compare-and-set one local stable record in the serialized daemon loop.
+    pub async fn update_local_record(
+        &self,
+        path: String,
+        data: Vec<u8>,
+        revision: String,
+        mutation_id: String,
+    ) -> Result<LocalRecordUpdate, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::UpdateLocalRecord {
+                path,
+                data,
+                revision,
+                mutation_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
     }
 
     /// Pin content to prevent cache eviction.

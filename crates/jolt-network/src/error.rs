@@ -38,6 +38,9 @@ pub enum NetworkError {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    #[error("Record changed since the observed revision")]
+    RecordConflict,
+
     #[error("Content not found: {0}")]
     ContentNotFound(String),
 

@@ -11,8 +11,9 @@ pub mod protocol;
 pub use command::{
     AppendRecordInfo, CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
     EncryptedObjectResponse, FetchResult, IngressRecord, IngressStatus, LocalRecordInfo,
-    NodeStatus, PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
-    PublishedContentInfo, PublishedRelayInfo, RelayDiagnoseIdentityResponse, ResolveResponse,
+    LocalRecordUpdate, NodeStatus, PeerConnectResponse, PeerInfo, PublishReachabilityResponse,
+    PublishResponse, PublishedContentInfo, PublishedRelayInfo, RelayDiagnoseIdentityResponse,
+    ResolveResponse,
 };
 pub use config::{HomeRelayCapability, HomeRelayConfig, NetworkConfig, RelayPinPolicy};
 pub use daemon_handle::DaemonHandle;

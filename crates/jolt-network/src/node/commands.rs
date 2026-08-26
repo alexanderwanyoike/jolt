@@ -27,12 +27,13 @@ impl NetworkNode {
                 let size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
                 let result = match path {
                     Some(path) => self.publish_file_at_path(&file_path, &path).map(
-                        |(content_id, address, latest_sequence)| PublishResponse {
+                        |(content_id, address, latest_sequence, revision)| PublishResponse {
                             content_id: content_id.to_string(),
                             size,
                             path: Some(address.path().to_string()),
                             address: Some(address.to_string()),
                             latest_sequence: Some(latest_sequence),
+                            revision: Some(revision),
                         },
                     ),
                     None => self
@@ -43,6 +44,7 @@ impl NetworkNode {
                             path: None,
                             address: None,
                             latest_sequence: None,
+                            revision: None,
                         }),
                 };
                 let _ = response_tx.send(result);
@@ -60,6 +62,7 @@ impl NetworkNode {
                         path: Some(address.path().to_string()),
                         address: Some(address.to_string()),
                         latest_sequence: Some(device_sequence),
+                        revision: None,
                     },
                 );
                 let _ = response_tx.send(result);
@@ -368,6 +371,16 @@ impl NetworkNode {
             }
             DaemonCommand::InspectLocalRecord { path, response_tx } => {
                 let _ = response_tx.send(self.inspect_local_record(&path));
+            }
+            DaemonCommand::UpdateLocalRecord {
+                path,
+                data,
+                revision,
+                mutation_id,
+                response_tx,
+            } => {
+                let result = self.update_local_record(&path, &data, &revision, &mutation_id);
+                let _ = response_tx.send(result);
             }
             DaemonCommand::Pin {
                 content_id,
