@@ -1,7 +1,12 @@
 /** A decorated application value class used as both runtime schema and TypeScript type. */
 export type SchemaClass<T extends object> = new () => T;
 
+/** A Jolt identity address such as `alice.jolt`. */
+export type Identity = string;
+
 type ScalarFieldKind = "string" | "number" | "boolean" | "identity" | "dateTime";
+
+const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 type ValueDefinition =
   | {
@@ -77,6 +82,12 @@ export interface MigrationPlan {
 
 const migrationSteps = new WeakMap<MigrationPlan, Map<number, MigrationTransform>>();
 
+function requirePositiveVersion(version: number, label: string): void {
+  if (!Number.isSafeInteger(version) || version < 1) {
+    throw new RangeError(`${label} must be a positive integer`);
+  }
+}
+
 function migrationValue(value: unknown): MigrationValue {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError("Migration value must be an object");
@@ -100,7 +111,12 @@ class DefinedMigrationPlan implements MigrationPlan {
   }
 
   to(version: number, define: MigrationDefinition): this {
-    migrationSteps.get(this)!.set(version, value => define(migrationValue(value)));
+    requirePositiveVersion(version, "Migration target version");
+    const steps = migrationSteps.get(this)!;
+    if (steps.has(version)) {
+      throw new RangeError(`Migration to version ${version} is already defined`);
+    }
+    steps.set(version, value => define(migrationValue(value)));
     return this;
   }
 }
@@ -113,6 +129,7 @@ export const Migrations = {
 const fieldsBySchema = new WeakMap<Function, Map<string | symbol, FieldDefinition>>();
 const optionsBySchema = new WeakMap<Function, SchemaOptions>();
 const valueDefinition = Symbol("JoltDataFieldDefinition");
+const optionalField = Symbol("JoltDataOptionalField");
 
 /** A property decorator produced by one of the typed {@link Field} helpers. */
 export type SchemaFieldDecorator = PropertyDecorator;
@@ -125,10 +142,16 @@ export type ArrayFieldItem = SchemaFieldFactory | SchemaFieldDecorator;
 
 type DefinedFieldDecorator = SchemaFieldDecorator & {
   readonly [valueDefinition]: ValueDefinition;
+  readonly [optionalField]: boolean;
 };
 
 function field(definition: ValueDefinition, options: FieldOptions = {}): DefinedFieldDecorator {
   const decorator: PropertyDecorator = (target, propertyKey) => {
+    if (target === undefined) {
+      throw new TypeError(
+        "Jolt Schema Classes require TypeScript experimentalDecorators; enable it in tsconfig.json",
+      );
+    }
     const schema = target.constructor;
     let fields = fieldsBySchema.get(schema);
     if (fields === undefined) {
@@ -140,10 +163,14 @@ function field(definition: ValueDefinition, options: FieldOptions = {}): Defined
       optional: options.optional ?? false,
     });
   };
-  return Object.assign(decorator, { [valueDefinition]: definition });
+  return Object.assign(decorator, {
+    [valueDefinition]: definition,
+    [optionalField]: options.optional ?? false,
+  });
 }
 
 function schema(options: SchemaOptions): ClassDecorator {
+  requirePositiveVersion(options.version, "Schema version");
   return (target) => {
     optionsBySchema.set(target, options);
   };
@@ -180,12 +207,16 @@ function migrate<T extends object>(
   if (options === undefined) {
     throw new TypeError("Class is not decorated with @Schema");
   }
+  requirePositiveVersion(stored.version, "Stored schema version");
   if (stored.version > options.version) {
     throw new SchemaMigrationError(
       stored.version,
       options.version,
       `Cannot migrate schema version ${stored.version} to older version ${options.version}`,
     );
+  }
+  if (stored.version === options.version) {
+    return parse(schemaClass, stored.value);
   }
 
   let value = stored.value;
@@ -264,7 +295,7 @@ function parseValue(definition: ValueDefinition, input: unknown, path: string): 
 
   const parsed = input instanceof Date
     ? new Date(input.getTime())
-    : typeof input === "string"
+    : typeof input === "string" && ISO_DATE_TIME.test(input)
       ? new Date(input)
       : null;
   if (parsed === null || Number.isNaN(parsed.getTime())) {
@@ -278,6 +309,9 @@ function arrayItemDefinition(item: ArrayFieldItem): ValueDefinition {
   const decorator = valueDefinition in candidate
     ? candidate
     : (item as SchemaFieldFactory)() as DefinedFieldDecorator;
+  if (decorator[optionalField]) {
+    throw new TypeError("Set optional on the array field instead of its items");
+  }
   return decorator[valueDefinition];
 }
 

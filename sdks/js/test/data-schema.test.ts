@@ -7,6 +7,7 @@ import {
   SchemaMigrationError,
   SchemaValidationError,
 } from "jolt-sdk/data";
+import type { Identity } from "jolt-sdk/data";
 
 describe("Schema classes", () => {
   it("validates a typed value and converts date-time fields", () => {
@@ -28,6 +29,17 @@ describe("Schema classes", () => {
     expect(post.postedAt).toEqual(new Date("2026-08-26T10:00:00.000Z"));
   });
 
+  it("rejects implementation-defined non-ISO date-time strings", () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.dateTime()
+      postedAt!: Date;
+    }
+
+    expect(() => Schema.parse(Post, { postedAt: "1" })).toThrow(SchemaValidationError);
+    expect(() => Schema.parse(Post, { postedAt: "2026/08/26" })).toThrow(SchemaValidationError);
+  });
+
   it("throws a typed validation error for an invalid field", () => {
     @Schema({ version: 1 })
     class Post {
@@ -35,14 +47,7 @@ describe("Schema classes", () => {
       text!: string;
     }
 
-    expect(typeof SchemaValidationError).toBe("function");
-
-    try {
-      Schema.parse(Post, { text: 42 });
-      throw new Error("expected schema validation to fail");
-    } catch (error) {
-      expect(error).toBeInstanceOf(SchemaValidationError);
-    }
+    expect(() => Schema.parse(Post, { text: 42 })).toThrow(SchemaValidationError);
   });
 
   it("throws a typed validation error for a non-object schema value", () => {
@@ -55,6 +60,50 @@ describe("Schema classes", () => {
     expect(() => Schema.parse(Post, null)).toThrow(SchemaValidationError);
   });
 
+  it("explains that Schema Classes require legacy TypeScript decorators", () => {
+    const standardDecoratorCall = Field.string() as unknown as (
+      value: undefined,
+      context: { readonly kind: "field"; readonly name: string },
+    ) => void;
+
+    expect(() => standardDecoratorCall(undefined, {
+      kind: "field",
+      name: "text",
+    })).toThrow(/experimentalDecorators/);
+  });
+
+  it("rejects invalid Schema Class versions at definition time", () => {
+    expect(() => Schema({ version: 0 })).toThrow(/positive integer/);
+    expect(() => Schema({ version: 1.5 })).toThrow(/positive integer/);
+  });
+
+  it("rejects invalid migration target versions at definition time", () => {
+    const migrations = Migrations.create();
+
+    expect(() => migrations.to(0, value => value)).toThrow(/positive integer/);
+    expect(() => migrations.to(1.5, value => value)).toThrow(/positive integer/);
+  });
+
+  it("rejects duplicate migration target versions", () => {
+    const migrations = Migrations.create()
+      .to(2, value => value);
+
+    expect(() => migrations.to(2, value => value)).toThrow(/already defined/);
+  });
+
+  it("rejects invalid stored schema versions before migration", () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    expect(() => Schema.migrate(Post, {
+      version: 0,
+      value: { text: "Hello!" },
+    })).toThrow(/positive integer/);
+  });
+
   it("validates number, boolean, and identity fields", () => {
     @Schema({ version: 1 })
     class Settings {
@@ -65,7 +114,7 @@ describe("Schema classes", () => {
       notifications!: boolean;
 
       @Field.identity()
-      owner!: string;
+      owner!: Identity;
     }
 
     expect(Schema.parse(Settings, {
@@ -140,6 +189,12 @@ describe("Schema classes", () => {
     expect(post.tags).toEqual(["jolt", "hello"]);
     expect(post.attachments[0]).toBeInstanceOf(Attachment);
     expect(post.attachments[0]?.url).toBe("https://example.test/photo.jpg");
+  });
+
+  it("rejects optional array item descriptors", () => {
+    expect(() => Field.array(Field.string({ optional: true }))).toThrow(
+      /array field instead of its items/,
+    );
   });
 
   it("migrates an older value into the current schema without an old model class", () => {
@@ -222,5 +277,18 @@ describe("Schema classes", () => {
       version: 1,
       value: { text: "Hello!" },
     })).toThrow(SchemaMigrationError);
+  });
+
+  it("keeps current-version validation failures distinct from migration failures", () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    expect(() => Schema.migrate(Post, {
+      version: 1,
+      value: { text: 42 },
+    })).toThrow(SchemaValidationError);
   });
 });
