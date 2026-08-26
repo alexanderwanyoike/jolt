@@ -1,3 +1,6 @@
+import { makeId } from "./client.js";
+import type { JoltSdk } from "./client.js";
+
 /** A decorated application value class used as both runtime schema and TypeScript type. */
 export type SchemaClass<T extends object> = new () => T;
 
@@ -487,6 +490,15 @@ export type AppTestOptions = {
   readonly identity?: Identity;
 };
 
+/**
+ * Advanced connection seam for an already-authorized Jolt client. It keeps
+ * host bootstrap separate from typed Resource behavior.
+ */
+export type AppConnectOptions = {
+  readonly identity: Identity;
+  readonly client: Pick<JoltSdk, "publishJson" | "read">;
+};
+
 /** Shared deterministic state that can expose several identity-bound App views. */
 export type AppTestWorld<TData extends AppDataDefinitions> = {
   as(identity: Identity): AppInstance<TData>;
@@ -522,6 +534,7 @@ export type AppDefinition<TData extends AppDataDefinitions> = {
   readonly namespace: string;
   readonly data: BoundAppData<TData>;
   readonly accessPlan: AppAccessPlan;
+  connect(options: AppConnectOptions): Promise<AppInstance<TData>>;
   test(options?: AppTestOptions): AppInstance<TData>;
   testWorld(): AppTestWorld<TData>;
 };
@@ -693,6 +706,131 @@ function createTestApp<TData extends AppDataDefinitions>(
   ])) as AppInstance<TData>;
 }
 
+function decodeStoredSchemaValue(input: unknown): StoredSchemaValue | null {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return null;
+  const candidate = input as Record<string, unknown>;
+  if (
+    !Number.isSafeInteger(candidate.version)
+    || (candidate.version as number) < 1
+    || !Object.prototype.hasOwnProperty.call(candidate, "value")
+  ) {
+    return null;
+  }
+  return { version: candidate.version as number, value: candidate.value };
+}
+
+function currentStoredValue<T extends object>(
+  schemaClass: SchemaClass<T>,
+  input: T,
+): { readonly stored: StoredSchemaValue; readonly value: T } {
+  const options = optionsBySchema.get(schemaClass);
+  if (options === undefined) {
+    throw new TypeError("Class is not decorated with @Schema");
+  }
+  const value = parse(schemaClass, input);
+  return {
+    stored: { version: options.version, value },
+    value,
+  };
+}
+
+async function readConnectedItem<T extends object>(
+  resource: ResourceDefinition<T, ResourceAccess, ResourceKindValue>,
+  options: AppConnectOptions,
+  ref: Ref<T>,
+): Promise<Item<T>> {
+  const versioned = await options.client.read(ref, decodeStoredSchemaValue);
+  return versioned === null
+    ? missingItem(ref)
+    : presentItem(ref, resource.migrate(versioned.value));
+}
+
+type ConnectedResourceViewOptions = {
+  readonly remote?: boolean;
+};
+
+function createConnectedCollection<T extends object, TAccess extends ResourceAccess>(
+  resource: BoundCollectionDefinition<T, TAccess>,
+  connection: AppConnectOptions,
+  options: ConnectedResourceViewOptions = {},
+): CollectionResource<T, TAccess> {
+  const remote = options.remote ?? false;
+  const collection: CollectionReader<T>
+    & Partial<CollectionCreator<T>>
+    & Partial<CollectionRemoteReader<T>> = {
+    async get(ref) {
+      if (
+        ref.identity !== connection.identity
+        || !ref.path.startsWith(`${resource.path}/`)
+      ) {
+        throw new TypeError("Collection reference does not belong to this Resource view");
+      }
+      return readConnectedItem(resource, connection, ref);
+    },
+  };
+  if (!remote && resource.access.create === true) {
+    collection.create = async (input) => {
+      const { stored, value } = currentStoredValue(resource.schema, input);
+      const ref = createRef<T>(connection.identity, `${resource.path}/${makeId("jlt")}`);
+      await connection.client.publishJson(ref.path, stored);
+      return presentItem(ref, parse(resource.schema, value));
+    };
+  }
+  if (!remote && resource.access.read === Read.AnyIdentity) {
+    collection.for = identity => createConnectedCollection(
+      resource,
+      { ...connection, identity },
+      { remote: true },
+    );
+  }
+  return Object.freeze(collection) as CollectionResource<T, TAccess>;
+}
+
+function createConnectedDocument<T extends object, TAccess extends ResourceAccess>(
+  resource: BoundDocumentDefinition<T, TAccess>,
+  connection: AppConnectOptions,
+  options: ConnectedResourceViewOptions = {},
+): DocumentResource<T, TAccess> {
+  const remote = options.remote ?? false;
+  const ref = createRef<T>(connection.identity, resource.path);
+  const document: DocumentReader<T>
+    & Partial<DocumentCreator<T>>
+    & Partial<DocumentRemoteReader<T>> = {
+    async get() {
+      return readConnectedItem(resource, connection, ref);
+    },
+  };
+  if (!remote && resource.access.create === true) {
+    document.getOrCreate = async (input) => {
+      const existing = await readConnectedItem(resource, connection, ref);
+      if (existing.isPresent()) return existing;
+      const { stored, value } = currentStoredValue(resource.schema, input);
+      await connection.client.publishJson(ref.path, stored);
+      return presentItem(ref, parse(resource.schema, value));
+    };
+  }
+  if (!remote && resource.access.read === Read.AnyIdentity) {
+    document.for = identity => createConnectedDocument(
+      resource,
+      { ...connection, identity },
+      { remote: true },
+    );
+  }
+  return Object.freeze(document) as DocumentResource<T, TAccess>;
+}
+
+function createConnectedApp<TData extends AppDataDefinitions>(
+  data: BoundAppData<TData>,
+  connection: AppConnectOptions,
+): AppInstance<TData> {
+  return Object.fromEntries(Object.entries(data).map(([name, resource]) => [
+    name,
+    resource[resourceDefinition] === ResourceKind.Collection
+      ? createConnectedCollection(resource, connection)
+      : createConnectedDocument(resource, connection),
+  ])) as AppInstance<TData>;
+}
+
 /** Composes Resource definitions into one application definition. */
 export const App = {
   create: <const TData extends AppDataDefinitions>(options: {
@@ -735,6 +873,7 @@ export const App = {
       namespace: options.namespace,
       data,
       accessPlan,
+      connect: async connectOptions => createConnectedApp(data, connectOptions),
       test: testOptions => createTestApp(data, testOptions),
       testWorld: () => {
         const state = createTestWorldState();
