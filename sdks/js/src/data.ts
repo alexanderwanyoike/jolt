@@ -100,20 +100,25 @@ function renameMigrationFields(
   renames: MigrationRenames,
 ): Record<string, unknown> {
   const renamed = { ...value };
-  for (const [from, to] of Object.entries(renames)) {
-    if (!Object.prototype.hasOwnProperty.call(value, from) || from === to) {
-      continue;
-    }
+  const moves = Object.entries(renames).filter(([from, to]) => (
+    Object.prototype.hasOwnProperty.call(value, from) && from !== to
+  ));
+
+  for (const [from] of moves) {
+    delete renamed[from];
+  }
+  for (const [from, to] of moves) {
     if (Object.prototype.hasOwnProperty.call(renamed, to)) {
       throw new TypeError(`Cannot rename ${from} to existing field ${to}`);
     }
+    // A data property keeps a destination named `__proto__` from changing
+    // the result's prototype.
     Object.defineProperty(renamed, to, {
       configurable: true,
       enumerable: true,
       value: value[from],
       writable: true,
     });
-    delete renamed[from];
   }
   return renamed;
 }
@@ -125,6 +130,9 @@ class DefinedMigrationPlan implements MigrationPlan {
 
   to(version: number, define: MigrationDefinition): this {
     requirePositiveVersion(version, "Migration target version");
+    if (version < 2) {
+      throw new RangeError("Migration target version must be at least 2");
+    }
     const steps = migrationSteps.get(this)!;
     if (steps.has(version)) {
       throw new RangeError(`Migration to version ${version} is already defined`);

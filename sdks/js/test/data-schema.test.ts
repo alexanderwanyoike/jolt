@@ -81,6 +81,7 @@ describe("Schema classes", () => {
     const migrations = Migrations.create();
 
     expect(() => migrations.to(0, value => value)).toThrow(/positive integer/);
+    expect(() => migrations.to(1, value => value)).toThrow(/at least 2/);
     expect(() => migrations.to(1.5, value => value)).toThrow(/positive integer/);
   });
 
@@ -296,6 +297,32 @@ describe("Schema classes", () => {
         title: "second value",
       },
     })).toThrow(SchemaMigrationError);
+  });
+
+  it("renames several fields independently of mapping order", () => {
+    expect(Migrations.rename({
+      title: "Hello!",
+      text: "A short introduction",
+    }, {
+      title: "text",
+      text: "body",
+    })).toEqual({
+      text: "Hello!",
+      body: "A short introduction",
+    });
+  });
+
+  it("swaps two fields in one rename operation", () => {
+    expect(Migrations.rename({
+      title: "Visible title",
+      text: "Internal text",
+    }, {
+      title: "text",
+      text: "title",
+    })).toEqual({
+      title: "Internal text",
+      text: "Visible title",
+    });
   });
 
   it("supports optional arrays and optional nested schemas without treating null as absent", () => {
