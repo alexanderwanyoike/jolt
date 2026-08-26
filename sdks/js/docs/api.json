@@ -22,7 +22,7 @@
 						"summary": [
 							{
 								"kind": "text",
-								"text": "Symbol-backed kinds used when inspecting a derived App access plan."
+								"text": "Symbol-backed kinds used when inspecting a derived App access plan. The\nclass preserves unique-symbol types for direct equality narrowing."
 							}
 						]
 					},
@@ -702,7 +702,7 @@
 						"summary": [
 							{
 								"kind": "text",
-								"text": "Inspectable connection input derived from an App's Resource declarations."
+								"text": "Inspectable connection input derived from an App's Resource declarations.\nRequirements and Grants are index-aligned in declared Resource order."
 							}
 						]
 					},

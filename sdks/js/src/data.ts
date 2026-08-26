@@ -180,7 +180,10 @@ export const DeleteConflict = {
   Manual: policy("delete-conflict:manual"),
 } as const;
 
-/** Symbol-backed kinds used when inspecting a derived App access plan. */
+/**
+ * Symbol-backed kinds used when inspecting a derived App access plan. The
+ * class preserves unique-symbol types for direct equality narrowing.
+ */
 export class ResourceKind {
   static readonly Collection = Symbol("JoltDataResourceCollection");
   static readonly Document = Symbol("JoltDataResourceDocument");
@@ -494,7 +497,10 @@ export type ResourceGrantPlan = {
   readonly access: Readonly<ResourceAccess>;
 };
 
-/** Inspectable connection input derived from an App's Resource declarations. */
+/**
+ * Inspectable connection input derived from an App's Resource declarations.
+ * Requirements and Grants are index-aligned in declared Resource order.
+ */
 export type AppAccessPlan = {
   readonly requirements: readonly ResourceRequirement[];
   readonly grants: readonly ResourceGrantPlan[];
