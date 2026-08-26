@@ -180,7 +180,10 @@ export const DeleteConflict = {
   Manual: policy("delete-conflict:manual"),
 } as const;
 
-/** Symbol-backed states for immutable Item snapshots. */
+/**
+ * Symbol-backed states for immutable Item snapshots. The class keeps every
+ * static Symbol's unique-symbol type so direct equality checks narrow Items.
+ */
 export class State {
   static readonly Present = Symbol("JoltDataStatePresent");
   static readonly Deleted = Symbol("JoltDataStateDeleted");
@@ -207,9 +210,16 @@ export type ItemSnapshot<T extends object, TState extends symbol> = {
   isDeleted(): this is DeletedItem<T>;
 };
 
+/** A schema value whose nested object properties and arrays cannot be mutated. */
+export type ImmutableValue<T> = T extends readonly (infer TValue)[]
+  ? readonly ImmutableValue<TValue>[]
+  : T extends object
+    ? { readonly [K in keyof T]: ImmutableValue<T[K]> }
+    : T;
+
 /** An immutable Item snapshot containing a current schema-valid value. */
 export type PresentItem<T extends object> = ItemSnapshot<T, typeof State.Present> & {
-  readonly value: Readonly<T>;
+  readonly value: ImmutableValue<T>;
 };
 
 /** An immutable Item snapshot whose current state is a Tombstone. */
@@ -404,21 +414,36 @@ function createRef<T extends object>(identity: Identity, path: string): Ref<T> {
   return Object.freeze({ identity, path }) as Ref<T>;
 }
 
-function isPresent<T extends object>(this: Item<T>): this is PresentItem<T> {
-  return this.state === State.Present;
+function trueIsPresent<T extends object>(this: Item<T>): this is PresentItem<T> {
+  return true;
 }
 
-function isDeleted<T extends object>(this: Item<T>): this is DeletedItem<T> {
-  return this.state === State.Deleted;
+function falseIsPresent<T extends object>(this: Item<T>): this is PresentItem<T> {
+  return false;
+}
+
+function falseIsDeleted<T extends object>(this: Item<T>): this is DeletedItem<T> {
+  return false;
+}
+
+function freezeValue<T>(value: T, seen = new WeakSet<object>()): ImmutableValue<T> {
+  if (value === null || typeof value !== "object" || seen.has(value)) {
+    return value as ImmutableValue<T>;
+  }
+  seen.add(value);
+  for (const nested of Object.values(value)) {
+    freezeValue(nested, seen);
+  }
+  return Object.freeze(value) as ImmutableValue<T>;
 }
 
 function presentItem<T extends object>(ref: Ref<T>, value: T): PresentItem<T> {
   return Object.freeze({
     state: State.Present,
     ref,
-    value: Object.freeze(value),
-    isPresent,
-    isDeleted,
+    value: freezeValue(value),
+    isPresent: trueIsPresent,
+    isDeleted: falseIsDeleted,
   });
 }
 
@@ -426,8 +451,8 @@ function missingItem<T extends object>(ref: Ref<T>): MissingItem<T> {
   return Object.freeze({
     state: State.Missing,
     ref,
-    isPresent,
-    isDeleted,
+    isPresent: falseIsPresent,
+    isDeleted: falseIsDeleted,
   });
 }
 
@@ -443,7 +468,9 @@ function createTestCollection<T extends object, TAccess extends ResourceAccess>(
         throw new TypeError("Collection reference does not belong to this Resource view");
       }
       const value = store.get(testStoreKey(ref)) as T | undefined;
-      return value === undefined ? missingItem(ref) : presentItem(ref, value);
+      return value === undefined
+        ? missingItem(ref)
+        : presentItem(ref, parse(resource.schema, value));
     },
   };
   if (resource.access.create === true) {
@@ -451,7 +478,7 @@ function createTestCollection<T extends object, TAccess extends ResourceAccess>(
       const value = parse(resource.schema, input);
       const ref = createRef<T>(identity, `${resource.path}/${nextId()}`);
       store.set(testStoreKey(ref), value);
-      return presentItem(ref, value);
+      return presentItem(ref, parse(resource.schema, value));
     };
   }
   return Object.freeze(collection) as CollectionResource<T, TAccess>;

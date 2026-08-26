@@ -188,6 +188,64 @@ describe("Data SDK applications", () => {
     expect(readByState.value.text).toBe("Hello!");
   });
 
+  it("keeps nested Item values immutable and separate from deterministic state", async () => {
+    @Schema({ version: 1 })
+    class Author {
+      @Field.string()
+      displayName!: string;
+    }
+
+    @Schema({ version: 1 })
+    class Post {
+      @Field.array(Field.string)
+      tags!: string[];
+
+      @Field.schema(Author)
+      author!: Author;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: { read: Read.OwnIdentity, create: true },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts },
+    });
+    const chirp = Chirp.test();
+    const created = await chirp.posts.create({
+      tags: ["hello"],
+      author: { displayName: "Alice" },
+    });
+
+    expect(Object.isFrozen(created.value.tags)).toBe(true);
+    expect(Object.isFrozen(created.value.author)).toBe(true);
+    expect(() => (created.value.tags as string[]).push("mutated")).toThrow(TypeError);
+    expect(() => {
+      (created.value.author as Author).displayName = "Mallory";
+    }).toThrow(TypeError);
+    if (false) {
+      // @ts-expect-error Nested snapshot arrays are readonly.
+      created.value.tags.push("mutated");
+      // @ts-expect-error Nested snapshot objects are readonly.
+      created.value.author.displayName = "Mallory";
+    }
+
+    const { isPresent } = created;
+    expect(isPresent()).toBe(true);
+
+    const read = await chirp.posts.get(created.ref);
+    if (!read.isPresent()) throw new Error("expected an unchanged post");
+    expect(read.value.tags).toEqual(["hello"]);
+    expect(read.value.author.displayName).toBe("Alice");
+    expect(read.value).not.toBe(created.value);
+  });
+
   it("gives every App.test call fresh state", async () => {
     @Schema({ version: 1 })
     class Post {
