@@ -219,11 +219,13 @@ export type ItemSnapshot<T extends object, TState extends symbol> = {
 };
 
 /** A schema value whose nested object properties and arrays cannot be mutated. */
-export type ImmutableValue<T> = T extends readonly (infer TValue)[]
-  ? readonly ImmutableValue<TValue>[]
-  : T extends object
-    ? { readonly [K in keyof T]: ImmutableValue<T[K]> }
-    : T;
+export type ImmutableValue<T> = T extends Date
+  ? T
+  : T extends readonly (infer TValue)[]
+    ? readonly ImmutableValue<TValue>[]
+    : T extends object
+      ? { readonly [K in keyof T]: ImmutableValue<T[K]> }
+      : T;
 
 /** An immutable Item snapshot containing a current schema-valid value. */
 export type PresentItem<T extends object> = ItemSnapshot<T, typeof State.Present> & {
@@ -579,13 +581,29 @@ function missingItem<T extends object>(ref: Ref<T>): MissingItem<T> {
   });
 }
 
+function readTestItem<T extends object>(
+  schemaClass: SchemaClass<T>,
+  state: TestWorldState,
+  ref: Ref<T>,
+): Item<T> {
+  const value = state.store.get(testStoreKey(ref)) as T | undefined;
+  return value === undefined
+    ? missingItem(ref)
+    : presentItem(ref, parse(schemaClass, value));
+}
+
+type TestResourceViewOptions = {
+  readonly remote?: boolean;
+};
+
 function createTestCollection<T extends object, TAccess extends ResourceAccess>(
   resource: BoundCollectionDefinition<T, TAccess>,
   identity: Identity,
   state: TestWorldState,
   nextId: () => string,
-  remote = false,
+  options: TestResourceViewOptions = {},
 ): CollectionResource<T, TAccess> {
+  const remote = options.remote ?? false;
   const collection: CollectionReader<T>
     & Partial<CollectionCreator<T>>
     & Partial<CollectionRemoteReader<T>> = {
@@ -593,10 +611,7 @@ function createTestCollection<T extends object, TAccess extends ResourceAccess>(
       if (ref.identity !== identity || !ref.path.startsWith(`${resource.path}/`)) {
         throw new TypeError("Collection reference does not belong to this Resource view");
       }
-      const value = state.store.get(testStoreKey(ref)) as T | undefined;
-      return value === undefined
-        ? missingItem(ref)
-        : presentItem(ref, parse(resource.schema, value));
+      return readTestItem(resource.schema, state, ref);
     },
   };
   if (!remote && resource.access.create === true) {
@@ -609,7 +624,7 @@ function createTestCollection<T extends object, TAccess extends ResourceAccess>(
   }
   if (!remote && resource.access.read === Read.AnyIdentity) {
     collection.for = remoteIdentity => (
-      createTestCollection(resource, remoteIdentity, state, nextId, true)
+      createTestCollection(resource, remoteIdentity, state, nextId, { remote: true })
     );
   }
   return Object.freeze(collection) as CollectionResource<T, TAccess>;
@@ -619,32 +634,30 @@ function createTestDocument<T extends object, TAccess extends ResourceAccess>(
   resource: BoundDocumentDefinition<T, TAccess>,
   identity: Identity,
   state: TestWorldState,
-  remote = false,
+  options: TestResourceViewOptions = {},
 ): DocumentResource<T, TAccess> {
+  const remote = options.remote ?? false;
   const ref = createRef<T>(identity, resource.path);
   const document: DocumentReader<T>
     & Partial<DocumentCreator<T>>
     & Partial<DocumentRemoteReader<T>> = {
     async get() {
-      const value = state.store.get(testStoreKey(ref)) as T | undefined;
-      return value === undefined
-        ? missingItem(ref)
-        : presentItem(ref, parse(resource.schema, value));
+      return readTestItem(resource.schema, state, ref);
     },
   };
   if (!remote && resource.access.create === true) {
     document.getOrCreate = async (input) => {
-      const existing = state.store.get(testStoreKey(ref)) as T | undefined;
-      if (existing !== undefined) {
-        return presentItem(ref, parse(resource.schema, existing));
-      }
+      const existing = readTestItem(resource.schema, state, ref);
+      if (existing.isPresent()) return existing;
       const value = parse(resource.schema, input);
       state.store.set(testStoreKey(ref), value);
       return presentItem(ref, parse(resource.schema, value));
     };
   }
   if (!remote && resource.access.read === Read.AnyIdentity) {
-    document.for = remoteIdentity => createTestDocument(resource, remoteIdentity, state, true);
+    document.for = remoteIdentity => (
+      createTestDocument(resource, remoteIdentity, state, { remote: true })
+    );
   }
   return Object.freeze(document) as DocumentResource<T, TAccess>;
 }
