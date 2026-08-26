@@ -199,26 +199,41 @@ describe("Schema classes", () => {
 
   it("migrates an older value into the current schema without an old model class", () => {
     const migrations = Migrations.create()
-      .to(2, migration => migration.rename("message", "text"));
+      .to(2, value => Migrations.rename(value, {
+        message: "text",
+        author: "owner",
+      }));
 
     @Schema({ version: 2, migrations })
     class Post {
       @Field.string()
       text!: string;
+
+      @Field.string()
+      owner!: string;
+
+      @Field.string()
+      rename!: string;
     }
 
     const post = Schema.migrate(Post, {
       version: 1,
-      value: { message: "Hello!" },
+      value: {
+        message: "Hello!",
+        author: "alice.jolt",
+        rename: "historical application data",
+      },
     });
 
     expect(post).toBeInstanceOf(Post);
     expect(post.text).toBe("Hello!");
+    expect(post.owner).toBe("alice.jolt");
+    expect(post.rename).toBe("historical application data");
   });
 
   it("supports pure migration transforms", () => {
     const migrations = Migrations.create()
-      .to(2, migration => migration.rename("message", "text"))
+      .to(2, value => Migrations.rename(value, { message: "text" }))
       .to(3, value => ({
         ...value,
         tags: ["migrated"],
@@ -240,6 +255,47 @@ describe("Schema classes", () => {
 
     expect(post.text).toBe("Hello!");
     expect(post.tags).toEqual(["migrated"]);
+  });
+
+  it("fails a rename migration rather than overwriting an existing destination", () => {
+    const migrations = Migrations.create()
+      .to(2, value => Migrations.rename(value, { message: "text" }));
+
+    @Schema({ version: 2, migrations })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    expect(() => Schema.migrate(Post, {
+      version: 1,
+      value: {
+        message: "old text",
+        text: "existing text",
+      },
+    })).toThrow(SchemaMigrationError);
+  });
+
+  it("fails a rename migration when two fields target the same destination", () => {
+    const migrations = Migrations.create()
+      .to(2, value => Migrations.rename(value, {
+        message: "text",
+        title: "text",
+      }));
+
+    @Schema({ version: 2, migrations })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    expect(() => Schema.migrate(Post, {
+      version: 1,
+      value: {
+        message: "first value",
+        title: "second value",
+      },
+    })).toThrow(SchemaMigrationError);
   });
 
   it("supports optional arrays and optional nested schemas without treating null as absent", () => {

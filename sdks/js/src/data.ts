@@ -62,15 +62,11 @@ export class SchemaMigrationError extends Error {
 
 type MigrationTransform = (value: unknown) => unknown;
 
-/**
- * The immutable object supplied to a migration step.
- *
- * Spread it for a pure transform, or use {@link MigrationValue.rename} for a
- * simple field rename.
- */
-export type MigrationValue = Readonly<Record<string, unknown>> & {
-  rename(from: string, to: string): Record<string, unknown>;
-};
+/** The immutable object supplied to a migration step. */
+export type MigrationValue = Readonly<Record<string, unknown>>;
+
+/** Source fields mapped to their new field names for a migration. */
+export type MigrationRenames = Readonly<Record<string, string>>;
 
 /** One deterministic, side-effect-free migration into its declared version. */
 export type MigrationDefinition = (value: MigrationValue) => unknown;
@@ -92,17 +88,34 @@ function migrationValue(value: unknown): MigrationValue {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError("Migration value must be an object");
   }
-  const source = { ...(value as Record<string, unknown>) };
-  Object.defineProperty(source, "rename", {
-    enumerable: false,
-    value: (from: string, to: string) => {
-      const renamed = { ...source };
-      renamed[to] = renamed[from];
-      delete renamed[from];
-      return renamed;
-    },
-  });
-  return source as MigrationValue;
+  return { ...(value as Record<string, unknown>) };
+}
+
+/**
+ * Returns a migrated copy with every present source field moved to its new
+ * name. Missing source fields are ignored; occupied destinations are rejected.
+ */
+function renameMigrationFields(
+  value: MigrationValue,
+  renames: MigrationRenames,
+): Record<string, unknown> {
+  const renamed = { ...value };
+  for (const [from, to] of Object.entries(renames)) {
+    if (!Object.prototype.hasOwnProperty.call(value, from) || from === to) {
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(renamed, to)) {
+      throw new TypeError(`Cannot rename ${from} to existing field ${to}`);
+    }
+    Object.defineProperty(renamed, to, {
+      configurable: true,
+      enumerable: true,
+      value: value[from],
+      writable: true,
+    });
+    delete renamed[from];
+  }
+  return renamed;
 }
 
 class DefinedMigrationPlan implements MigrationPlan {
@@ -121,9 +134,10 @@ class DefinedMigrationPlan implements MigrationPlan {
   }
 }
 
-/** Builds a separate migration history for a current Schema Class. */
+/** Builds migrations and provides pure helpers for a current Schema Class. */
 export const Migrations = {
   create: (): MigrationPlan => new DefinedMigrationPlan(),
+  rename: renameMigrationFields,
 } as const;
 
 const fieldsBySchema = new WeakMap<Function, Map<string | symbol, FieldDefinition>>();
