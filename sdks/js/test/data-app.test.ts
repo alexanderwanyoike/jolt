@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   App,
@@ -202,6 +202,9 @@ describe("Data SDK applications", () => {
 
       @Field.schema(Author)
       author!: Author;
+
+      @Field.dateTime()
+      postedAt!: Date;
     }
 
     const Posts = Collection.create(Post, {
@@ -221,10 +224,12 @@ describe("Data SDK applications", () => {
     const created = await chirp.posts.create({
       tags: ["hello"],
       author: { displayName: "Alice" },
+      postedAt: new Date("2026-08-26T20:00:00.000Z"),
     });
 
     expect(Object.isFrozen(created.value.tags)).toBe(true);
     expect(Object.isFrozen(created.value.author)).toBe(true);
+    expectTypeOf(created.value.postedAt).toEqualTypeOf<Date>();
     expect(() => (created.value.tags as string[]).push("mutated")).toThrow(TypeError);
     expect(() => {
       (created.value.author as Author).displayName = "Mallory";
