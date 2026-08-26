@@ -311,12 +311,8 @@ describe("Data SDK applications", () => {
 
     expect("create" in chirp.posts).toBe(false);
     expect("for" in chirp.posts).toBe(false);
-    if (false) {
-      // @ts-expect-error Read-only Resources do not expose create.
-      void chirp.posts.create;
-      // @ts-expect-error OwnIdentity Resources do not expose remote views.
-      void chirp.posts.for;
-    }
+    expectTypeOf(chirp.posts).not.toHaveProperty("create");
+    expectTypeOf(chirp.posts).not.toHaveProperty("for");
   });
 
   it("reads or creates one stable Document Item", async () => {
@@ -409,20 +405,14 @@ describe("Data SDK applications", () => {
 
     const alicePosts = bob.posts.for("alice.jolt");
     expect("create" in alicePosts).toBe(false);
-    if (false) {
-      // @ts-expect-error Remote views are always read-only.
-      void alicePosts.create;
-    }
+    expectTypeOf(alicePosts).not.toHaveProperty("create");
     const read = await alicePosts.get(created.ref);
     if (!read.isPresent()) throw new Error("expected Alice's post");
     expect(read.value.text).toBe("Hello Bob!");
 
     const aliceFollows = bob.follows.for("alice.jolt");
     expect("getOrCreate" in aliceFollows).toBe(false);
-    if (false) {
-      // @ts-expect-error Remote Document views are always read-only.
-      void aliceFollows.getOrCreate;
-    }
+    expectTypeOf(aliceFollows).not.toHaveProperty("getOrCreate");
     const followList = await aliceFollows.get();
     if (!followList.isPresent()) throw new Error("expected Alice's follow list");
     expect(followList.value.identities).toEqual(["bob.jolt"]);
