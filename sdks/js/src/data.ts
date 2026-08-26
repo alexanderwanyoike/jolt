@@ -148,6 +148,125 @@ export const Migrations = {
   rename: renameMigrationFields,
 } as const;
 
+const ownIdentityRead = Symbol("JoltDataReadOwnIdentity");
+const anyIdentityRead = Symbol("JoltDataReadAnyIdentity");
+const lastWriteWins = Symbol("JoltDataUpdateConflictLastWriteWins");
+const manualUpdateConflict = Symbol("JoltDataUpdateConflictManual");
+const deleteWins = Symbol("JoltDataDeleteConflictDeleteWins");
+const updateWins = Symbol("JoltDataDeleteConflictUpdateWins");
+const manualDeleteConflict = Symbol("JoltDataDeleteConflictManual");
+const resourceDefinition = Symbol("JoltDataResourceDefinition");
+
+/** Read scopes available to a Resource access declaration. */
+export const Read = {
+  OwnIdentity: ownIdentityRead,
+  AnyIdentity: anyIdentityRead,
+} as const;
+
+/** Conflict policies for concurrent updates to the same field. */
+export const UpdateConflict = {
+  LastWriteWins: lastWriteWins,
+  Manual: manualUpdateConflict,
+} as const;
+
+/** Conflict policies for a concurrent deletion and update. */
+export const DeleteConflict = {
+  DeleteWins: deleteWins,
+  UpdateWins: updateWins,
+  Manual: manualDeleteConflict,
+} as const;
+
+/** Operations an application requests for one Resource. */
+export type ResourceAccess = {
+  readonly read: typeof Read[keyof typeof Read];
+  readonly create?: true;
+  readonly update?: true;
+  readonly delete?: true;
+  readonly restore?: true;
+};
+
+/** Conflict behavior required for one Resource definition. */
+export type ResourceConflicts = {
+  readonly update: typeof UpdateConflict[keyof typeof UpdateConflict];
+  readonly delete: typeof DeleteConflict[keyof typeof DeleteConflict];
+};
+
+/** An unbound Collection definition created before it belongs to an App. */
+export type CollectionDefinition<
+  T extends object,
+  TAccess extends ResourceAccess,
+> = {
+  readonly schema: SchemaClass<T>;
+  readonly access: TAccess;
+  readonly conflicts: ResourceConflicts;
+  readonly [resourceDefinition]: "collection";
+};
+
+/** A Collection definition bound to its canonical App path prefix. */
+export type BoundCollectionDefinition<
+  T extends object,
+  TAccess extends ResourceAccess,
+> = CollectionDefinition<T, TAccess> & {
+  readonly path: string;
+};
+
+/** Defines an unbound typed Collection. App.create derives its path. */
+export const Collection = {
+  create: <T extends object, const TAccess extends ResourceAccess>(
+    schemaClass: SchemaClass<T>,
+    options: {
+      readonly access: TAccess;
+      readonly conflicts: ResourceConflicts;
+    },
+  ): CollectionDefinition<T, TAccess> => ({
+    schema: schemaClass,
+    access: options.access,
+    conflicts: options.conflicts,
+    [resourceDefinition]: "collection",
+  }),
+} as const;
+
+type AppDataDefinitions = Readonly<Record<
+  string,
+  CollectionDefinition<object, ResourceAccess>
+>>;
+
+type BoundAppData<TData extends AppDataDefinitions> = {
+  readonly [K in keyof TData]: TData[K] extends CollectionDefinition<
+    infer TValue,
+    infer TAccess
+  > ? BoundCollectionDefinition<TValue, TAccess> : never;
+};
+
+/** A complete application definition with canonically bound Resources. */
+export type AppDefinition<TData extends AppDataDefinitions> = {
+  readonly id: string;
+  readonly name: string;
+  readonly namespace: string;
+  readonly data: BoundAppData<TData>;
+};
+
+/** Composes Resource definitions into one application definition. */
+export const App = {
+  create: <const TData extends AppDataDefinitions>(options: {
+    readonly id: string;
+    readonly name: string;
+    readonly namespace: string;
+    readonly data: TData;
+  }): AppDefinition<TData> => ({
+    id: options.id,
+    name: options.name,
+    namespace: options.namespace,
+    data: Object.fromEntries(Object.entries(options.data).map(([name, resource]) => [
+      name,
+      {
+        ...resource,
+        path: `/${options.namespace}/${name}`,
+      },
+    ])) as BoundAppData<TData>,
+  }),
+} as const;
+
 const fieldsBySchema = new WeakMap<Function, Map<string | symbol, FieldDefinition>>();
 const optionsBySchema = new WeakMap<Function, SchemaOptions>();
 const valueDefinition = Symbol("JoltDataFieldDefinition");
