@@ -70,6 +70,47 @@ pub async fn fetch_content(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct LocalRecordReadRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum LocalRecordReadResponse {
+    Missing {
+        path: String,
+    },
+    Present {
+        path: String,
+        content_id: String,
+        revision: String,
+        data: Vec<u8>,
+    },
+}
+
+pub async fn read_local_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<LocalRecordReadRequest>,
+) -> Result<Json<LocalRecordReadResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+    require_capability(&session, "resolve:public")?;
+    require_capability(&session, "fetch:public")?;
+    let path = normalize_path(&req.path)?;
+    let Some(record) = state.daemon.inspect_local_record(path.clone()).await? else {
+        return Ok(Json(LocalRecordReadResponse::Missing { path }));
+    };
+    let fetched = state.daemon.fetch(record.content_id.clone()).await?;
+    Ok(Json(LocalRecordReadResponse::Present {
+        path: record.path,
+        content_id: record.content_id,
+        revision: record.revision,
+        data: fetched.data,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
 pub struct EncryptedPublishRequest {
     pub path: String,
     pub plaintext: Vec<u8>,

@@ -3,13 +3,28 @@ use std::collections::HashMap;
 use jolt_core::{ContentId, JoltAddress, UpdateAction};
 use jolt_store::HomeRelayPinRecord;
 
-use crate::command::{PublishedContentInfo, PublishedRelayInfo};
+use crate::command::{LocalRecordInfo, PublishedContentInfo, PublishedRelayInfo};
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
 
 use super::{unix_now, NetworkNode};
 
 impl NetworkNode {
+    pub(super) fn inspect_local_record(&self, path: &str) -> Option<LocalRecordInfo> {
+        let identity = self.identity.identity_id();
+        let entry = self
+            .device_writer_states
+            .get(&identity)?
+            .merged
+            .singleton_paths
+            .get(path)?;
+        Some(LocalRecordInfo {
+            path: path.to_string(),
+            content_id: entry.content_id.to_string(),
+            revision: entry.entry_hash.to_hex(),
+        })
+    }
+
     pub(super) fn published_content_inventory(&self) -> Vec<PublishedContentInfo> {
         let identity = self.identity.identity_id();
         let current_paths = self.current_local_paths();

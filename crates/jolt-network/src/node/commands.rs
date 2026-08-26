@@ -366,6 +366,9 @@ impl NetworkNode {
             DaemonCommand::ListPublishedContent { response_tx } => {
                 let _ = response_tx.send(self.published_content_inventory());
             }
+            DaemonCommand::InspectLocalRecord { path, response_tx } => {
+                let _ = response_tx.send(self.inspect_local_record(&path));
+            }
             DaemonCommand::Pin {
                 content_id,
                 response_tx,

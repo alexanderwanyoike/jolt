@@ -72,6 +72,10 @@ pub fn build_router_with_stores(
         )
         .route("/app/v1/resolve", post(routes::app_api::resolve_address))
         .route("/app/v1/fetch", post(routes::app_api::fetch_content))
+        .route(
+            "/app/v1/records/read",
+            post(routes::app_api::read_local_record),
+        )
         .route("/app/v1/publish", post(routes::app_api::publish_file))
         .route("/app/v1/append", post(routes::app_api::append_record))
         .route(
