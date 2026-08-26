@@ -211,11 +211,13 @@ export type ItemSnapshot<T extends object, TState extends symbol> = {
 };
 
 /** A schema value whose nested object properties and arrays cannot be mutated. */
-export type ImmutableValue<T> = T extends readonly (infer TValue)[]
-  ? readonly ImmutableValue<TValue>[]
-  : T extends object
-    ? { readonly [K in keyof T]: ImmutableValue<T[K]> }
-    : T;
+export type ImmutableValue<T> = T extends Date
+  ? T
+  : T extends readonly (infer TValue)[]
+    ? readonly ImmutableValue<TValue>[]
+    : T extends object
+      ? { readonly [K in keyof T]: ImmutableValue<T[K]> }
+      : T;
 
 /** An immutable Item snapshot containing a current schema-valid value. */
 export type PresentItem<T extends object> = ItemSnapshot<T, typeof State.Present> & {
