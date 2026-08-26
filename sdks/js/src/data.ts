@@ -643,6 +643,14 @@ function decodeStoredSchemaValue(input: unknown): StoredSchemaValue | null {
   return { version: candidate.version as number, value: candidate.value };
 }
 
+function requireStoredSchemaValue(input: unknown): StoredSchemaValue {
+  const stored = decodeStoredSchemaValue(input);
+  if (stored === null) {
+    throw new SchemaValidationError("$", "must be a versioned schema value");
+  }
+  return stored;
+}
+
 function currentStoredValue<T extends object>(
   schemaClass: SchemaClass<T>,
   input: T,
@@ -696,11 +704,7 @@ function createConnectedBackend(
       if (ref.identity !== localIdentity) {
         const versioned = await options.client.read(ref, value => ({ value }));
         if (versioned === null) return State.Unavailable;
-        const stored = decodeStoredSchemaValue(versioned.value.value);
-        if (stored === null) {
-          throw new SchemaValidationError("$", "must be a versioned schema value");
-        }
-        return stored;
+        return requireStoredSchemaValue(versioned.value.value);
       }
       let record;
       try {
@@ -716,11 +720,7 @@ function createConnectedBackend(
       } catch {
         throw new SchemaValidationError("$", "must be valid JSON");
       }
-      const stored = decodeStoredSchemaValue(parsed);
-      if (stored === null) {
-        throw new SchemaValidationError("$", "must be a versioned schema value");
-      }
-      return stored;
+      return requireStoredSchemaValue(parsed);
     },
     async write(ref, stored) {
       await options.client.publishJson(ref.path, stored);

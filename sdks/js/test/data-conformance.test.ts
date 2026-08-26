@@ -13,7 +13,7 @@ import {
   State,
   UpdateConflict,
 } from "jolt-sdk/data";
-import { JoltTransportError } from "jolt-sdk";
+import { JoltApiError, JoltTransportError } from "jolt-sdk";
 import { createFakeJolt } from "jolt-sdk/testing";
 
 @Schema({ version: 1 })
@@ -175,6 +175,27 @@ describe("Data SDK client-backed content validation", () => {
       chirp.follows.getOrCreate({ identities: ["bob.jolt"] }),
     ).rejects.toBeInstanceOf(ItemUnavailableError);
     expect(publishes).toBe(0);
+  });
+
+  it("maps a daemon-classified content fetch failure to Unavailable", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        publishJson: jolt.client.publishJson,
+        read: jolt.client.read,
+        async readRecord() {
+          throw new JoltApiError("No content provider", {
+            status: 404,
+            code: "content_provider_not_found",
+          });
+        },
+      },
+    });
+
+    await expect(chirp.follows.get()).resolves.toMatchObject({
+      state: State.Unavailable,
+    });
   });
 
   it("does not mistake a remote identity for the daemon's authoritative local state", async () => {

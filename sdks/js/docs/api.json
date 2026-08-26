@@ -17705,7 +17705,7 @@
 								"summary": [
 									{
 										"kind": "text",
-										"text": "Whether a failed Jolt operation should be presented as unavailable.\n\nTyped transport failures mean the daemon could not be reached. HTTP 500 and\n502 also cover browser development proxies that could not complete the\nrequest. This classifies the attempt, not whether a daemon process exists."
+										"text": "Whether a failed Jolt operation should be presented as unavailable.\n\nTyped transport failures mean the daemon could not be reached. HTTP 500 and\nunstructured 502 responses also cover browser development proxies that could\nnot complete the request. Structured content discovery/fetch failures are\nunavailable, while a content-hash mismatch remains a corruption error."
 									}
 								]
 							},
