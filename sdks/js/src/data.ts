@@ -191,6 +191,11 @@ export class ResourceKind {
   private constructor() {}
 }
 
+/** One Collection or Document discriminant used throughout Resource definitions. */
+export type ResourceKindValue =
+  | typeof ResourceKind.Collection
+  | typeof ResourceKind.Document;
+
 /**
  * Symbol-backed states for immutable Item snapshots. The class keeps every
  * static Symbol's unique-symbol type so direct equality checks narrow Items.
@@ -276,7 +281,7 @@ export type ResourceOptions<TAccess extends ResourceAccess> = {
 export type ResourceDefinition<
   T extends object,
   TAccess extends ResourceAccess,
-  TKind extends "collection" | "document",
+  TKind extends ResourceKindValue,
 > = {
   readonly schema: SchemaClass<T>;
   readonly access: TAccess;
@@ -289,13 +294,13 @@ export type ResourceDefinition<
 export type CollectionDefinition<
   T extends object,
   TAccess extends ResourceAccess,
-> = ResourceDefinition<T, TAccess, "collection">;
+> = ResourceDefinition<T, TAccess, typeof ResourceKind.Collection>;
 
 /** An unbound Document definition created before it belongs to an App. */
 export type DocumentDefinition<
   T extends object,
   TAccess extends ResourceAccess,
-> = ResourceDefinition<T, TAccess, "document">;
+> = ResourceDefinition<T, TAccess, typeof ResourceKind.Document>;
 
 /** A Collection definition bound to its canonical App path prefix. */
 export type BoundCollectionDefinition<
@@ -352,7 +357,7 @@ function validatedResourceConflicts(conflicts: ResourceConflicts): ResourceConfl
 function defineResource<
   T extends object,
   const TAccess extends ResourceAccess,
-  const TKind extends "collection" | "document",
+  const TKind extends ResourceKindValue,
 >(
   kind: TKind,
   schemaClass: SchemaClass<T>,
@@ -374,7 +379,9 @@ export const Collection = {
   create: <T extends object, const TAccess extends ResourceAccess>(
     schemaClass: SchemaClass<T>,
     options: ResourceOptions<TAccess>,
-  ): CollectionDefinition<T, TAccess> => defineResource("collection", schemaClass, options),
+  ): CollectionDefinition<T, TAccess> => (
+    defineResource(ResourceKind.Collection, schemaClass, options)
+  ),
 } as const;
 
 /** Defines an unbound typed Document. App.create derives its path. */
@@ -382,7 +389,9 @@ export const Document = {
   create: <T extends object, const TAccess extends ResourceAccess>(
     schemaClass: SchemaClass<T>,
     options: ResourceOptions<TAccess>,
-  ): DocumentDefinition<T, TAccess> => defineResource("document", schemaClass, options),
+  ): DocumentDefinition<T, TAccess> => (
+    defineResource(ResourceKind.Document, schemaClass, options)
+  ),
 } as const;
 
 /** Named unbound Resources accepted by App.create. */
@@ -486,7 +495,7 @@ export type AppTestWorld<TData extends AppDataDefinitions> = {
 /** High-level node behavior required by one declared Resource. */
 export type ResourceRequirement = {
   readonly resource: string;
-  readonly kind: typeof ResourceKind.Collection | typeof ResourceKind.Document;
+  readonly kind: ResourceKindValue;
   readonly access: Readonly<ResourceAccess>;
 };
 
@@ -678,7 +687,7 @@ function createTestApp<TData extends AppDataDefinitions>(
 
   return Object.fromEntries(Object.entries(data).map(([name, resource]) => [
     name,
-    resource[resourceDefinition] === "collection"
+    resource[resourceDefinition] === ResourceKind.Collection
       ? createTestCollection(resource, identity, state, opaqueId)
       : createTestDocument(resource, identity, state),
   ])) as AppInstance<TData>;
@@ -706,16 +715,14 @@ export const App = {
     const requirements = Object.freeze(Object.entries(data).map(([resourceName, resource]) => (
       Object.freeze({
         resource: resourceName,
-        kind: resource[resourceDefinition] === "collection"
-          ? ResourceKind.Collection
-          : ResourceKind.Document,
+        kind: resource[resourceDefinition],
         access: resource.access,
       })
     )));
     const grants = Object.freeze(Object.entries(data).map(([resourceName, resource]) => (
       Object.freeze({
         resource: resourceName,
-        path: resource[resourceDefinition] === "collection"
+        path: resource[resourceDefinition] === ResourceKind.Collection
           ? `${resource.path}/*`
           : resource.path,
         access: resource.access,
