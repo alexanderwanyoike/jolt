@@ -77,6 +77,7 @@ export { decodeAppCompatibilityDeclaration } from "./compatibility.js";
 
 export {
   apiErrorMessage,
+  isContentUnavailableError,
   isJoltUnavailableError,
   JoltApiError,
   JoltTransportError,

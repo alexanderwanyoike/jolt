@@ -7375,15 +7375,15 @@
 			},
 			"children": [
 				{
-					"id": 898,
+					"id": 901,
 					"name": "SessionRequest",
 					"variant": "reference",
 					"kind": 4194304,
 					"flags": {},
-					"target": 891
+					"target": 894
 				},
 				{
-					"id": 740,
+					"id": 743,
 					"name": "operations",
 					"variant": "declaration",
 					"kind": 4,
@@ -7398,7 +7398,7 @@
 								"kind": "inline-tag",
 								"tag": "@link",
 								"text": "JoltTransport",
-								"target": 715
+								"target": 718
 							},
 							{
 								"kind": "text",
@@ -7418,7 +7418,7 @@
 					},
 					"children": [
 						{
-							"id": 891,
+							"id": 894,
 							"name": "SessionRequest",
 							"variant": "declaration",
 							"kind": 2097152,
@@ -7434,14 +7434,14 @@
 							"type": {
 								"type": "reflection",
 								"declaration": {
-									"id": 892,
+									"id": 895,
 									"name": "__type",
 									"variant": "declaration",
 									"kind": 65536,
 									"flags": {},
 									"children": [
 										{
-											"id": 893,
+											"id": 896,
 											"name": "appId",
 											"variant": "declaration",
 											"kind": 1024,
@@ -7452,7 +7452,7 @@
 											}
 										},
 										{
-											"id": 894,
+											"id": 897,
 											"name": "appName",
 											"variant": "declaration",
 											"kind": 1024,
@@ -7463,7 +7463,7 @@
 											}
 										},
 										{
-											"id": 895,
+											"id": 898,
 											"name": "appOrigin",
 											"variant": "declaration",
 											"kind": 1024,
@@ -7474,7 +7474,7 @@
 											}
 										},
 										{
-											"id": 897,
+											"id": 900,
 											"name": "capabilities",
 											"variant": "declaration",
 											"kind": 1024,
@@ -7508,7 +7508,7 @@
 											}
 										},
 										{
-											"id": 896,
+											"id": 899,
 											"name": "identity",
 											"variant": "declaration",
 											"kind": 1024,
@@ -7540,11 +7540,11 @@
 										{
 											"title": "Properties",
 											"children": [
-												893,
-												894,
-												895,
+												896,
 												897,
-												896
+												898,
+												900,
+												899
 											]
 										}
 									]
@@ -7552,14 +7552,14 @@
 							}
 						},
 						{
-							"id": 879,
+							"id": 882,
 							"name": "acceptIngress",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 880,
+									"id": 883,
 									"name": "acceptIngress",
 									"variant": "signature",
 									"kind": 4096,
@@ -7574,20 +7574,20 @@
 									},
 									"parameters": [
 										{
-											"id": 881,
+											"id": 884,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 882,
+											"id": 885,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -7598,7 +7598,7 @@
 											}
 										},
 										{
-											"id": 883,
+											"id": 886,
 											"name": "ingressId",
 											"variant": "param",
 											"kind": 32768,
@@ -7609,7 +7609,7 @@
 											}
 										},
 										{
-											"id": 884,
+											"id": 887,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -7618,7 +7618,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -7633,7 +7633,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 964,
+												"target": 967,
 												"name": "IngressRecord",
 												"package": "jolt-sdk"
 											}
@@ -7645,14 +7645,14 @@
 							]
 						},
 						{
-							"id": 782,
+							"id": 785,
 							"name": "appendPublishJson",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 783,
+									"id": 786,
 									"name": "appendPublishJson",
 									"variant": "signature",
 									"kind": 4096,
@@ -7675,7 +7675,7 @@
 												"kind": "inline-tag",
 												"tag": "@link",
 												"text": "enumerate",
-												"target": 789
+												"target": 792
 											},
 											{
 												"kind": "text",
@@ -7685,20 +7685,20 @@
 									},
 									"parameters": [
 										{
-											"id": 784,
+											"id": 787,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 785,
+											"id": 788,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -7709,7 +7709,7 @@
 											}
 										},
 										{
-											"id": 786,
+											"id": 789,
 											"name": "path",
 											"variant": "param",
 											"kind": 32768,
@@ -7720,7 +7720,7 @@
 											}
 										},
 										{
-											"id": 787,
+											"id": 790,
 											"name": "body",
 											"variant": "param",
 											"kind": 32768,
@@ -7731,7 +7731,7 @@
 											}
 										},
 										{
-											"id": 788,
+											"id": 791,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -7740,7 +7740,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -7755,7 +7755,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 1043,
+												"target": 1046,
 												"name": "PublishResponse",
 												"package": "jolt-sdk"
 											}
@@ -7767,14 +7767,14 @@
 							]
 						},
 						{
-							"id": 833,
+							"id": 836,
 							"name": "decryptEncryptedTarget",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 834,
+									"id": 837,
 									"name": "decryptEncryptedTarget",
 									"variant": "signature",
 									"kind": 4096,
@@ -7789,20 +7789,20 @@
 									},
 									"parameters": [
 										{
-											"id": 835,
+											"id": 838,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 836,
+											"id": 839,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -7813,7 +7813,7 @@
 											}
 										},
 										{
-											"id": 837,
+											"id": 840,
 											"name": "target",
 											"variant": "param",
 											"kind": 32768,
@@ -7824,7 +7824,7 @@
 											}
 										},
 										{
-											"id": 838,
+											"id": 841,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -7833,7 +7833,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -7848,7 +7848,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 936,
+												"target": 939,
 												"name": "DecryptedEncryptedObject",
 												"package": "jolt-sdk"
 											}
@@ -7860,14 +7860,14 @@
 							]
 						},
 						{
-							"id": 789,
+							"id": 792,
 							"name": "enumerate",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 790,
+									"id": 793,
 									"name": "enumerate",
 									"variant": "signature",
 									"kind": 4096,
@@ -7882,20 +7882,20 @@
 									},
 									"parameters": [
 										{
-											"id": 791,
+											"id": 794,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 792,
+											"id": 795,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -7906,7 +7906,7 @@
 											}
 										},
 										{
-											"id": 793,
+											"id": 796,
 											"name": "identity",
 											"variant": "param",
 											"kind": 32768,
@@ -7917,7 +7917,7 @@
 											}
 										},
 										{
-											"id": 794,
+											"id": 797,
 											"name": "pathPrefix",
 											"variant": "param",
 											"kind": 32768,
@@ -7928,7 +7928,7 @@
 											}
 										},
 										{
-											"id": 795,
+											"id": 798,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -7937,7 +7937,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -7954,7 +7954,7 @@
 												"type": "array",
 												"elementType": {
 													"type": "reference",
-													"target": 899,
+													"target": 902,
 													"name": "AppendRecordInfo",
 													"package": "jolt-sdk"
 												}
@@ -7967,14 +7967,14 @@
 							]
 						},
 						{
-							"id": 821,
+							"id": 824,
 							"name": "fetchTarget",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 822,
+									"id": 825,
 									"name": "fetchTarget",
 									"variant": "signature",
 									"kind": 4096,
@@ -7989,20 +7989,20 @@
 									},
 									"parameters": [
 										{
-											"id": 823,
+											"id": 826,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 824,
+											"id": 827,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -8013,7 +8013,7 @@
 											}
 										},
 										{
-											"id": 825,
+											"id": 828,
 											"name": "target",
 											"variant": "param",
 											"kind": 32768,
@@ -8024,7 +8024,7 @@
 											}
 										},
 										{
-											"id": 826,
+											"id": 829,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -8033,7 +8033,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -8048,7 +8048,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 951,
+												"target": 954,
 												"name": "FetchResult",
 												"package": "jolt-sdk"
 											}
@@ -8060,14 +8060,14 @@
 							]
 						},
 						{
-							"id": 760,
+							"id": 763,
 							"name": "getAppApiFeatures",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 761,
+									"id": 764,
 									"name": "getAppApiFeatures",
 									"variant": "signature",
 									"kind": 4096,
@@ -8082,20 +8082,20 @@
 									},
 									"parameters": [
 										{
-											"id": 762,
+											"id": 765,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 763,
+											"id": 766,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -8104,7 +8104,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -8119,7 +8119,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 907,
+												"target": 910,
 												"name": "AppApiFeatureManifestResponse",
 												"package": "jolt-sdk"
 											}
@@ -8131,14 +8131,14 @@
 							]
 						},
 						{
-							"id": 751,
+							"id": 754,
 							"name": "getCurrentSession",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 752,
+									"id": 755,
 									"name": "getCurrentSession",
 									"variant": "signature",
 									"kind": 4096,
@@ -8153,20 +8153,20 @@
 									},
 									"parameters": [
 										{
-											"id": 753,
+											"id": 756,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 754,
+											"id": 757,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -8177,7 +8177,7 @@
 											}
 										},
 										{
-											"id": 755,
+											"id": 758,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -8186,7 +8186,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -8201,7 +8201,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 925,
+												"target": 928,
 												"name": "CurrentAppSession",
 												"package": "jolt-sdk"
 											}
@@ -8213,14 +8213,14 @@
 							]
 						},
 						{
-							"id": 746,
+							"id": 749,
 							"name": "getSessionRequestStatus",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 747,
+									"id": 750,
 									"name": "getSessionRequestStatus",
 									"variant": "signature",
 									"kind": 4096,
@@ -8243,20 +8243,20 @@
 									},
 									"parameters": [
 										{
-											"id": 748,
+											"id": 751,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 749,
+											"id": 752,
 											"name": "requestId",
 											"variant": "param",
 											"kind": 32768,
@@ -8267,7 +8267,7 @@
 											}
 										},
 										{
-											"id": 750,
+											"id": 753,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -8276,7 +8276,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -8291,7 +8291,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 916,
+												"target": 919,
 												"name": "AppSessionStatusResponse",
 												"package": "jolt-sdk"
 											}
@@ -8303,14 +8303,14 @@
 							]
 						},
 						{
-							"id": 756,
+							"id": 759,
 							"name": "getStatus",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 757,
+									"id": 760,
 									"name": "getStatus",
 									"variant": "signature",
 									"kind": 4096,
@@ -8325,20 +8325,20 @@
 									},
 									"parameters": [
 										{
-											"id": 758,
+											"id": 761,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 759,
+											"id": 762,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -8347,7 +8347,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -8362,7 +8362,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 987,
+												"target": 990,
 												"name": "NodeStatus",
 												"package": "jolt-sdk"
 											}
@@ -8374,14 +8374,14 @@
 							]
 						},
 						{
-							"id": 868,
+							"id": 871,
 							"name": "listPendingIngress",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 869,
+									"id": 872,
 									"name": "listPendingIngress",
 									"variant": "signature",
 									"kind": 4096,
@@ -8396,20 +8396,20 @@
 									},
 									"parameters": [
 										{
-											"id": 870,
+											"id": 873,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 871,
+											"id": 874,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -8420,7 +8420,7 @@
 											}
 										},
 										{
-											"id": 872,
+											"id": 875,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -8429,7 +8429,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -8446,7 +8446,7 @@
 												"type": "array",
 												"elementType": {
 													"type": "reference",
-													"target": 964,
+													"target": 967,
 													"name": "IngressRecord",
 													"package": "jolt-sdk"
 												}
@@ -8459,14 +8459,14 @@
 							]
 						},
 						{
-							"id": 846,
+							"id": 849,
 							"name": "listPublished",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 847,
+									"id": 850,
 									"name": "listPublished",
 									"variant": "signature",
 									"kind": 4096,
@@ -8481,20 +8481,20 @@
 									},
 									"parameters": [
 										{
-											"id": 848,
+											"id": 851,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 849,
+											"id": 852,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -8505,7 +8505,7 @@
 											}
 										},
 										{
-											"id": 850,
+											"id": 853,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -8514,7 +8514,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -8531,7 +8531,7 @@
 												"type": "array",
 												"elementType": {
 													"type": "reference",
-													"target": 1028,
+													"target": 1031,
 													"name": "PublishedContent",
 													"package": "jolt-sdk"
 												}
@@ -8544,14 +8544,14 @@
 							]
 						},
 						{
-							"id": 839,
+							"id": 842,
 							"name": "openEncryptedTarget",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 840,
+									"id": 843,
 									"name": "openEncryptedTarget",
 									"variant": "signature",
 									"kind": 4096,
@@ -8566,20 +8566,20 @@
 									},
 									"parameters": [
 										{
-											"id": 841,
+											"id": 844,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 842,
+											"id": 845,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -8590,7 +8590,7 @@
 											}
 										},
 										{
-											"id": 843,
+											"id": 846,
 											"name": "target",
 											"variant": "param",
 											"kind": 32768,
@@ -8601,7 +8601,7 @@
 											}
 										},
 										{
-											"id": 844,
+											"id": 847,
 											"name": "path",
 											"variant": "param",
 											"kind": 32768,
@@ -8614,7 +8614,7 @@
 											}
 										},
 										{
-											"id": 845,
+											"id": 848,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -8623,7 +8623,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -8638,7 +8638,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 1017,
+												"target": 1020,
 												"name": "OpenedEncryptedObject",
 												"package": "jolt-sdk"
 											}
@@ -8650,14 +8650,14 @@
 							]
 						},
 						{
-							"id": 873,
+							"id": 876,
 							"name": "openIngress",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 874,
+									"id": 877,
 									"name": "openIngress",
 									"variant": "signature",
 									"kind": 4096,
@@ -8672,20 +8672,20 @@
 									},
 									"parameters": [
 										{
-											"id": 875,
+											"id": 878,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 876,
+											"id": 879,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -8696,7 +8696,7 @@
 											}
 										},
 										{
-											"id": 877,
+											"id": 880,
 											"name": "ingressId",
 											"variant": "param",
 											"kind": 32768,
@@ -8707,7 +8707,7 @@
 											}
 										},
 										{
-											"id": 878,
+											"id": 881,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -8716,7 +8716,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -8731,7 +8731,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 943,
+												"target": 946,
 												"name": "DecryptedIngress",
 												"package": "jolt-sdk"
 											}
@@ -8743,14 +8743,14 @@
 							]
 						},
 						{
-							"id": 851,
+							"id": 854,
 							"name": "pinHomeRelay",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 852,
+									"id": 855,
 									"name": "pinHomeRelay",
 									"variant": "signature",
 									"kind": 4096,
@@ -8765,20 +8765,20 @@
 									},
 									"parameters": [
 										{
-											"id": 853,
+											"id": 856,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 854,
+											"id": 857,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -8789,7 +8789,7 @@
 											}
 										},
 										{
-											"id": 855,
+											"id": 858,
 											"name": "contentId",
 											"variant": "param",
 											"kind": 32768,
@@ -8800,7 +8800,7 @@
 											}
 										},
 										{
-											"id": 856,
+											"id": 859,
 											"name": "path",
 											"variant": "param",
 											"kind": 32768,
@@ -8813,7 +8813,7 @@
 											}
 										},
 										{
-											"id": 857,
+											"id": 860,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -8822,7 +8822,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -8837,7 +8837,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 956,
+												"target": 959,
 												"name": "HomeRelayPinResponse",
 												"package": "jolt-sdk"
 											}
@@ -8849,14 +8849,14 @@
 							]
 						},
 						{
-							"id": 771,
+							"id": 774,
 							"name": "publishBytes",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 772,
+									"id": 775,
 									"name": "publishBytes",
 									"variant": "signature",
 									"kind": 4096,
@@ -8871,20 +8871,20 @@
 									},
 									"parameters": [
 										{
-											"id": 773,
+											"id": 776,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 774,
+											"id": 777,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -8895,7 +8895,7 @@
 											}
 										},
 										{
-											"id": 775,
+											"id": 778,
 											"name": "path",
 											"variant": "param",
 											"kind": 32768,
@@ -8906,7 +8906,7 @@
 											}
 										},
 										{
-											"id": 776,
+											"id": 779,
 											"name": "bytes",
 											"variant": "param",
 											"kind": 32768,
@@ -8933,7 +8933,7 @@
 											}
 										},
 										{
-											"id": 777,
+											"id": 780,
 											"name": "meta",
 											"variant": "param",
 											"kind": 32768,
@@ -8941,14 +8941,14 @@
 											"type": {
 												"type": "reflection",
 												"declaration": {
-													"id": 778,
+													"id": 781,
 													"name": "__type",
 													"variant": "declaration",
 													"kind": 65536,
 													"flags": {},
 													"children": [
 														{
-															"id": 779,
+															"id": 782,
 															"name": "fileName",
 															"variant": "declaration",
 															"kind": 1024,
@@ -8959,7 +8959,7 @@
 															}
 														},
 														{
-															"id": 780,
+															"id": 783,
 															"name": "mimeType",
 															"variant": "declaration",
 															"kind": 1024,
@@ -8974,8 +8974,8 @@
 														{
 															"title": "Properties",
 															"children": [
-																779,
-																780
+																782,
+																783
 															]
 														}
 													]
@@ -8983,7 +8983,7 @@
 											}
 										},
 										{
-											"id": 781,
+											"id": 784,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -8992,7 +8992,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -9007,7 +9007,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 1043,
+												"target": 1046,
 												"name": "PublishResponse",
 												"package": "jolt-sdk"
 											}
@@ -9019,14 +9019,14 @@
 							]
 						},
 						{
-							"id": 804,
+							"id": 807,
 							"name": "publishEncryptedBytes",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 805,
+									"id": 808,
 									"name": "publishEncryptedBytes",
 									"variant": "signature",
 									"kind": 4096,
@@ -9049,20 +9049,20 @@
 									},
 									"parameters": [
 										{
-											"id": 806,
+											"id": 809,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 807,
+											"id": 810,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -9073,7 +9073,7 @@
 											}
 										},
 										{
-											"id": 808,
+											"id": 811,
 											"name": "path",
 											"variant": "param",
 											"kind": 32768,
@@ -9084,7 +9084,7 @@
 											}
 										},
 										{
-											"id": 809,
+											"id": 812,
 											"name": "plaintext",
 											"variant": "param",
 											"kind": 32768,
@@ -9111,7 +9111,7 @@
 											}
 										},
 										{
-											"id": 810,
+											"id": 813,
 											"name": "meta",
 											"variant": "param",
 											"kind": 32768,
@@ -9119,14 +9119,14 @@
 											"type": {
 												"type": "reflection",
 												"declaration": {
-													"id": 811,
+													"id": 814,
 													"name": "__type",
 													"variant": "declaration",
 													"kind": 65536,
 													"flags": {},
 													"children": [
 														{
-															"id": 812,
+															"id": 815,
 															"name": "mimeType",
 															"variant": "declaration",
 															"kind": 1024,
@@ -9137,7 +9137,7 @@
 															}
 														},
 														{
-															"id": 813,
+															"id": 816,
 															"name": "recipients",
 															"variant": "declaration",
 															"kind": 1024,
@@ -9155,8 +9155,8 @@
 														{
 															"title": "Properties",
 															"children": [
-																812,
-																813
+																815,
+																816
 															]
 														}
 													]
@@ -9164,7 +9164,7 @@
 											}
 										},
 										{
-											"id": 814,
+											"id": 817,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -9173,7 +9173,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -9188,7 +9188,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 948,
+												"target": 951,
 												"name": "EncryptedPublishResponse",
 												"package": "jolt-sdk"
 											}
@@ -9200,14 +9200,14 @@
 							]
 						},
 						{
-							"id": 796,
+							"id": 799,
 							"name": "publishEncryptedJson",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 797,
+									"id": 800,
 									"name": "publishEncryptedJson",
 									"variant": "signature",
 									"kind": 4096,
@@ -9230,20 +9230,20 @@
 									},
 									"parameters": [
 										{
-											"id": 798,
+											"id": 801,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 799,
+											"id": 802,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -9254,7 +9254,7 @@
 											}
 										},
 										{
-											"id": 800,
+											"id": 803,
 											"name": "path",
 											"variant": "param",
 											"kind": 32768,
@@ -9265,7 +9265,7 @@
 											}
 										},
 										{
-											"id": 801,
+											"id": 804,
 											"name": "body",
 											"variant": "param",
 											"kind": 32768,
@@ -9276,7 +9276,7 @@
 											}
 										},
 										{
-											"id": 802,
+											"id": 805,
 											"name": "recipients",
 											"variant": "param",
 											"kind": 32768,
@@ -9290,7 +9290,7 @@
 											}
 										},
 										{
-											"id": 803,
+											"id": 806,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -9299,7 +9299,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -9314,7 +9314,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 948,
+												"target": 951,
 												"name": "EncryptedPublishResponse",
 												"package": "jolt-sdk"
 											}
@@ -9326,14 +9326,14 @@
 							]
 						},
 						{
-							"id": 764,
+							"id": 767,
 							"name": "publishJson",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 765,
+									"id": 768,
 									"name": "publishJson",
 									"variant": "signature",
 									"kind": 4096,
@@ -9348,20 +9348,20 @@
 									},
 									"parameters": [
 										{
-											"id": 766,
+											"id": 769,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 767,
+											"id": 770,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -9372,7 +9372,7 @@
 											}
 										},
 										{
-											"id": 768,
+											"id": 771,
 											"name": "path",
 											"variant": "param",
 											"kind": 32768,
@@ -9383,7 +9383,7 @@
 											}
 										},
 										{
-											"id": 769,
+											"id": 772,
 											"name": "body",
 											"variant": "param",
 											"kind": 32768,
@@ -9394,7 +9394,7 @@
 											}
 										},
 										{
-											"id": 770,
+											"id": 773,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -9403,7 +9403,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -9418,7 +9418,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 1043,
+												"target": 1046,
 												"name": "PublishResponse",
 												"package": "jolt-sdk"
 											}
@@ -9430,14 +9430,14 @@
 							]
 						},
 						{
-							"id": 827,
+							"id": 830,
 							"name": "readLocalRecord",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 828,
+									"id": 831,
 									"name": "readLocalRecord",
 									"variant": "signature",
 									"kind": 4096,
@@ -9452,20 +9452,20 @@
 									},
 									"parameters": [
 										{
-											"id": 829,
+											"id": 832,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 830,
+											"id": 833,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -9476,7 +9476,7 @@
 											}
 										},
 										{
-											"id": 831,
+											"id": 834,
 											"name": "path",
 											"variant": "param",
 											"kind": 32768,
@@ -9487,7 +9487,7 @@
 											}
 										},
 										{
-											"id": 832,
+											"id": 835,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -9496,7 +9496,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -9511,7 +9511,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 977,
+												"target": 980,
 												"name": "LocalRecordReadResponse",
 												"package": "jolt-sdk"
 											}
@@ -9523,14 +9523,14 @@
 							]
 						},
 						{
-							"id": 885,
+							"id": 888,
 							"name": "rejectIngress",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 886,
+									"id": 889,
 									"name": "rejectIngress",
 									"variant": "signature",
 									"kind": 4096,
@@ -9545,20 +9545,20 @@
 									},
 									"parameters": [
 										{
-											"id": 887,
+											"id": 890,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 888,
+											"id": 891,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -9569,7 +9569,7 @@
 											}
 										},
 										{
-											"id": 889,
+											"id": 892,
 											"name": "ingressId",
 											"variant": "param",
 											"kind": 32768,
@@ -9580,7 +9580,7 @@
 											}
 										},
 										{
-											"id": 890,
+											"id": 893,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -9589,7 +9589,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -9604,7 +9604,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 964,
+												"target": 967,
 												"name": "IngressRecord",
 												"package": "jolt-sdk"
 											}
@@ -9616,14 +9616,14 @@
 							]
 						},
 						{
-							"id": 741,
+							"id": 744,
 							"name": "requestSession",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 742,
+									"id": 745,
 									"name": "requestSession",
 									"variant": "signature",
 									"kind": 4096,
@@ -9638,33 +9638,33 @@
 									},
 									"parameters": [
 										{
-											"id": 743,
+											"id": 746,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 744,
+											"id": 747,
 											"name": "req",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 891,
+												"target": 894,
 												"name": "SessionRequest",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 745,
+											"id": 748,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -9673,7 +9673,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -9688,7 +9688,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 911,
+												"target": 914,
 												"name": "AppSessionRequestResponse",
 												"package": "jolt-sdk"
 											}
@@ -9700,14 +9700,14 @@
 							]
 						},
 						{
-							"id": 815,
+							"id": 818,
 							"name": "resolveAddress",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 816,
+									"id": 819,
 									"name": "resolveAddress",
 									"variant": "signature",
 									"kind": 4096,
@@ -9730,20 +9730,20 @@
 									},
 									"parameters": [
 										{
-											"id": 817,
+											"id": 820,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 818,
+											"id": 821,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -9754,7 +9754,7 @@
 											}
 										},
 										{
-											"id": 819,
+											"id": 822,
 											"name": "address",
 											"variant": "param",
 											"kind": 32768,
@@ -9765,7 +9765,7 @@
 											}
 										},
 										{
-											"id": 820,
+											"id": 823,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -9774,7 +9774,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -9789,7 +9789,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 1050,
+												"target": 1053,
 												"name": "ResolveResponse",
 												"package": "jolt-sdk"
 											}
@@ -9801,14 +9801,14 @@
 							]
 						},
 						{
-							"id": 858,
+							"id": 861,
 							"name": "sendIngress",
 							"variant": "declaration",
 							"kind": 64,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 859,
+									"id": 862,
 									"name": "sendIngress",
 									"variant": "signature",
 									"kind": 4096,
@@ -9839,20 +9839,20 @@
 									},
 									"parameters": [
 										{
-											"id": 860,
+											"id": 863,
 											"name": "transport",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 861,
+											"id": 864,
 											"name": "token",
 											"variant": "param",
 											"kind": 32768,
@@ -9863,7 +9863,7 @@
 											}
 										},
 										{
-											"id": 862,
+											"id": 865,
 											"name": "req",
 											"variant": "param",
 											"kind": 32768,
@@ -9871,14 +9871,14 @@
 											"type": {
 												"type": "reflection",
 												"declaration": {
-													"id": 863,
+													"id": 866,
 													"name": "__type",
 													"variant": "declaration",
 													"kind": 65536,
 													"flags": {},
 													"children": [
 														{
-															"id": 865,
+															"id": 868,
 															"name": "encryptedObject",
 															"variant": "declaration",
 															"kind": 1024,
@@ -9892,7 +9892,7 @@
 															}
 														},
 														{
-															"id": 866,
+															"id": 869,
 															"name": "expiresAt",
 															"variant": "declaration",
 															"kind": 1024,
@@ -9905,7 +9905,7 @@
 															}
 														},
 														{
-															"id": 864,
+															"id": 867,
 															"name": "recipient",
 															"variant": "declaration",
 															"kind": 1024,
@@ -9920,9 +9920,9 @@
 														{
 															"title": "Properties",
 															"children": [
-																865,
-																866,
-																864
+																868,
+																869,
+																867
 															]
 														}
 													]
@@ -9930,7 +9930,7 @@
 											}
 										},
 										{
-											"id": 867,
+											"id": 870,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -9939,7 +9939,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -9954,7 +9954,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 964,
+												"target": 967,
 												"name": "IngressRecord",
 												"package": "jolt-sdk"
 											}
@@ -9970,41 +9970,41 @@
 						{
 							"title": "Type Aliases",
 							"children": [
-								891
+								894
 							]
 						},
 						{
 							"title": "Functions",
 							"children": [
-								879,
-								782,
-								833,
-								789,
-								821,
-								760,
-								751,
-								746,
-								756,
-								868,
-								846,
-								839,
-								873,
-								851,
-								771,
-								804,
-								796,
-								764,
-								827,
-								885,
-								741,
-								815,
-								858
+								882,
+								785,
+								836,
+								792,
+								824,
+								763,
+								754,
+								749,
+								759,
+								871,
+								849,
+								842,
+								876,
+								854,
+								774,
+								807,
+								799,
+								767,
+								830,
+								888,
+								744,
+								818,
+								861
 							]
 						}
 					]
 				},
 				{
-					"id": 683,
+					"id": 686,
 					"name": "JoltApiError",
 					"variant": "declaration",
 					"kind": 128,
@@ -10019,7 +10019,7 @@
 								"kind": "inline-tag",
 								"tag": "@link",
 								"text": "body",
-								"target": 694
+								"target": 697
 							},
 							{
 								"kind": "text",
@@ -10037,21 +10037,21 @@
 					},
 					"children": [
 						{
-							"id": 684,
+							"id": 687,
 							"name": "constructor",
 							"variant": "declaration",
 							"kind": 512,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 685,
+									"id": 688,
 									"name": "new JoltApiError",
 									"variant": "signature",
 									"kind": 16384,
 									"flags": {},
 									"parameters": [
 										{
-											"id": 686,
+											"id": 689,
 											"name": "message",
 											"variant": "param",
 											"kind": 32768,
@@ -10062,7 +10062,7 @@
 											}
 										},
 										{
-											"id": 687,
+											"id": 690,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -10070,14 +10070,14 @@
 											"type": {
 												"type": "reflection",
 												"declaration": {
-													"id": 688,
+													"id": 691,
 													"name": "__type",
 													"variant": "declaration",
 													"kind": 65536,
 													"flags": {},
 													"children": [
 														{
-															"id": 691,
+															"id": 694,
 															"name": "body",
 															"variant": "declaration",
 															"kind": 1024,
@@ -10090,7 +10090,7 @@
 															}
 														},
 														{
-															"id": 690,
+															"id": 693,
 															"name": "code",
 															"variant": "declaration",
 															"kind": 1024,
@@ -10103,7 +10103,7 @@
 															}
 														},
 														{
-															"id": 689,
+															"id": 692,
 															"name": "status",
 															"variant": "declaration",
 															"kind": 1024,
@@ -10120,9 +10120,9 @@
 														{
 															"title": "Properties",
 															"children": [
-																691,
-																690,
-																689
+																694,
+																693,
+																692
 															]
 														}
 													]
@@ -10133,7 +10133,7 @@
 									],
 									"type": {
 										"type": "reference",
-										"target": 683,
+										"target": 686,
 										"name": "JoltApiError",
 										"package": "jolt-sdk"
 									},
@@ -10151,7 +10151,7 @@
 							}
 						},
 						{
-							"id": 694,
+							"id": 697,
 							"name": "body",
 							"variant": "declaration",
 							"kind": 1024,
@@ -10173,7 +10173,7 @@
 							}
 						},
 						{
-							"id": 698,
+							"id": 701,
 							"name": "cause",
 							"variant": "declaration",
 							"kind": 1024,
@@ -10193,7 +10193,7 @@
 							}
 						},
 						{
-							"id": 693,
+							"id": 696,
 							"name": "code",
 							"variant": "declaration",
 							"kind": 1024,
@@ -10223,7 +10223,7 @@
 							}
 						},
 						{
-							"id": 696,
+							"id": 699,
 							"name": "message",
 							"variant": "declaration",
 							"kind": 1024,
@@ -10242,7 +10242,7 @@
 							}
 						},
 						{
-							"id": 695,
+							"id": 698,
 							"name": "name",
 							"variant": "declaration",
 							"kind": 1024,
@@ -10261,7 +10261,7 @@
 							}
 						},
 						{
-							"id": 697,
+							"id": 700,
 							"name": "stack",
 							"variant": "declaration",
 							"kind": 1024,
@@ -10281,7 +10281,7 @@
 							}
 						},
 						{
-							"id": 692,
+							"id": 695,
 							"name": "status",
 							"variant": "declaration",
 							"kind": 1024,
@@ -10307,19 +10307,19 @@
 						{
 							"title": "Constructors",
 							"children": [
-								684
+								687
 							]
 						},
 						{
 							"title": "Properties",
 							"children": [
-								694,
-								698,
-								693,
-								696,
-								695,
 								697,
-								692
+								701,
+								696,
+								699,
+								698,
+								700,
+								695
 							]
 						}
 					],
@@ -10336,7 +10336,7 @@
 					]
 				},
 				{
-					"id": 699,
+					"id": 702,
 					"name": "JoltTransportError",
 					"variant": "declaration",
 					"kind": 128,
@@ -10361,21 +10361,21 @@
 					},
 					"children": [
 						{
-							"id": 700,
+							"id": 703,
 							"name": "constructor",
 							"variant": "declaration",
 							"kind": 512,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 701,
+									"id": 704,
 									"name": "new JoltTransportError",
 									"variant": "signature",
 									"kind": 16384,
 									"flags": {},
 									"parameters": [
 										{
-											"id": 702,
+											"id": 705,
 											"name": "message",
 											"variant": "param",
 											"kind": 32768,
@@ -10386,7 +10386,7 @@
 											}
 										},
 										{
-											"id": 703,
+											"id": 706,
 											"name": "options",
 											"variant": "param",
 											"kind": 32768,
@@ -10394,14 +10394,14 @@
 											"type": {
 												"type": "reflection",
 												"declaration": {
-													"id": 704,
+													"id": 707,
 													"name": "__type",
 													"variant": "declaration",
 													"kind": 65536,
 													"flags": {},
 													"children": [
 														{
-															"id": 705,
+															"id": 708,
 															"name": "cause",
 															"variant": "declaration",
 															"kind": 1024,
@@ -10418,7 +10418,7 @@
 														{
 															"title": "Properties",
 															"children": [
-																705
+																708
 															]
 														}
 													]
@@ -10429,7 +10429,7 @@
 									],
 									"type": {
 										"type": "reference",
-										"target": 699,
+										"target": 702,
 										"name": "JoltTransportError",
 										"package": "jolt-sdk"
 									},
@@ -10447,7 +10447,7 @@
 							}
 						},
 						{
-							"id": 709,
+							"id": 712,
 							"name": "cause",
 							"variant": "declaration",
 							"kind": 1024,
@@ -10467,7 +10467,7 @@
 							}
 						},
 						{
-							"id": 707,
+							"id": 710,
 							"name": "message",
 							"variant": "declaration",
 							"kind": 1024,
@@ -10486,7 +10486,7 @@
 							}
 						},
 						{
-							"id": 706,
+							"id": 709,
 							"name": "name",
 							"variant": "declaration",
 							"kind": 1024,
@@ -10505,7 +10505,7 @@
 							}
 						},
 						{
-							"id": 708,
+							"id": 711,
 							"name": "stack",
 							"variant": "declaration",
 							"kind": 1024,
@@ -10529,16 +10529,16 @@
 						{
 							"title": "Constructors",
 							"children": [
-								700
+								703
 							]
 						},
 						{
 							"title": "Properties",
 							"children": [
+								712,
+								710,
 								709,
-								707,
-								706,
-								708
+								711
 							]
 						}
 					],
@@ -10623,7 +10623,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -10714,7 +10714,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -10822,7 +10822,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -10993,7 +10993,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -11010,7 +11010,7 @@
 												"type": "array",
 												"elementType": {
 													"type": "reference",
-													"target": 1028,
+													"target": 1031,
 													"name": "PublishedContent",
 													"package": "jolt-sdk"
 												}
@@ -11078,7 +11078,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -11198,7 +11198,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -11308,7 +11308,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -11415,7 +11415,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -11463,7 +11463,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -11480,7 +11480,7 @@
 												"type": "array",
 												"elementType": {
 													"type": "reference",
-													"target": 964,
+													"target": 967,
 													"name": "IngressRecord",
 													"package": "jolt-sdk"
 												}
@@ -11543,7 +11543,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -11602,7 +11602,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -11707,7 +11707,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -11816,7 +11816,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -11934,7 +11934,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -12076,7 +12076,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -12165,7 +12165,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -12251,7 +12251,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -12266,7 +12266,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 925,
+												"target": 928,
 												"name": "CurrentAppSession",
 												"package": "jolt-sdk"
 											}
@@ -12320,7 +12320,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -12335,7 +12335,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 916,
+												"target": 919,
 												"name": "AppSessionStatusResponse",
 												"package": "jolt-sdk"
 											}
@@ -12378,7 +12378,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -12393,7 +12393,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 987,
+												"target": 990,
 												"name": "NodeStatus",
 												"package": "jolt-sdk"
 											}
@@ -12434,7 +12434,7 @@
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 891,
+												"target": 894,
 												"name": "SessionRequest",
 												"package": "jolt-sdk"
 											}
@@ -12449,7 +12449,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 711,
+												"target": 714,
 												"name": "CallOptions",
 												"package": "jolt-sdk"
 											}
@@ -12464,7 +12464,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 911,
+												"target": 914,
 												"name": "AppSessionRequestResponse",
 												"package": "jolt-sdk"
 											}
@@ -12489,7 +12489,7 @@
 					]
 				},
 				{
-					"id": 715,
+					"id": 718,
 					"name": "JoltTransport",
 					"variant": "declaration",
 					"kind": 256,
@@ -12504,7 +12504,7 @@
 								"kind": "inline-tag",
 								"tag": "@link",
 								"text": "JoltApiError",
-								"target": 683
+								"target": 686
 							},
 							{
 								"kind": "text",
@@ -12514,7 +12514,7 @@
 								"kind": "inline-tag",
 								"tag": "@link",
 								"text": "JoltTransportError",
-								"target": 699
+								"target": 702
 							},
 							{
 								"kind": "text",
@@ -12524,14 +12524,14 @@
 					},
 					"children": [
 						{
-							"id": 716,
+							"id": 719,
 							"name": "request",
 							"variant": "declaration",
 							"kind": 2048,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 717,
+									"id": 720,
 									"name": "request",
 									"variant": "signature",
 									"kind": 4096,
@@ -12562,7 +12562,7 @@
 									},
 									"typeParameters": [
 										{
-											"id": 718,
+											"id": 721,
 											"name": "T",
 											"variant": "typeParam",
 											"kind": 131072,
@@ -12571,20 +12571,20 @@
 									],
 									"parameters": [
 										{
-											"id": 719,
+											"id": 722,
 											"name": "base",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 710,
+												"target": 713,
 												"name": "ApiBase",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 720,
+											"id": 723,
 											"name": "path",
 											"variant": "param",
 											"kind": 32768,
@@ -12595,7 +12595,7 @@
 											}
 										},
 										{
-											"id": 721,
+											"id": 724,
 											"name": "req",
 											"variant": "param",
 											"kind": 32768,
@@ -12604,7 +12604,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 728,
+												"target": 731,
 												"name": "TransportRequest",
 												"package": "jolt-sdk"
 											}
@@ -12619,7 +12619,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 718,
+												"target": 721,
 												"name": "T",
 												"package": "jolt-sdk",
 												"refersToTypeParameter": true
@@ -12632,14 +12632,14 @@
 							]
 						},
 						{
-							"id": 722,
+							"id": 725,
 							"name": "upload",
 							"variant": "declaration",
 							"kind": 2048,
 							"flags": {},
 							"signatures": [
 								{
-									"id": 723,
+									"id": 726,
 									"name": "upload",
 									"variant": "signature",
 									"kind": 4096,
@@ -12670,7 +12670,7 @@
 									},
 									"typeParameters": [
 										{
-											"id": 724,
+											"id": 727,
 											"name": "T",
 											"variant": "typeParam",
 											"kind": 131072,
@@ -12679,20 +12679,20 @@
 									],
 									"parameters": [
 										{
-											"id": 725,
+											"id": 728,
 											"name": "base",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 710,
+												"target": 713,
 												"name": "ApiBase",
 												"package": "jolt-sdk"
 											}
 										},
 										{
-											"id": 726,
+											"id": 729,
 											"name": "path",
 											"variant": "param",
 											"kind": 32768,
@@ -12703,14 +12703,14 @@
 											}
 										},
 										{
-											"id": 727,
+											"id": 730,
 											"name": "req",
 											"variant": "param",
 											"kind": 32768,
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 733,
+												"target": 736,
 												"name": "TransportUpload",
 												"package": "jolt-sdk"
 											}
@@ -12725,7 +12725,7 @@
 										"typeArguments": [
 											{
 												"type": "reference",
-												"target": 724,
+												"target": 727,
 												"name": "T",
 												"package": "jolt-sdk",
 												"refersToTypeParameter": true
@@ -12742,8 +12742,8 @@
 						{
 							"title": "Methods",
 							"children": [
-								716,
-								722
+								719,
+								725
 							]
 						}
 					],
@@ -12761,7 +12761,7 @@
 					]
 				},
 				{
-					"id": 710,
+					"id": 713,
 					"name": "ApiBase",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -12894,7 +12894,7 @@
 					}
 				},
 				{
-					"id": 907,
+					"id": 910,
 					"name": "AppApiFeatureManifestResponse",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -12914,14 +12914,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 908,
+							"id": 911,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 909,
+									"id": 912,
 									"name": "app_api",
 									"variant": "declaration",
 									"kind": 1024,
@@ -12932,7 +12932,7 @@
 									}
 								},
 								{
-									"id": 910,
+									"id": 913,
 									"name": "features",
 									"variant": "declaration",
 									"kind": 1024,
@@ -12962,8 +12962,8 @@
 								{
 									"title": "Properties",
 									"children": [
-										909,
-										910
+										912,
+										913
 									]
 								}
 							]
@@ -13382,7 +13382,7 @@
 					}
 				},
 				{
-					"id": 899,
+					"id": 902,
 					"name": "AppendRecordInfo",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -13406,14 +13406,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 900,
+							"id": 903,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 902,
+									"id": 905,
 									"name": "content_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13424,7 +13424,7 @@
 									}
 								},
 								{
-									"id": 905,
+									"id": 908,
 									"name": "created_at",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13435,7 +13435,7 @@
 									}
 								},
 								{
-									"id": 903,
+									"id": 906,
 									"name": "device_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13446,7 +13446,7 @@
 									}
 								},
 								{
-									"id": 904,
+									"id": 907,
 									"name": "device_sequence",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13457,7 +13457,7 @@
 									}
 								},
 								{
-									"id": 906,
+									"id": 909,
 									"name": "entry_hash",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13468,7 +13468,7 @@
 									}
 								},
 								{
-									"id": 901,
+									"id": 904,
 									"name": "path",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13483,12 +13483,12 @@
 								{
 									"title": "Properties",
 									"children": [
-										902,
 										905,
-										903,
-										904,
+										908,
 										906,
-										901
+										907,
+										909,
+										904
 									]
 								}
 							]
@@ -13496,7 +13496,7 @@
 					}
 				},
 				{
-					"id": 911,
+					"id": 914,
 					"name": "AppSessionRequestResponse",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -13520,14 +13520,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 912,
+							"id": 915,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 913,
+									"id": 916,
 									"name": "request_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13538,14 +13538,14 @@
 									}
 								},
 								{
-									"id": 914,
+									"id": 917,
 									"name": "status",
 									"variant": "declaration",
 									"kind": 1024,
 									"flags": {},
 									"type": {
 										"type": "reference",
-										"target": 915,
+										"target": 918,
 										"name": "AppSessionStatus",
 										"package": "jolt-sdk"
 									}
@@ -13555,8 +13555,8 @@
 								{
 									"title": "Properties",
 									"children": [
-										913,
-										914
+										916,
+										917
 									]
 								}
 							]
@@ -13564,7 +13564,7 @@
 					}
 				},
 				{
-					"id": 915,
+					"id": 918,
 					"name": "AppSessionStatus",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -13604,7 +13604,7 @@
 					}
 				},
 				{
-					"id": 916,
+					"id": 919,
 					"name": "AppSessionStatusResponse",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -13628,14 +13628,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 917,
+							"id": 920,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 923,
+									"id": 926,
 									"name": "capabilities",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13649,7 +13649,7 @@
 									}
 								},
 								{
-									"id": 924,
+									"id": 927,
 									"name": "expires_at",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13671,7 +13671,7 @@
 									}
 								},
 								{
-									"id": 922,
+									"id": 925,
 									"name": "identity",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13693,7 +13693,7 @@
 									}
 								},
 								{
-									"id": 918,
+									"id": 921,
 									"name": "request_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13704,7 +13704,7 @@
 									}
 								},
 								{
-									"id": 919,
+									"id": 922,
 									"name": "session_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13726,7 +13726,7 @@
 									}
 								},
 								{
-									"id": 920,
+									"id": 923,
 									"name": "session_token",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13748,14 +13748,14 @@
 									}
 								},
 								{
-									"id": 921,
+									"id": 924,
 									"name": "status",
 									"variant": "declaration",
 									"kind": 1024,
 									"flags": {},
 									"type": {
 										"type": "reference",
-										"target": 915,
+										"target": 918,
 										"name": "AppSessionStatus",
 										"package": "jolt-sdk"
 									}
@@ -13765,13 +13765,13 @@
 								{
 									"title": "Properties",
 									"children": [
-										923,
-										924,
+										926,
+										927,
+										925,
+										921,
 										922,
-										918,
-										919,
-										920,
-										921
+										923,
+										924
 									]
 								}
 							]
@@ -13779,7 +13779,7 @@
 					}
 				},
 				{
-					"id": 711,
+					"id": 714,
 					"name": "CallOptions",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -13810,7 +13810,7 @@
 								"kind": "inline-tag",
 								"tag": "@link",
 								"text": "JoltTransportError",
-								"target": 699
+								"target": 702
 							},
 							{
 								"kind": "text",
@@ -13821,14 +13821,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 712,
+							"id": 715,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 713,
+									"id": 716,
 									"name": "signal",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13846,7 +13846,7 @@
 									}
 								},
 								{
-									"id": 714,
+									"id": 717,
 									"name": "timeoutMs",
 									"variant": "declaration",
 									"kind": 1024,
@@ -13863,8 +13863,8 @@
 								{
 									"title": "Properties",
 									"children": [
-										713,
-										714
+										716,
+										717
 									]
 								}
 							]
@@ -13890,7 +13890,7 @@
 						"types": [
 							{
 								"type": "reference",
-								"target": 711,
+								"target": 714,
 								"name": "CallOptions",
 								"package": "jolt-sdk"
 							},
@@ -14010,7 +14010,7 @@
 					}
 				},
 				{
-					"id": 925,
+					"id": 928,
 					"name": "CurrentAppSession",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -14034,14 +14034,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 926,
+							"id": 929,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 929,
+									"id": 932,
 									"name": "app_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14052,7 +14052,7 @@
 									}
 								},
 								{
-									"id": 930,
+									"id": 933,
 									"name": "app_name",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14063,7 +14063,7 @@
 									}
 								},
 								{
-									"id": 934,
+									"id": 937,
 									"name": "expires_at",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14085,7 +14085,7 @@
 									}
 								},
 								{
-									"id": 932,
+									"id": 935,
 									"name": "granted_capabilities",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14099,7 +14099,7 @@
 									}
 								},
 								{
-									"id": 931,
+									"id": 934,
 									"name": "identity",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14121,7 +14121,7 @@
 									}
 								},
 								{
-									"id": 935,
+									"id": 938,
 									"name": "last_used_at",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14143,7 +14143,7 @@
 									}
 								},
 								{
-									"id": 927,
+									"id": 930,
 									"name": "request_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14154,7 +14154,7 @@
 									}
 								},
 								{
-									"id": 928,
+									"id": 931,
 									"name": "session_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14176,14 +14176,14 @@
 									}
 								},
 								{
-									"id": 933,
+									"id": 936,
 									"name": "status",
 									"variant": "declaration",
 									"kind": 1024,
 									"flags": {},
 									"type": {
 										"type": "reference",
-										"target": 915,
+										"target": 918,
 										"name": "AppSessionStatus",
 										"package": "jolt-sdk"
 									}
@@ -14193,15 +14193,15 @@
 								{
 									"title": "Properties",
 									"children": [
-										929,
-										930,
-										934,
 										932,
-										931,
+										933,
+										937,
 										935,
-										927,
-										928,
-										933
+										934,
+										938,
+										930,
+										931,
+										936
 									]
 								}
 							]
@@ -14289,7 +14289,7 @@
 					}
 				},
 				{
-					"id": 936,
+					"id": 939,
 					"name": "DecryptedEncryptedObject",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -14313,14 +14313,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 937,
+							"id": 940,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 938,
+									"id": 941,
 									"name": "content_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14331,7 +14331,7 @@
 									}
 								},
 								{
-									"id": 942,
+									"id": 945,
 									"name": "content_type",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14342,7 +14342,7 @@
 									}
 								},
 								{
-									"id": 939,
+									"id": 942,
 									"name": "path",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14353,7 +14353,7 @@
 									}
 								},
 								{
-									"id": 940,
+									"id": 943,
 									"name": "plaintext",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14367,7 +14367,7 @@
 									}
 								},
 								{
-									"id": 941,
+									"id": 944,
 									"name": "size",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14382,11 +14382,11 @@
 								{
 									"title": "Properties",
 									"children": [
-										938,
+										941,
+										945,
 										942,
-										939,
-										940,
-										941
+										943,
+										944
 									]
 								}
 							]
@@ -14394,7 +14394,7 @@
 					}
 				},
 				{
-					"id": 943,
+					"id": 946,
 					"name": "DecryptedIngress",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -14418,14 +14418,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 944,
+							"id": 947,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 947,
+									"id": 950,
 									"name": "content_type",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14436,7 +14436,7 @@
 									}
 								},
 								{
-									"id": 945,
+									"id": 948,
 									"name": "plaintext",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14450,7 +14450,7 @@
 									}
 								},
 								{
-									"id": 946,
+									"id": 949,
 									"name": "size",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14465,9 +14465,9 @@
 								{
 									"title": "Properties",
 									"children": [
-										947,
-										945,
-										946
+										950,
+										948,
+										949
 									]
 								}
 							]
@@ -14475,7 +14475,7 @@
 					}
 				},
 				{
-					"id": 948,
+					"id": 951,
 					"name": "EncryptedPublishResponse",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -14501,21 +14501,21 @@
 						"types": [
 							{
 								"type": "reference",
-								"target": 1043,
+								"target": 1046,
 								"name": "PublishResponse",
 								"package": "jolt-sdk"
 							},
 							{
 								"type": "reflection",
 								"declaration": {
-									"id": 949,
+									"id": 952,
 									"name": "__type",
 									"variant": "declaration",
 									"kind": 65536,
 									"flags": {},
 									"children": [
 										{
-											"id": 950,
+											"id": 953,
 											"name": "recipient_count",
 											"variant": "declaration",
 											"kind": 1024,
@@ -14530,7 +14530,7 @@
 										{
 											"title": "Properties",
 											"children": [
-												950
+												953
 											]
 										}
 									]
@@ -14658,7 +14658,7 @@
 					}
 				},
 				{
-					"id": 951,
+					"id": 954,
 					"name": "FetchResult",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -14682,14 +14682,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 952,
+							"id": 955,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 954,
+									"id": 957,
 									"name": "content_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14700,7 +14700,7 @@
 									}
 								},
 								{
-									"id": 953,
+									"id": 956,
 									"name": "data",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14714,7 +14714,7 @@
 									}
 								},
 								{
-									"id": 955,
+									"id": 958,
 									"name": "size",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14729,9 +14729,9 @@
 								{
 									"title": "Properties",
 									"children": [
-										954,
-										953,
-										955
+										957,
+										956,
+										958
 									]
 								}
 							]
@@ -14739,7 +14739,7 @@
 					}
 				},
 				{
-					"id": 956,
+					"id": 959,
 					"name": "HomeRelayPinResponse",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -14755,14 +14755,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 957,
+							"id": 960,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 961,
+									"id": 964,
 									"name": "content_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14773,7 +14773,7 @@
 									}
 								},
 								{
-									"id": 962,
+									"id": 965,
 									"name": "latest_sequence",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14784,7 +14784,7 @@
 									}
 								},
 								{
-									"id": 960,
+									"id": 963,
 									"name": "owner",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14795,7 +14795,7 @@
 									}
 								},
 								{
-									"id": 959,
+									"id": 962,
 									"name": "relay",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14806,7 +14806,7 @@
 									}
 								},
 								{
-									"id": 963,
+									"id": 966,
 									"name": "size",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14817,7 +14817,7 @@
 									}
 								},
 								{
-									"id": 958,
+									"id": 961,
 									"name": "status",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14832,12 +14832,12 @@
 								{
 									"title": "Properties",
 									"children": [
-										961,
-										962,
-										960,
-										959,
+										964,
+										965,
 										963,
-										958
+										962,
+										966,
+										961
 									]
 								}
 							]
@@ -14951,7 +14951,7 @@
 					}
 				},
 				{
-					"id": 964,
+					"id": 967,
 					"name": "IngressRecord",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -14967,14 +14967,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 965,
+							"id": 968,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 975,
+									"id": 978,
 									"name": "accepted_at",
 									"variant": "declaration",
 									"kind": 1024,
@@ -14996,7 +14996,7 @@
 									}
 								},
 								{
-									"id": 973,
+									"id": 976,
 									"name": "expires_at",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15018,7 +15018,7 @@
 									}
 								},
 								{
-									"id": 966,
+									"id": 969,
 									"name": "ingress_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15029,7 +15029,7 @@
 									}
 								},
 								{
-									"id": 972,
+									"id": 975,
 									"name": "received_at",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15040,7 +15040,7 @@
 									}
 								},
 								{
-									"id": 967,
+									"id": 970,
 									"name": "receiver_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15051,7 +15051,7 @@
 									}
 								},
 								{
-									"id": 969,
+									"id": 972,
 									"name": "recipient_identity",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15062,7 +15062,7 @@
 									}
 								},
 								{
-									"id": 976,
+									"id": 979,
 									"name": "rejected_at",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15084,7 +15084,7 @@
 									}
 								},
 								{
-									"id": 970,
+									"id": 973,
 									"name": "schema_hint",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15106,7 +15106,7 @@
 									}
 								},
 								{
-									"id": 968,
+									"id": 971,
 									"name": "sender_identity",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15117,7 +15117,7 @@
 									}
 								},
 								{
-									"id": 974,
+									"id": 977,
 									"name": "size",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15128,7 +15128,7 @@
 									}
 								},
 								{
-									"id": 971,
+									"id": 974,
 									"name": "status",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15156,17 +15156,17 @@
 								{
 									"title": "Properties",
 									"children": [
-										975,
-										973,
-										966,
-										972,
-										967,
-										969,
+										978,
 										976,
+										969,
+										975,
 										970,
-										968,
-										974,
-										971
+										972,
+										979,
+										973,
+										971,
+										977,
+										974
 									]
 								}
 							]
@@ -15259,7 +15259,7 @@
 											},
 											"type": {
 												"type": "reference",
-												"target": 715,
+												"target": 718,
 												"name": "JoltTransport",
 												"package": "jolt-sdk"
 											}
@@ -15357,7 +15357,7 @@
 									"flags": {},
 									"type": {
 										"type": "reference",
-										"target": 715,
+										"target": 718,
 										"name": "JoltTransport",
 										"package": "jolt-sdk"
 									}
@@ -15376,7 +15376,7 @@
 					}
 				},
 				{
-					"id": 977,
+					"id": 980,
 					"name": "LocalRecordReadResponse",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -15403,49 +15403,6 @@
 							{
 								"type": "reflection",
 								"declaration": {
-									"id": 978,
-									"name": "__type",
-									"variant": "declaration",
-									"kind": 65536,
-									"flags": {},
-									"children": [
-										{
-											"id": 980,
-											"name": "path",
-											"variant": "declaration",
-											"kind": 1024,
-											"flags": {},
-											"type": {
-												"type": "intrinsic",
-												"name": "string"
-											}
-										},
-										{
-											"id": 979,
-											"name": "state",
-											"variant": "declaration",
-											"kind": 1024,
-											"flags": {},
-											"type": {
-												"type": "literal",
-												"value": "missing"
-											}
-										}
-									],
-									"groups": [
-										{
-											"title": "Properties",
-											"children": [
-												980,
-												979
-											]
-										}
-									]
-								}
-							},
-							{
-								"type": "reflection",
-								"declaration": {
 									"id": 981,
 									"name": "__type",
 									"variant": "declaration",
@@ -15453,44 +15410,8 @@
 									"flags": {},
 									"children": [
 										{
-											"id": 984,
-											"name": "content_id",
-											"variant": "declaration",
-											"kind": 1024,
-											"flags": {},
-											"type": {
-												"type": "intrinsic",
-												"name": "string"
-											}
-										},
-										{
-											"id": 986,
-											"name": "data",
-											"variant": "declaration",
-											"kind": 1024,
-											"flags": {},
-											"type": {
-												"type": "array",
-												"elementType": {
-													"type": "intrinsic",
-													"name": "number"
-												}
-											}
-										},
-										{
 											"id": 983,
 											"name": "path",
-											"variant": "declaration",
-											"kind": 1024,
-											"flags": {},
-											"type": {
-												"type": "intrinsic",
-												"name": "string"
-											}
-										},
-										{
-											"id": 985,
-											"name": "revision",
 											"variant": "declaration",
 											"kind": 1024,
 											"flags": {},
@@ -15507,6 +15428,85 @@
 											"flags": {},
 											"type": {
 												"type": "literal",
+												"value": "missing"
+											}
+										}
+									],
+									"groups": [
+										{
+											"title": "Properties",
+											"children": [
+												983,
+												982
+											]
+										}
+									]
+								}
+							},
+							{
+								"type": "reflection",
+								"declaration": {
+									"id": 984,
+									"name": "__type",
+									"variant": "declaration",
+									"kind": 65536,
+									"flags": {},
+									"children": [
+										{
+											"id": 987,
+											"name": "content_id",
+											"variant": "declaration",
+											"kind": 1024,
+											"flags": {},
+											"type": {
+												"type": "intrinsic",
+												"name": "string"
+											}
+										},
+										{
+											"id": 989,
+											"name": "data",
+											"variant": "declaration",
+											"kind": 1024,
+											"flags": {},
+											"type": {
+												"type": "array",
+												"elementType": {
+													"type": "intrinsic",
+													"name": "number"
+												}
+											}
+										},
+										{
+											"id": 986,
+											"name": "path",
+											"variant": "declaration",
+											"kind": 1024,
+											"flags": {},
+											"type": {
+												"type": "intrinsic",
+												"name": "string"
+											}
+										},
+										{
+											"id": 988,
+											"name": "revision",
+											"variant": "declaration",
+											"kind": 1024,
+											"flags": {},
+											"type": {
+												"type": "intrinsic",
+												"name": "string"
+											}
+										},
+										{
+											"id": 985,
+											"name": "state",
+											"variant": "declaration",
+											"kind": 1024,
+											"flags": {},
+											"type": {
+												"type": "literal",
 												"value": "present"
 											}
 										}
@@ -15515,11 +15515,11 @@
 										{
 											"title": "Properties",
 											"children": [
-												984,
+												987,
+												989,
 												986,
-												983,
-												985,
-												982
+												988,
+												985
 											]
 										}
 									]
@@ -15529,7 +15529,7 @@
 					}
 				},
 				{
-					"id": 987,
+					"id": 990,
 					"name": "NodeStatus",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -15549,14 +15549,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 988,
+							"id": 991,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 997,
+									"id": 1000,
 									"name": "active_relays",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15567,7 +15567,7 @@
 									}
 								},
 								{
-									"id": 1001,
+									"id": 1004,
 									"name": "bootstrap_relay",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15578,7 +15578,7 @@
 									}
 								},
 								{
-									"id": 1002,
+									"id": 1005,
 									"name": "bootstrap_state",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15589,7 +15589,7 @@
 									}
 								},
 								{
-									"id": 999,
+									"id": 1002,
 									"name": "cached_count",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15600,7 +15600,7 @@
 									}
 								},
 								{
-									"id": 1004,
+									"id": 1007,
 									"name": "configured_bootstrap_relay_count",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15611,7 +15611,7 @@
 									}
 								},
 								{
-									"id": 1003,
+									"id": 1006,
 									"name": "configured_bootstrap_relays",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15625,7 +15625,7 @@
 									}
 								},
 								{
-									"id": 1008,
+									"id": 1011,
 									"name": "connected_bootstrap_peers",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15636,7 +15636,7 @@
 									}
 								},
 								{
-									"id": 993,
+									"id": 996,
 									"name": "connected_peers",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15647,7 +15647,7 @@
 									}
 								},
 								{
-									"id": 989,
+									"id": 992,
 									"name": "daemon_version",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15658,7 +15658,7 @@
 									}
 								},
 								{
-									"id": 994,
+									"id": 997,
 									"name": "direct_peers",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15669,7 +15669,7 @@
 									}
 								},
 								{
-									"id": 1006,
+									"id": 1009,
 									"name": "effective_bootstrap_relay_count",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15680,7 +15680,7 @@
 									}
 								},
 								{
-									"id": 1005,
+									"id": 1008,
 									"name": "effective_bootstrap_relays",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15694,7 +15694,7 @@
 									}
 								},
 								{
-									"id": 1010,
+									"id": 1013,
 									"name": "home_relay",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15709,14 +15709,14 @@
 											{
 												"type": "reflection",
 												"declaration": {
-													"id": 1011,
+													"id": 1014,
 													"name": "__type",
 													"variant": "declaration",
 													"kind": 65536,
 													"flags": {},
 													"children": [
 														{
-															"id": 1015,
+															"id": 1018,
 															"name": "api_url",
 															"variant": "declaration",
 															"kind": 1024,
@@ -15738,7 +15738,7 @@
 															}
 														},
 														{
-															"id": 1014,
+															"id": 1017,
 															"name": "capability",
 															"variant": "declaration",
 															"kind": 1024,
@@ -15762,7 +15762,7 @@
 															}
 														},
 														{
-															"id": 1013,
+															"id": 1016,
 															"name": "multiaddr",
 															"variant": "declaration",
 															"kind": 1024,
@@ -15773,7 +15773,7 @@
 															}
 														},
 														{
-															"id": 1012,
+															"id": 1015,
 															"name": "peer_id",
 															"variant": "declaration",
 															"kind": 1024,
@@ -15788,10 +15788,10 @@
 														{
 															"title": "Properties",
 															"children": [
-																1015,
-																1014,
-																1013,
-																1012
+																1018,
+																1017,
+																1016,
+																1015
 															]
 														}
 													]
@@ -15801,7 +15801,7 @@
 									}
 								},
 								{
-									"id": 991,
+									"id": 994,
 									"name": "identity_address",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15812,7 +15812,7 @@
 									}
 								},
 								{
-									"id": 1007,
+									"id": 1010,
 									"name": "known_relay_count",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15823,7 +15823,7 @@
 									}
 								},
 								{
-									"id": 1009,
+									"id": 1012,
 									"name": "last_bootstrap_error",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15843,7 +15843,7 @@
 									}
 								},
 								{
-									"id": 1000,
+									"id": 1003,
 									"name": "listen_addresses",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15857,7 +15857,7 @@
 									}
 								},
 								{
-									"id": 996,
+									"id": 999,
 									"name": "nat_type",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15868,7 +15868,7 @@
 									}
 								},
 								{
-									"id": 990,
+									"id": 993,
 									"name": "peer_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15879,7 +15879,7 @@
 									}
 								},
 								{
-									"id": 998,
+									"id": 1001,
 									"name": "published_count",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15890,7 +15890,7 @@
 									}
 								},
 								{
-									"id": 1016,
+									"id": 1019,
 									"name": "relay_record",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15912,7 +15912,7 @@
 									}
 								},
 								{
-									"id": 995,
+									"id": 998,
 									"name": "relayed_peers",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15923,7 +15923,7 @@
 									}
 								},
 								{
-									"id": 992,
+									"id": 995,
 									"name": "uptime_secs",
 									"variant": "declaration",
 									"kind": 1024,
@@ -15938,29 +15938,29 @@
 								{
 									"title": "Properties",
 									"children": [
-										997,
-										1001,
-										1002,
-										999,
-										1004,
-										1003,
-										1008,
-										993,
-										989,
-										994,
-										1006,
-										1005,
-										1010,
-										991,
-										1007,
-										1009,
 										1000,
+										1004,
+										1005,
+										1002,
+										1007,
+										1006,
+										1011,
 										996,
-										990,
+										992,
+										997,
+										1009,
+										1008,
+										1013,
+										994,
+										1010,
+										1012,
+										1003,
+										999,
+										993,
+										1001,
+										1019,
 										998,
-										1016,
-										995,
-										992
+										995
 									]
 								}
 							]
@@ -15968,7 +15968,7 @@
 					}
 				},
 				{
-					"id": 1017,
+					"id": 1020,
 					"name": "OpenedEncryptedObject",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -15984,14 +15984,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 1018,
+							"id": 1021,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 1022,
+									"id": 1025,
 									"name": "access_status",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16015,7 +16015,7 @@
 									}
 								},
 								{
-									"id": 1024,
+									"id": 1027,
 									"name": "ciphertext",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16040,7 +16040,7 @@
 									}
 								},
 								{
-									"id": 1019,
+									"id": 1022,
 									"name": "content_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16051,7 +16051,7 @@
 									}
 								},
 								{
-									"id": 1026,
+									"id": 1029,
 									"name": "content_type",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16073,7 +16073,7 @@
 									}
 								},
 								{
-									"id": 1027,
+									"id": 1030,
 									"name": "decrypt_error",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16095,7 +16095,7 @@
 									}
 								},
 								{
-									"id": 1020,
+									"id": 1023,
 									"name": "path",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16106,7 +16106,7 @@
 									}
 								},
 								{
-									"id": 1023,
+									"id": 1026,
 									"name": "plaintext",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16131,7 +16131,7 @@
 									}
 								},
 								{
-									"id": 1025,
+									"id": 1028,
 									"name": "size",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16142,7 +16142,7 @@
 									}
 								},
 								{
-									"id": 1021,
+									"id": 1024,
 									"name": "status",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16166,15 +16166,15 @@
 								{
 									"title": "Properties",
 									"children": [
-										1022,
-										1024,
-										1019,
-										1026,
-										1027,
-										1020,
-										1023,
 										1025,
-										1021
+										1027,
+										1022,
+										1029,
+										1030,
+										1023,
+										1026,
+										1028,
+										1024
 									]
 								}
 							]
@@ -16355,7 +16355,7 @@
 					}
 				},
 				{
-					"id": 1028,
+					"id": 1031,
 					"name": "PublishedContent",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -16379,14 +16379,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 1029,
+							"id": 1032,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 1033,
+									"id": 1036,
 									"name": "address",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16408,7 +16408,7 @@
 									}
 								},
 								{
-									"id": 1030,
+									"id": 1033,
 									"name": "content_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16419,7 +16419,7 @@
 									}
 								},
 								{
-									"id": 1034,
+									"id": 1037,
 									"name": "local_sequence",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16441,7 +16441,7 @@
 									}
 								},
 								{
-									"id": 1032,
+									"id": 1035,
 									"name": "path",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16463,7 +16463,7 @@
 									}
 								},
 								{
-									"id": 1035,
+									"id": 1038,
 									"name": "pin_state",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16474,7 +16474,7 @@
 									}
 								},
 								{
-									"id": 1041,
+									"id": 1044,
 									"name": "pinned_content_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16496,7 +16496,7 @@
 									}
 								},
 								{
-									"id": 1042,
+									"id": 1045,
 									"name": "pinned_sequence",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16518,7 +16518,7 @@
 									}
 								},
 								{
-									"id": 1036,
+									"id": 1039,
 									"name": "relay",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16535,14 +16535,14 @@
 											{
 												"type": "reflection",
 												"declaration": {
-													"id": 1037,
+													"id": 1040,
 													"name": "__type",
 													"variant": "declaration",
 													"kind": 65536,
 													"flags": {},
 													"children": [
 														{
-															"id": 1040,
+															"id": 1043,
 															"name": "api_url",
 															"variant": "declaration",
 															"kind": 1024,
@@ -16564,7 +16564,7 @@
 															}
 														},
 														{
-															"id": 1039,
+															"id": 1042,
 															"name": "multiaddr",
 															"variant": "declaration",
 															"kind": 1024,
@@ -16575,7 +16575,7 @@
 															}
 														},
 														{
-															"id": 1038,
+															"id": 1041,
 															"name": "peer_id",
 															"variant": "declaration",
 															"kind": 1024,
@@ -16590,9 +16590,9 @@
 														{
 															"title": "Properties",
 															"children": [
-																1040,
-																1039,
-																1038
+																1043,
+																1042,
+																1041
 															]
 														}
 													]
@@ -16602,7 +16602,7 @@
 									}
 								},
 								{
-									"id": 1031,
+									"id": 1034,
 									"name": "size",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16617,15 +16617,15 @@
 								{
 									"title": "Properties",
 									"children": [
-										1033,
-										1030,
-										1034,
-										1032,
-										1035,
-										1041,
-										1042,
 										1036,
-										1031
+										1033,
+										1037,
+										1035,
+										1038,
+										1044,
+										1045,
+										1039,
+										1034
 									]
 								}
 							]
@@ -16633,7 +16633,7 @@
 					}
 				},
 				{
-					"id": 1043,
+					"id": 1046,
 					"name": "PublishResponse",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -16657,14 +16657,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 1044,
+							"id": 1047,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 1048,
+									"id": 1051,
 									"name": "address",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16686,7 +16686,7 @@
 									}
 								},
 								{
-									"id": 1045,
+									"id": 1048,
 									"name": "content_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16697,7 +16697,7 @@
 									}
 								},
 								{
-									"id": 1049,
+									"id": 1052,
 									"name": "latest_sequence",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16719,7 +16719,7 @@
 									}
 								},
 								{
-									"id": 1047,
+									"id": 1050,
 									"name": "path",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16741,7 +16741,7 @@
 									}
 								},
 								{
-									"id": 1046,
+									"id": 1049,
 									"name": "size",
 									"variant": "declaration",
 									"kind": 1024,
@@ -16756,11 +16756,11 @@
 								{
 									"title": "Properties",
 									"children": [
+										1051,
 										1048,
-										1045,
-										1049,
-										1047,
-										1046
+										1052,
+										1050,
+										1049
 									]
 								}
 							]
@@ -17074,7 +17074,7 @@
 					}
 				},
 				{
-					"id": 1050,
+					"id": 1053,
 					"name": "ResolveResponse",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -17106,14 +17106,14 @@
 					"type": {
 						"type": "reflection",
 						"declaration": {
-							"id": 1051,
+							"id": 1054,
 							"name": "__type",
 							"variant": "declaration",
 							"kind": 65536,
 							"flags": {},
 							"children": [
 								{
-									"id": 1052,
+									"id": 1055,
 									"name": "address",
 									"variant": "declaration",
 									"kind": 1024,
@@ -17124,7 +17124,7 @@
 									}
 								},
 								{
-									"id": 1056,
+									"id": 1059,
 									"name": "content_id",
 									"variant": "declaration",
 									"kind": 1024,
@@ -17135,7 +17135,7 @@
 									}
 								},
 								{
-									"id": 1053,
+									"id": 1056,
 									"name": "identity",
 									"variant": "declaration",
 									"kind": 1024,
@@ -17146,7 +17146,7 @@
 									}
 								},
 								{
-									"id": 1055,
+									"id": 1058,
 									"name": "latest_sequence",
 									"variant": "declaration",
 									"kind": 1024,
@@ -17157,7 +17157,7 @@
 									}
 								},
 								{
-									"id": 1054,
+									"id": 1057,
 									"name": "path",
 									"variant": "declaration",
 									"kind": 1024,
@@ -17168,7 +17168,7 @@
 									}
 								},
 								{
-									"id": 1057,
+									"id": 1060,
 									"name": "reachability_hints",
 									"variant": "declaration",
 									"kind": 1024,
@@ -17182,7 +17182,7 @@
 									}
 								},
 								{
-									"id": 1058,
+									"id": 1061,
 									"name": "source",
 									"variant": "declaration",
 									"kind": 1024,
@@ -17197,13 +17197,13 @@
 								{
 									"title": "Properties",
 									"children": [
-										1052,
-										1056,
-										1053,
 										1055,
-										1054,
+										1059,
+										1056,
+										1058,
 										1057,
-										1058
+										1060,
+										1061
 									]
 								}
 							]
@@ -17211,7 +17211,7 @@
 					}
 				},
 				{
-					"id": 728,
+					"id": 731,
 					"name": "TransportRequest",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -17229,21 +17229,21 @@
 						"types": [
 							{
 								"type": "reference",
-								"target": 711,
+								"target": 714,
 								"name": "CallOptions",
 								"package": "jolt-sdk"
 							},
 							{
 								"type": "reflection",
 								"declaration": {
-									"id": 729,
+									"id": 732,
 									"name": "__type",
 									"variant": "declaration",
 									"kind": 65536,
 									"flags": {},
 									"children": [
 										{
-											"id": 732,
+											"id": 735,
 											"name": "json",
 											"variant": "declaration",
 											"kind": 1024,
@@ -17264,7 +17264,7 @@
 											}
 										},
 										{
-											"id": 730,
+											"id": 733,
 											"name": "method",
 											"variant": "declaration",
 											"kind": 1024,
@@ -17290,7 +17290,7 @@
 											}
 										},
 										{
-											"id": 731,
+											"id": 734,
 											"name": "token",
 											"variant": "declaration",
 											"kind": 1024,
@@ -17324,9 +17324,9 @@
 										{
 											"title": "Properties",
 											"children": [
-												732,
-												730,
-												731
+												735,
+												733,
+												734
 											]
 										}
 									]
@@ -17336,7 +17336,7 @@
 					}
 				},
 				{
-					"id": 733,
+					"id": 736,
 					"name": "TransportUpload",
 					"variant": "declaration",
 					"kind": 2097152,
@@ -17354,21 +17354,21 @@
 						"types": [
 							{
 								"type": "reference",
-								"target": 711,
+								"target": 714,
 								"name": "CallOptions",
 								"package": "jolt-sdk"
 							},
 							{
 								"type": "reflection",
 								"declaration": {
-									"id": 734,
+									"id": 737,
 									"name": "__type",
 									"variant": "declaration",
 									"kind": 65536,
 									"flags": {},
 									"children": [
 										{
-											"id": 737,
+											"id": 740,
 											"name": "bytes",
 											"variant": "declaration",
 											"kind": 1024,
@@ -17384,7 +17384,7 @@
 											}
 										},
 										{
-											"id": 738,
+											"id": 741,
 											"name": "fileName",
 											"variant": "declaration",
 											"kind": 1024,
@@ -17395,7 +17395,7 @@
 											}
 										},
 										{
-											"id": 739,
+											"id": 742,
 											"name": "mimeType",
 											"variant": "declaration",
 											"kind": 1024,
@@ -17406,7 +17406,7 @@
 											}
 										},
 										{
-											"id": 736,
+											"id": 739,
 											"name": "path",
 											"variant": "declaration",
 											"kind": 1024,
@@ -17425,7 +17425,7 @@
 											}
 										},
 										{
-											"id": 735,
+											"id": 738,
 											"name": "token",
 											"variant": "declaration",
 											"kind": 1024,
@@ -17440,11 +17440,11 @@
 										{
 											"title": "Properties",
 											"children": [
-												737,
-												738,
+												740,
+												741,
+												742,
 												739,
-												736,
-												735
+												738
 											]
 										}
 									]
@@ -17690,13 +17690,54 @@
 				},
 				{
 					"id": 680,
-					"name": "isJoltUnavailableError",
+					"name": "isContentUnavailableError",
 					"variant": "declaration",
 					"kind": 64,
 					"flags": {},
 					"signatures": [
 						{
 							"id": 681,
+							"name": "isContentUnavailableError",
+							"variant": "signature",
+							"kind": 4096,
+							"flags": {},
+							"comment": {
+								"summary": [
+									{
+										"kind": "text",
+										"text": "Whether a reachable daemon reported that referenced content cannot be fetched."
+									}
+								]
+							},
+							"parameters": [
+								{
+									"id": 682,
+									"name": "error",
+									"variant": "param",
+									"kind": 32768,
+									"flags": {},
+									"type": {
+										"type": "intrinsic",
+										"name": "unknown"
+									}
+								}
+							],
+							"type": {
+								"type": "intrinsic",
+								"name": "boolean"
+							}
+						}
+					]
+				},
+				{
+					"id": 683,
+					"name": "isJoltUnavailableError",
+					"variant": "declaration",
+					"kind": 64,
+					"flags": {},
+					"signatures": [
+						{
+							"id": 684,
 							"name": "isJoltUnavailableError",
 							"variant": "signature",
 							"kind": 4096,
@@ -17705,13 +17746,13 @@
 								"summary": [
 									{
 										"kind": "text",
-										"text": "Whether a failed Jolt operation should be presented as unavailable.\n\nTyped transport failures mean the daemon could not be reached. HTTP 500 and\nunstructured 502 responses also cover browser development proxies that could\nnot complete the request. Structured content discovery/fetch failures are\nunavailable, while a content-hash mismatch remains a corruption error."
+										"text": "Whether a failed Jolt operation should be presented as unavailable.\n\nTyped transport failures mean the daemon could not be reached. HTTP 500 and\nunstructured 502 responses also cover browser development proxies that could\nnot complete the request. This classifies the attempt, not the availability\nof content requested through a reachable daemon."
 									}
 								]
 							},
 							"parameters": [
 								{
-									"id": 682,
+									"id": 685,
 									"name": "error",
 									"variant": "param",
 									"kind": 32768,
@@ -17889,20 +17930,20 @@
 				{
 					"title": "References",
 					"children": [
-						898
+						901
 					]
 				},
 				{
 					"title": "Namespaces",
 					"children": [
-						740
+						743
 					]
 				},
 				{
 					"title": "Classes",
 					"children": [
-						683,
-						699
+						686,
+						702
 					]
 				},
 				{
@@ -17915,49 +17956,49 @@
 						541,
 						563,
 						587,
-						715
+						718
 					]
 				},
 				{
 					"title": "Type Aliases",
 					"children": [
-						710,
+						713,
 						639,
-						907,
+						910,
 						644,
 						649,
 						654,
-						899,
-						911,
-						915,
-						916,
-						711,
+						902,
+						914,
+						918,
+						919,
+						714,
 						661,
 						664,
-						925,
+						928,
 						472,
-						936,
-						943,
-						948,
-						477,
+						939,
+						946,
 						951,
-						956,
+						477,
+						954,
+						959,
 						486,
-						964,
+						967,
 						511,
 						514,
-						977,
-						987,
-						1017,
+						980,
+						990,
+						1020,
 						602,
-						1028,
-						1043,
+						1031,
+						1046,
 						612,
 						618,
 						628,
-						1050,
-						728,
-						733,
+						1053,
+						731,
+						736,
 						632
 					]
 				},
@@ -17968,6 +18009,7 @@
 						460,
 						674,
 						680,
+						683,
 						463,
 						466,
 						469
@@ -18011,7 +18053,7 @@
 			},
 			"children": [
 				{
-					"id": 1059,
+					"id": 1062,
 					"name": "referenceKey",
 					"variant": "reference",
 					"kind": 4194304,
@@ -18259,7 +18301,7 @@
 											],
 											"type": {
 												"type": "reference",
-												"target": 964,
+												"target": 967,
 												"name": "IngressRecord",
 												"package": "jolt-sdk"
 											}
@@ -18597,7 +18639,7 @@
 				{
 					"title": "References",
 					"children": [
-						1059
+						1062
 					]
 				},
 				{
@@ -18789,7 +18831,7 @@
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 710,
+												"target": 713,
 												"name": "ApiBase",
 												"package": "jolt-sdk"
 											}
@@ -18813,7 +18855,7 @@
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 728,
+												"target": 731,
 												"name": "TransportRequest",
 												"package": "jolt-sdk"
 											},
@@ -18840,14 +18882,14 @@
 									},
 									"implementationOf": {
 										"type": "reference",
-										"target": 717,
+										"target": 720,
 										"name": "JoltTransport.request"
 									}
 								}
 							],
 							"implementationOf": {
 								"type": "reference",
-								"target": 716,
+								"target": 719,
 								"name": "JoltTransport.request"
 							}
 						},
@@ -18906,7 +18948,7 @@
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 710,
+												"target": 713,
 												"name": "ApiBase",
 												"package": "jolt-sdk"
 											}
@@ -18930,7 +18972,7 @@
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 733,
+												"target": 736,
 												"name": "TransportUpload",
 												"package": "jolt-sdk"
 											}
@@ -18956,14 +18998,14 @@
 									},
 									"implementationOf": {
 										"type": "reference",
-										"target": 723,
+										"target": 726,
 										"name": "JoltTransport.upload"
 									}
 								}
 							],
 							"implementationOf": {
 								"type": "reference",
-								"target": 722,
+								"target": 725,
 								"name": "JoltTransport.upload"
 							}
 						},
@@ -19075,7 +19117,7 @@
 					"implementedTypes": [
 						{
 							"type": "reference",
-							"target": 715,
+							"target": 718,
 							"name": "JoltTransport",
 							"package": "jolt-sdk"
 						}
@@ -19409,7 +19451,7 @@
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 710,
+												"target": 713,
 												"name": "ApiBase",
 												"package": "jolt-sdk"
 											}
@@ -19433,7 +19475,7 @@
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 728,
+												"target": 731,
 												"name": "TransportRequest",
 												"package": "jolt-sdk"
 											},
@@ -19460,14 +19502,14 @@
 									},
 									"implementationOf": {
 										"type": "reference",
-										"target": 717,
+										"target": 720,
 										"name": "JoltTransport.request"
 									}
 								}
 							],
 							"implementationOf": {
 								"type": "reference",
-								"target": 716,
+								"target": 719,
 								"name": "JoltTransport.request"
 							}
 						},
@@ -19526,7 +19568,7 @@
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 710,
+												"target": 713,
 												"name": "ApiBase",
 												"package": "jolt-sdk"
 											}
@@ -19550,7 +19592,7 @@
 											"flags": {},
 											"type": {
 												"type": "reference",
-												"target": 733,
+												"target": 736,
 												"name": "TransportUpload",
 												"package": "jolt-sdk"
 											}
@@ -19576,14 +19618,14 @@
 									},
 									"implementationOf": {
 										"type": "reference",
-										"target": 723,
+										"target": 726,
 										"name": "JoltTransport.upload"
 									}
 								}
 							],
 							"implementationOf": {
 								"type": "reference",
-								"target": 722,
+								"target": 725,
 								"name": "JoltTransport.upload"
 							}
 						}
@@ -19606,7 +19648,7 @@
 					"implementedTypes": [
 						{
 							"type": "reference",
-							"target": 715,
+							"target": 718,
 							"name": "JoltTransport",
 							"package": "jolt-sdk"
 						}
@@ -22649,11 +22691,11 @@
 		},
 		"680": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "isJoltUnavailableError"
+			"qualifiedName": "isContentUnavailableError"
 		},
 		"681": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "isJoltUnavailableError"
+			"qualifiedName": "isContentUnavailableError"
 		},
 		"682": {
 			"sourceFileName": "src/errors.ts",
@@ -22661,1079 +22703,1079 @@
 		},
 		"683": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "JoltApiError"
+			"qualifiedName": "isJoltUnavailableError"
 		},
 		"684": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "JoltApiError.__constructor"
+			"qualifiedName": "isJoltUnavailableError"
 		},
 		"685": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "JoltApiError"
+			"qualifiedName": "error"
 		},
 		"686": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "message"
+			"qualifiedName": "JoltApiError"
 		},
 		"687": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "JoltApiError.__constructor"
 		},
 		"688": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "JoltApiError"
 		},
 		"689": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "__type.status"
+			"qualifiedName": "message"
 		},
 		"690": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "__type.code"
+			"qualifiedName": "options"
 		},
 		"691": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "__type.body"
+			"qualifiedName": "__type"
 		},
 		"692": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "JoltApiError.status"
+			"qualifiedName": "__type.status"
 		},
 		"693": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "JoltApiError.code"
+			"qualifiedName": "__type.code"
 		},
 		"694": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "JoltApiError.body"
+			"qualifiedName": "__type.body"
 		},
 		"695": {
+			"sourceFileName": "src/errors.ts",
+			"qualifiedName": "JoltApiError.status"
+		},
+		"696": {
+			"sourceFileName": "src/errors.ts",
+			"qualifiedName": "JoltApiError.code"
+		},
+		"697": {
+			"sourceFileName": "src/errors.ts",
+			"qualifiedName": "JoltApiError.body"
+		},
+		"698": {
 			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.name"
 		},
-		"696": {
+		"699": {
 			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.message"
 		},
-		"697": {
+		"700": {
 			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.stack"
 		},
-		"698": {
+		"701": {
 			"sourceFileName": "node_modules/typescript/lib/lib.es2022.error.d.ts",
 			"qualifiedName": "Error.cause"
-		},
-		"699": {
-			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "JoltTransportError"
-		},
-		"700": {
-			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "JoltTransportError.__constructor"
-		},
-		"701": {
-			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "JoltTransportError"
 		},
 		"702": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "message"
+			"qualifiedName": "JoltTransportError"
 		},
 		"703": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "JoltTransportError.__constructor"
 		},
 		"704": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "JoltTransportError"
 		},
 		"705": {
 			"sourceFileName": "src/errors.ts",
-			"qualifiedName": "__type.cause"
+			"qualifiedName": "message"
 		},
 		"706": {
+			"sourceFileName": "src/errors.ts",
+			"qualifiedName": "options"
+		},
+		"707": {
+			"sourceFileName": "src/errors.ts",
+			"qualifiedName": "__type"
+		},
+		"708": {
+			"sourceFileName": "src/errors.ts",
+			"qualifiedName": "__type.cause"
+		},
+		"709": {
 			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.name"
 		},
-		"707": {
+		"710": {
 			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.message"
 		},
-		"708": {
+		"711": {
 			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.stack"
 		},
-		"709": {
+		"712": {
 			"sourceFileName": "node_modules/typescript/lib/lib.es2022.error.d.ts",
 			"qualifiedName": "Error.cause"
 		},
-		"710": {
+		"713": {
 			"sourceFileName": "src/transport.ts",
 			"qualifiedName": "ApiBase"
 		},
-		"711": {
+		"714": {
 			"sourceFileName": "src/transport.ts",
 			"qualifiedName": "CallOptions"
 		},
-		"712": {
-			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type"
-		},
-		"713": {
-			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type.signal"
-		},
-		"714": {
-			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type.timeoutMs"
-		},
 		"715": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "JoltTransport"
+			"qualifiedName": "__type"
 		},
 		"716": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "JoltTransport.request"
+			"qualifiedName": "__type.signal"
 		},
 		"717": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "JoltTransport.request"
+			"qualifiedName": "__type.timeoutMs"
 		},
 		"718": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "T"
+			"qualifiedName": "JoltTransport"
 		},
 		"719": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "base"
+			"qualifiedName": "JoltTransport.request"
 		},
 		"720": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "path"
+			"qualifiedName": "JoltTransport.request"
 		},
 		"721": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "req"
+			"qualifiedName": "T"
 		},
 		"722": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "JoltTransport.upload"
+			"qualifiedName": "base"
 		},
 		"723": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "JoltTransport.upload"
+			"qualifiedName": "path"
 		},
 		"724": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "T"
+			"qualifiedName": "req"
 		},
 		"725": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "base"
+			"qualifiedName": "JoltTransport.upload"
 		},
 		"726": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "path"
+			"qualifiedName": "JoltTransport.upload"
 		},
 		"727": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "req"
+			"qualifiedName": "T"
 		},
 		"728": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "TransportRequest"
+			"qualifiedName": "base"
 		},
 		"729": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "path"
 		},
 		"730": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type.method"
+			"qualifiedName": "req"
 		},
 		"731": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type.token"
+			"qualifiedName": "TransportRequest"
 		},
 		"732": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type.json"
+			"qualifiedName": "__type"
 		},
 		"733": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "TransportUpload"
+			"qualifiedName": "__type.method"
 		},
 		"734": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.token"
 		},
 		"735": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type.token"
+			"qualifiedName": "__type.json"
 		},
 		"736": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type.path"
+			"qualifiedName": "TransportUpload"
 		},
 		"737": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type.bytes"
+			"qualifiedName": "__type"
 		},
 		"738": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type.fileName"
+			"qualifiedName": "__type.token"
 		},
 		"739": {
 			"sourceFileName": "src/transport.ts",
-			"qualifiedName": "__type.mimeType"
+			"qualifiedName": "__type.path"
 		},
 		"740": {
-			"sourceFileName": "src/operations.ts",
-			"qualifiedName": ""
+			"sourceFileName": "src/transport.ts",
+			"qualifiedName": "__type.bytes"
 		},
 		"741": {
-			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "requestSession"
+			"sourceFileName": "src/transport.ts",
+			"qualifiedName": "__type.fileName"
 		},
 		"742": {
-			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "requestSession"
+			"sourceFileName": "src/transport.ts",
+			"qualifiedName": "__type.mimeType"
 		},
 		"743": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": ""
 		},
 		"744": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "req"
+			"qualifiedName": "requestSession"
 		},
 		"745": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "requestSession"
 		},
 		"746": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "getSessionRequestStatus"
+			"qualifiedName": "transport"
 		},
 		"747": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "getSessionRequestStatus"
+			"qualifiedName": "req"
 		},
 		"748": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"749": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "requestId"
+			"qualifiedName": "getSessionRequestStatus"
 		},
 		"750": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "getSessionRequestStatus"
 		},
 		"751": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "getCurrentSession"
+			"qualifiedName": "transport"
 		},
 		"752": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "getCurrentSession"
+			"qualifiedName": "requestId"
 		},
 		"753": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"754": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "getCurrentSession"
 		},
 		"755": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "getCurrentSession"
 		},
 		"756": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "getStatus"
+			"qualifiedName": "transport"
 		},
 		"757": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "getStatus"
+			"qualifiedName": "token"
 		},
 		"758": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"759": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "getStatus"
 		},
 		"760": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "getAppApiFeatures"
+			"qualifiedName": "getStatus"
 		},
 		"761": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "getAppApiFeatures"
+			"qualifiedName": "transport"
 		},
 		"762": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"763": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "getAppApiFeatures"
 		},
 		"764": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "publishJson"
+			"qualifiedName": "getAppApiFeatures"
 		},
 		"765": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "publishJson"
+			"qualifiedName": "transport"
 		},
 		"766": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"767": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "publishJson"
 		},
 		"768": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "path"
+			"qualifiedName": "publishJson"
 		},
 		"769": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "body"
+			"qualifiedName": "transport"
 		},
 		"770": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "token"
 		},
 		"771": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "publishBytes"
+			"qualifiedName": "path"
 		},
 		"772": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "publishBytes"
+			"qualifiedName": "body"
 		},
 		"773": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"774": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "publishBytes"
 		},
 		"775": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "path"
+			"qualifiedName": "publishBytes"
 		},
 		"776": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "bytes"
+			"qualifiedName": "transport"
 		},
 		"777": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "meta"
+			"qualifiedName": "token"
 		},
 		"778": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "path"
 		},
 		"779": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.fileName"
+			"qualifiedName": "bytes"
 		},
 		"780": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.mimeType"
+			"qualifiedName": "meta"
 		},
 		"781": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "__type"
 		},
 		"782": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "appendPublishJson"
+			"qualifiedName": "__type.fileName"
 		},
 		"783": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "appendPublishJson"
+			"qualifiedName": "__type.mimeType"
 		},
 		"784": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"785": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "appendPublishJson"
 		},
 		"786": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "path"
+			"qualifiedName": "appendPublishJson"
 		},
 		"787": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "body"
+			"qualifiedName": "transport"
 		},
 		"788": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "token"
 		},
 		"789": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "enumerate"
+			"qualifiedName": "path"
 		},
 		"790": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "enumerate"
+			"qualifiedName": "body"
 		},
 		"791": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"792": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "enumerate"
 		},
 		"793": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "identity"
+			"qualifiedName": "enumerate"
 		},
 		"794": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "pathPrefix"
+			"qualifiedName": "transport"
 		},
 		"795": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "token"
 		},
 		"796": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "publishEncryptedJson"
+			"qualifiedName": "identity"
 		},
 		"797": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "publishEncryptedJson"
+			"qualifiedName": "pathPrefix"
 		},
 		"798": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"799": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "publishEncryptedJson"
 		},
 		"800": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "path"
+			"qualifiedName": "publishEncryptedJson"
 		},
 		"801": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "body"
+			"qualifiedName": "transport"
 		},
 		"802": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "recipients"
+			"qualifiedName": "token"
 		},
 		"803": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "path"
 		},
 		"804": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "publishEncryptedBytes"
+			"qualifiedName": "body"
 		},
 		"805": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "publishEncryptedBytes"
+			"qualifiedName": "recipients"
 		},
 		"806": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"807": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "publishEncryptedBytes"
 		},
 		"808": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "path"
+			"qualifiedName": "publishEncryptedBytes"
 		},
 		"809": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "plaintext"
+			"qualifiedName": "transport"
 		},
 		"810": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "meta"
+			"qualifiedName": "token"
 		},
 		"811": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "path"
 		},
 		"812": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.mimeType"
+			"qualifiedName": "plaintext"
 		},
 		"813": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.recipients"
+			"qualifiedName": "meta"
 		},
 		"814": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "__type"
 		},
 		"815": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "resolveAddress"
+			"qualifiedName": "__type.mimeType"
 		},
 		"816": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "resolveAddress"
+			"qualifiedName": "__type.recipients"
 		},
 		"817": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"818": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "resolveAddress"
 		},
 		"819": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "address"
+			"qualifiedName": "resolveAddress"
 		},
 		"820": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "transport"
 		},
 		"821": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "fetchTarget"
+			"qualifiedName": "token"
 		},
 		"822": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "fetchTarget"
+			"qualifiedName": "address"
 		},
 		"823": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"824": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "fetchTarget"
 		},
 		"825": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "target"
+			"qualifiedName": "fetchTarget"
 		},
 		"826": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "transport"
 		},
 		"827": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "readLocalRecord"
+			"qualifiedName": "token"
 		},
 		"828": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "readLocalRecord"
+			"qualifiedName": "target"
 		},
 		"829": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"830": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "readLocalRecord"
 		},
 		"831": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "path"
+			"qualifiedName": "readLocalRecord"
 		},
 		"832": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "transport"
 		},
 		"833": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "decryptEncryptedTarget"
+			"qualifiedName": "token"
 		},
 		"834": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "decryptEncryptedTarget"
+			"qualifiedName": "path"
 		},
 		"835": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"836": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "decryptEncryptedTarget"
 		},
 		"837": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "target"
+			"qualifiedName": "decryptEncryptedTarget"
 		},
 		"838": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "transport"
 		},
 		"839": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "openEncryptedTarget"
+			"qualifiedName": "token"
 		},
 		"840": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "openEncryptedTarget"
+			"qualifiedName": "target"
 		},
 		"841": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"842": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "openEncryptedTarget"
 		},
 		"843": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "target"
+			"qualifiedName": "openEncryptedTarget"
 		},
 		"844": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "path"
+			"qualifiedName": "transport"
 		},
 		"845": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "token"
 		},
 		"846": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "listPublished"
+			"qualifiedName": "target"
 		},
 		"847": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "listPublished"
+			"qualifiedName": "path"
 		},
 		"848": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"849": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "listPublished"
 		},
 		"850": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "listPublished"
 		},
 		"851": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "pinHomeRelay"
+			"qualifiedName": "transport"
 		},
 		"852": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "pinHomeRelay"
+			"qualifiedName": "token"
 		},
 		"853": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"854": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "pinHomeRelay"
 		},
 		"855": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "contentId"
+			"qualifiedName": "pinHomeRelay"
 		},
 		"856": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "path"
+			"qualifiedName": "transport"
 		},
 		"857": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "token"
 		},
 		"858": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "sendIngress"
+			"qualifiedName": "contentId"
 		},
 		"859": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "sendIngress"
+			"qualifiedName": "path"
 		},
 		"860": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"861": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "sendIngress"
 		},
 		"862": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "req"
+			"qualifiedName": "sendIngress"
 		},
 		"863": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "transport"
 		},
 		"864": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.recipient"
+			"qualifiedName": "token"
 		},
 		"865": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.encryptedObject"
+			"qualifiedName": "req"
 		},
 		"866": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.expiresAt"
+			"qualifiedName": "__type"
 		},
 		"867": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "__type.recipient"
 		},
 		"868": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "listPendingIngress"
+			"qualifiedName": "__type.encryptedObject"
 		},
 		"869": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "listPendingIngress"
+			"qualifiedName": "__type.expiresAt"
 		},
 		"870": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"871": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "listPendingIngress"
 		},
 		"872": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "listPendingIngress"
 		},
 		"873": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "openIngress"
+			"qualifiedName": "transport"
 		},
 		"874": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "openIngress"
+			"qualifiedName": "token"
 		},
 		"875": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"876": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "openIngress"
 		},
 		"877": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "ingressId"
+			"qualifiedName": "openIngress"
 		},
 		"878": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "transport"
 		},
 		"879": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "acceptIngress"
+			"qualifiedName": "token"
 		},
 		"880": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "acceptIngress"
+			"qualifiedName": "ingressId"
 		},
 		"881": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"882": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "acceptIngress"
 		},
 		"883": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "ingressId"
+			"qualifiedName": "acceptIngress"
 		},
 		"884": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "transport"
 		},
 		"885": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "rejectIngress"
+			"qualifiedName": "token"
 		},
 		"886": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "rejectIngress"
+			"qualifiedName": "ingressId"
 		},
 		"887": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "transport"
+			"qualifiedName": "options"
 		},
 		"888": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "token"
+			"qualifiedName": "rejectIngress"
 		},
 		"889": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "ingressId"
+			"qualifiedName": "rejectIngress"
 		},
 		"890": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "options"
+			"qualifiedName": "transport"
 		},
 		"891": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "SessionRequest"
+			"qualifiedName": "token"
 		},
 		"892": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "ingressId"
 		},
 		"893": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.appId"
+			"qualifiedName": "options"
 		},
 		"894": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.appName"
+			"qualifiedName": "SessionRequest"
 		},
 		"895": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.appOrigin"
+			"qualifiedName": "__type"
 		},
 		"896": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.identity"
+			"qualifiedName": "__type.appId"
 		},
 		"897": {
 			"sourceFileName": "src/operations.ts",
-			"qualifiedName": "__type.capabilities"
+			"qualifiedName": "__type.appName"
 		},
 		"898": {
+			"sourceFileName": "src/operations.ts",
+			"qualifiedName": "__type.appOrigin"
+		},
+		"899": {
+			"sourceFileName": "src/operations.ts",
+			"qualifiedName": "__type.identity"
+		},
+		"900": {
+			"sourceFileName": "src/operations.ts",
+			"qualifiedName": "__type.capabilities"
+		},
+		"901": {
 			"sourceFileName": "src/index.ts",
 			"qualifiedName": "SessionRequest"
 		},
-		"899": {
+		"902": {
 			"sourceFileName": "src/wire.ts",
 			"qualifiedName": "AppendRecordInfo"
 		},
-		"900": {
-			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
-		},
-		"901": {
-			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.path"
-		},
-		"902": {
-			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_id"
-		},
 		"903": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.device_id"
+			"qualifiedName": "__type"
 		},
 		"904": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.device_sequence"
+			"qualifiedName": "__type.path"
 		},
 		"905": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.created_at"
+			"qualifiedName": "__type.content_id"
 		},
 		"906": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.entry_hash"
+			"qualifiedName": "__type.device_id"
 		},
 		"907": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "AppApiFeatureManifestResponse"
+			"qualifiedName": "__type.device_sequence"
 		},
 		"908": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.created_at"
 		},
 		"909": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.app_api"
+			"qualifiedName": "__type.entry_hash"
 		},
 		"910": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.features"
+			"qualifiedName": "AppApiFeatureManifestResponse"
 		},
 		"911": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "AppSessionRequestResponse"
+			"qualifiedName": "__type"
 		},
 		"912": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.app_api"
 		},
 		"913": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.request_id"
+			"qualifiedName": "__type.features"
 		},
 		"914": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.status"
+			"qualifiedName": "AppSessionRequestResponse"
 		},
 		"915": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "AppSessionStatus"
+			"qualifiedName": "__type"
 		},
 		"916": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "AppSessionStatusResponse"
+			"qualifiedName": "__type.request_id"
 		},
 		"917": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.status"
 		},
 		"918": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.request_id"
+			"qualifiedName": "AppSessionStatus"
 		},
 		"919": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.session_id"
+			"qualifiedName": "AppSessionStatusResponse"
 		},
 		"920": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.session_token"
+			"qualifiedName": "__type"
 		},
 		"921": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.status"
+			"qualifiedName": "__type.request_id"
 		},
 		"922": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.identity"
+			"qualifiedName": "__type.session_id"
 		},
 		"923": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.capabilities"
+			"qualifiedName": "__type.session_token"
 		},
 		"924": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.expires_at"
+			"qualifiedName": "__type.status"
 		},
 		"925": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "CurrentAppSession"
+			"qualifiedName": "__type.identity"
 		},
 		"926": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.capabilities"
 		},
 		"927": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.request_id"
+			"qualifiedName": "__type.expires_at"
 		},
 		"928": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.session_id"
+			"qualifiedName": "CurrentAppSession"
 		},
 		"929": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.app_id"
+			"qualifiedName": "__type"
 		},
 		"930": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.app_name"
+			"qualifiedName": "__type.request_id"
 		},
 		"931": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.identity"
+			"qualifiedName": "__type.session_id"
 		},
 		"932": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.granted_capabilities"
+			"qualifiedName": "__type.app_id"
 		},
 		"933": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.status"
+			"qualifiedName": "__type.app_name"
 		},
 		"934": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.expires_at"
+			"qualifiedName": "__type.identity"
 		},
 		"935": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.last_used_at"
+			"qualifiedName": "__type.granted_capabilities"
 		},
 		"936": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "DecryptedEncryptedObject"
+			"qualifiedName": "__type.status"
 		},
 		"937": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.expires_at"
 		},
 		"938": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_id"
+			"qualifiedName": "__type.last_used_at"
 		},
 		"939": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.path"
+			"qualifiedName": "DecryptedEncryptedObject"
 		},
 		"940": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.plaintext"
+			"qualifiedName": "__type"
 		},
 		"941": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.size"
+			"qualifiedName": "__type.content_id"
 		},
 		"942": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_type"
+			"qualifiedName": "__type.path"
 		},
 		"943": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "DecryptedIngress"
+			"qualifiedName": "__type.plaintext"
 		},
 		"944": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.size"
 		},
 		"945": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.plaintext"
+			"qualifiedName": "__type.content_type"
 		},
 		"946": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.size"
+			"qualifiedName": "DecryptedIngress"
 		},
 		"947": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_type"
+			"qualifiedName": "__type"
 		},
 		"948": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "EncryptedPublishResponse"
+			"qualifiedName": "__type.plaintext"
 		},
 		"949": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.size"
 		},
 		"950": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.recipient_count"
+			"qualifiedName": "__type.content_type"
 		},
 		"951": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "FetchResult"
+			"qualifiedName": "EncryptedPublishResponse"
 		},
 		"952": {
 			"sourceFileName": "src/wire.ts",
@@ -23741,115 +23783,115 @@
 		},
 		"953": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.data"
+			"qualifiedName": "__type.recipient_count"
 		},
 		"954": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_id"
+			"qualifiedName": "FetchResult"
 		},
 		"955": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.size"
+			"qualifiedName": "__type"
 		},
 		"956": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "HomeRelayPinResponse"
+			"qualifiedName": "__type.data"
 		},
 		"957": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.content_id"
 		},
 		"958": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.status"
+			"qualifiedName": "__type.size"
 		},
 		"959": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.relay"
+			"qualifiedName": "HomeRelayPinResponse"
 		},
 		"960": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.owner"
+			"qualifiedName": "__type"
 		},
 		"961": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_id"
+			"qualifiedName": "__type.status"
 		},
 		"962": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.latest_sequence"
+			"qualifiedName": "__type.relay"
 		},
 		"963": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.size"
+			"qualifiedName": "__type.owner"
 		},
 		"964": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "IngressRecord"
+			"qualifiedName": "__type.content_id"
 		},
 		"965": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.latest_sequence"
 		},
 		"966": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.ingress_id"
+			"qualifiedName": "__type.size"
 		},
 		"967": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.receiver_id"
+			"qualifiedName": "IngressRecord"
 		},
 		"968": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.sender_identity"
+			"qualifiedName": "__type"
 		},
 		"969": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.recipient_identity"
+			"qualifiedName": "__type.ingress_id"
 		},
 		"970": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.schema_hint"
+			"qualifiedName": "__type.receiver_id"
 		},
 		"971": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.status"
+			"qualifiedName": "__type.sender_identity"
 		},
 		"972": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.received_at"
+			"qualifiedName": "__type.recipient_identity"
 		},
 		"973": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.expires_at"
+			"qualifiedName": "__type.schema_hint"
 		},
 		"974": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.size"
+			"qualifiedName": "__type.status"
 		},
 		"975": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.accepted_at"
+			"qualifiedName": "__type.received_at"
 		},
 		"976": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.rejected_at"
+			"qualifiedName": "__type.expires_at"
 		},
 		"977": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "LocalRecordReadResponse"
+			"qualifiedName": "__type.size"
 		},
 		"978": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.accepted_at"
 		},
 		"979": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.state"
+			"qualifiedName": "__type.rejected_at"
 		},
 		"980": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.path"
+			"qualifiedName": "LocalRecordReadResponse"
 		},
 		"981": {
 			"sourceFileName": "src/wire.ts",
@@ -23865,305 +23907,317 @@
 		},
 		"984": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_id"
+			"qualifiedName": "__type"
 		},
 		"985": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.revision"
+			"qualifiedName": "__type.state"
 		},
 		"986": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.data"
+			"qualifiedName": "__type.path"
 		},
 		"987": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "NodeStatus"
+			"qualifiedName": "__type.content_id"
 		},
 		"988": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.revision"
 		},
 		"989": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.daemon_version"
+			"qualifiedName": "__type.data"
 		},
 		"990": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.peer_id"
+			"qualifiedName": "NodeStatus"
 		},
 		"991": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.identity_address"
+			"qualifiedName": "__type"
 		},
 		"992": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.uptime_secs"
+			"qualifiedName": "__type.daemon_version"
 		},
 		"993": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.connected_peers"
+			"qualifiedName": "__type.peer_id"
 		},
 		"994": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.direct_peers"
+			"qualifiedName": "__type.identity_address"
 		},
 		"995": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.relayed_peers"
+			"qualifiedName": "__type.uptime_secs"
 		},
 		"996": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.nat_type"
+			"qualifiedName": "__type.connected_peers"
 		},
 		"997": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.active_relays"
+			"qualifiedName": "__type.direct_peers"
 		},
 		"998": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.published_count"
+			"qualifiedName": "__type.relayed_peers"
 		},
 		"999": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.cached_count"
+			"qualifiedName": "__type.nat_type"
 		},
 		"1000": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.listen_addresses"
+			"qualifiedName": "__type.active_relays"
 		},
 		"1001": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.bootstrap_relay"
+			"qualifiedName": "__type.published_count"
 		},
 		"1002": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.bootstrap_state"
+			"qualifiedName": "__type.cached_count"
 		},
 		"1003": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.configured_bootstrap_relays"
+			"qualifiedName": "__type.listen_addresses"
 		},
 		"1004": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.configured_bootstrap_relay_count"
+			"qualifiedName": "__type.bootstrap_relay"
 		},
 		"1005": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.effective_bootstrap_relays"
+			"qualifiedName": "__type.bootstrap_state"
 		},
 		"1006": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.effective_bootstrap_relay_count"
+			"qualifiedName": "__type.configured_bootstrap_relays"
 		},
 		"1007": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.known_relay_count"
+			"qualifiedName": "__type.configured_bootstrap_relay_count"
 		},
 		"1008": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.connected_bootstrap_peers"
+			"qualifiedName": "__type.effective_bootstrap_relays"
 		},
 		"1009": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.last_bootstrap_error"
+			"qualifiedName": "__type.effective_bootstrap_relay_count"
 		},
 		"1010": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.home_relay"
+			"qualifiedName": "__type.known_relay_count"
 		},
 		"1011": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.connected_bootstrap_peers"
 		},
 		"1012": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.peer_id"
+			"qualifiedName": "__type.last_bootstrap_error"
 		},
 		"1013": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.multiaddr"
+			"qualifiedName": "__type.home_relay"
 		},
 		"1014": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.capability"
+			"qualifiedName": "__type"
 		},
 		"1015": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.api_url"
+			"qualifiedName": "__type.peer_id"
 		},
 		"1016": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.relay_record"
+			"qualifiedName": "__type.multiaddr"
 		},
 		"1017": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "OpenedEncryptedObject"
+			"qualifiedName": "__type.capability"
 		},
 		"1018": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.api_url"
 		},
 		"1019": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_id"
+			"qualifiedName": "__type.relay_record"
 		},
 		"1020": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.path"
+			"qualifiedName": "OpenedEncryptedObject"
 		},
 		"1021": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.status"
+			"qualifiedName": "__type"
 		},
 		"1022": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.access_status"
+			"qualifiedName": "__type.content_id"
 		},
 		"1023": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.plaintext"
+			"qualifiedName": "__type.path"
 		},
 		"1024": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.ciphertext"
+			"qualifiedName": "__type.status"
 		},
 		"1025": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.size"
+			"qualifiedName": "__type.access_status"
 		},
 		"1026": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_type"
+			"qualifiedName": "__type.plaintext"
 		},
 		"1027": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.decrypt_error"
+			"qualifiedName": "__type.ciphertext"
 		},
 		"1028": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "PublishedContent"
+			"qualifiedName": "__type.size"
 		},
 		"1029": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.content_type"
 		},
 		"1030": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_id"
+			"qualifiedName": "__type.decrypt_error"
 		},
 		"1031": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.size"
+			"qualifiedName": "PublishedContent"
 		},
 		"1032": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.path"
+			"qualifiedName": "__type"
 		},
 		"1033": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.address"
+			"qualifiedName": "__type.content_id"
 		},
 		"1034": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.local_sequence"
+			"qualifiedName": "__type.size"
 		},
 		"1035": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.pin_state"
+			"qualifiedName": "__type.path"
 		},
 		"1036": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.relay"
+			"qualifiedName": "__type.address"
 		},
 		"1037": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.local_sequence"
 		},
 		"1038": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.peer_id"
+			"qualifiedName": "__type.pin_state"
 		},
 		"1039": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.multiaddr"
+			"qualifiedName": "__type.relay"
 		},
 		"1040": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.api_url"
+			"qualifiedName": "__type"
 		},
 		"1041": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.pinned_content_id"
+			"qualifiedName": "__type.peer_id"
 		},
 		"1042": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.pinned_sequence"
+			"qualifiedName": "__type.multiaddr"
 		},
 		"1043": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "PublishResponse"
+			"qualifiedName": "__type.api_url"
 		},
 		"1044": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.pinned_content_id"
 		},
 		"1045": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_id"
+			"qualifiedName": "__type.pinned_sequence"
 		},
 		"1046": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.size"
+			"qualifiedName": "PublishResponse"
 		},
 		"1047": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.path"
+			"qualifiedName": "__type"
 		},
 		"1048": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.address"
+			"qualifiedName": "__type.content_id"
 		},
 		"1049": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.latest_sequence"
+			"qualifiedName": "__type.size"
 		},
 		"1050": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "ResolveResponse"
+			"qualifiedName": "__type.path"
 		},
 		"1051": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type"
+			"qualifiedName": "__type.address"
 		},
 		"1052": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.address"
+			"qualifiedName": "__type.latest_sequence"
 		},
 		"1053": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.identity"
+			"qualifiedName": "ResolveResponse"
 		},
 		"1054": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.path"
+			"qualifiedName": "__type"
 		},
 		"1055": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.latest_sequence"
+			"qualifiedName": "__type.address"
 		},
 		"1056": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.content_id"
+			"qualifiedName": "__type.identity"
 		},
 		"1057": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.reachability_hints"
+			"qualifiedName": "__type.path"
 		},
 		"1058": {
 			"sourceFileName": "src/wire.ts",
-			"qualifiedName": "__type.source"
+			"qualifiedName": "__type.latest_sequence"
 		},
 		"1059": {
+			"sourceFileName": "src/wire.ts",
+			"qualifiedName": "__type.content_id"
+		},
+		"1060": {
+			"sourceFileName": "src/wire.ts",
+			"qualifiedName": "__type.reachability_hints"
+		},
+		"1061": {
+			"sourceFileName": "src/wire.ts",
+			"qualifiedName": "__type.source"
+		},
+		"1062": {
 			"sourceFileName": "src/testing.ts",
 			"qualifiedName": "referenceKey"
 		}
@@ -24183,7 +24237,7 @@
 			"3": 358,
 			"4": 405,
 			"5": 428,
-			"6": 740
+			"6": 743
 		}
 	}
 }

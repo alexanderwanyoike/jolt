@@ -1,6 +1,9 @@
 import { makeId } from "./client.js";
 import type { JoltSdk } from "./client.js";
-import { isJoltUnavailableError } from "./errors.js";
+import {
+  isContentUnavailableError,
+  isJoltUnavailableError,
+} from "./errors.js";
 
 /** A decorated application value class used as both runtime schema and TypeScript type. */
 export type SchemaClass<T extends object> = new () => T;
@@ -710,7 +713,12 @@ function createConnectedBackend(
       try {
         record = await options.client.readRecord(ref);
       } catch (error) {
-        if (isJoltUnavailableError(error)) return State.Unavailable;
+        if (
+          isJoltUnavailableError(error) ||
+          isContentUnavailableError(error)
+        ) {
+          return State.Unavailable;
+        }
         throw error;
       }
       if (record.state === "missing") return State.Missing;

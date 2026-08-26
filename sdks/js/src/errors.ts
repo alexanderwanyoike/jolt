@@ -48,17 +48,24 @@ export class JoltTransportError extends Error {
  *
  * Typed transport failures mean the daemon could not be reached. HTTP 500 and
  * unstructured 502 responses also cover browser development proxies that could
- * not complete the request. Structured content discovery/fetch failures are
- * unavailable, while a content-hash mismatch remains a corruption error.
+ * not complete the request. This classifies the attempt, not the availability
+ * of content requested through a reachable daemon.
  */
 export function isJoltUnavailableError(error: unknown): boolean {
   return (
     error instanceof JoltTransportError ||
     (error instanceof JoltApiError &&
       (error.status === 500 ||
-        (error.status === 502 && error.code !== "content_hash_mismatch") ||
-        error.code === "content_provider_not_found" ||
-        error.code === "content_fetch_failed"))
+        (error.status === 502 && error.code !== "content_hash_mismatch")))
+  );
+}
+
+/** Whether a reachable daemon reported that referenced content cannot be fetched. */
+export function isContentUnavailableError(error: unknown): boolean {
+  return (
+    error instanceof JoltApiError &&
+    (error.code === "content_provider_not_found" ||
+      error.code === "content_fetch_failed")
   );
 }
 
