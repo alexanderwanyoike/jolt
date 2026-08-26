@@ -202,6 +202,7 @@ pub struct FetchResult {
 pub struct LocalRecordInfo {
     pub path: String,
     pub content_id: String,
+    /// Opaque revision token; equal if and only if it names the same winning log entry.
     pub revision: String,
 }
 

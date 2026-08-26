@@ -2559,6 +2559,30 @@ async fn test_app_reads_authoritative_local_record_state_across_restart() {
         )
     );
 
+    let content_id = published["content_id"].as_str().unwrap();
+    let content_path = profile
+        .path()
+        .join("data")
+        .join("published")
+        .join(content_id)
+        .join("content");
+    std::fs::remove_file(&content_path).unwrap();
+    let unavailable = client
+        .post(format!("{}/app/v1/records/read", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .unwrap();
+    assert!(unavailable.status() == 404 || unavailable.status() == 504);
+    let unavailable: serde_json::Value = unavailable.json().await.unwrap();
+    assert!(
+        unavailable["code"] == "content_provider_not_found"
+            || unavailable["code"] == "content_fetch_failed",
+        "expected structured content failure code, got {unavailable}"
+    );
+    std::fs::write(content_path, stored).unwrap();
+
     let revision = first_read["revision"].clone();
     first_handle.shutdown().await.ok();
 

@@ -101,7 +101,11 @@ pub async fn read_local_record(
     let Some(record) = state.daemon.inspect_local_record(path.clone()).await? else {
         return Ok(Json(LocalRecordReadResponse::Missing { path }));
     };
-    let fetched = state.daemon.fetch(record.content_id.clone()).await?;
+    let fetched = state
+        .daemon
+        .fetch(record.content_id.clone())
+        .await
+        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &record.content_id)))?;
     Ok(Json(LocalRecordReadResponse::Present {
         path: record.path,
         content_id: record.content_id,
