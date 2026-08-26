@@ -199,7 +199,8 @@ export type Ref<T extends object> = {
   readonly [referenceType]?: (value: T) => T;
 };
 
-type ItemSnapshot<T extends object, TState extends symbol> = {
+/** Shared immutable state and narrowing behavior for an Item snapshot. */
+export type ItemSnapshot<T extends object, TState extends symbol> = {
   readonly state: TState;
   readonly ref: Ref<T>;
   isPresent(): this is PresentItem<T>;
