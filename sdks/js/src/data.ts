@@ -3,6 +3,7 @@ import type { JoltSdk } from "./client.js";
 import {
   isContentUnavailableError,
   isJoltUnavailableError,
+  JoltApiError,
 } from "./errors.js";
 
 /** A decorated application value class used as both runtime schema and TypeScript type. */
@@ -236,12 +237,32 @@ export class ItemUnavailableError extends Error {
   }
 }
 
+/** A mutation observed an older Item revision than the record currently has. */
+export class ConflictError extends Error {
+  readonly ref: Pick<Ref<object>, "identity" | "path">;
+
+  constructor(ref: Pick<Ref<object>, "identity" | "path">) {
+    super(`Item changed since it was read: ${ref.identity}${ref.path}`);
+    this.name = "ConflictError";
+    this.ref = ref;
+  }
+}
+
+/** A shallow update: omitted fields remain and supplied fields replace whole values. */
+export type ShallowPatch<T extends object> = {
+  readonly [K in keyof T]?: T[K];
+};
+
 /** Shared immutable state and narrowing behavior for an Item snapshot. */
-export type ItemSnapshot<T extends object, TState extends symbol> = {
+export type ItemSnapshot<
+  T extends object,
+  TState extends symbol,
+  TAccess extends ResourceAccess = ResourceAccess,
+> = {
   readonly state: TState;
   readonly ref: Ref<T>;
-  isPresent(): this is PresentItem<T>;
-  isDeleted(): this is DeletedItem<T>;
+  isPresent(): this is PresentItem<T, TAccess>;
+  isDeleted(): this is DeletedItem<T, TAccess>;
 };
 
 /** A schema value whose nested object properties and arrays cannot be mutated. */
@@ -254,25 +275,43 @@ export type ImmutableValue<T> = T extends Date
       : T;
 
 /** An immutable Item snapshot containing a current schema-valid value. */
-export type PresentItem<T extends object> = ItemSnapshot<T, typeof State.Present> & {
+export type PresentItem<
+  T extends object,
+  TAccess extends ResourceAccess = ResourceAccess,
+> = ItemSnapshot<T, typeof State.Present, TAccess> & {
   readonly value: ImmutableValue<T>;
-};
+} & (TAccess extends { readonly update: true } ? {
+  update(patch: ShallowPatch<T>): Promise<PresentItem<T, TAccess>>;
+  replace(value: T): Promise<PresentItem<T, TAccess>>;
+} : object);
 
 /** An immutable Item snapshot whose current state is a Tombstone. */
-export type DeletedItem<T extends object> = ItemSnapshot<T, typeof State.Deleted>;
+export type DeletedItem<
+  T extends object,
+  TAccess extends ResourceAccess = ResourceAccess,
+> = ItemSnapshot<T, typeof State.Deleted, TAccess>;
 
 /** An immutable Item snapshot for a logical reference with no observed record. */
-export type MissingItem<T extends object> = ItemSnapshot<T, typeof State.Missing>;
+export type MissingItem<
+  T extends object,
+  TAccess extends ResourceAccess = ResourceAccess,
+> = ItemSnapshot<T, typeof State.Missing, TAccess>;
 
 /** An immutable Item snapshot whose current state cannot be determined. */
-export type UnavailableItem<T extends object> = ItemSnapshot<T, typeof State.Unavailable>;
+export type UnavailableItem<
+  T extends object,
+  TAccess extends ResourceAccess = ResourceAccess,
+> = ItemSnapshot<T, typeof State.Unavailable, TAccess>;
 
 /** Any current immutable state of one logical Item. */
-export type Item<T extends object> =
-  | PresentItem<T>
-  | DeletedItem<T>
-  | MissingItem<T>
-  | UnavailableItem<T>;
+export type Item<
+  T extends object,
+  TAccess extends ResourceAccess = ResourceAccess,
+> =
+  | PresentItem<T, TAccess>
+  | DeletedItem<T, TAccess>
+  | MissingItem<T, TAccess>
+  | UnavailableItem<T, TAccess>;
 
 /** Operations an application requests for one Resource. */
 export type ResourceAccess = {
@@ -431,17 +470,19 @@ export type BoundAppData<TData extends AppDataDefinitions> = {
 };
 
 /** Read operations shared by every connected Collection surface. */
-export type CollectionReader<T extends object> = {
-  get(ref: Ref<T>): Promise<Item<T>>;
+export type CollectionReader<T extends object, TAccess extends ResourceAccess> = {
+  get(ref: Ref<T>): Promise<Item<T, TAccess>>;
 };
 
 /** Collection creation exposed only when declared in Resource access. */
-export type CollectionCreator<T extends object> = {
-  create(value: T): Promise<PresentItem<T>>;
+export type CollectionCreator<T extends object, TAccess extends ResourceAccess> = {
+  create(value: T): Promise<PresentItem<T, TAccess>>;
 };
 
 /** A read-only Collection view bound to another identity. */
-export type RemoteCollection<T extends object> = CollectionReader<T>;
+export type RemoteCollection<T extends object> = CollectionReader<T, {
+  readonly read: typeof Read.AnyIdentity;
+}>;
 
 /** Remote Collection reads exposed only for AnyIdentity access. */
 export type CollectionRemoteReader<T extends object> = {
@@ -452,24 +493,26 @@ export type CollectionRemoteReader<T extends object> = {
 export type CollectionResource<
   T extends object,
   TAccess extends ResourceAccess,
-> = CollectionReader<T> & (
-  TAccess extends { readonly create: true } ? CollectionCreator<T> : object
+> = CollectionReader<T, TAccess> & (
+  TAccess extends { readonly create: true } ? CollectionCreator<T, TAccess> : object
 ) & (
   TAccess["read"] extends typeof Read.AnyIdentity ? CollectionRemoteReader<T> : object
 );
 
 /** Read operations shared by every connected Document surface. */
-export type DocumentReader<T extends object> = {
-  get(): Promise<Item<T>>;
+export type DocumentReader<T extends object, TAccess extends ResourceAccess> = {
+  get(): Promise<Item<T, TAccess>>;
 };
 
 /** Document creation exposed only when declared in Resource access. */
-export type DocumentCreator<T extends object> = {
-  getOrCreate(value: T): Promise<PresentItem<T>>;
+export type DocumentCreator<T extends object, TAccess extends ResourceAccess> = {
+  getOrCreate(value: T): Promise<PresentItem<T, TAccess>>;
 };
 
 /** A read-only Document view bound to another identity. */
-export type RemoteDocument<T extends object> = DocumentReader<T>;
+export type RemoteDocument<T extends object> = DocumentReader<T, {
+  readonly read: typeof Read.AnyIdentity;
+}>;
 
 /** Remote Document reads exposed only for AnyIdentity access. */
 export type DocumentRemoteReader<T extends object> = {
@@ -480,8 +523,8 @@ export type DocumentRemoteReader<T extends object> = {
 export type DocumentResource<
   T extends object,
   TAccess extends ResourceAccess,
-> = DocumentReader<T> & (
-  TAccess extends { readonly create: true } ? DocumentCreator<T> : object
+> = DocumentReader<T, TAccess> & (
+  TAccess extends { readonly create: true } ? DocumentCreator<T, TAccess> : object
 ) & (
   TAccess["read"] extends typeof Read.AnyIdentity ? DocumentRemoteReader<T> : object
 );
@@ -511,7 +554,10 @@ export type AppTestOptions = {
  */
 export type AppConnectOptions = {
   readonly identity: Identity;
-  readonly client: Pick<JoltSdk, "publishJson" | "read" | "readRecord">;
+  readonly client: Pick<
+    JoltSdk,
+    "publishJson" | "read" | "readRecord" | "updateRecord"
+  >;
 };
 
 /** Shared deterministic state that can expose several identity-bound App views. */
@@ -566,12 +612,19 @@ function requirePathSegment(value: string, label: string): void {
 }
 
 type TestWorldState = {
-  readonly store: Map<string, StoredSchemaValue>;
+  readonly store: Map<string, BackendPresentRecord>;
   nextId: number;
+  nextMutationId: number;
+  nextRevision: number;
 };
 
 function createTestWorldState(): TestWorldState {
-  return { store: new Map(), nextId: 0 };
+  return {
+    store: new Map(),
+    nextId: 0,
+    nextMutationId: 0,
+    nextRevision: 0,
+  };
 }
 
 function testStoreKey(ref: Pick<Ref<object>, "identity" | "path">): string {
@@ -582,15 +635,21 @@ function createRef<T extends object>(identity: Identity, path: string): Ref<T> {
   return Object.freeze({ identity, path }) as Ref<T>;
 }
 
-function trueIsPresent<T extends object>(this: Item<T>): this is PresentItem<T> {
+function trueIsPresent<T extends object, TAccess extends ResourceAccess>(
+  this: Item<T, TAccess>,
+): this is PresentItem<T, TAccess> {
   return true;
 }
 
-function falseIsPresent<T extends object>(this: Item<T>): this is PresentItem<T> {
+function falseIsPresent<T extends object, TAccess extends ResourceAccess>(
+  this: Item<T, TAccess>,
+): this is PresentItem<T, TAccess> {
   return false;
 }
 
-function falseIsDeleted<T extends object>(this: Item<T>): this is DeletedItem<T> {
+function falseIsDeleted<T extends object, TAccess extends ResourceAccess>(
+  this: Item<T, TAccess>,
+): this is DeletedItem<T, TAccess> {
   return false;
 }
 
@@ -605,17 +664,59 @@ function freezeValue<T>(value: T, seen = new WeakSet<object>()): ImmutableValue<
   return Object.freeze(value) as ImmutableValue<T>;
 }
 
-function presentItem<T extends object>(ref: Ref<T>, value: T): PresentItem<T> {
-  return Object.freeze({
+function presentItem<T extends object, TAccess extends ResourceAccess>(
+  resource: ResourceDefinition<T, TAccess, ResourceKindValue>,
+  backend: DataBackend,
+  ref: Ref<T>,
+  record: BackendPresentRecord,
+  mutable: boolean,
+): PresentItem<T, TAccess> {
+  const value = resource.migrate(record.stored);
+  const item: Record<string, unknown> = {
     state: State.Present,
     ref,
     value: freezeValue(value),
     isPresent: trueIsPresent,
     isDeleted: falseIsDeleted,
-  });
+  };
+  if (mutable && resource.access.update === true && record.revision !== null) {
+    const revision = record.revision;
+    item.update = async (patch: ShallowPatch<T>) => {
+      const raw = record.stored.value;
+      if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+        throw new SchemaValidationError("$", "must be an object");
+      }
+      const stored = patchedStoredValue(
+        resource.schema,
+        record.stored,
+        value,
+        patch,
+      );
+      const next = await backend.update(
+        ref,
+        stored,
+        revision,
+        backend.nextMutationId(),
+      );
+      return presentItem(resource, backend, ref, next, mutable);
+    };
+    item.replace = async (input: T) => {
+      const current = currentStoredValue(resource.schema, input);
+      const next = await backend.update(
+        ref,
+        current.stored,
+        revision,
+        backend.nextMutationId(),
+      );
+      return presentItem(resource, backend, ref, next, mutable);
+    };
+  }
+  return Object.freeze(item) as PresentItem<T, TAccess>;
 }
 
-function missingItem<T extends object>(ref: Ref<T>): MissingItem<T> {
+function missingItem<T extends object, TAccess extends ResourceAccess>(
+  ref: Ref<T>,
+): MissingItem<T, TAccess> {
   return Object.freeze({
     state: State.Missing,
     ref,
@@ -624,7 +725,9 @@ function missingItem<T extends object>(ref: Ref<T>): MissingItem<T> {
   });
 }
 
-function unavailableItem<T extends object>(ref: Ref<T>): UnavailableItem<T> {
+function unavailableItem<T extends object, TAccess extends ResourceAccess>(
+  ref: Ref<T>,
+): UnavailableItem<T, TAccess> {
   return Object.freeze({
     state: State.Unavailable,
     ref,
@@ -669,16 +772,60 @@ function currentStoredValue<T extends object>(
   };
 }
 
+function patchedStoredValue<T extends object>(
+  schemaClass: SchemaClass<T>,
+  previous: StoredSchemaValue,
+  currentValue: T,
+  patch: ShallowPatch<T>,
+): StoredSchemaValue {
+  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
+    throw new SchemaValidationError("$", "patch must be an object");
+  }
+  const raw = previous.value as Record<PropertyKey, unknown>;
+  const candidate = { ...currentValue, ...patch } as T;
+  const current = currentStoredValue(schemaClass, candidate);
+  const parsed = current.stored.value as Record<PropertyKey, unknown>;
+  const next = { ...raw };
+  const currentVersion = current.stored.version;
+
+  for (const propertyKey of fieldsBySchema.get(schemaClass)?.keys() ?? []) {
+    const explicitlyPatched = Object.prototype.hasOwnProperty.call(patch, propertyKey);
+    const canKeepRaw = previous.version === currentVersion
+      && Object.prototype.hasOwnProperty.call(raw, propertyKey)
+      && !explicitlyPatched;
+    if (canKeepRaw) continue;
+    if (Object.prototype.hasOwnProperty.call(parsed, propertyKey)) {
+      next[propertyKey] = parsed[propertyKey];
+    } else {
+      delete next[propertyKey];
+    }
+  }
+
+  return { version: currentVersion, value: next };
+}
+
+type BackendPresentRecord = {
+  readonly stored: StoredSchemaValue;
+  readonly revision: string | null;
+};
+
 type BackendReadResult =
-  | StoredSchemaValue
+  | BackendPresentRecord
   | typeof State.Missing
   | typeof State.Unavailable;
 
 type DataBackend = {
   readonly identity: Identity;
   nextId(): string;
+  nextMutationId(): string;
   read<T extends object>(ref: Ref<T>): Promise<BackendReadResult>;
-  write<T extends object>(ref: Ref<T>, stored: StoredSchemaValue): Promise<void>;
+  write<T extends object>(ref: Ref<T>, stored: StoredSchemaValue): Promise<BackendPresentRecord>;
+  update<T extends object>(
+    ref: Ref<T>,
+    stored: StoredSchemaValue,
+    revision: string,
+    mutationId: string,
+  ): Promise<BackendPresentRecord>;
   for(identity: Identity): DataBackend;
 };
 
@@ -686,11 +833,24 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
   return {
     identity,
     nextId: () => `jlt_${(++state.nextId).toString(36).padStart(12, "0")}`,
+    nextMutationId: () => `mut_${(++state.nextMutationId).toString(36).padStart(12, "0")}`,
     async read(ref) {
       return state.store.get(testStoreKey(ref)) ?? State.Missing;
     },
     async write(ref, stored) {
-      state.store.set(testStoreKey(ref), stored);
+      const record = { stored, revision: `revision_${++state.nextRevision}` };
+      state.store.set(testStoreKey(ref), record);
+      return record;
+    },
+    async update(ref, stored, revision) {
+      const key = testStoreKey(ref);
+      const current = state.store.get(key);
+      if (current === undefined || current.revision !== revision) {
+        throw new ConflictError(ref);
+      }
+      const record = { stored, revision: `revision_${++state.nextRevision}` };
+      state.store.set(key, record);
+      return record;
     },
     for: remoteIdentity => createTestBackend(state, remoteIdentity),
   };
@@ -703,11 +863,15 @@ function createConnectedBackend(
   return {
     identity: options.identity,
     nextId: () => makeId("jlt"),
+    nextMutationId: () => makeId("mut"),
     async read(ref) {
       if (ref.identity !== localIdentity) {
         const versioned = await options.client.read(ref, value => ({ value }));
         if (versioned === null) return State.Unavailable;
-        return requireStoredSchemaValue(versioned.value.value);
+        return {
+          stored: requireStoredSchemaValue(versioned.value.value),
+          revision: null,
+        };
       }
       let record;
       try {
@@ -722,30 +886,55 @@ function createConnectedBackend(
         throw error;
       }
       if (record.state === "missing") return State.Missing;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(new TextDecoder().decode(new Uint8Array(record.bytes)));
-      } catch {
-        throw new SchemaValidationError("$", "must be valid JSON");
-      }
-      return requireStoredSchemaValue(parsed);
+      return backendRecord(record.bytes, record.revision);
     },
     async write(ref, stored) {
       await options.client.publishJson(ref.path, stored);
+      const record = await options.client.readRecord(ref);
+      if (record.state === "missing") {
+        throw new ItemUnavailableError(ref);
+      }
+      return backendRecord(record.bytes, record.revision);
+    },
+    async update(ref, stored, revision, mutationId) {
+      try {
+        const record = await options.client.updateRecord(
+          ref,
+          stored,
+          { revision, mutationId },
+        );
+        return backendRecord(record.bytes, record.revision);
+      } catch (error) {
+        if (error instanceof JoltApiError && error.code === "record_conflict") {
+          throw new ConflictError(ref);
+        }
+        throw error;
+      }
     },
     for: identity => createConnectedBackend({ ...options, identity }, localIdentity),
   };
 }
 
-async function readItem<T extends object>(
-  resource: ResourceDefinition<T, ResourceAccess, ResourceKindValue>,
+function backendRecord(bytes: readonly number[], revision: string): BackendPresentRecord {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes)));
+  } catch {
+    throw new SchemaValidationError("$", "must be valid JSON");
+  }
+  return { stored: requireStoredSchemaValue(parsed), revision };
+}
+
+async function readItem<T extends object, TAccess extends ResourceAccess>(
+  resource: ResourceDefinition<T, TAccess, ResourceKindValue>,
   backend: DataBackend,
   ref: Ref<T>,
-): Promise<Item<T>> {
+  mutable: boolean,
+): Promise<Item<T, TAccess>> {
   const stored = await backend.read(ref);
   if (stored === State.Missing) return missingItem(ref);
   if (stored === State.Unavailable) return unavailableItem(ref);
-  return presentItem(ref, resource.migrate(stored));
+  return presentItem(resource, backend, ref, stored, mutable);
 }
 
 type ResourceViewOptions = {
@@ -758,8 +947,8 @@ function createCollection<T extends object, TAccess extends ResourceAccess>(
   options: ResourceViewOptions = {},
 ): CollectionResource<T, TAccess> {
   const remote = options.remote ?? false;
-  const collection: CollectionReader<T>
-    & Partial<CollectionCreator<T>>
+  const collection: CollectionReader<T, TAccess>
+    & Partial<CollectionCreator<T, TAccess>>
     & Partial<CollectionRemoteReader<T>> = {
     async get(ref) {
       if (
@@ -768,15 +957,15 @@ function createCollection<T extends object, TAccess extends ResourceAccess>(
       ) {
         throw new TypeError("Collection reference does not belong to this Resource view");
       }
-      return readItem(resource, backend, ref);
+      return readItem(resource, backend, ref, !remote);
     },
   };
   if (!remote && resource.access.create === true) {
     collection.create = async (input) => {
-      const { stored, value } = currentStoredValue(resource.schema, input);
+      const { stored } = currentStoredValue(resource.schema, input);
       const ref = createRef<T>(backend.identity, `${resource.path}/${backend.nextId()}`);
-      await backend.write(ref, stored);
-      return presentItem(ref, parse(resource.schema, value));
+      const record = await backend.write(ref, stored);
+      return presentItem(resource, backend, ref, record, true);
     };
   }
   if (!remote && resource.access.read === Read.AnyIdentity) {
@@ -784,7 +973,7 @@ function createCollection<T extends object, TAccess extends ResourceAccess>(
       resource,
       backend.for(identity),
       { remote: true },
-    );
+    ) as RemoteCollection<T>;
   }
   return Object.freeze(collection) as CollectionResource<T, TAccess>;
 }
@@ -796,23 +985,23 @@ function createDocument<T extends object, TAccess extends ResourceAccess>(
 ): DocumentResource<T, TAccess> {
   const remote = options.remote ?? false;
   const ref = createRef<T>(backend.identity, resource.path);
-  const document: DocumentReader<T>
-    & Partial<DocumentCreator<T>>
+  const document: DocumentReader<T, TAccess>
+    & Partial<DocumentCreator<T, TAccess>>
     & Partial<DocumentRemoteReader<T>> = {
     async get() {
-      return readItem(resource, backend, ref);
+      return readItem(resource, backend, ref, !remote);
     },
   };
   if (!remote && resource.access.create === true) {
     document.getOrCreate = async (input) => {
-      const existing = await readItem(resource, backend, ref);
+      const existing = await readItem(resource, backend, ref, true);
       if (existing.isPresent()) return existing;
       if (existing.state === State.Unavailable) {
         throw new ItemUnavailableError(ref);
       }
-      const { stored, value } = currentStoredValue(resource.schema, input);
-      await backend.write(ref, stored);
-      return presentItem(ref, parse(resource.schema, value));
+      const { stored } = currentStoredValue(resource.schema, input);
+      const record = await backend.write(ref, stored);
+      return presentItem(resource, backend, ref, record, true);
     };
   }
   if (!remote && resource.access.read === Read.AnyIdentity) {
@@ -820,7 +1009,7 @@ function createDocument<T extends object, TAccess extends ResourceAccess>(
       resource,
       backend.for(identity),
       { remote: true },
-    );
+    ) as RemoteDocument<T>;
   }
   return Object.freeze(document) as DocumentResource<T, TAccess>;
 }

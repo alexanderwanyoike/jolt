@@ -23,6 +23,7 @@ import type {
   FetchResult,
   HomeRelayPinResponse,
   IngressRecord,
+  LocalRecordUpdateResponse,
   LocalRecordReadResponse,
   NodeStatus,
   OpenedEncryptedObject,
@@ -239,6 +240,24 @@ export function readLocalRecord(
   return transport.request("app", "/records/read", {
     token,
     json: { path },
+    ...options,
+  });
+}
+
+/** Compare-and-set one local stable record against an observed revision. */
+export function updateLocalRecord(
+  transport: JoltTransport,
+  token: string,
+  path: string,
+  body: object,
+  revision: string,
+  mutationId: string,
+  options?: CallOptions
+): Promise<LocalRecordUpdateResponse> {
+  const data = Array.from(new TextEncoder().encode(JSON.stringify(body)));
+  return transport.request("app", "/records/update", {
+    token,
+    json: { path, revision, mutation_id: mutationId, data },
     ...options,
   });
 }
