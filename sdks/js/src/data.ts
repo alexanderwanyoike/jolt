@@ -36,6 +36,12 @@ export type SchemaOptions = {
   readonly migrations?: MigrationPlan;
 };
 
+/** One stored schema version and its opaque value. */
+export type StoredSchemaValue = {
+  readonly version: number;
+  readonly value: unknown;
+};
+
 /** A value failed validation against a Schema Class. */
 export class SchemaValidationError extends Error {
   constructor(
@@ -148,6 +154,193 @@ export const Migrations = {
   rename: renameMigrationFields,
 } as const;
 
+const resourceDefinition = Symbol("JoltDataResourceDefinition");
+const policyKind = Symbol("JoltDataPolicyKind");
+
+function policy<const TKind extends string>(kind: TKind) {
+  return Object.freeze({ [policyKind]: kind });
+}
+
+/** Read scopes available to a Resource access declaration. */
+export const Read = {
+  OwnIdentity: policy("read:own-identity"),
+  AnyIdentity: policy("read:any-identity"),
+} as const;
+
+/** Conflict policies for concurrent updates to the same field. */
+export const UpdateConflict = {
+  LastWriteWins: policy("update-conflict:last-write-wins"),
+  Manual: policy("update-conflict:manual"),
+} as const;
+
+/** Conflict policies for a concurrent deletion and update. */
+export const DeleteConflict = {
+  DeleteWins: policy("delete-conflict:delete-wins"),
+  UpdateWins: policy("delete-conflict:update-wins"),
+  Manual: policy("delete-conflict:manual"),
+} as const;
+
+/** Operations an application requests for one Resource. */
+export type ResourceAccess = {
+  readonly read: typeof Read[keyof typeof Read];
+  readonly create?: true;
+  readonly update?: true;
+  readonly delete?: true;
+  readonly restore?: true;
+};
+
+/** Conflict behavior required for one Resource definition. */
+export type ResourceConflicts = {
+  readonly update: typeof UpdateConflict[keyof typeof UpdateConflict];
+  readonly delete: typeof DeleteConflict[keyof typeof DeleteConflict];
+};
+
+/** Developer-facing access and conflict declarations for one Resource. */
+export type ResourceOptions<TAccess extends ResourceAccess> = {
+  readonly access: TAccess;
+  readonly conflicts: ResourceConflicts;
+};
+
+/** Shared metadata and migration behavior for an unbound Resource. */
+export type ResourceDefinition<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TKind extends "collection" | "document",
+> = {
+  readonly schema: SchemaClass<T>;
+  readonly access: TAccess;
+  readonly conflicts: ResourceConflicts;
+  readonly migrate: (stored: StoredSchemaValue) => T;
+  readonly [resourceDefinition]: TKind;
+};
+
+/** An unbound Collection definition created before it belongs to an App. */
+export type CollectionDefinition<
+  T extends object,
+  TAccess extends ResourceAccess,
+> = ResourceDefinition<T, TAccess, "collection">;
+
+/** An unbound Document definition created before it belongs to an App. */
+export type DocumentDefinition<
+  T extends object,
+  TAccess extends ResourceAccess,
+> = ResourceDefinition<T, TAccess, "document">;
+
+/** A Collection definition bound to its canonical App path prefix. */
+export type BoundCollectionDefinition<
+  T extends object,
+  TAccess extends ResourceAccess,
+> = CollectionDefinition<T, TAccess> & {
+  readonly path: string;
+};
+
+/** A Document definition bound to its one canonical App path. */
+export type BoundDocumentDefinition<
+  T extends object,
+  TAccess extends ResourceAccess,
+> = DocumentDefinition<T, TAccess> & {
+  readonly path: string;
+};
+
+function defineResource<
+  T extends object,
+  const TAccess extends ResourceAccess,
+  const TKind extends "collection" | "document",
+>(
+  kind: TKind,
+  schemaClass: SchemaClass<T>,
+  options: ResourceOptions<TAccess>,
+): ResourceDefinition<T, TAccess, TKind> {
+  return {
+    schema: schemaClass,
+    access: options.access,
+    conflicts: options.conflicts,
+    migrate: stored => migrate(schemaClass, stored),
+    [resourceDefinition]: kind,
+  };
+}
+
+/** Defines an unbound typed Collection. App.create derives its path. */
+export const Collection = {
+  create: <T extends object, const TAccess extends ResourceAccess>(
+    schemaClass: SchemaClass<T>,
+    options: ResourceOptions<TAccess>,
+  ): CollectionDefinition<T, TAccess> => defineResource("collection", schemaClass, options),
+} as const;
+
+/** Defines an unbound typed Document. App.create derives its path. */
+export const Document = {
+  create: <T extends object, const TAccess extends ResourceAccess>(
+    schemaClass: SchemaClass<T>,
+    options: ResourceOptions<TAccess>,
+  ): DocumentDefinition<T, TAccess> => defineResource("document", schemaClass, options),
+} as const;
+
+/** Named unbound Resources accepted by App.create. */
+export type AppDataDefinitions = Readonly<Record<
+  string,
+  | CollectionDefinition<object, ResourceAccess>
+  | DocumentDefinition<object, ResourceAccess>
+>>;
+
+/** App data definitions after canonical paths have been derived. */
+export type BoundAppData<TData extends AppDataDefinitions> = {
+  readonly [K in keyof TData]: TData[K] extends CollectionDefinition<
+    infer TValue,
+    infer TAccess
+  > ? BoundCollectionDefinition<TValue, TAccess>
+    : TData[K] extends DocumentDefinition<infer TValue, infer TAccess>
+      ? BoundDocumentDefinition<TValue, TAccess>
+      : never;
+};
+
+/** A complete application definition with canonically bound Resources. */
+export type AppDefinition<TData extends AppDataDefinitions> = {
+  readonly id: string;
+  readonly name: string;
+  readonly namespace: string;
+  readonly data: BoundAppData<TData>;
+};
+
+function requirePathSegment(value: string, label: string): void {
+  if (
+    value.length === 0
+    || value === "."
+    || value === ".."
+    || /[/\s?#]/u.test(value)
+  ) {
+    throw new TypeError(`${label} must be one valid path segment: ${value}`);
+  }
+}
+
+/** Composes Resource definitions into one application definition. */
+export const App = {
+  create: <const TData extends AppDataDefinitions>(options: {
+    readonly id: string;
+    readonly name: string;
+    readonly namespace: string;
+    readonly data: TData;
+  }): AppDefinition<TData> => {
+    requirePathSegment(options.namespace, "App namespace");
+    const data = Object.fromEntries(Object.entries(options.data).map(([name, resource]) => {
+      requirePathSegment(name, "Resource name");
+      return [
+        name,
+        {
+          ...resource,
+          path: `/${options.namespace}/${name}`,
+        },
+      ];
+    })) as BoundAppData<TData>;
+    return {
+      id: options.id,
+      name: options.name,
+      namespace: options.namespace,
+      data,
+    };
+  },
+} as const;
+
 const fieldsBySchema = new WeakMap<Function, Map<string | symbol, FieldDefinition>>();
 const optionsBySchema = new WeakMap<Function, SchemaOptions>();
 const valueDefinition = Symbol("JoltDataFieldDefinition");
@@ -223,7 +416,7 @@ function parse<T extends object>(schemaClass: SchemaClass<T>, input: unknown): T
 
 function migrate<T extends object>(
   schemaClass: SchemaClass<T>,
-  stored: { readonly version: number; readonly value: unknown },
+  stored: StoredSchemaValue,
 ): T {
   const options = optionsBySchema.get(schemaClass);
   if (options === undefined) {
