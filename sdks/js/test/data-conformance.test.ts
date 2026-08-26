@@ -8,6 +8,7 @@ import {
   Document,
   Field,
   ItemUnavailableError,
+  Migrations,
   Read,
   Schema,
   SchemaValidationError,
@@ -173,6 +174,58 @@ describe.each(implementations)("Data SDK $name conformance", ({ connect }) => {
 });
 
 describe("Data SDK client-backed content validation", () => {
+  it("updates migrated storage without retaining renamed legacy fields", async () => {
+    const migrations = Migrations.create()
+      .to(2, value => Migrations.rename(value, { message: "text" }));
+
+    @Schema({ version: 2, migrations })
+    class MigratedPost {
+      @Field.string()
+      text!: string;
+    }
+
+    const MigratedPosts = Collection.create(MigratedPost, {
+      access: {
+        read: Read.OwnIdentity,
+        update: true,
+      },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+    const MigratingApp = App.create({
+      id: "migration.example",
+      name: "Migration example",
+      namespace: "migration",
+      data: { posts: MigratedPosts },
+    });
+    const jolt = createFakeJolt("alice.jolt");
+    const path = "/migration/posts/jlt_legacy";
+    await jolt.client.publishJson(path, {
+      version: 1,
+      value: { message: "Original", futureField: "preserved" },
+    });
+    const app = await MigratingApp.connect({
+      identity: jolt.identity,
+      client: jolt.client,
+    });
+    const item = await app.posts.get({ identity: jolt.identity, path });
+    if (!item.isPresent()) throw new Error("expected a migrated post");
+
+    await item.update({ text: "Edited" });
+
+    const stored = await jolt.client.read(
+      { identity: jolt.identity, path },
+      value => value as { version: number; value: Record<string, unknown> },
+    );
+    expect(stored?.value).toEqual({
+      version: 2,
+      value: { text: "Edited", futureField: "preserved" },
+    });
+    expect(stored?.value.value).not.toHaveProperty("message");
+  });
+
   it("preserves unknown stored fields across a shallow update", async () => {
     const jolt = createFakeJolt("alice.jolt");
     const path = "/chirp/posts/jlt_future";

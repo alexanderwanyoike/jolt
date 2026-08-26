@@ -671,7 +671,8 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
   record: BackendPresentRecord,
   mutable: boolean,
 ): PresentItem<T, TAccess> {
-  const value = resource.migrate(record.stored);
+  const migrated = migratedStoredValue(resource.schema, record.stored);
+  const value = migrated.value;
   const item: Record<string, unknown> = {
     state: State.Present,
     ref,
@@ -681,17 +682,7 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
   };
   if (mutable && resource.access.update === true && record.revision !== null) {
     const revision = record.revision;
-    item.update = async (patch: ShallowPatch<T>) => {
-      const raw = record.stored.value;
-      if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-        throw new SchemaValidationError("$", "must be an object");
-      }
-      const stored = patchedStoredValue(
-        resource.schema,
-        record.stored,
-        value,
-        patch,
-      );
+    const commit = async (stored: StoredSchemaValue) => {
       const next = await backend.update(
         ref,
         stored,
@@ -700,15 +691,18 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
       );
       return presentItem(resource, backend, ref, next, mutable);
     };
+    item.update = async (patch: ShallowPatch<T>) => {
+      const stored = patchedStoredValue(
+        resource.schema,
+        migrated.stored,
+        value,
+        patch,
+      );
+      return commit(stored);
+    };
     item.replace = async (input: T) => {
       const current = currentStoredValue(resource.schema, input);
-      const next = await backend.update(
-        ref,
-        current.stored,
-        revision,
-        backend.nextMutationId(),
-      );
-      return presentItem(resource, backend, ref, next, mutable);
+      return commit(current.stored);
     };
   }
   return Object.freeze(item) as PresentItem<T, TAccess>;
@@ -1167,10 +1161,10 @@ function parse<T extends object>(schemaClass: SchemaClass<T>, input: unknown): T
   return value;
 }
 
-function migrate<T extends object>(
+function migratedStoredValue<T extends object>(
   schemaClass: SchemaClass<T>,
   stored: StoredSchemaValue,
-): T {
+): { readonly stored: StoredSchemaValue; readonly value: T } {
   const options = optionsBySchema.get(schemaClass);
   if (options === undefined) {
     throw new TypeError("Class is not decorated with @Schema");
@@ -1184,7 +1178,7 @@ function migrate<T extends object>(
     );
   }
   if (stored.version === options.version) {
-    return parse(schemaClass, stored.value);
+    return { stored, value: parse(schemaClass, stored.value) };
   }
 
   let value = stored.value;
@@ -1212,7 +1206,10 @@ function migrate<T extends object>(
   }
 
   try {
-    return parse(schemaClass, value);
+    return {
+      stored: { version: options.version, value },
+      value: parse(schemaClass, value),
+    };
   } catch (cause) {
     throw new SchemaMigrationError(
       stored.version,
@@ -1221,6 +1218,13 @@ function migrate<T extends object>(
       { cause },
     );
   }
+}
+
+function migrate<T extends object>(
+  schemaClass: SchemaClass<T>,
+  stored: StoredSchemaValue,
+): T {
+  return migratedStoredValue(schemaClass, stored).value;
 }
 
 function parseValue(definition: ValueDefinition, input: unknown, path: string): unknown {
