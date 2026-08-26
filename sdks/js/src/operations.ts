@@ -23,6 +23,7 @@ import type {
   FetchResult,
   HomeRelayPinResponse,
   IngressRecord,
+  LocalRecordReadResponse,
   NodeStatus,
   OpenedEncryptedObject,
   PublishedContent,
@@ -226,6 +227,20 @@ export function fetchTarget(
   options?: CallOptions
 ): Promise<FetchResult> {
   return transport.request("app", "/fetch", { token, json: { target }, ...options });
+}
+
+/** Read one path from the local identity's authoritative singleton state. */
+export function readLocalRecord(
+  transport: JoltTransport,
+  token: string,
+  path: string,
+  options?: CallOptions
+): Promise<LocalRecordReadResponse> {
+  return transport.request("app", "/records/read", {
+    token,
+    json: { path },
+    ...options,
+  });
 }
 
 /** Resolve + decrypt an encrypted publication addressed to this session's identity. */

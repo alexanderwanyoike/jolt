@@ -188,6 +188,19 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
       return { ref, value, latestSequence, contentId };
     },
 
+    async readRecord(ref) {
+      if (ref.identity !== identity) return { state: "missing", ref };
+      const record = published.get(ref.path);
+      if (!record || record.recipients !== null) return { state: "missing", ref };
+      return {
+        state: "present",
+        ref,
+        contentId: record.contentId,
+        revision: `revision_${record.seq}`,
+        bytes: Array.from(new TextEncoder().encode(JSON.stringify(record.body))),
+      };
+    },
+
     async publishAppend(path, body) {
       const record: StoredPublication = {
         body,

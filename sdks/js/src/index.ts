@@ -59,6 +59,7 @@ export type {
   JoltSessionSdk,
   OpenEncryptedResult,
   PublishResult,
+  RecordReadResult,
   Reference,
   Versioned,
 } from "./client.js";
@@ -105,6 +106,7 @@ export type {
   FetchResult,
   HomeRelayPinResponse,
   IngressRecord,
+  LocalRecordReadResponse,
   NodeStatus,
   OpenedEncryptedObject,
   PublishedContent,

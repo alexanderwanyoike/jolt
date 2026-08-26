@@ -59,6 +59,20 @@ export type Versioned<T> = {
   contentId: string;
 };
 
+/** Strict authoritative state for one local stable record reference. */
+export type RecordReadResult =
+  | {
+      state: "missing";
+      ref: Reference;
+    }
+  | {
+      state: "present";
+      ref: Reference;
+      contentId: string;
+      revision: string;
+      bytes: number[];
+    };
+
 /** One append record, marshalled into domain shape. */
 export type EnumeratedRecord = {
   identity: string;
@@ -112,6 +126,8 @@ export interface JoltSdk {
     decode: Decoder<T>,
     options?: CallOptions
   ): Promise<Versioned<T> | null>;
+  /** Read authoritative local record state without collapsing failures into absence. */
+  readRecord(ref: Reference, options?: CallOptions): Promise<RecordReadResult>;
 }
 
 /** Coexisting append records and their enumeration. */
@@ -328,6 +344,25 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
       const value = decode(parsed);
       if (value === null) return null;
       return { ref, value, latestSequence, contentId };
+    },
+
+    async readRecord(ref, call) {
+      const result = await ops.readLocalRecord(
+        transport,
+        getSessionToken(),
+        ref.path,
+        call
+      );
+      if (result.state === "missing") {
+        return { state: "missing", ref };
+      }
+      return {
+        state: "present",
+        ref,
+        contentId: result.content_id,
+        revision: result.revision,
+        bytes: result.data,
+      };
     },
 
     async publishAppend(path, body, call) {

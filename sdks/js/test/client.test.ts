@@ -282,6 +282,63 @@ describe("createJoltClient", () => {
     ).resolves.toBeNull();
   });
 
+  it("reads explicit local record state without collapsing daemon failures", async () => {
+    const responses: Record<string, unknown> = {
+      "/records/read": {
+        state: "present",
+        path: "/chirp/posts/jlt_record",
+        content_id: "cid_record",
+        revision: "revision_record",
+        data: [1, 2, 3],
+      },
+    };
+    const { transport, calls } = recordingTransport(responses);
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_record" };
+
+    await expect(jolt.readRecord(ref)).resolves.toEqual({
+      state: "present",
+      ref,
+      contentId: "cid_record",
+      revision: "revision_record",
+      bytes: [1, 2, 3],
+    });
+    expect(calls[0]).toMatchObject({
+      kind: "request",
+      base: "app",
+      path: "/records/read",
+      detail: {
+        token: "tok_test",
+        json: { path: "/chirp/posts/jlt_record" },
+      },
+    });
+
+    responses["/records/read"] = {
+      state: "missing",
+      path: "/chirp/posts/jlt_record",
+    };
+    await expect(jolt.readRecord(ref)).resolves.toEqual({
+      state: "missing",
+      ref,
+    });
+
+    const failure = new JoltTransportError("daemon unavailable");
+    const unavailableTransport: JoltTransport = {
+      async request(): Promise<never> {
+        throw failure;
+      },
+      async upload(): Promise<never> {
+        throw new Error("unused");
+      },
+    };
+    const unavailableClient = createJoltClient({
+      transport: unavailableTransport,
+      getSessionToken: token,
+    });
+
+    await expect(unavailableClient.readRecord(ref)).rejects.toBe(failure);
+  });
+
   it("sendObject publishes encrypted, fetches the bytes, and ingress-sends them", async () => {
     const { transport, calls } = recordingTransport({
       "/encrypted/publish": { content_id: "cid_3", size: 9, latest_sequence: 0, recipient_count: 1 },
