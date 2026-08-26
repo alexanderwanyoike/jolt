@@ -318,7 +318,7 @@ describe("Data SDK applications", () => {
     }
 
     const Posts = Collection.create(Post, {
-      access: { read: Read.OwnIdentity, create: true },
+      access: { read: Read.OwnIdentity, create: true, update: true },
       conflicts: {
         update: UpdateConflict.LastWriteWins,
         delete: DeleteConflict.DeleteWins,
@@ -359,6 +359,14 @@ describe("Data SDK applications", () => {
     expect(read.value.tags).toEqual(["hello"]);
     expect(read.value.author.displayName).toBe("Alice");
     expect(read.value).not.toBe(created.value);
+
+    const updated = await read.update({
+      tags: ["replacement"],
+      author: { displayName: "Bob" },
+    });
+    expect(updated.value.tags).toEqual(["replacement"]);
+    expect(updated.value.author.displayName).toBe("Bob");
+    expect(updated.value.postedAt).toEqual(created.value.postedAt);
   });
 
   it("gives every App.test call fresh state", async () => {
@@ -393,6 +401,10 @@ describe("Data SDK applications", () => {
     expect(missing.state).toBe(State.Missing);
     expect(missing.isPresent()).toBe(false);
     expect(missing.isDeleted()).toBe(false);
+    expect("update" in created).toBe(false);
+    expect("replace" in created).toBe(false);
+    expectTypeOf(created).not.toHaveProperty("update");
+    expectTypeOf(created).not.toHaveProperty("replace");
   });
 
   it("omits Collection creation when Resource access does not declare it", () => {
@@ -484,6 +496,7 @@ describe("Data SDK applications", () => {
       access: {
         read: Read.AnyIdentity,
         create: true,
+        update: true,
       },
       conflicts: {
         update: UpdateConflict.LastWriteWins,
@@ -519,6 +532,8 @@ describe("Data SDK applications", () => {
     const read = await alicePosts.get(created.ref);
     if (!read.isPresent()) throw new Error("expected Alice's post");
     expect(read.value.text).toBe("Hello Bob!");
+    expect("update" in read).toBe(false);
+    expectTypeOf(read).not.toHaveProperty("update");
 
     const aliceFollows = bob.follows.for("alice.jolt");
     expect("getOrCreate" in aliceFollows).toBe(false);

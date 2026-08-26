@@ -59,19 +59,29 @@ export type Versioned<T> = {
   contentId: string;
 };
 
+/** One authoritative local stable record reference that has no current value. */
+export type RecordMissingResult = {
+  state: "missing";
+  ref: Reference;
+};
+
+/** One present authoritative local stable record. */
+export type RecordPresentResult = {
+  state: "present";
+  ref: Reference;
+  contentId: string;
+  revision: string;
+  bytes: number[];
+};
+
 /** Strict authoritative state for one local stable record reference. */
-export type RecordReadResult =
-  | {
-      state: "missing";
-      ref: Reference;
-    }
-  | {
-      state: "present";
-      ref: Reference;
-      contentId: string;
-      revision: string;
-      bytes: number[];
-    };
+export type RecordReadResult = RecordMissingResult | RecordPresentResult;
+
+/** Opaque compare-and-set context used by advanced record mutations. */
+export type RecordMutationContext = {
+  readonly revision: string;
+  readonly mutationId: string;
+};
 
 /** One append record, marshalled into domain shape. */
 export type EnumeratedRecord = {
@@ -128,6 +138,13 @@ export interface JoltSdk {
   ): Promise<Versioned<T> | null>;
   /** Read authoritative local record state without collapsing failures into absence. */
   readRecord(ref: Reference, options?: CallOptions): Promise<RecordReadResult>;
+  /** Compare-and-set one local stable record against an observed revision. */
+  updateRecord(
+    ref: Reference,
+    body: object,
+    mutation: RecordMutationContext,
+    options?: CallOptions,
+  ): Promise<RecordPresentResult>;
 }
 
 /** Coexisting append records and their enumeration. */
@@ -362,6 +379,25 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
         contentId: result.content_id,
         revision: result.revision,
         bytes: result.data,
+      };
+    },
+
+    async updateRecord(ref, body, mutation, call) {
+      const response = await ops.updateLocalRecord(
+        transport,
+        getSessionToken(),
+        ref.path,
+        body,
+        mutation.revision,
+        mutation.mutationId,
+        call,
+      );
+      return {
+        state: "present",
+        ref,
+        contentId: response.content_id,
+        revision: response.revision,
+        bytes: response.data,
       };
     },
 

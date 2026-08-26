@@ -21,6 +21,7 @@ import type {
 } from "./client.js";
 import { referenceKey } from "./client.js";
 import { evaluateCompatibility } from "./compatibility.js";
+import { JoltApiError } from "./errors.js";
 import type { AppCompatibilityDeclaration } from "./compatibility.js";
 import type { CallOptions, JoltTransport } from "./transport.js";
 import type { IngressRecord, PublishedContent } from "./wire.js";
@@ -97,6 +98,7 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
   const sent: RecordedSend[] = [];
   const encryptedRecipients = new Map<string, string[]>();
   const homeRelayPins = new Set<string>();
+  const recordMutations = new Map<string, import("./client.js").RecordPresentResult>();
   const featureDiscovery = options.featureDiscovery ?? "advertised";
   const appApiFeatures = featureDiscovery === "legacy"
     ? { app_api: 1, features: {} }
@@ -199,6 +201,33 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
         revision: `revision_${record.seq}`,
         bytes: Array.from(new TextEncoder().encode(JSON.stringify(record.body))),
       };
+    },
+
+    async updateRecord(ref, body, mutation) {
+      const retried = recordMutations.get(mutation.mutationId);
+      if (retried !== undefined) return retried;
+      const current = published.get(ref.path);
+      if (
+        ref.identity !== identity
+        || current === undefined
+        || current.recipients !== null
+        || mutation.revision !== `revision_${current.seq}`
+      ) {
+        throw new JoltApiError("Record revision changed", {
+          status: 409,
+          code: "record_conflict",
+        });
+      }
+      const record = store(ref.path, body, null);
+      const result = {
+        state: "present" as const,
+        ref,
+        contentId: record.contentId,
+        revision: `revision_${record.seq}`,
+        bytes: Array.from(new TextEncoder().encode(JSON.stringify(record.body))),
+      };
+      recordMutations.set(mutation.mutationId, result);
+      return result;
     },
 
     async publishAppend(path, body) {

@@ -216,6 +216,45 @@ describe("createJoltClient", () => {
     expect(detail.mimeType).toBe("application/json");
   });
 
+  it("sends opaque compare-and-set context when updating a stable record", async () => {
+    const { transport, calls } = recordingTransport({
+      "/records/update": {
+        path: "/chirp/posts/jlt_1",
+        content_id: "cid_2",
+        revision: "revision_2",
+        data: [123, 125],
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_1" };
+
+    await expect(jolt.updateRecord(
+      ref,
+      { version: 1, value: { text: "Edited" } },
+      { revision: "revision_1", mutationId: "mut_1" },
+    )).resolves.toEqual({
+      state: "present",
+      ref,
+      contentId: "cid_2",
+      revision: "revision_2",
+      bytes: [123, 125],
+    });
+    expect(calls).toEqual([{
+      kind: "request",
+      base: "app",
+      path: "/records/update",
+      detail: {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_1",
+          mutation_id: "mut_1",
+          data: expect.any(Array),
+        },
+      },
+    }]);
+  });
+
   it("can request a session before the local identity is known", async () => {
     const { transport, calls } = recordingTransport({
       "/sessions/request": { request_id: "req_1", status: "pending" },

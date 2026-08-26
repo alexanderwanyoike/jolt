@@ -55,6 +55,14 @@ export type PublishResponse = {
   latest_sequence?: number | null;
 };
 
+/** Successful compare-and-set write of one local stable record. */
+export type LocalRecordUpdateResponse = {
+  path: string;
+  content_id: string;
+  revision: string;
+  data: number[];
+};
+
 /** Result of an encrypted publish (`/app/v1/encrypted/publish`). */
 export type EncryptedPublishResponse = PublishResponse & {
   recipient_count: number;
