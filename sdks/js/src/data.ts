@@ -180,6 +180,66 @@ export const DeleteConflict = {
   Manual: policy("delete-conflict:manual"),
 } as const;
 
+/**
+ * Symbol-backed states for immutable Item snapshots. The class keeps every
+ * static Symbol's unique-symbol type so direct equality checks narrow Items.
+ */
+export class State {
+  static readonly Present = Symbol("JoltDataStatePresent");
+  static readonly Deleted = Symbol("JoltDataStateDeleted");
+  static readonly Missing = Symbol("JoltDataStateMissing");
+  static readonly Unavailable = Symbol("JoltDataStateUnavailable");
+
+  private constructor() {}
+}
+
+const referenceType = Symbol("JoltDataReferenceType");
+
+/** A stable logical reference to one typed Item. */
+export type Ref<T extends object> = {
+  readonly identity: Identity;
+  readonly path: string;
+  readonly [referenceType]?: (value: T) => T;
+};
+
+/** Shared immutable state and narrowing behavior for an Item snapshot. */
+export type ItemSnapshot<T extends object, TState extends symbol> = {
+  readonly state: TState;
+  readonly ref: Ref<T>;
+  isPresent(): this is PresentItem<T>;
+  isDeleted(): this is DeletedItem<T>;
+};
+
+/** A schema value whose nested object properties and arrays cannot be mutated. */
+export type ImmutableValue<T> = T extends Date
+  ? T
+  : T extends readonly (infer TValue)[]
+    ? readonly ImmutableValue<TValue>[]
+    : T extends object
+      ? { readonly [K in keyof T]: ImmutableValue<T[K]> }
+      : T;
+
+/** An immutable Item snapshot containing a current schema-valid value. */
+export type PresentItem<T extends object> = ItemSnapshot<T, typeof State.Present> & {
+  readonly value: ImmutableValue<T>;
+};
+
+/** An immutable Item snapshot whose current state is a Tombstone. */
+export type DeletedItem<T extends object> = ItemSnapshot<T, typeof State.Deleted>;
+
+/** An immutable Item snapshot for a logical reference with no observed record. */
+export type MissingItem<T extends object> = ItemSnapshot<T, typeof State.Missing>;
+
+/** An immutable Item snapshot whose current state cannot be determined. */
+export type UnavailableItem<T extends object> = ItemSnapshot<T, typeof State.Unavailable>;
+
+/** Any current immutable state of one logical Item. */
+export type Item<T extends object> =
+  | PresentItem<T>
+  | DeletedItem<T>
+  | MissingItem<T>
+  | UnavailableItem<T>;
+
 /** Operations an application requests for one Resource. */
 export type ResourceAccess = {
   readonly read: typeof Read[keyof typeof Read];
@@ -294,12 +354,47 @@ export type BoundAppData<TData extends AppDataDefinitions> = {
       : never;
 };
 
+/** Read operations shared by every connected Collection surface. */
+export type CollectionReader<T extends object> = {
+  get(ref: Ref<T>): Promise<Item<T>>;
+};
+
+/** Collection creation exposed only when declared in Resource access. */
+export type CollectionCreator<T extends object> = {
+  create(value: T): Promise<PresentItem<T>>;
+};
+
+/** A connected Collection surface derived from its access declaration. */
+export type CollectionResource<
+  T extends object,
+  TAccess extends ResourceAccess,
+> = CollectionReader<T> & (
+  TAccess extends { readonly create: true } ? CollectionCreator<T> : object
+);
+
+/** The connected Resource surface generated from one Resource definition. */
+export type AppResource<TDefinition> = TDefinition extends CollectionDefinition<
+  infer TValue,
+  infer TAccess
+> ? CollectionResource<TValue, TAccess> : object;
+
+/** The direct named Resource surface returned by App.test or App.connect. */
+export type AppInstance<TData extends AppDataDefinitions> = {
+  readonly [K in keyof TData]: AppResource<TData[K]>;
+};
+
+/** Options for one fresh deterministic App test instance. */
+export type AppTestOptions = {
+  readonly identity?: Identity;
+};
+
 /** A complete application definition with canonically bound Resources. */
 export type AppDefinition<TData extends AppDataDefinitions> = {
   readonly id: string;
   readonly name: string;
   readonly namespace: string;
   readonly data: BoundAppData<TData>;
+  test(options?: AppTestOptions): AppInstance<TData>;
 };
 
 function requirePathSegment(value: string, label: string): void {
@@ -311,6 +406,101 @@ function requirePathSegment(value: string, label: string): void {
   ) {
     throw new TypeError(`${label} must be one valid path segment: ${value}`);
   }
+}
+
+function testStoreKey(ref: Pick<Ref<object>, "identity" | "path">): string {
+  return `${ref.identity}\u0000${ref.path}`;
+}
+
+function createRef<T extends object>(identity: Identity, path: string): Ref<T> {
+  return Object.freeze({ identity, path }) as Ref<T>;
+}
+
+function trueIsPresent<T extends object>(this: Item<T>): this is PresentItem<T> {
+  return true;
+}
+
+function falseIsPresent<T extends object>(this: Item<T>): this is PresentItem<T> {
+  return false;
+}
+
+function falseIsDeleted<T extends object>(this: Item<T>): this is DeletedItem<T> {
+  return false;
+}
+
+function freezeValue<T>(value: T, seen = new WeakSet<object>()): ImmutableValue<T> {
+  if (value === null || typeof value !== "object" || seen.has(value)) {
+    return value as ImmutableValue<T>;
+  }
+  seen.add(value);
+  for (const nested of Object.values(value)) {
+    freezeValue(nested, seen);
+  }
+  return Object.freeze(value) as ImmutableValue<T>;
+}
+
+function presentItem<T extends object>(ref: Ref<T>, value: T): PresentItem<T> {
+  return Object.freeze({
+    state: State.Present,
+    ref,
+    value: freezeValue(value),
+    isPresent: trueIsPresent,
+    isDeleted: falseIsDeleted,
+  });
+}
+
+function missingItem<T extends object>(ref: Ref<T>): MissingItem<T> {
+  return Object.freeze({
+    state: State.Missing,
+    ref,
+    isPresent: falseIsPresent,
+    isDeleted: falseIsDeleted,
+  });
+}
+
+function createTestCollection<T extends object, TAccess extends ResourceAccess>(
+  resource: BoundCollectionDefinition<T, TAccess>,
+  identity: Identity,
+  store: Map<string, object>,
+  nextId: () => string,
+): CollectionResource<T, TAccess> {
+  const collection: CollectionReader<T> & Partial<CollectionCreator<T>> = {
+    async get(ref) {
+      if (ref.identity !== identity || !ref.path.startsWith(`${resource.path}/`)) {
+        throw new TypeError("Collection reference does not belong to this Resource view");
+      }
+      const value = store.get(testStoreKey(ref)) as T | undefined;
+      return value === undefined
+        ? missingItem(ref)
+        : presentItem(ref, parse(resource.schema, value));
+    },
+  };
+  if (resource.access.create === true) {
+    collection.create = async (input) => {
+      const value = parse(resource.schema, input);
+      const ref = createRef<T>(identity, `${resource.path}/${nextId()}`);
+      store.set(testStoreKey(ref), value);
+      return presentItem(ref, parse(resource.schema, value));
+    };
+  }
+  return Object.freeze(collection) as CollectionResource<T, TAccess>;
+}
+
+function createTestApp<TData extends AppDataDefinitions>(
+  data: BoundAppData<TData>,
+  options: AppTestOptions = {},
+): AppInstance<TData> {
+  const identity = options.identity ?? "test.jolt";
+  const store = new Map<string, object>();
+  let nextId = 0;
+  const opaqueId = () => `jlt_${(++nextId).toString(36).padStart(12, "0")}`;
+
+  return Object.fromEntries(Object.entries(data).map(([name, resource]) => [
+    name,
+    resource[resourceDefinition] === "collection"
+      ? createTestCollection(resource, identity, store, opaqueId)
+      : Object.freeze({}),
+  ])) as AppInstance<TData>;
 }
 
 /** Composes Resource definitions into one application definition. */
@@ -337,6 +527,7 @@ export const App = {
       name: options.name,
       namespace: options.namespace,
       data,
+      test: testOptions => createTestApp(data, testOptions),
     };
   },
 } as const;

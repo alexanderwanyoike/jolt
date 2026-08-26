@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   App,
@@ -9,6 +9,7 @@ import {
   Migrations,
   Read,
   Schema,
+  State,
   UpdateConflict,
 } from "jolt-sdk/data";
 
@@ -138,5 +139,180 @@ describe("Data SDK applications", () => {
 
     expect(post).toBeInstanceOf(Post);
     expect(post.text).toBe("Hello!");
+  });
+
+  it("creates and reads a typed Collection Item through an isolated App test", async () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: {
+        read: Read.AnyIdentity,
+        create: true,
+      },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts },
+    });
+    const chirp = Chirp.test({ identity: "alice.jolt" });
+
+    const created = await chirp.posts.create({ text: "Hello!" });
+
+    expect(created.state).toBe(State.Present);
+    expect(created.isPresent()).toBe(true);
+    expect(created.ref.identity).toBe("alice.jolt");
+    expect(created.ref.path).toMatch(/^\/chirp\/posts\/jlt_/);
+    expect(created.value).toBeInstanceOf(Post);
+    expect(Object.isFrozen(created)).toBe(true);
+    expect(Object.isFrozen(created.ref)).toBe(true);
+    expect(Object.isFrozen(created.value)).toBe(true);
+
+    const read = await chirp.posts.get(created.ref);
+    expect(read.isPresent()).toBe(true);
+    if (!read.isPresent()) throw new Error("expected a present post");
+    expect(read.value.text).toBe("Hello!");
+
+    const readByState = await chirp.posts.get(created.ref);
+    if (readByState.state !== State.Present) throw new Error("expected a present post");
+    expect(readByState.value.text).toBe("Hello!");
+  });
+
+  it("keeps nested Item values immutable and separate from deterministic state", async () => {
+    @Schema({ version: 1 })
+    class Author {
+      @Field.string()
+      displayName!: string;
+    }
+
+    @Schema({ version: 1 })
+    class Post {
+      @Field.array(Field.string)
+      tags!: string[];
+
+      @Field.schema(Author)
+      author!: Author;
+
+      @Field.dateTime()
+      postedAt!: Date;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: { read: Read.OwnIdentity, create: true },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts },
+    });
+    const chirp = Chirp.test();
+    const created = await chirp.posts.create({
+      tags: ["hello"],
+      author: { displayName: "Alice" },
+      postedAt: new Date("2026-08-26T20:00:00.000Z"),
+    });
+
+    expect(Object.isFrozen(created.value.tags)).toBe(true);
+    expect(Object.isFrozen(created.value.author)).toBe(true);
+    expectTypeOf(created.value.postedAt).toEqualTypeOf<Date>();
+    expect(() => (created.value.tags as string[]).push("mutated")).toThrow(TypeError);
+    expect(() => {
+      (created.value.author as Author).displayName = "Mallory";
+    }).toThrow(TypeError);
+    if (false) {
+      // @ts-expect-error Nested snapshot arrays are readonly.
+      created.value.tags.push("mutated");
+      // @ts-expect-error Nested snapshot objects are readonly.
+      created.value.author.displayName = "Mallory";
+    }
+
+    const { isPresent } = created;
+    expect(isPresent()).toBe(true);
+
+    const read = await chirp.posts.get(created.ref);
+    if (!read.isPresent()) throw new Error("expected an unchanged post");
+    expect(read.value.tags).toEqual(["hello"]);
+    expect(read.value.author.displayName).toBe("Alice");
+    expect(read.value).not.toBe(created.value);
+  });
+
+  it("gives every App.test call fresh state", async () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: {
+        read: Read.OwnIdentity,
+        create: true,
+      },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts },
+    });
+
+    const first = Chirp.test({ identity: "alice.jolt" });
+    const created = await first.posts.create({ text: "First test" });
+    const second = Chirp.test({ identity: "alice.jolt" });
+
+    const missing = await second.posts.get(created.ref);
+    expect(missing.state).toBe(State.Missing);
+    expect(missing.isPresent()).toBe(false);
+    expect(missing.isDeleted()).toBe(false);
+  });
+
+  it("omits Collection creation when Resource access does not declare it", () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: {
+        read: Read.OwnIdentity,
+      },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts },
+    });
+    const chirp = Chirp.test();
+
+    expect("create" in chirp.posts).toBe(false);
+    if (false) {
+      // @ts-expect-error Read-only Resources do not expose create.
+      void chirp.posts.create;
+    }
   });
 });
