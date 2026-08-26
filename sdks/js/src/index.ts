@@ -59,6 +59,7 @@ export type {
   JoltSessionSdk,
   OpenEncryptedResult,
   PublishResult,
+  RecordReadResult,
   Reference,
   Versioned,
 } from "./client.js";
@@ -76,6 +77,7 @@ export { decodeAppCompatibilityDeclaration } from "./compatibility.js";
 
 export {
   apiErrorMessage,
+  isContentUnavailableError,
   isJoltUnavailableError,
   JoltApiError,
   JoltTransportError,
@@ -105,6 +107,7 @@ export type {
   FetchResult,
   HomeRelayPinResponse,
   IngressRecord,
+  LocalRecordReadResponse,
   NodeStatus,
   OpenedEncryptedObject,
   PublishedContent,

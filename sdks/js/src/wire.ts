@@ -105,6 +105,20 @@ export type FetchResult = {
   size: number;
 };
 
+/** Result of reading one authoritative local singleton path (`/app/v1/records/read`). */
+export type LocalRecordReadResponse =
+  | {
+      state: "missing";
+      path: string;
+    }
+  | {
+      state: "present";
+      path: string;
+      content_id: string;
+      revision: string;
+      data: number[];
+    };
+
 /** Lifecycle states of an app session. */
 export type AppSessionStatus = "pending" | "active" | "rejected" | "revoked" | "expired";
 

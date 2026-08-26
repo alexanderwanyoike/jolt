@@ -1,5 +1,9 @@
 import { makeId } from "./client.js";
 import type { JoltSdk } from "./client.js";
+import {
+  isContentUnavailableError,
+  isJoltUnavailableError,
+} from "./errors.js";
 
 /** A decorated application value class used as both runtime schema and TypeScript type. */
 export type SchemaClass<T extends object> = new () => T;
@@ -220,6 +224,17 @@ export type Ref<T extends object> = {
   readonly path: string;
   readonly [referenceType]?: (value: T) => T;
 };
+
+/** A mutation could not safely proceed because the Item's state is unknown. */
+export class ItemUnavailableError extends Error {
+  readonly ref: Pick<Ref<object>, "identity" | "path">;
+
+  constructor(ref: Pick<Ref<object>, "identity" | "path">) {
+    super(`Item state is unavailable: ${ref.identity}${ref.path}`);
+    this.name = "ItemUnavailableError";
+    this.ref = ref;
+  }
+}
 
 /** Shared immutable state and narrowing behavior for an Item snapshot. */
 export type ItemSnapshot<T extends object, TState extends symbol> = {
@@ -496,7 +511,7 @@ export type AppTestOptions = {
  */
 export type AppConnectOptions = {
   readonly identity: Identity;
-  readonly client: Pick<JoltSdk, "publishJson" | "read">;
+  readonly client: Pick<JoltSdk, "publishJson" | "read" | "readRecord">;
 };
 
 /** Shared deterministic state that can expose several identity-bound App views. */
@@ -609,6 +624,15 @@ function missingItem<T extends object>(ref: Ref<T>): MissingItem<T> {
   });
 }
 
+function unavailableItem<T extends object>(ref: Ref<T>): UnavailableItem<T> {
+  return Object.freeze({
+    state: State.Unavailable,
+    ref,
+    isPresent: falseIsPresent,
+    isDeleted: falseIsDeleted,
+  });
+}
+
 function decodeStoredSchemaValue(input: unknown): StoredSchemaValue | null {
   if (input === null || typeof input !== "object" || Array.isArray(input)) return null;
   const candidate = input as Record<string, unknown>;
@@ -620,6 +644,14 @@ function decodeStoredSchemaValue(input: unknown): StoredSchemaValue | null {
     return null;
   }
   return { version: candidate.version as number, value: candidate.value };
+}
+
+function requireStoredSchemaValue(input: unknown): StoredSchemaValue {
+  const stored = decodeStoredSchemaValue(input);
+  if (stored === null) {
+    throw new SchemaValidationError("$", "must be a versioned schema value");
+  }
+  return stored;
 }
 
 function currentStoredValue<T extends object>(
@@ -637,10 +669,15 @@ function currentStoredValue<T extends object>(
   };
 }
 
+type BackendReadResult =
+  | StoredSchemaValue
+  | typeof State.Missing
+  | typeof State.Unavailable;
+
 type DataBackend = {
   readonly identity: Identity;
   nextId(): string;
-  read<T extends object>(ref: Ref<T>): Promise<StoredSchemaValue | null>;
+  read<T extends object>(ref: Ref<T>): Promise<BackendReadResult>;
   write<T extends object>(ref: Ref<T>, stored: StoredSchemaValue): Promise<void>;
   for(identity: Identity): DataBackend;
 };
@@ -650,7 +687,7 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
     identity,
     nextId: () => `jlt_${(++state.nextId).toString(36).padStart(12, "0")}`,
     async read(ref) {
-      return state.store.get(testStoreKey(ref)) ?? null;
+      return state.store.get(testStoreKey(ref)) ?? State.Missing;
     },
     async write(ref, stored) {
       state.store.set(testStoreKey(ref), stored);
@@ -659,23 +696,44 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
   };
 }
 
-function createConnectedBackend(options: AppConnectOptions): DataBackend {
+function createConnectedBackend(
+  options: AppConnectOptions,
+  localIdentity: Identity = options.identity,
+): DataBackend {
   return {
     identity: options.identity,
     nextId: () => makeId("jlt"),
     async read(ref) {
-      const versioned = await options.client.read(ref, value => ({ value }));
-      if (versioned === null) return null;
-      const stored = decodeStoredSchemaValue(versioned.value.value);
-      if (stored === null) {
-        throw new SchemaValidationError("$", "must be a versioned schema value");
+      if (ref.identity !== localIdentity) {
+        const versioned = await options.client.read(ref, value => ({ value }));
+        if (versioned === null) return State.Unavailable;
+        return requireStoredSchemaValue(versioned.value.value);
       }
-      return stored;
+      let record;
+      try {
+        record = await options.client.readRecord(ref);
+      } catch (error) {
+        if (
+          isJoltUnavailableError(error) ||
+          isContentUnavailableError(error)
+        ) {
+          return State.Unavailable;
+        }
+        throw error;
+      }
+      if (record.state === "missing") return State.Missing;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(new TextDecoder().decode(new Uint8Array(record.bytes)));
+      } catch {
+        throw new SchemaValidationError("$", "must be valid JSON");
+      }
+      return requireStoredSchemaValue(parsed);
     },
     async write(ref, stored) {
       await options.client.publishJson(ref.path, stored);
     },
-    for: identity => createConnectedBackend({ ...options, identity }),
+    for: identity => createConnectedBackend({ ...options, identity }, localIdentity),
   };
 }
 
@@ -685,7 +743,8 @@ async function readItem<T extends object>(
   ref: Ref<T>,
 ): Promise<Item<T>> {
   const stored = await backend.read(ref);
-  if (stored === null) return missingItem(ref);
+  if (stored === State.Missing) return missingItem(ref);
+  if (stored === State.Unavailable) return unavailableItem(ref);
   return presentItem(ref, resource.migrate(stored));
 }
 
@@ -748,6 +807,9 @@ function createDocument<T extends object, TAccess extends ResourceAccess>(
     document.getOrCreate = async (input) => {
       const existing = await readItem(resource, backend, ref);
       if (existing.isPresent()) return existing;
+      if (existing.state === State.Unavailable) {
+        throw new ItemUnavailableError(ref);
+      }
       const { stored, value } = currentStoredValue(resource.schema, input);
       await backend.write(ref, stored);
       return presentItem(ref, parse(resource.schema, value));

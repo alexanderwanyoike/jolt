@@ -6,12 +6,14 @@ import {
   DeleteConflict,
   Document,
   Field,
+  ItemUnavailableError,
   Read,
   Schema,
   SchemaValidationError,
   State,
   UpdateConflict,
 } from "jolt-sdk/data";
+import { JoltApiError, JoltTransportError } from "jolt-sdk";
 import { createFakeJolt } from "jolt-sdk/testing";
 
 @Schema({ version: 1 })
@@ -122,5 +124,103 @@ describe("Data SDK client-backed content validation", () => {
       chirp.follows.getOrCreate({ identities: ["mallory.jolt"] }),
     ).rejects.toBeInstanceOf(SchemaValidationError);
     await expect(chirp.follows.get()).rejects.toBeInstanceOf(SchemaValidationError);
+  });
+
+  it("rejects invalid present bytes instead of treating them as Unavailable", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        publishJson: jolt.client.publishJson,
+        read: jolt.client.read,
+        async readRecord(ref) {
+          return {
+            state: "present",
+            ref,
+            contentId: "cid_invalid",
+            revision: "revision_invalid",
+            bytes: [255],
+          };
+        },
+      },
+    });
+
+    await expect(chirp.follows.get()).rejects.toBeInstanceOf(SchemaValidationError);
+  });
+
+  it("returns an Unavailable Item when strict record state cannot be read", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const unavailable = new JoltTransportError("daemon unavailable");
+    let publishes = 0;
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        async publishJson(...args) {
+          publishes += 1;
+          return jolt.client.publishJson(...args);
+        },
+        read: jolt.client.read,
+        async readRecord() {
+          throw unavailable;
+        },
+      },
+    });
+
+    const item = await chirp.follows.get();
+
+    expect(item.state).toBe(State.Unavailable);
+    expect(item.isPresent()).toBe(false);
+    expect(item.isDeleted()).toBe(false);
+    await expect(
+      chirp.follows.getOrCreate({ identities: ["bob.jolt"] }),
+    ).rejects.toBeInstanceOf(ItemUnavailableError);
+    expect(publishes).toBe(0);
+  });
+
+  it("maps a daemon-classified content fetch failure to Unavailable", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        publishJson: jolt.client.publishJson,
+        read: jolt.client.read,
+        async readRecord() {
+          throw new JoltApiError("No content provider", {
+            status: 404,
+            code: "content_provider_not_found",
+          });
+        },
+      },
+    });
+
+    await expect(chirp.follows.get()).resolves.toMatchObject({
+      state: State.Unavailable,
+    });
+  });
+
+  it("does not mistake a remote identity for the daemon's authoritative local state", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    let localRecordReads = 0;
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        publishJson: jolt.client.publishJson,
+        async readRecord(ref) {
+          localRecordReads += 1;
+          return { state: "missing", ref };
+        },
+        async read() {
+          return null;
+        },
+      },
+    });
+
+    const item = await chirp.posts.for("bob.jolt").get({
+      identity: "bob.jolt",
+      path: "/chirp/posts/jlt_remote",
+    });
+
+    expect(item.state).toBe(State.Unavailable);
+    expect(localRecordReads).toBe(0);
   });
 });
