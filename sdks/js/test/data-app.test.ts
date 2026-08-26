@@ -8,6 +8,7 @@ import {
   Field,
   Migrations,
   Read,
+  ResourceKind,
   Schema,
   State,
   UpdateConflict,
@@ -78,6 +79,75 @@ describe("Data SDK applications", () => {
     expect(Chirp.data.follows.schema).toBe(FollowList);
   });
 
+  it("derives an inspectable requirement and Grant plan from Resource access", () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    @Schema({ version: 1 })
+    class FollowList {
+      @Field.array(Field.identity)
+      identities!: string[];
+    }
+
+    const Posts = Collection.create(Post, {
+      access: {
+        read: Read.AnyIdentity,
+        create: true,
+        update: true,
+        delete: true,
+        restore: true,
+      },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+    const Follows = Document.create(FollowList, {
+      access: { read: Read.OwnIdentity, create: true },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts, follows: Follows },
+    });
+
+    expect(Chirp.accessPlan.requirements).toEqual([
+      {
+        resource: "posts",
+        kind: ResourceKind.Collection,
+        access: Posts.access,
+      },
+      {
+        resource: "follows",
+        kind: ResourceKind.Document,
+        access: Follows.access,
+      },
+    ]);
+    expect(Chirp.accessPlan.grants).toEqual([
+      {
+        resource: "posts",
+        path: "/chirp/posts/*",
+        access: Posts.access,
+      },
+      {
+        resource: "follows",
+        path: "/chirp/follows",
+        access: Follows.access,
+      },
+    ]);
+    expect(Object.isFrozen(Chirp.accessPlan)).toBe(true);
+    expect(Object.isFrozen(Chirp.accessPlan.requirements)).toBe(true);
+    expect(Object.isFrozen(Chirp.accessPlan.grants)).toBe(true);
+  });
+
   it("rejects invalid derived path segments at App definition time", () => {
     @Schema({ version: 1 })
     class Post {
@@ -110,6 +180,46 @@ describe("Data SDK applications", () => {
         data: { [resourceName]: Posts },
       })).toThrowError(`Resource name must be one valid path segment: ${resourceName}`);
     }
+  });
+
+  it("rejects invalid Resource policies at definition time", () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    expect(() => Collection.create(Post, {
+      access: { read: "any identity" as never },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    })).toThrowError("Resource access read must be Read.OwnIdentity or Read.AnyIdentity");
+
+    expect(() => Collection.create(Post, {
+      access: { read: Read.OwnIdentity, create: false as never },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    })).toThrowError("Resource access create must be true when declared");
+
+    expect(() => Collection.create(Post, {
+      access: { read: Read.OwnIdentity, udpate: true } as never,
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    })).toThrowError("Unknown Resource access operation: udpate");
+
+    expect(() => Collection.create(Post, {
+      access: { read: Read.OwnIdentity },
+      conflicts: {
+        update: "latest" as never,
+        delete: DeleteConflict.DeleteWins,
+      },
+    })).toThrowError("Resource update conflict must be a value from UpdateConflict");
   });
 
   it("migrates historical values through a Resource definition", () => {

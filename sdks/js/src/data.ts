@@ -181,6 +181,17 @@ export const DeleteConflict = {
 } as const;
 
 /**
+ * Symbol-backed kinds used when inspecting a derived App access plan. The
+ * class preserves unique-symbol types for direct equality narrowing.
+ */
+export class ResourceKind {
+  static readonly Collection = Symbol("JoltDataResourceCollection");
+  static readonly Document = Symbol("JoltDataResourceDocument");
+
+  private constructor() {}
+}
+
+/**
  * Symbol-backed states for immutable Item snapshots. The class keeps every
  * static Symbol's unique-symbol type so direct equality checks narrow Items.
  */
@@ -302,6 +313,42 @@ export type BoundDocumentDefinition<
   readonly path: string;
 };
 
+const accessOperations = new Set(["read", "create", "update", "delete", "restore"]);
+const mutationAccessOperations = ["create", "update", "delete", "restore"] as const;
+
+function validatedResourceAccess<TAccess extends ResourceAccess>(access: TAccess): TAccess {
+  if (access === null || typeof access !== "object" || Array.isArray(access)) {
+    throw new TypeError("Resource access must be an object");
+  }
+  for (const operation of Object.keys(access)) {
+    if (!accessOperations.has(operation)) {
+      throw new TypeError(`Unknown Resource access operation: ${operation}`);
+    }
+  }
+  if (access.read !== Read.OwnIdentity && access.read !== Read.AnyIdentity) {
+    throw new TypeError("Resource access read must be Read.OwnIdentity or Read.AnyIdentity");
+  }
+  for (const operation of mutationAccessOperations) {
+    if (access[operation] !== undefined && access[operation] !== true) {
+      throw new TypeError(`Resource access ${operation} must be true when declared`);
+    }
+  }
+  return Object.freeze({ ...access });
+}
+
+function validatedResourceConflicts(conflicts: ResourceConflicts): ResourceConflicts {
+  if (conflicts === null || typeof conflicts !== "object" || Array.isArray(conflicts)) {
+    throw new TypeError("Resource conflicts must be an object");
+  }
+  if (!(Object.values(UpdateConflict) as readonly unknown[]).includes(conflicts.update)) {
+    throw new TypeError("Resource update conflict must be a value from UpdateConflict");
+  }
+  if (!(Object.values(DeleteConflict) as readonly unknown[]).includes(conflicts.delete)) {
+    throw new TypeError("Resource delete conflict must be a value from DeleteConflict");
+  }
+  return Object.freeze({ ...conflicts });
+}
+
 function defineResource<
   T extends object,
   const TAccess extends ResourceAccess,
@@ -311,13 +358,15 @@ function defineResource<
   schemaClass: SchemaClass<T>,
   options: ResourceOptions<TAccess>,
 ): ResourceDefinition<T, TAccess, TKind> {
-  return {
+  const access = validatedResourceAccess(options.access);
+  const conflicts = validatedResourceConflicts(options.conflicts);
+  return Object.freeze({
     schema: schemaClass,
-    access: options.access,
-    conflicts: options.conflicts,
+    access,
+    conflicts,
     migrate: stored => migrate(schemaClass, stored),
     [resourceDefinition]: kind,
-  };
+  });
 }
 
 /** Defines an unbound typed Collection. App.create derives its path. */
@@ -434,12 +483,36 @@ export type AppTestWorld<TData extends AppDataDefinitions> = {
   as(identity: Identity): AppInstance<TData>;
 };
 
+/** High-level node behavior required by one declared Resource. */
+export type ResourceRequirement = {
+  readonly resource: string;
+  readonly kind: typeof ResourceKind.Collection | typeof ResourceKind.Document;
+  readonly access: Readonly<ResourceAccess>;
+};
+
+/** High-level authority requested for one canonically scoped Resource. */
+export type ResourceGrantPlan = {
+  readonly resource: string;
+  readonly path: string;
+  readonly access: Readonly<ResourceAccess>;
+};
+
+/**
+ * Inspectable connection input derived from an App's Resource declarations.
+ * Requirements and Grants are index-aligned in declared Resource order.
+ */
+export type AppAccessPlan = {
+  readonly requirements: readonly ResourceRequirement[];
+  readonly grants: readonly ResourceGrantPlan[];
+};
+
 /** A complete application definition with canonically bound Resources. */
 export type AppDefinition<TData extends AppDataDefinitions> = {
   readonly id: string;
   readonly name: string;
   readonly namespace: string;
   readonly data: BoundAppData<TData>;
+  readonly accessPlan: AppAccessPlan;
   test(options?: AppTestOptions): AppInstance<TData>;
   testWorld(): AppTestWorld<TData>;
 };
@@ -630,11 +703,31 @@ export const App = {
         },
       ];
     })) as BoundAppData<TData>;
+    const requirements = Object.freeze(Object.entries(data).map(([resourceName, resource]) => (
+      Object.freeze({
+        resource: resourceName,
+        kind: resource[resourceDefinition] === "collection"
+          ? ResourceKind.Collection
+          : ResourceKind.Document,
+        access: resource.access,
+      })
+    )));
+    const grants = Object.freeze(Object.entries(data).map(([resourceName, resource]) => (
+      Object.freeze({
+        resource: resourceName,
+        path: resource[resourceDefinition] === "collection"
+          ? `${resource.path}/*`
+          : resource.path,
+        access: resource.access,
+      })
+    )));
+    const accessPlan = Object.freeze({ requirements, grants });
     return {
       id: options.id,
       name: options.name,
       namespace: options.namespace,
       data,
+      accessPlan,
       test: testOptions => createTestApp(data, testOptions),
       testWorld: () => {
         const state = createTestWorldState();
