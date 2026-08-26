@@ -36,6 +36,12 @@ export type SchemaOptions = {
   readonly migrations?: MigrationPlan;
 };
 
+/** One stored schema version and its opaque value. */
+export type StoredSchemaValue = {
+  readonly version: number;
+  readonly value: unknown;
+};
+
 /** A value failed validation against a Schema Class. */
 export class SchemaValidationError extends Error {
   constructor(
@@ -191,16 +197,29 @@ export type ResourceConflicts = {
   readonly delete: typeof DeleteConflict[keyof typeof DeleteConflict];
 };
 
-/** An unbound Collection definition created before it belongs to an App. */
-export type CollectionDefinition<
+type ResourceDefinition<
   T extends object,
   TAccess extends ResourceAccess,
+  TKind extends "collection" | "document",
 > = {
   readonly schema: SchemaClass<T>;
   readonly access: TAccess;
   readonly conflicts: ResourceConflicts;
-  readonly [resourceDefinition]: "collection";
+  readonly migrate: (stored: StoredSchemaValue) => T;
+  readonly [resourceDefinition]: TKind;
 };
+
+/** An unbound Collection definition created before it belongs to an App. */
+export type CollectionDefinition<
+  T extends object,
+  TAccess extends ResourceAccess,
+> = ResourceDefinition<T, TAccess, "collection">;
+
+/** An unbound Document definition created before it belongs to an App. */
+export type DocumentDefinition<
+  T extends object,
+  TAccess extends ResourceAccess,
+> = ResourceDefinition<T, TAccess, "document">;
 
 /** A Collection definition bound to its canonical App path prefix. */
 export type BoundCollectionDefinition<
@@ -210,6 +229,35 @@ export type BoundCollectionDefinition<
   readonly path: string;
 };
 
+/** A Document definition bound to its one canonical App path. */
+export type BoundDocumentDefinition<
+  T extends object,
+  TAccess extends ResourceAccess,
+> = DocumentDefinition<T, TAccess> & {
+  readonly path: string;
+};
+
+function defineResource<
+  T extends object,
+  const TAccess extends ResourceAccess,
+  const TKind extends "collection" | "document",
+>(
+  kind: TKind,
+  schemaClass: SchemaClass<T>,
+  options: {
+    readonly access: TAccess;
+    readonly conflicts: ResourceConflicts;
+  },
+): ResourceDefinition<T, TAccess, TKind> {
+  return {
+    schema: schemaClass,
+    access: options.access,
+    conflicts: options.conflicts,
+    migrate: stored => migrate(schemaClass, stored),
+    [resourceDefinition]: kind,
+  };
+}
+
 /** Defines an unbound typed Collection. App.create derives its path. */
 export const Collection = {
   create: <T extends object, const TAccess extends ResourceAccess>(
@@ -218,24 +266,34 @@ export const Collection = {
       readonly access: TAccess;
       readonly conflicts: ResourceConflicts;
     },
-  ): CollectionDefinition<T, TAccess> => ({
-    schema: schemaClass,
-    access: options.access,
-    conflicts: options.conflicts,
-    [resourceDefinition]: "collection",
-  }),
+  ): CollectionDefinition<T, TAccess> => defineResource("collection", schemaClass, options),
+} as const;
+
+/** Defines an unbound typed Document. App.create derives its path. */
+export const Document = {
+  create: <T extends object, const TAccess extends ResourceAccess>(
+    schemaClass: SchemaClass<T>,
+    options: {
+      readonly access: TAccess;
+      readonly conflicts: ResourceConflicts;
+    },
+  ): DocumentDefinition<T, TAccess> => defineResource("document", schemaClass, options),
 } as const;
 
 type AppDataDefinitions = Readonly<Record<
   string,
-  CollectionDefinition<object, ResourceAccess>
+  | CollectionDefinition<object, ResourceAccess>
+  | DocumentDefinition<object, ResourceAccess>
 >>;
 
 type BoundAppData<TData extends AppDataDefinitions> = {
   readonly [K in keyof TData]: TData[K] extends CollectionDefinition<
     infer TValue,
     infer TAccess
-  > ? BoundCollectionDefinition<TValue, TAccess> : never;
+  > ? BoundCollectionDefinition<TValue, TAccess>
+    : TData[K] extends DocumentDefinition<infer TValue, infer TAccess>
+      ? BoundDocumentDefinition<TValue, TAccess>
+      : never;
 };
 
 /** A complete application definition with canonically bound Resources. */
@@ -342,7 +400,7 @@ function parse<T extends object>(schemaClass: SchemaClass<T>, input: unknown): T
 
 function migrate<T extends object>(
   schemaClass: SchemaClass<T>,
-  stored: { readonly version: number; readonly value: unknown },
+  stored: StoredSchemaValue,
 ): T {
   const options = optionsBySchema.get(schemaClass);
   if (options === undefined) {
