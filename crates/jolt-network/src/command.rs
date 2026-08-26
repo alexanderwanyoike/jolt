@@ -120,6 +120,10 @@ pub enum DaemonCommand {
     ListPublishedContent {
         response_tx: oneshot::Sender<Vec<PublishedContentInfo>>,
     },
+    InspectLocalRecord {
+        path: String,
+        response_tx: oneshot::Sender<Option<LocalRecordInfo>>,
+    },
     Pin {
         content_id: String,
         response_tx: oneshot::Sender<Result<(), NetworkError>>,
@@ -192,6 +196,14 @@ pub struct FetchResult {
     pub data: Vec<u8>,
     pub content_id: String,
     pub size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalRecordInfo {
+    pub path: String,
+    pub content_id: String,
+    /// Opaque revision token; equal if and only if it names the same winning log entry.
+    pub revision: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

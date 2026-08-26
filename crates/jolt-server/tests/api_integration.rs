@@ -2483,6 +2483,130 @@ async fn test_app_can_append_and_enumerate_records_by_prefix() {
 }
 
 #[tokio::test]
+async fn test_app_reads_authoritative_local_record_state_across_restart() {
+    let profile = tempfile::tempdir().unwrap();
+    let (first_port, first_handle, _first_holder) =
+        start_test_server_with_profile_dir(profile.path().to_path_buf()).await;
+    let client = reqwest::Client::new();
+    let identity = first_handle.status().await.unwrap().identity_address;
+    let capabilities = ["resolve:public", "fetch:public", "publish:/chirp/*"];
+    for incomplete_capabilities in [&["resolve:public"][..], &["fetch:public"][..]] {
+        let incomplete_token =
+            approve_app_session(&client, first_port, &identity, incomplete_capabilities).await;
+        let denied = client
+            .post(format!("{}/app/v1/records/read", base_url(first_port)))
+            .bearer_auth(incomplete_token)
+            .json(&serde_json::json!({ "path": "/chirp/posts/jlt_record" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), 403);
+    }
+    let token = approve_app_session(&client, first_port, &identity, &capabilities).await;
+    let path = "/chirp/posts/jlt_record";
+
+    let missing = client
+        .post(format!("{}/app/v1/records/read", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), 200);
+    assert_eq!(
+        missing.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({ "state": "missing", "path": path })
+    );
+
+    let stored = br#"{"version":1,"value":{"text":"Hello!"}}"#;
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(stored.to_vec()).file_name("record.json"),
+        )
+        .text("path", path.to_string());
+    let published = client
+        .post(format!("{}/app/v1/publish", base_url(first_port)))
+        .bearer_auth(&token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(published.status(), 200);
+    let published: serde_json::Value = published.json().await.unwrap();
+
+    let first_read = client
+        .post(format!("{}/app/v1/records/read", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first_read.status(), 200);
+    let first_read: serde_json::Value = first_read.json().await.unwrap();
+    assert_eq!(first_read["state"], "present");
+    assert_eq!(first_read["path"], path);
+    assert_eq!(first_read["content_id"], published["content_id"]);
+    assert_eq!(first_read["revision"].as_str().unwrap().len(), 64);
+    assert_eq!(
+        first_read["data"],
+        serde_json::Value::Array(
+            stored
+                .iter()
+                .copied()
+                .map(serde_json::Value::from)
+                .collect()
+        )
+    );
+
+    let content_id = published["content_id"].as_str().unwrap();
+    let content_path = profile
+        .path()
+        .join("data")
+        .join("published")
+        .join(content_id)
+        .join("content");
+    std::fs::remove_file(&content_path).unwrap();
+    let unavailable = client
+        .post(format!("{}/app/v1/records/read", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .unwrap();
+    assert!(unavailable.status() == 404 || unavailable.status() == 504);
+    let unavailable: serde_json::Value = unavailable.json().await.unwrap();
+    assert!(
+        unavailable["code"] == "content_provider_not_found"
+            || unavailable["code"] == "content_fetch_failed",
+        "expected structured content failure code, got {unavailable}"
+    );
+    std::fs::write(content_path, stored).unwrap();
+
+    let revision = first_read["revision"].clone();
+    first_handle.shutdown().await.ok();
+
+    let (second_port, second_handle, _second_holder) =
+        start_test_server_with_profile_dir(profile.path().to_path_buf()).await;
+    let after_restart = client
+        .post(format!("{}/app/v1/records/read", base_url(second_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(after_restart.status(), 200);
+    let after_restart: serde_json::Value = after_restart.json().await.unwrap();
+    assert_eq!(after_restart["state"], "present");
+    assert_eq!(after_restart["path"], path);
+    assert_eq!(after_restart["content_id"], published["content_id"]);
+    assert_eq!(after_restart["revision"], revision);
+    assert_eq!(after_restart["data"], first_read["data"]);
+
+    second_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_any_enumeration_is_path_scoped_across_identities() {
     let (port, handle, _dir) = start_test_server().await;
     let session_identity = handle.status().await.unwrap().identity_address;
@@ -3694,7 +3818,7 @@ async fn test_app_api_feature_manifest_is_public_and_generic() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["app_api"], 1);
-    assert_eq!(body["features"], serde_json::json!({}));
+    assert_eq!(body["features"], serde_json::json!({ "data.records": 1 }));
     assert!(body.get("daemon_version").is_none());
     assert!(body.get("applications").is_none());
 

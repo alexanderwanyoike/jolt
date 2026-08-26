@@ -10,9 +10,9 @@ use jolt_core::{
 
 use crate::command::{
     AppendRecordInfo, CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
-    EncryptedObjectResponse, FetchResult, IngressRecord, NodeStatus, PeerConnectResponse, PeerInfo,
-    PublishReachabilityResponse, PublishResponse, PublishedContentInfo,
-    RelayDiagnoseIdentityResponse, ResolveResponse,
+    EncryptedObjectResponse, FetchResult, IngressRecord, LocalRecordInfo, NodeStatus,
+    PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
+    PublishedContentInfo, RelayDiagnoseIdentityResponse, ResolveResponse,
 };
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
@@ -454,6 +454,22 @@ impl DaemonHandle {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
             .send(DaemonCommand::ListPublishedContent { response_tx: tx })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_plain(rx).await
+    }
+
+    /// Inspect one path in the local identity's merged singleton state.
+    pub async fn inspect_local_record(
+        &self,
+        path: String,
+    ) -> Result<Option<LocalRecordInfo>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::InspectLocalRecord {
+                path,
+                response_tx: tx,
+            })
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
         receive_plain(rx).await
