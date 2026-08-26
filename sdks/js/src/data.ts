@@ -195,6 +195,12 @@ export type ResourceConflicts = {
   readonly delete: typeof DeleteConflict[keyof typeof DeleteConflict];
 };
 
+/** Developer-facing access and conflict declarations for one Resource. */
+export type ResourceOptions<TAccess extends ResourceAccess> = {
+  readonly access: TAccess;
+  readonly conflicts: ResourceConflicts;
+};
+
 /** Shared metadata and migration behavior for an unbound Resource. */
 export type ResourceDefinition<
   T extends object,
@@ -243,10 +249,7 @@ function defineResource<
 >(
   kind: TKind,
   schemaClass: SchemaClass<T>,
-  options: {
-    readonly access: TAccess;
-    readonly conflicts: ResourceConflicts;
-  },
+  options: ResourceOptions<TAccess>,
 ): ResourceDefinition<T, TAccess, TKind> {
   return {
     schema: schemaClass,
@@ -261,10 +264,7 @@ function defineResource<
 export const Collection = {
   create: <T extends object, const TAccess extends ResourceAccess>(
     schemaClass: SchemaClass<T>,
-    options: {
-      readonly access: TAccess;
-      readonly conflicts: ResourceConflicts;
-    },
+    options: ResourceOptions<TAccess>,
   ): CollectionDefinition<T, TAccess> => defineResource("collection", schemaClass, options),
 } as const;
 
@@ -272,10 +272,7 @@ export const Collection = {
 export const Document = {
   create: <T extends object, const TAccess extends ResourceAccess>(
     schemaClass: SchemaClass<T>,
-    options: {
-      readonly access: TAccess;
-      readonly conflicts: ResourceConflicts;
-    },
+    options: ResourceOptions<TAccess>,
   ): DocumentDefinition<T, TAccess> => defineResource("document", schemaClass, options),
 } as const;
 
@@ -305,6 +302,17 @@ export type AppDefinition<TData extends AppDataDefinitions> = {
   readonly data: BoundAppData<TData>;
 };
 
+function requirePathSegment(value: string, label: string): void {
+  if (
+    value.length === 0
+    || value === "."
+    || value === ".."
+    || /[/\s?#]/u.test(value)
+  ) {
+    throw new TypeError(`${label} must be one valid path segment: ${value}`);
+  }
+}
+
 /** Composes Resource definitions into one application definition. */
 export const App = {
   create: <const TData extends AppDataDefinitions>(options: {
@@ -312,18 +320,25 @@ export const App = {
     readonly name: string;
     readonly namespace: string;
     readonly data: TData;
-  }): AppDefinition<TData> => ({
-    id: options.id,
-    name: options.name,
-    namespace: options.namespace,
-    data: Object.fromEntries(Object.entries(options.data).map(([name, resource]) => [
-      name,
-      {
-        ...resource,
-        path: `/${options.namespace}/${name}`,
-      },
-    ])) as BoundAppData<TData>,
-  }),
+  }): AppDefinition<TData> => {
+    requirePathSegment(options.namespace, "App namespace");
+    const data = Object.fromEntries(Object.entries(options.data).map(([name, resource]) => {
+      requirePathSegment(name, "Resource name");
+      return [
+        name,
+        {
+          ...resource,
+          path: `/${options.namespace}/${name}`,
+        },
+      ];
+    })) as BoundAppData<TData>;
+    return {
+      id: options.id,
+      name: options.name,
+      namespace: options.namespace,
+      data,
+    };
+  },
 } as const;
 
 const fieldsBySchema = new WeakMap<Function, Map<string | symbol, FieldDefinition>>();

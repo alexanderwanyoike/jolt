@@ -77,6 +77,40 @@ describe("Data SDK applications", () => {
     expect(Chirp.data.follows.schema).toBe(FollowList);
   });
 
+  it("rejects invalid derived path segments at App definition time", () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: { read: Read.OwnIdentity },
+      conflicts: {
+        update: UpdateConflict.LastWriteWins,
+        delete: DeleteConflict.DeleteWins,
+      },
+    });
+
+    for (const namespace of ["", "/chirp", "chirp/", "chirp/posts", "my app", ".", "..", "chirp?x", "chirp#x"]) {
+      expect(() => App.create({
+        id: "chirp.example",
+        name: "Chirp",
+        namespace,
+        data: { posts: Posts },
+      })).toThrowError(`App namespace must be one valid path segment: ${namespace}`);
+    }
+
+    for (const resourceName of ["", "/posts", "chirp/posts", "my posts", ".", "..", "posts?x", "posts#x"]) {
+      expect(() => App.create({
+        id: "chirp.example",
+        name: "Chirp",
+        namespace: "chirp",
+        data: { [resourceName]: Posts },
+      })).toThrowError(`Resource name must be one valid path segment: ${resourceName}`);
+    }
+  });
+
   it("migrates historical values through a Resource definition", () => {
     const migrations = Migrations.create()
       .to(2, value => Migrations.rename(value, { message: "text" }));
