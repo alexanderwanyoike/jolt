@@ -79,6 +79,17 @@ grep -Fq "workflows: [\"Package Jolt Console\"]" .github/workflows/pages.yml || 
   echo "Pages workflow does not follow tagged Jolt Console releases" >&2
   exit 1
 }
+
+for sdk_docs_path in \
+  'sdks/js/docs/api.json' \
+  'sdks/js/typedoc.json' \
+  'scripts/render-sdk-docs.py'; do
+  grep -Fq "\"${sdk_docs_path}\"" .github/workflows/pages.yml || {
+    echo "Pages workflow does not verify SDK docs change: $sdk_docs_path" >&2
+    exit 1
+  }
+done
+
 grep -Fq 'gh release view' .github/workflows/pages.yml || {
   echo "Pages workflow does not resolve the latest published release" >&2
   exit 1
@@ -105,6 +116,10 @@ test "$rfc_count" -eq 7 || {
 }
 
 sdk_source_sha="$(sha256sum sdks/js/docs/api.json | cut -d' ' -f1)"
+if grep -Fq '"sources":' sdks/js/docs/api.json; then
+  echo "SDK API snapshot contains volatile source metadata; enable TypeDoc disableSources" >&2
+  exit 1
+fi
 grep -q "jolt-sdk-source-sha256.*${sdk_source_sha}" website/sdk/reference.html || {
   echo "rendered SDK reference is stale: website/sdk/reference.html; run: python3 scripts/render-sdk-docs.py" >&2
   exit 1
@@ -140,6 +155,22 @@ grep -Fq 'yarn add jolt-sdk' <(sed 's/<[^>]*>//g' website/sdk/index.html) || {
   echo "SDK page does not document the jolt-sdk install command" >&2
   exit 1
 }
+
+required_data_sdk_reference=(
+  'id="module-data"'
+  'jolt-sdk/data'
+  'id="data.Schema"'
+  'id="data.Schema.parse"'
+  'id="data.Schema.migrate"'
+  'id="data.Migrations"'
+)
+
+for value in "${required_data_sdk_reference[@]}"; do
+  grep -Fq "$value" website/sdk/reference.html || {
+    echo "SDK reference is missing the Data SDK contract: $value" >&2
+    exit 1
+  }
+done
 
 required_rfc_library_contract=(
   'Protocol series · seven experimental drafts'

@@ -6,7 +6,10 @@ on:
     paths:
       - "website/**"
       - "rfcs/**"
+      - "sdks/js/docs/api.json"
+      - "sdks/js/typedoc.json"
       - "scripts/render-rfcs.py"
+      - "scripts/render-sdk-docs.py"
       - "scripts/verify-website.sh"
       - ".github/workflows/pages.yml"
   push:
@@ -14,7 +17,10 @@ on:
     paths:
       - "website/**"
       - "rfcs/**"
+      - "sdks/js/docs/api.json"
+      - "sdks/js/typedoc.json"
       - "scripts/render-rfcs.py"
+      - "scripts/render-sdk-docs.py"
       - "scripts/verify-website.sh"
       - ".github/workflows/pages.yml"
   release:
