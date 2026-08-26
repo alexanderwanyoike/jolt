@@ -154,32 +154,30 @@ export const Migrations = {
   rename: renameMigrationFields,
 } as const;
 
-const ownIdentityRead = Symbol("JoltDataReadOwnIdentity");
-const anyIdentityRead = Symbol("JoltDataReadAnyIdentity");
-const lastWriteWins = Symbol("JoltDataUpdateConflictLastWriteWins");
-const manualUpdateConflict = Symbol("JoltDataUpdateConflictManual");
-const deleteWins = Symbol("JoltDataDeleteConflictDeleteWins");
-const updateWins = Symbol("JoltDataDeleteConflictUpdateWins");
-const manualDeleteConflict = Symbol("JoltDataDeleteConflictManual");
 const resourceDefinition = Symbol("JoltDataResourceDefinition");
+const policyKind = Symbol("JoltDataPolicyKind");
+
+function policy<const TKind extends string>(kind: TKind) {
+  return Object.freeze({ [policyKind]: kind });
+}
 
 /** Read scopes available to a Resource access declaration. */
 export const Read = {
-  OwnIdentity: ownIdentityRead,
-  AnyIdentity: anyIdentityRead,
+  OwnIdentity: policy("read:own-identity"),
+  AnyIdentity: policy("read:any-identity"),
 } as const;
 
 /** Conflict policies for concurrent updates to the same field. */
 export const UpdateConflict = {
-  LastWriteWins: lastWriteWins,
-  Manual: manualUpdateConflict,
+  LastWriteWins: policy("update-conflict:last-write-wins"),
+  Manual: policy("update-conflict:manual"),
 } as const;
 
 /** Conflict policies for a concurrent deletion and update. */
 export const DeleteConflict = {
-  DeleteWins: deleteWins,
-  UpdateWins: updateWins,
-  Manual: manualDeleteConflict,
+  DeleteWins: policy("delete-conflict:delete-wins"),
+  UpdateWins: policy("delete-conflict:update-wins"),
+  Manual: policy("delete-conflict:manual"),
 } as const;
 
 /** Operations an application requests for one Resource. */
@@ -197,7 +195,8 @@ export type ResourceConflicts = {
   readonly delete: typeof DeleteConflict[keyof typeof DeleteConflict];
 };
 
-type ResourceDefinition<
+/** Shared metadata and migration behavior for an unbound Resource. */
+export type ResourceDefinition<
   T extends object,
   TAccess extends ResourceAccess,
   TKind extends "collection" | "document",
@@ -280,13 +279,15 @@ export const Document = {
   ): DocumentDefinition<T, TAccess> => defineResource("document", schemaClass, options),
 } as const;
 
-type AppDataDefinitions = Readonly<Record<
+/** Named unbound Resources accepted by App.create. */
+export type AppDataDefinitions = Readonly<Record<
   string,
   | CollectionDefinition<object, ResourceAccess>
   | DocumentDefinition<object, ResourceAccess>
 >>;
 
-type BoundAppData<TData extends AppDataDefinitions> = {
+/** App data definitions after canonical paths have been derived. */
+export type BoundAppData<TData extends AppDataDefinitions> = {
   readonly [K in keyof TData]: TData[K] extends CollectionDefinition<
     infer TValue,
     infer TAccess
