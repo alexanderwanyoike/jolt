@@ -3015,6 +3015,191 @@ async fn test_app_delete_record_allows_one_concurrent_same_revision_winner() {
 }
 
 #[tokio::test]
+async fn test_app_restore_record_is_publish_scoped_idempotent_and_durable() {
+    let profile = tempfile::tempdir().unwrap();
+    let (first_port, first_handle, _first_holder) =
+        start_test_server_with_profile_dir(profile.path().to_path_buf()).await;
+    let client = reqwest::Client::new();
+    let identity = first_handle.status().await.unwrap().identity_address;
+    let path = "/chirp/posts/jlt_restored_by_app";
+    let token = approve_app_session(
+        &client,
+        first_port,
+        &identity,
+        &[
+            "publish:/chirp/*",
+            "delete:/chirp/*",
+            "inventory:/chirp/*",
+            "resolve:public",
+            "fetch:public",
+        ],
+    )
+    .await;
+
+    let original = br#"{"version":1,"value":{"text":"Before delete"}}"#;
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(original.to_vec()).file_name("record.json"),
+        )
+        .text("path", path.to_string());
+    let published = client
+        .post(format!("{}/app/v1/publish", base_url(first_port)))
+        .bearer_auth(&token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(published.status(), 200);
+    let published: serde_json::Value = published.json().await.unwrap();
+
+    let deleted = client
+        .post(format!("{}/app/v1/records/delete", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": published["revision"],
+            "mutation_id": "mut_delete_before_restore",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 200);
+    let deleted: serde_json::Value = deleted.json().await.unwrap();
+
+    let restored_bytes = br#"{"version":1,"value":{"text":"Restored"}}"#.to_vec();
+    let restore_request = serde_json::json!({
+        "path": path,
+        "revision": deleted["revision"],
+        "mutation_id": "mut_record_restore",
+        "data": restored_bytes.to_vec(),
+    });
+    let no_publish_token =
+        approve_app_session(&client, first_port, &identity, &["delete:/chirp/*"]).await;
+    let denied = client
+        .post(format!("{}/app/v1/records/restore", base_url(first_port)))
+        .bearer_auth(no_publish_token)
+        .json(&restore_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 403);
+
+    let restored = client
+        .post(format!("{}/app/v1/records/restore", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&restore_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(restored.status(), 200);
+    let restored: serde_json::Value = restored.json().await.unwrap();
+    assert_eq!(restored["path"], path);
+    assert_eq!(restored["data"], serde_json::json!(restored_bytes));
+    assert_ne!(restored["content_id"], published["content_id"]);
+    assert_ne!(restored["revision"], deleted["revision"]);
+
+    let read_restored = client
+        .post(format!("{}/app/v1/records/read", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(read_restored.status(), 200);
+    assert_eq!(
+        read_restored.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({
+            "state": "present",
+            "path": path,
+            "content_id": restored["content_id"],
+            "revision": restored["revision"],
+            "data": restored_bytes,
+        })
+    );
+
+    let retried = client
+        .post(format!("{}/app/v1/records/restore", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&restore_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retried.status(), 200);
+    assert_eq!(retried.json::<serde_json::Value>().await.unwrap(), restored);
+
+    let reused_for_delete = client
+        .post(format!("{}/app/v1/records/delete", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": restored["revision"],
+            "mutation_id": "mut_record_restore",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reused_for_delete.status(), 400);
+    assert_eq!(
+        reused_for_delete.json::<serde_json::Value>().await.unwrap()["code"],
+        "invalid_input"
+    );
+
+    let stale = client
+        .post(format!("{}/app/v1/records/restore", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": deleted["revision"],
+            "mutation_id": "mut_stale_restore",
+            "data": restored_bytes.to_vec(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(stale.status(), 409);
+    assert_eq!(
+        stale.json::<serde_json::Value>().await.unwrap()["code"],
+        "record_conflict"
+    );
+
+    let inventory = client
+        .get(format!("{}/app/v1/published", base_url(first_port)))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(inventory.status(), 200);
+    assert!(inventory
+        .json::<Vec<serde_json::Value>>()
+        .await
+        .unwrap()
+        .iter()
+        .any(|item| item["path"] == path && item["content_id"] == restored["content_id"]));
+
+    first_handle.shutdown().await.ok();
+    let (second_port, second_handle, _second_holder) =
+        start_test_server_with_profile_dir(profile.path().to_path_buf()).await;
+    let retry_after_restart = client
+        .post(format!("{}/app/v1/records/restore", base_url(second_port)))
+        .bearer_auth(&token)
+        .json(&restore_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retry_after_restart.status(), 200);
+    assert_eq!(
+        retry_after_restart
+            .json::<serde_json::Value>()
+            .await
+            .unwrap(),
+        restored
+    );
+
+    second_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_reads_local_tombstone_as_deleted_with_its_revision() {
     let dir = tempfile::tempdir().unwrap();
     let root = NodeIdentity::generate();
@@ -4290,7 +4475,7 @@ async fn test_app_api_feature_manifest_is_public_and_generic() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["app_api"], 1);
-    assert_eq!(body["features"], serde_json::json!({ "data.records": 3 }));
+    assert_eq!(body["features"], serde_json::json!({ "data.records": 4 }));
     assert!(body.get("daemon_version").is_none());
     assert!(body.get("applications").is_none());
 

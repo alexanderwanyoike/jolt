@@ -55,14 +55,38 @@ pub struct PersistedDeviceWriterLog {
 }
 
 /// Durable idempotency result for one successful local stable-record mutation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistedRecordMutationOperation {
+    Update,
+    Delete,
+    Restore,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PersistedRecordMutation {
     pub path: String,
     pub observed_revision: String,
+    /// Explicit operation for new records. Older records infer update/delete
+    /// from whether they contain a content CID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<PersistedRecordMutationOperation>,
     /// Updated content CID, or `None` when the successful result is a Tombstone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_id: Option<String>,
     pub result_revision: String,
+}
+
+impl PersistedRecordMutation {
+    pub fn operation(&self) -> PersistedRecordMutationOperation {
+        self.operation.unwrap_or_else(|| {
+            if self.content_id.is_some() {
+                PersistedRecordMutationOperation::Update
+            } else {
+                PersistedRecordMutationOperation::Delete
+            }
+        })
+    }
 }
 
 /// One recipient-controlled ingress envelope as persisted to disk, including
@@ -905,6 +929,46 @@ mod tests {
             |bytes| identity.sign(bytes),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn persisted_record_mutations_infer_legacy_operations_and_preserve_restore() {
+        let legacy_update: PersistedRecordMutation = serde_json::from_value(serde_json::json!({
+            "path": "/posts/hello",
+            "observed_revision": "revision_1",
+            "content_id": "cid_updated",
+            "result_revision": "revision_2"
+        }))
+        .unwrap();
+        let legacy_delete: PersistedRecordMutation = serde_json::from_value(serde_json::json!({
+            "path": "/posts/hello",
+            "observed_revision": "revision_2",
+            "result_revision": "revision_3"
+        }))
+        .unwrap();
+        let restore = PersistedRecordMutation {
+            path: "/posts/hello".to_string(),
+            observed_revision: "revision_3".to_string(),
+            operation: Some(PersistedRecordMutationOperation::Restore),
+            content_id: Some("cid_restored".to_string()),
+            result_revision: "revision_4".to_string(),
+        };
+
+        assert_eq!(
+            legacy_update.operation(),
+            PersistedRecordMutationOperation::Update
+        );
+        assert_eq!(
+            legacy_delete.operation(),
+            PersistedRecordMutationOperation::Delete
+        );
+
+        let restored: PersistedRecordMutation =
+            serde_json::from_value(serde_json::to_value(&restore).unwrap()).unwrap();
+        assert_eq!(
+            restored.operation(),
+            PersistedRecordMutationOperation::Restore
+        );
     }
 
     // --- Phase 1: ContentStore basics ---
