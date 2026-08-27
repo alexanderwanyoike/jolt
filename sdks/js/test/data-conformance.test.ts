@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
+  AccessRevokedError,
   App,
   Collection,
   ConflictError,
@@ -45,6 +46,13 @@ class Post {
 class FollowList {
   @Field.array(Field.identity)
   identities!: string[];
+}
+
+function revokedSessionError(): JoltApiError {
+  return new JoltApiError("App session is invalid or revoked", {
+    status: 401,
+    code: "app_session_unauthorized",
+  });
 }
 
 const Posts = Collection.create(Post, {
@@ -615,5 +623,108 @@ describe("Data SDK client-backed content validation", () => {
     expect(item.state).toBe(State.Deleted);
     expect(item.ref).toEqual(ref);
     expect(item.isDeleted()).toBe(true);
+  });
+
+  it("maps revoked local reads and creates to AccessRevokedError", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        ...jolt.client,
+        async publishJson() {
+          throw revokedSessionError();
+        },
+        async readRecord() {
+          throw revokedSessionError();
+        },
+      },
+    });
+
+    await expect(chirp.follows.get()).rejects.toBeInstanceOf(AccessRevokedError);
+    await expect(chirp.posts.create({
+      text: "Denied",
+      postedAt: new Date("2026-08-27T09:00:00.000Z"),
+    })).rejects.toBeInstanceOf(AccessRevokedError);
+  });
+
+  it("does not misclassify revoked remote reads as Unavailable", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        ...jolt.client,
+        async resolve() {
+          throw revokedSessionError();
+        },
+      },
+    });
+
+    await expect(chirp.posts.for("bob.jolt").get({
+      identity: "bob.jolt",
+      path: "/chirp/posts/jlt_revoked",
+    })).rejects.toBeInstanceOf(AccessRevokedError);
+
+    const revokedDuringFetch = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        ...jolt.client,
+        async resolve(ref) {
+          return { ref, contentId: "cid_revoked_fetch", latestSequence: 1 };
+        },
+        async readContent() {
+          throw revokedSessionError();
+        },
+      },
+    });
+    await expect(revokedDuringFetch.posts.for("bob.jolt").get({
+      identity: "bob.jolt",
+      path: "/chirp/posts/jlt_revoked_fetch",
+    })).rejects.toBeInstanceOf(AccessRevokedError);
+  });
+
+  it("maps revoked update, delete, and restore mutations to AccessRevokedError", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const seeded = await Chirp.connect({ identity: jolt.identity, client: jolt.client });
+    const updateRef = (await seeded.posts.create({
+      text: "Update me",
+      postedAt: new Date("2026-08-27T09:00:00.000Z"),
+    })).ref;
+    const deleteRef = (await seeded.posts.create({
+      text: "Delete me",
+      postedAt: new Date("2026-08-27T09:01:00.000Z"),
+    })).ref;
+    const deletedRef = (await (await seeded.posts.create({
+      text: "Restore me",
+      postedAt: new Date("2026-08-27T09:02:00.000Z"),
+    })).delete()).ref;
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        ...jolt.client,
+        async updateRecord() {
+          throw revokedSessionError();
+        },
+        async deleteRecord() {
+          throw revokedSessionError();
+        },
+        async restoreRecord() {
+          throw revokedSessionError();
+        },
+      },
+    });
+    const updateItem = await chirp.posts.get(updateRef);
+    const deleteItem = await chirp.posts.get(deleteRef);
+    const restoreItem = await chirp.posts.get(deletedRef);
+    if (!updateItem.isPresent() || !deleteItem.isPresent() || !restoreItem.isDeleted()) {
+      throw new Error("expected seeded mutation states");
+    }
+
+    await expect(updateItem.update({ text: "Denied" }))
+      .rejects.toBeInstanceOf(AccessRevokedError);
+    await expect(deleteItem.delete()).rejects.toBeInstanceOf(AccessRevokedError);
+    await expect(restoreItem.restore({
+      text: "Denied",
+      postedAt: new Date("2026-08-27T09:03:00.000Z"),
+    })).rejects.toBeInstanceOf(AccessRevokedError);
   });
 });

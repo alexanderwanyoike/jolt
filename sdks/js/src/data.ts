@@ -976,6 +976,17 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
   };
 }
 
+async function withConnectedAccess<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    if (error instanceof JoltApiError && error.code === "app_session_unauthorized") {
+      throw new AccessRevokedError({ cause: error });
+    }
+    throw error;
+  }
+}
+
 function createConnectedBackend(
   options: AppConnectOptions,
   localIdentity: Identity = options.identity,
@@ -988,19 +999,20 @@ function createConnectedBackend(
       if (ref.identity !== localIdentity) {
         let resolved;
         try {
-          resolved = await options.client.resolve(ref);
+          resolved = await withConnectedAccess(() => options.client.resolve(ref));
         } catch (error) {
+          if (error instanceof AccessRevokedError) throw error;
           if (error instanceof JoltApiError && error.code === "path_tombstoned") {
             return { state: State.Deleted, revision: null };
           }
           return State.Unavailable;
         }
-        const versioned = await options.client.readContent(
+        const versioned = await withConnectedAccess(() => options.client.readContent(
           resolved.contentId,
           ref,
           resolved.latestSequence,
           value => ({ value }),
-        );
+        ));
         if (versioned === null) return State.Unavailable;
         return {
           stored: requireStoredSchemaValue(versioned.value.value),
@@ -1009,7 +1021,7 @@ function createConnectedBackend(
       }
       let record;
       try {
-        record = await options.client.readRecord(ref);
+        record = await withConnectedAccess(() => options.client.readRecord(ref));
       } catch (error) {
         if (
           isJoltUnavailableError(error) ||
@@ -1026,11 +1038,13 @@ function createConnectedBackend(
       return backendRecord(record.bytes, record.revision);
     },
     async write(ref, stored) {
-      const published = await options.client.publishJson(ref.path, stored);
+      const published = await withConnectedAccess(() => (
+        options.client.publishJson(ref.path, stored)
+      ));
       if (published.revision !== undefined) {
         return { stored, revision: published.revision };
       }
-      const record = await options.client.readRecord(ref);
+      const record = await withConnectedAccess(() => options.client.readRecord(ref));
       if (record.state !== "present") {
         throw new ItemUnavailableError(ref);
       }
@@ -1038,11 +1052,11 @@ function createConnectedBackend(
     },
     async update(ref, stored, revision, mutationId) {
       try {
-        const record = await options.client.updateRecord(
+        const record = await withConnectedAccess(() => options.client.updateRecord(
           ref,
           stored,
           { revision, mutationId },
-        );
+        ));
         return backendRecord(record.bytes, record.revision);
       } catch (error) {
         if (error instanceof JoltApiError && error.code === "record_conflict") {
@@ -1053,10 +1067,10 @@ function createConnectedBackend(
     },
     async delete(ref, revision, mutationId) {
       try {
-        const record = await options.client.deleteRecord(
+        const record = await withConnectedAccess(() => options.client.deleteRecord(
           ref,
           { revision, mutationId },
-        );
+        ));
         return { state: State.Deleted, revision: record.revision };
       } catch (error) {
         if (error instanceof JoltApiError && error.code === "record_conflict") {
@@ -1067,11 +1081,11 @@ function createConnectedBackend(
     },
     async restore(ref, stored, revision, mutationId) {
       try {
-        const record = await options.client.restoreRecord(
+        const record = await withConnectedAccess(() => options.client.restoreRecord(
           ref,
           stored,
           { revision, mutationId },
-        );
+        ));
         return backendRecord(record.bytes, record.revision) as BackendPresentRecord & {
           readonly revision: string;
         };
@@ -1512,3 +1526,11 @@ export const Field: {
     item: arrayItemDefinition(item),
   }, options),
 } as const;
+
+/** The App Session no longer authorizes connected Data SDK operations. */
+export class AccessRevokedError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Jolt access was revoked; reconnect and request approval again", options);
+    this.name = "AccessRevokedError";
+  }
+}
