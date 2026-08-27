@@ -19,6 +19,7 @@
 import * as ops from "./operations.js";
 import { createCompatibilityChecker } from "./compatibility.js";
 import type { JoltCompatibilitySdk } from "./compatibility.js";
+import { JoltApiError } from "./errors.js";
 import type { CallOptions, JoltTransport } from "./transport.js";
 import type {
   AppSessionRequestResponse,
@@ -336,7 +337,10 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
     try {
       resolved = await ops.resolveAddress(transport, token, referenceTarget(ref), call);
       bytes = await getBytes(token, resolved.content_id, call);
-    } catch {
+    } catch (error) {
+      if (error instanceof JoltApiError && error.code === "path_tombstoned") {
+        throw error;
+      }
       return null; // missing or unreachable
     }
     const parsed = parseJsonBytes(bytes);
