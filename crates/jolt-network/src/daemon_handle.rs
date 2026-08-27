@@ -10,7 +10,7 @@ use jolt_core::{
 
 use crate::command::{
     AppendRecordInfo, CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
-    EncryptedObjectResponse, FetchResult, IngressRecord, LocalRecordInfo, LocalRecordUpdate,
+    EncryptedObjectResponse, FetchResult, IngressRecord, LocalRecordState, LocalRecordUpdate,
     NodeStatus, PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
     PublishedContentInfo, RelayDiagnoseIdentityResponse, ResolveResponse,
 };
@@ -463,7 +463,7 @@ impl DaemonHandle {
     pub async fn inspect_local_record(
         &self,
         path: String,
-    ) -> Result<Option<LocalRecordInfo>, NetworkError> {
+    ) -> Result<LocalRecordState, NetworkError> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
             .send(DaemonCommand::InspectLocalRecord {

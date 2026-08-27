@@ -122,7 +122,7 @@ pub enum DaemonCommand {
     },
     InspectLocalRecord {
         path: String,
-        response_tx: oneshot::Sender<Option<LocalRecordInfo>>,
+        response_tx: oneshot::Sender<LocalRecordState>,
     },
     UpdateLocalRecord {
         path: String,
@@ -207,12 +207,25 @@ pub struct FetchResult {
     pub size: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LocalRecordInfo {
     pub path: String,
     pub content_id: String,
     /// Opaque revision token; equal if and only if it names the same winning log entry.
     pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LocalRecordState {
+    Missing {
+        path: String,
+    },
+    Deleted {
+        path: String,
+        /// Opaque revision token naming the winning Tombstone entry.
+        revision: String,
+    },
+    Present(LocalRecordInfo),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -373,6 +373,17 @@ describe("createJoltClient", () => {
       ref,
     });
 
+    responses["/records/read"] = {
+      state: "deleted",
+      path: "/chirp/posts/jlt_record",
+      revision: "revision_tombstone",
+    };
+    await expect(jolt.readRecord(ref)).resolves.toEqual({
+      state: "deleted",
+      ref,
+      revision: "revision_tombstone",
+    });
+
     const failure = new JoltTransportError("daemon unavailable");
     const unavailableTransport: JoltTransport = {
       async request(): Promise<never> {

@@ -67,6 +67,13 @@ export type RecordMissingResult = {
   ref: Reference;
 };
 
+/** One authoritative local stable record whose current state is a Tombstone. */
+export type RecordDeletedResult = {
+  state: "deleted";
+  ref: Reference;
+  revision: string;
+};
+
 /** One present authoritative local stable record. */
 export type RecordPresentResult = {
   state: "present";
@@ -77,7 +84,10 @@ export type RecordPresentResult = {
 };
 
 /** Strict authoritative state for one local stable record reference. */
-export type RecordReadResult = RecordMissingResult | RecordPresentResult;
+export type RecordReadResult =
+  | RecordMissingResult
+  | RecordDeletedResult
+  | RecordPresentResult;
 
 /** Opaque compare-and-set context used by advanced record mutations. */
 export type RecordMutationContext = {
@@ -377,6 +387,9 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
       );
       if (result.state === "missing") {
         return { state: "missing", ref };
+      }
+      if (result.state === "deleted") {
+        return { state: "deleted", ref, revision: result.revision };
       }
       return {
         state: "present",

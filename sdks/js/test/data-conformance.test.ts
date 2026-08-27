@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   App,
   Collection,
   ConflictError,
+  type DeletedItem,
+  DeletedError,
   DeleteConflict,
   Document,
   Field,
@@ -377,6 +379,46 @@ describe("Data SDK client-backed content validation", () => {
     await expect(
       chirp.follows.getOrCreate({ identities: ["bob.jolt"] }),
     ).rejects.toBeInstanceOf(ItemUnavailableError);
+    expect(publishes).toBe(0);
+  });
+
+  it("returns a Deleted Item for a verified local Tombstone", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    let publishes = 0;
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        async publishJson(...args) {
+          publishes += 1;
+          return jolt.client.publishJson(...args);
+        },
+        read: jolt.client.read,
+        updateRecord: jolt.client.updateRecord,
+        async readRecord(ref) {
+          return {
+            state: "deleted",
+            ref,
+            revision: "revision_tombstone",
+          };
+        },
+      },
+    });
+
+    const item = await chirp.follows.get();
+
+    expect(item.state).toBe(State.Deleted);
+    expect(item.ref).toEqual({
+      identity: "alice.jolt",
+      path: "/chirp/follows",
+    });
+    expect(item.isPresent()).toBe(false);
+    expect(item.isDeleted()).toBe(true);
+    if (item.isDeleted()) {
+      expectTypeOf(item).toMatchTypeOf<DeletedItem<FollowList>>();
+    }
+    await expect(
+      chirp.follows.getOrCreate({ identities: ["bob.jolt"] }),
+    ).rejects.toBeInstanceOf(DeletedError);
     expect(publishes).toBe(0);
   });
 

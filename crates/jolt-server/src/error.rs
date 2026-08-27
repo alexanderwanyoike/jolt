@@ -41,6 +41,11 @@ impl IntoResponse for ApiError {
                 "record_conflict",
                 "Record changed since it was read".to_string(),
             ),
+            NetworkError::PathTombstoned { path } => (
+                StatusCode::GONE,
+                "path_tombstoned",
+                format!("Path is tombstoned: {path}"),
+            ),
             NetworkError::VerificationFailed => (
                 StatusCode::BAD_GATEWAY,
                 "content_hash_mismatch",

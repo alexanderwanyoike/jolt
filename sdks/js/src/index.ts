@@ -59,6 +59,7 @@ export type {
   JoltSessionSdk,
   OpenEncryptedResult,
   PublishResult,
+  RecordDeletedResult,
   RecordMissingResult,
   RecordMutationContext,
   RecordPresentResult,

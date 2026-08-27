@@ -159,9 +159,11 @@ impl NetworkNode {
             });
         }
 
-        let current = self
-            .inspect_local_record(address.path())
-            .ok_or(NetworkError::RecordConflict)?;
+        let crate::command::LocalRecordState::Present(current) =
+            self.inspect_local_record(address.path())
+        else {
+            return Err(NetworkError::RecordConflict);
+        };
         if current.revision != observed_revision {
             return Err(NetworkError::RecordConflict);
         }
