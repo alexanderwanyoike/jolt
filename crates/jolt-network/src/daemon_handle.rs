@@ -10,9 +10,10 @@ use jolt_core::{
 
 use crate::command::{
     AppendRecordInfo, CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
-    EncryptedObjectResponse, FetchResult, IngressRecord, LocalRecordDelete, LocalRecordState,
-    LocalRecordUpdate, NodeStatus, PeerConnectResponse, PeerInfo, PublishReachabilityResponse,
-    PublishResponse, PublishedContentInfo, RelayDiagnoseIdentityResponse, ResolveResponse,
+    EncryptedObjectResponse, FetchResult, IngressRecord, LocalRecordDelete, LocalRecordRestore,
+    LocalRecordState, LocalRecordUpdate, NodeStatus, PeerConnectResponse, PeerInfo,
+    PublishReachabilityResponse, PublishResponse, PublishedContentInfo,
+    RelayDiagnoseIdentityResponse, ResolveResponse,
 };
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
@@ -508,6 +509,28 @@ impl DaemonHandle {
         self.cmd_tx
             .send(DaemonCommand::DeleteLocalRecord {
                 path,
+                revision,
+                mutation_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    /// Compare-and-set one local Tombstone to new immutable content.
+    pub async fn restore_local_record(
+        &self,
+        path: String,
+        data: Vec<u8>,
+        revision: String,
+        mutation_id: String,
+    ) -> Result<LocalRecordRestore, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::RestoreLocalRecord {
+                path,
+                data,
                 revision,
                 mutation_id,
                 response_tx: tx,

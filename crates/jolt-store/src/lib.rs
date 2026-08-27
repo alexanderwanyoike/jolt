@@ -9,5 +9,5 @@ pub use error::StoreError;
 pub use store::{
     ContentStore, DiscoveredPeerHint, HomeRelayPinRecord, LocalIdentityEncryptionKeypair,
     PersistedDeviceWriterLog, PersistedIngressRecord, PersistedRecordMutation,
-    PublishedContentEntry, StoredRelayRecord,
+    PersistedRecordMutationOperation, PublishedContentEntry, StoredRelayRecord,
 };

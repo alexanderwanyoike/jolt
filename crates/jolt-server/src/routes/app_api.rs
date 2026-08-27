@@ -171,6 +171,22 @@ pub async fn delete_local_record(
     Ok(Json(deleted))
 }
 
+pub async fn restore_local_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<LocalRecordUpdateRequest>,
+) -> Result<Json<jolt_network::LocalRecordRestore>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+    let path = normalize_path(&req.path)?;
+    require_path_capability(&session, "publish:", &path)?;
+    let restored = state
+        .daemon
+        .restore_local_record(path, req.data, req.revision, req.mutation_id)
+        .await?;
+    Ok(Json(restored))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct EncryptedPublishRequest {
     pub path: String,
