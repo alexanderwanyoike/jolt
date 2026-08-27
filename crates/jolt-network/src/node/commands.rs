@@ -389,6 +389,15 @@ impl NetworkNode {
                 let result = self.update_local_record(&path, &data, &revision, &mutation_id);
                 let _ = response_tx.send(result);
             }
+            DaemonCommand::DeleteLocalRecord {
+                path,
+                revision,
+                mutation_id,
+                response_tx,
+            } => {
+                let result = self.delete_local_record(&path, &revision, &mutation_id);
+                let _ = response_tx.send(result);
+            }
             DaemonCommand::Pin {
                 content_id,
                 response_tx,

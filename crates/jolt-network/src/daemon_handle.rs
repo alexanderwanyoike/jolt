@@ -10,9 +10,9 @@ use jolt_core::{
 
 use crate::command::{
     AppendRecordInfo, CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
-    EncryptedObjectResponse, FetchResult, IngressRecord, LocalRecordState, LocalRecordUpdate,
-    NodeStatus, PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
-    PublishedContentInfo, RelayDiagnoseIdentityResponse, ResolveResponse,
+    EncryptedObjectResponse, FetchResult, IngressRecord, LocalRecordDelete, LocalRecordState,
+    LocalRecordUpdate, NodeStatus, PeerConnectResponse, PeerInfo, PublishReachabilityResponse,
+    PublishResponse, PublishedContentInfo, RelayDiagnoseIdentityResponse, ResolveResponse,
 };
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
@@ -488,6 +488,26 @@ impl DaemonHandle {
             .send(DaemonCommand::UpdateLocalRecord {
                 path,
                 data,
+                revision,
+                mutation_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    /// Compare-and-set one present local stable record to a Tombstone.
+    pub async fn delete_local_record(
+        &self,
+        path: String,
+        revision: String,
+        mutation_id: String,
+    ) -> Result<LocalRecordDelete, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::DeleteLocalRecord {
+                path,
                 revision,
                 mutation_id,
                 response_tx: tx,
