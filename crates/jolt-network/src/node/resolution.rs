@@ -155,7 +155,10 @@ impl NetworkNode {
             .into_iter()
             .map(|(path, entry)| AppendRecordInfo {
                 path: path.to_string(),
-                content_id: entry.content_id.to_string(),
+                content_id: entry
+                    .content_id()
+                    .expect("append records are always content-bearing")
+                    .to_string(),
                 device_id: entry.device_id.clone(),
                 device_sequence: entry.device_sequence,
                 created_at: entry.created_at,
@@ -428,9 +431,7 @@ impl NetworkNode {
         identity: IdentityId,
         provider: &libp2p::PeerId,
     ) {
-        let request = DeviceWriterSyncRequest {
-            identity: identity.clone(),
-        };
+        let request = DeviceWriterSyncRequest::new(identity.clone());
         let request_id = self
             .swarm
             .behaviour_mut()
@@ -725,6 +726,8 @@ mod tests {
                 message: request_response::Message::Response {
                     request_id,
                     response: DeviceWriterSyncResponse {
+                        required_operation_version:
+                            crate::protocol::LEGACY_DEVICE_WRITER_OPERATION_VERSION,
                         authority_records,
                         device_logs,
                     },
@@ -1493,7 +1496,15 @@ mod tests {
                 .merged
                 .append_records_under("/spoke/posts/")
                 .into_iter()
-                .map(|(path, entry)| (path.to_string(), entry.content_id.to_string()))
+                .map(|(path, entry)| {
+                    (
+                        path.to_string(),
+                        entry
+                            .content_id()
+                            .expect("append records are always content-bearing")
+                            .to_string(),
+                    )
+                })
                 .collect()
         }
 
@@ -1579,7 +1590,7 @@ mod tests {
             .merged
             .rejected_entries
             .iter()
-            .any(|entry| entry.content_id == revoked_record));
+            .any(|entry| entry.content_id.as_ref() == Some(&revoked_record)));
     }
 
     #[tokio::test]

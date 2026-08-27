@@ -65,6 +65,9 @@ pub enum DeviceWriterLogError {
 
     #[error("no merged singleton path found for {path}")]
     PathNotFound { path: String },
+
+    #[error("merged singleton path is Tombstoned: {path}")]
+    PathTombstoned { path: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -89,6 +92,9 @@ pub enum DeviceWriterOperation {
         path: String,
         content_id: ContentId,
         mode: DeviceWriterPathMode,
+    },
+    TombstonePath {
+        path: String,
     },
 }
 
@@ -126,7 +132,22 @@ pub struct MergedDeviceWriterEntry {
     pub device_sequence: u64,
     pub entry_hash: DeviceWriterLogEntryHash,
     pub created_at: u64,
-    pub content_id: ContentId,
+    pub state: DeviceWriterPathState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeviceWriterPathState {
+    Present { content_id: ContentId },
+    Tombstone,
+}
+
+impl MergedDeviceWriterEntry {
+    pub fn content_id(&self) -> Option<&ContentId> {
+        match &self.state {
+            DeviceWriterPathState::Present { content_id } => Some(content_id),
+            DeviceWriterPathState::Tombstone => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,7 +156,7 @@ pub struct RejectedDeviceWriterEntry {
     pub device_id: String,
     pub device_sequence: u64,
     pub entry_hash: DeviceWriterLogEntryHash,
-    pub content_id: ContentId,
+    pub content_id: Option<ContentId>,
     pub reason: DeviceWriterRejectionReason,
 }
 
@@ -175,6 +196,10 @@ impl DeviceWriterOperation {
         Self::set_path(path, content_id, DeviceWriterPathMode::Append)
     }
 
+    pub fn tombstone_path(path: impl Into<String>) -> Self {
+        Self::TombstonePath { path: path.into() }
+    }
+
     fn encode(&self, bytes: &mut Vec<u8>) {
         match self {
             Self::SetPath {
@@ -189,6 +214,10 @@ impl DeviceWriterOperation {
                     DeviceWriterPathMode::Singleton => 0,
                     DeviceWriterPathMode::Append => 1,
                 });
+            }
+            Self::TombstonePath { path } => {
+                bytes.push(1);
+                put_string(bytes, path);
             }
         }
     }
@@ -333,7 +362,9 @@ where
                         device_sequence: entry.body.device_sequence,
                         entry_hash,
                         created_at: entry.body.created_at,
-                        content_id: content_id.clone(),
+                        state: DeviceWriterPathState::Present {
+                            content_id: content_id.clone(),
+                        },
                     };
                     match mode {
                         DeviceWriterPathMode::Singleton => {
@@ -346,6 +377,18 @@ where
                             append_records.entry(path.clone()).or_default().push(merged);
                         }
                     }
+                }
+                DeviceWriterOperation::TombstonePath { path } => {
+                    singleton_candidates.entry(path.clone()).or_default().push(
+                        MergedDeviceWriterEntry {
+                            identity: entry.body.identity.clone(),
+                            device_id: entry.body.device_id.clone(),
+                            device_sequence: entry.body.device_sequence,
+                            entry_hash,
+                            created_at: entry.body.created_at,
+                            state: DeviceWriterPathState::Tombstone,
+                        },
+                    );
                 }
             }
         }
@@ -405,12 +448,15 @@ pub fn resolve_merged_device_jolt_address(
         .get(address.path())
         .ok_or_else(|| DeviceWriterLogError::PathNotFound { path: path.clone() })?;
 
-    Ok(ResolvedJoltTarget {
-        identity: merged.identity.clone(),
-        path,
-        content_id: entry.content_id.clone(),
-        reachability: Vec::new(),
-    })
+    match &entry.state {
+        DeviceWriterPathState::Present { content_id } => Ok(ResolvedJoltTarget {
+            identity: merged.identity.clone(),
+            path,
+            content_id: content_id.clone(),
+            reachability: Vec::new(),
+        }),
+        DeviceWriterPathState::Tombstone => Err(DeviceWriterLogError::PathTombstoned { path }),
+    }
 }
 
 fn verify_device_log_shape(
@@ -460,7 +506,8 @@ fn rejected_entry(
     reason: DeviceWriterRejectionReason,
 ) -> RejectedDeviceWriterEntry {
     let content_id = match &entry.body.operation {
-        DeviceWriterOperation::SetPath { content_id, .. } => content_id.clone(),
+        DeviceWriterOperation::SetPath { content_id, .. } => Some(content_id.clone()),
+        DeviceWriterOperation::TombstonePath { .. } => None,
     };
     RejectedDeviceWriterEntry {
         identity: entry.body.identity.clone(),
@@ -482,6 +529,7 @@ fn validate_body(body: &DeviceWriterLogEntryBody) -> Result<(), DeviceWriterLogE
     validate_device_id(&body.device_id)?;
     match &body.operation {
         DeviceWriterOperation::SetPath { path, .. } => validate_path(&body.identity, path),
+        DeviceWriterOperation::TombstonePath { path } => validate_path(&body.identity, path),
     }
 }
 
