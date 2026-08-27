@@ -569,7 +569,13 @@ export type AppConnectOptions = {
   readonly identity: Identity;
   readonly client: Pick<
     JoltSdk,
-    "publishJson" | "read" | "readRecord" | "updateRecord" | "deleteRecord"
+    | "publishJson"
+    | "read"
+    | "readContent"
+    | "readRecord"
+    | "resolve"
+    | "updateRecord"
+    | "deleteRecord"
   >;
 };
 
@@ -948,15 +954,21 @@ function createConnectedBackend(
     nextMutationId: () => makeId("mut"),
     async read(ref) {
       if (ref.identity !== localIdentity) {
-        let versioned;
+        let resolved;
         try {
-          versioned = await options.client.read(ref, value => ({ value }));
+          resolved = await options.client.resolve(ref);
         } catch (error) {
           if (error instanceof JoltApiError && error.code === "path_tombstoned") {
             return { state: State.Deleted, revision: null };
           }
-          throw error;
+          return State.Unavailable;
         }
+        const versioned = await options.client.readContent(
+          resolved.contentId,
+          ref,
+          resolved.latestSequence,
+          value => ({ value }),
+        );
         if (versioned === null) return State.Unavailable;
         return {
           stored: requireStoredSchemaValue(versioned.value.value),

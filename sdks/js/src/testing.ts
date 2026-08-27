@@ -187,6 +187,21 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
       };
     },
 
+    async resolve(ref) {
+      const record = ref.identity === identity ? published.get(ref.path) : undefined;
+      if (record === undefined) {
+        throw new JoltApiError("Path not found", {
+          status: 404,
+          code: "path_not_found",
+        });
+      }
+      return {
+        ref,
+        latestSequence: record.seq,
+        contentId: record.contentId,
+      };
+    },
+
     async read(ref, decode) {
       return readStored(ref, decode, false);
     },

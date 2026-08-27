@@ -216,6 +216,8 @@ describe("Data SDK client-backed content validation", () => {
           };
         },
         read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
         updateRecord: jolt.client.updateRecord,
         async readRecord() {
           recordReads += 1;
@@ -244,6 +246,8 @@ describe("Data SDK client-backed content validation", () => {
           return published;
         },
         read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
         updateRecord: jolt.client.updateRecord,
         async readRecord(ref) {
           recordReads += 1;
@@ -363,6 +367,8 @@ describe("Data SDK client-backed content validation", () => {
       client: {
         publishJson: jolt.client.publishJson,
         read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
         updateRecord: jolt.client.updateRecord,
         async readRecord(ref) {
           return {
@@ -391,6 +397,8 @@ describe("Data SDK client-backed content validation", () => {
           return jolt.client.publishJson(...args);
         },
         read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
         updateRecord: jolt.client.updateRecord,
         async readRecord() {
           throw unavailable;
@@ -420,6 +428,8 @@ describe("Data SDK client-backed content validation", () => {
           return jolt.client.publishJson(...args);
         },
         read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
         updateRecord: jolt.client.updateRecord,
         async readRecord(ref) {
           return {
@@ -456,6 +466,8 @@ describe("Data SDK client-backed content validation", () => {
       client: {
         publishJson: jolt.client.publishJson,
         read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
         updateRecord: jolt.client.updateRecord,
         async readRecord() {
           throw new JoltApiError("No content provider", {
@@ -478,6 +490,7 @@ describe("Data SDK client-backed content validation", () => {
       identity: jolt.identity,
       client: {
         publishJson: jolt.client.publishJson,
+        readContent: jolt.client.readContent,
         updateRecord: jolt.client.updateRecord,
         async readRecord(ref) {
           localRecordReads += 1;
@@ -504,9 +517,13 @@ describe("Data SDK client-backed content validation", () => {
       identity: jolt.identity,
       client: {
         publishJson: jolt.client.publishJson,
+        readContent: jolt.client.readContent,
         readRecord: jolt.client.readRecord,
         updateRecord: jolt.client.updateRecord,
         async read() {
+          return null;
+        },
+        async resolve() {
           throw new JoltApiError("Path is tombstoned", {
             status: 410,
             code: "path_tombstoned",
