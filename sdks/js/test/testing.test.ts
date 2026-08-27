@@ -92,6 +92,28 @@ describe("createFakeJolt", () => {
     });
   });
 
+  it("makes record deletion retries idempotent and stale revisions conflicting", async () => {
+    const { client } = createFakeJolt("alice.jolt");
+    const ref = { identity: "alice.jolt", path: "/app/profile" };
+    await client.publishJson(ref.path, { name: "Alice" });
+    const observed = await client.readRecord(ref);
+    if (observed.state !== "present") throw new Error("expected a present record");
+    const mutation = { revision: observed.revision, mutationId: "mut_delete_retry" };
+
+    const first = await client.deleteRecord(ref, mutation);
+    const retried = await client.deleteRecord(ref, mutation);
+
+    expect(retried).toEqual(first);
+    await expect(client.readRecord(ref)).resolves.toEqual(first);
+    await expect(client.deleteRecord(
+      ref,
+      { revision: observed.revision, mutationId: "mut_delete_stale" },
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "record_conflict",
+    });
+  });
+
   it("separates public and encrypted reads", async () => {
     const { client, encryptedRecipients } = createFakeJolt("alice.jolt");
     await client.publishEncryptedJson("/app/secret", { s: 1 }, ["alice.jolt"]);

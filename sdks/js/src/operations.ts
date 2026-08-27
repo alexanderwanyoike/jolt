@@ -23,6 +23,7 @@ import type {
   FetchResult,
   HomeRelayPinResponse,
   IngressRecord,
+  LocalRecordDeleteResponse,
   LocalRecordUpdateResponse,
   LocalRecordReadResponse,
   NodeStatus,
@@ -258,6 +259,22 @@ export function updateLocalRecord(
   return transport.request("app", "/records/update", {
     token,
     json: { path, revision, mutation_id: mutationId, data },
+    ...options,
+  });
+}
+
+/** Compare-and-set one local stable record to a Tombstone. */
+export function deleteLocalRecord(
+  transport: JoltTransport,
+  token: string,
+  path: string,
+  revision: string,
+  mutationId: string,
+  options?: CallOptions
+): Promise<LocalRecordDeleteResponse> {
+  return transport.request("app", "/records/delete", {
+    token,
+    json: { path, revision, mutation_id: mutationId },
     ...options,
   });
 }

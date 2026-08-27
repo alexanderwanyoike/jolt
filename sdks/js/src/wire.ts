@@ -64,6 +64,12 @@ export type LocalRecordUpdateResponse = {
   data: number[];
 };
 
+/** Successful compare-and-set deletion of one local stable record. */
+export type LocalRecordDeleteResponse = {
+  path: string;
+  revision: string;
+};
+
 /** Result of an encrypted publish (`/app/v1/encrypted/publish`). */
 export type EncryptedPublishResponse = PublishResponse & {
   recipient_count: number;

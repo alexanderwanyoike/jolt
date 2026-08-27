@@ -167,6 +167,12 @@ export interface JoltSdk {
     mutation: RecordMutationContext,
     options?: CallOptions,
   ): Promise<RecordPresentResult>;
+  /** Compare-and-set one present local stable record to a Tombstone. */
+  deleteRecord(
+    ref: Reference,
+    mutation: RecordMutationContext,
+    options?: CallOptions,
+  ): Promise<RecordDeletedResult>;
 }
 
 /** Coexisting append records and their enumeration. */
@@ -446,6 +452,22 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
         contentId: response.content_id,
         revision: response.revision,
         bytes: response.data,
+      };
+    },
+
+    async deleteRecord(ref, mutation, call) {
+      const response = await ops.deleteLocalRecord(
+        transport,
+        getSessionToken(),
+        ref.path,
+        mutation.revision,
+        mutation.mutationId,
+        call,
+      );
+      return {
+        state: "deleted",
+        ref,
+        revision: response.revision,
       };
     },
 

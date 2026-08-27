@@ -52,6 +52,7 @@ const Posts = Collection.create(Post, {
     read: Read.AnyIdentity,
     create: true,
     update: true,
+    delete: true,
   },
   conflicts: {
     update: UpdateConflict.LastWriteWins,
@@ -173,7 +174,76 @@ describe.each(implementations)("Data SDK $name conformance", ({ connect }) => {
       value: { text: "Winner" },
     });
   });
+
+  it("deletes a present Item into a Deleted Item at the same Ref", async () => {
+    const chirp = await connect();
+    const created = await chirp.posts.create({
+      text: "Goodbye",
+      postedAt: new Date("2026-08-27T08:00:00.000Z"),
+    });
+
+    const first = await chirp.posts.get(created.ref);
+    const stale = await chirp.posts.get(created.ref);
+    if (!first.isPresent() || !stale.isPresent()) {
+      throw new Error("expected present post snapshots");
+    }
+    const deleted = await first.delete();
+    await expect(stale.delete()).rejects.toBeInstanceOf(ConflictError);
+    const read = await chirp.posts.get(created.ref);
+
+    expect(deleted.state).toBe(State.Deleted);
+    expect(deleted.ref).toEqual(created.ref);
+    expect(deleted.isPresent()).toBe(false);
+    expect(deleted.isDeleted()).toBe(true);
+    expect(read.state).toBe(State.Deleted);
+    expect(read.ref).toEqual(created.ref);
+    expect(created.state).toBe(State.Present);
+    expect(created.value.text).toBe("Goodbye");
+  });
 });
+
+const remoteDeleteImplementations = [
+  {
+    name: "deterministic",
+    observeAfterDelete: async () => {
+      const world = Chirp.testWorld();
+      const alice = world.as("alice.jolt");
+      const bob = world.as("bob.jolt");
+      const created = await alice.posts.create({
+        text: "Remote goodbye",
+        postedAt: new Date("2026-08-27T08:00:00.000Z"),
+      });
+      await created.delete();
+      return bob.posts.for("alice.jolt").get(created.ref);
+    },
+  },
+  {
+    name: "client-backed",
+    observeAfterDelete: async () => {
+      const jolt = createFakeJolt("alice.jolt");
+      const alice = await Chirp.connect({ identity: jolt.identity, client: jolt.client });
+      const created = await alice.posts.create({
+        text: "Remote goodbye",
+        postedAt: new Date("2026-08-27T08:00:00.000Z"),
+      });
+      await created.delete();
+      const bob = await Chirp.connect({ identity: "bob.jolt", client: jolt.client });
+      return bob.posts.for("alice.jolt").get(created.ref);
+    },
+  },
+] as const;
+
+describe.each(remoteDeleteImplementations)(
+  "Data SDK $name remote delete conformance",
+  ({ observeAfterDelete }) => {
+    it("observes a deleted remote Item instead of its old immutable content", async () => {
+      const observed = await observeAfterDelete();
+
+      expect(observed.state).toBe(State.Deleted);
+      expect(observed.isDeleted()).toBe(true);
+    });
+  },
+);
 
 describe("Data SDK client-backed content validation", () => {
   it("creates from the publish revision without a follow-up record read", async () => {

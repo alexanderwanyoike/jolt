@@ -283,6 +283,8 @@ export type PresentItem<
 } & (TAccess extends { readonly update: true } ? {
   update(patch: ShallowPatch<T>): Promise<PresentItem<T, TAccess>>;
   replace(value: T): Promise<PresentItem<T, TAccess>>;
+} : object) & (TAccess extends { readonly delete: true } ? {
+  delete(): Promise<DeletedItem<T, TAccess>>;
 } : object);
 
 /** An immutable Item snapshot whose current state is a Tombstone. */
@@ -559,16 +561,25 @@ export type AppTestOptions = {
   readonly identity?: Identity;
 };
 
+/** Low-level authorized client operations used by the Data SDK connection seam. */
+export type DataSdkClient = Pick<
+  JoltSdk,
+  | "publishJson"
+  | "read"
+  | "readContent"
+  | "readRecord"
+  | "resolve"
+  | "updateRecord"
+  | "deleteRecord"
+>;
+
 /**
  * Advanced connection seam for an already-authorized Jolt client. It keeps
  * host bootstrap separate from typed Resource behavior.
  */
 export type AppConnectOptions = {
   readonly identity: Identity;
-  readonly client: Pick<
-    JoltSdk,
-    "publishJson" | "read" | "readContent" | "readRecord" | "resolve" | "updateRecord"
-  >;
+  readonly client: DataSdkClient;
 };
 
 /** Shared deterministic state that can expose several identity-bound App views. */
@@ -623,7 +634,7 @@ function requirePathSegment(value: string, label: string): void {
 }
 
 type TestWorldState = {
-  readonly store: Map<string, BackendPresentRecord>;
+  readonly store: Map<string, BackendPresentRecord | BackendDeletedRecord>;
   nextId: number;
   nextMutationId: number;
   nextRevision: number;
@@ -697,8 +708,8 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
     isPresent: trueIsPresent,
     isDeleted: falseIsDeleted,
   };
-  if (mutable && resource.access.update === true && record.revision !== null) {
-    const revision = record.revision;
+  const revision = mutable ? record.revision : null;
+  if (resource.access.update === true && revision !== null) {
     const commit = async (stored: StoredSchemaValue) => {
       const next = await backend.update(
         ref,
@@ -720,6 +731,12 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
     item.replace = async (input: T) => {
       const current = currentStoredValue(resource.schema, input);
       return commit(current.stored);
+    };
+  }
+  if (resource.access.delete === true && revision !== null) {
+    item.delete = async () => {
+      const deleted = await backend.delete(ref, revision, backend.nextMutationId());
+      return deletedItem(ref, { backend, revision: deleted.revision });
     };
   }
   return Object.freeze(item) as PresentItem<T, TAccess>;
@@ -873,6 +890,11 @@ type DataBackend = {
     revision: string,
     mutationId: string,
   ): Promise<BackendPresentRecord>;
+  delete<T extends object>(
+    ref: Ref<T>,
+    revision: string,
+    mutationId: string,
+  ): Promise<BackendDeletedRecord & { readonly revision: string }>;
   for(identity: Identity): DataBackend;
 };
 
@@ -892,10 +914,31 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
     async update(ref, stored, revision) {
       const key = testStoreKey(ref);
       const current = state.store.get(key);
-      if (current === undefined || current.revision !== revision) {
+      if (
+        current === undefined
+        || isBackendDeletedRecord(current)
+        || current.revision !== revision
+      ) {
         throw new ConflictError(ref);
       }
       const record = { stored, revision: `revision_${++state.nextRevision}` };
+      state.store.set(key, record);
+      return record;
+    },
+    async delete(ref, revision) {
+      const key = testStoreKey(ref);
+      const current = state.store.get(key);
+      if (
+        current === undefined
+        || isBackendDeletedRecord(current)
+        || current.revision !== revision
+      ) {
+        throw new ConflictError(ref);
+      }
+      const record = {
+        state: State.Deleted,
+        revision: `revision_${++state.nextRevision}`,
+      } as const;
       state.store.set(key, record);
       return record;
     },
@@ -971,6 +1014,20 @@ function createConnectedBackend(
           { revision, mutationId },
         );
         return backendRecord(record.bytes, record.revision);
+      } catch (error) {
+        if (error instanceof JoltApiError && error.code === "record_conflict") {
+          throw new ConflictError(ref);
+        }
+        throw error;
+      }
+    },
+    async delete(ref, revision, mutationId) {
+      try {
+        const record = await options.client.deleteRecord(
+          ref,
+          { revision, mutationId },
+        );
+        return { state: State.Deleted, revision: record.revision };
       } catch (error) {
         if (error instanceof JoltApiError && error.code === "record_conflict") {
           throw new ConflictError(ref);
