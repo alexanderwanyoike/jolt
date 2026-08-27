@@ -149,11 +149,18 @@ impl NetworkNode {
                     }
                 };
 
-                if let Ok(response) =
-                    self.resolve_device_writer_response_from_cache(&address, "device_writer_cache")
+                match self
+                    .resolve_device_writer_response_from_cache(&address, "device_writer_cache")
                 {
-                    let _ = response_tx.send(Ok(response));
-                    return;
+                    Ok(response) => {
+                        let _ = response_tx.send(Ok(response));
+                        return;
+                    }
+                    Err(error @ NetworkError::PathTombstoned { .. }) => {
+                        let _ = response_tx.send(Err(error));
+                        return;
+                    }
+                    Err(_) => {}
                 }
 
                 let fallback_response = self

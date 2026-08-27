@@ -41,6 +41,9 @@ pub enum NetworkError {
     #[error("Record changed since the observed revision")]
     RecordConflict,
 
+    #[error("Path is Tombstoned: {path}")]
+    PathTombstoned { path: String },
+
     #[error(
         "Device-writer history requires operation version {required}, but this node supports {supported}"
     )]

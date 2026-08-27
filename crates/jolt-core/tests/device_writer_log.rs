@@ -177,8 +177,8 @@ fn preserves_append_records_from_multiple_devices_in_deterministic_order() {
     let records = merged.append_records.get("/apps/pastey/records").unwrap();
 
     assert_eq!(records.len(), 2);
-    assert_eq!(records[0].content_id(), Some(&phone_record));
-    assert_eq!(records[1].content_id(), Some(&laptop_record));
+    assert_eq!(records[0].content_id, phone_record);
+    assert_eq!(records[1].content_id, laptop_record);
     assert!(merged.singleton_paths.is_empty());
 }
 
@@ -220,9 +220,9 @@ fn enumerates_append_records_under_a_path_prefix_in_deterministic_order() {
 
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].0, "/app/items/1");
-    assert_eq!(records[0].1.content_id(), Some(&record_one));
+    assert_eq!(records[0].1.content_id, record_one);
     assert_eq!(records[1].0, "/app/items/2");
-    assert_eq!(records[1].1.content_id(), Some(&record_two));
+    assert_eq!(records[1].1.content_id, record_two);
     // A prefix outside the collection enumerates nothing from it.
     assert_eq!(merged.append_records_under("/app/missing/").len(), 0);
 }

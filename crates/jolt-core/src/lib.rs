@@ -17,8 +17,8 @@ pub use device_writer_log::{
     merge_device_writer_logs, resolve_merged_device_jolt_address, DeviceWriterLogEntry,
     DeviceWriterLogEntryBody, DeviceWriterLogEntryHash, DeviceWriterLogError,
     DeviceWriterOperation, DeviceWriterPathMode, DeviceWriterPathState,
-    DeviceWriterRejectionReason, MergedDeviceIdentityState, MergedDeviceWriterEntry,
-    RejectedDeviceWriterEntry,
+    DeviceWriterRejectionReason, MergedAppendRecord, MergedDeviceIdentityState,
+    MergedDeviceWriterEntry, RejectedDeviceWriterEntry,
 };
 pub use encrypted_object::{
     decrypt_encrypted_object_for_recipient, generate_identity_encryption_keypair,

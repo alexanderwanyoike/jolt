@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use jolt_core::{
     merge_device_writer_logs, resolve_jolt_address, resolve_merged_device_jolt_address,
     verify_identity_authority_chain, verify_update_log_for_identity, DeviceAuthorizationRecord,
-    DeviceWriterLogEntry, IdentityId, JoltAddress, ResolvedJoltTarget,
+    DeviceWriterLogEntry, DeviceWriterLogError, IdentityId, JoltAddress, ResolvedJoltTarget,
 };
 use tokio::sync::oneshot;
 
@@ -122,8 +122,14 @@ impl NetworkNode {
                     address.identity()
                 ))
             })?;
-        let target = resolve_merged_device_jolt_address(address, &state.merged)
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let target = resolve_merged_device_jolt_address(address, &state.merged).map_err(
+            |error| match error {
+                DeviceWriterLogError::PathTombstoned { path } => {
+                    NetworkError::PathTombstoned { path }
+                }
+                error => NetworkError::Protocol(error.to_string()),
+            },
+        )?;
 
         Ok(ResolveResponse {
             address: address.to_string(),
@@ -155,10 +161,7 @@ impl NetworkNode {
             .into_iter()
             .map(|(path, entry)| AppendRecordInfo {
                 path: path.to_string(),
-                content_id: entry
-                    .content_id()
-                    .expect("append records are always content-bearing")
-                    .to_string(),
+                content_id: entry.content_id.to_string(),
                 device_id: entry.device_id.clone(),
                 device_sequence: entry.device_sequence,
                 created_at: entry.created_at,
@@ -1052,6 +1055,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn daemon_resolution_does_not_resurrect_tombstoned_legacy_content() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let path = "/posts/post-1";
+        let old_content_id = ContentId::from_bytes(b"deleted post");
+        let legacy_entry = UpdateLogEntry::genesis(
+            root.public_key_bytes(),
+            UpdateAction::SetPath {
+                path: path.to_string(),
+                content_id: old_content_id.clone(),
+            },
+            |bytes| root.sign(bytes),
+        )
+        .unwrap();
+        node.store_verified_update_log(identity.clone(), vec![legacy_entry])
+            .unwrap();
+
+        let authority = vec![authorize_device(&root, &laptop, "dev_laptop")];
+        let present = DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            "dev_laptop",
+            DeviceWriterOperation::set_path(path, old_content_id, DeviceWriterPathMode::Singleton),
+            100,
+            |bytes| laptop.sign(bytes),
+        )
+        .unwrap();
+        let tombstone = present
+            .append(DeviceWriterOperation::tombstone_path(path), 101, |bytes| {
+                laptop.sign(bytes)
+            })
+            .unwrap();
+        node.store_verified_device_writer_logs(
+            identity.clone(),
+            authority,
+            vec![vec![present, tombstone]],
+        )
+        .unwrap();
+
+        let address = JoltAddress::new(identity, path).unwrap();
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::Resolve {
+            address: address.to_string(),
+            response_tx: tx,
+        });
+
+        let error = rx.await.unwrap().unwrap_err();
+        assert!(matches!(
+            error,
+            NetworkError::PathTombstoned { path: deleted_path } if deleted_path == path
+        ));
+        assert!(node.pending_daemon_resolutions.is_empty());
+    }
+
+    #[tokio::test]
     async fn daemon_store_device_writer_logs_command_updates_resolve_cache() {
         let dir = tempdir().unwrap();
         let mut node = make_node(dir.path());
@@ -1496,15 +1556,7 @@ mod tests {
                 .merged
                 .append_records_under("/spoke/posts/")
                 .into_iter()
-                .map(|(path, entry)| {
-                    (
-                        path.to_string(),
-                        entry
-                            .content_id()
-                            .expect("append records are always content-bearing")
-                            .to_string(),
-                    )
-                })
+                .map(|(path, entry)| (path.to_string(), entry.content_id.to_string()))
                 .collect()
         }
 
