@@ -24,6 +24,7 @@ import type {
   HomeRelayPinResponse,
   IngressRecord,
   LocalRecordDeleteResponse,
+  LocalRecordRestoreResponse,
   LocalRecordUpdateResponse,
   LocalRecordReadResponse,
   NodeStatus,
@@ -61,7 +62,6 @@ export function requestSession(
     ...options,
   });
 }
-
 /** Poll a session request until it carries a `session_token`. */
 export function getSessionRequestStatus(
   transport: JoltTransport,
@@ -275,6 +275,24 @@ export function deleteLocalRecord(
   return transport.request("app", "/records/delete", {
     token,
     json: { path, revision, mutation_id: mutationId },
+    ...options,
+  });
+}
+
+/** Compare-and-set one local Tombstone to new immutable content. */
+export function restoreLocalRecord(
+  transport: JoltTransport,
+  token: string,
+  path: string,
+  body: object,
+  revision: string,
+  mutationId: string,
+  options?: CallOptions
+): Promise<LocalRecordRestoreResponse> {
+  const data = Array.from(new TextEncoder().encode(JSON.stringify(body)));
+  return transport.request("app", "/records/restore", {
+    token,
+    json: { path, revision, mutation_id: mutationId, data },
     ...options,
   });
 }

@@ -114,6 +114,7 @@ export type {
   IngressRecord,
   LocalRecordDeleteResponse,
   LocalRecordReadResponse,
+  LocalRecordRestoreResponse,
   LocalRecordUpdateResponse,
   NodeStatus,
   OpenedEncryptedObject,

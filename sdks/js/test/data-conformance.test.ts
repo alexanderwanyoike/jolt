@@ -53,6 +53,7 @@ const Posts = Collection.create(Post, {
     create: true,
     update: true,
     delete: true,
+    restore: true,
   },
   conflicts: {
     update: UpdateConflict.LastWriteWins,
@@ -199,6 +200,36 @@ describe.each(implementations)("Data SDK $name conformance", ({ connect }) => {
     expect(read.ref).toEqual(created.ref);
     expect(created.state).toBe(State.Present);
     expect(created.value.text).toBe("Goodbye");
+  });
+
+  it("restores a Deleted Item with a schema-valid value at the same Ref", async () => {
+    const chirp = await connect();
+    const created = await chirp.posts.create({
+      text: "Before deletion",
+      postedAt: new Date("2026-08-27T08:00:00.000Z"),
+    });
+    const deleted = await created.delete();
+
+    await expect(deleted.restore({
+      text: 42 as never,
+      postedAt: new Date("2026-08-27T09:00:00.000Z"),
+    })).rejects.toBeInstanceOf(SchemaValidationError);
+    const restored = await deleted.restore({
+      text: "Restored",
+      postedAt: new Date("2026-08-27T09:00:00.000Z"),
+    });
+
+    expect(restored.state).toBe(State.Present);
+    expect(restored.ref).toEqual(created.ref);
+    expect(restored.value).toEqual({
+      text: "Restored",
+      postedAt: new Date("2026-08-27T09:00:00.000Z"),
+    });
+    expect(deleted.state).toBe(State.Deleted);
+    await expect(deleted.restore({
+      text: "Stale restore",
+      postedAt: new Date("2026-08-27T10:00:00.000Z"),
+    })).rejects.toBeInstanceOf(ConflictError);
   });
 });
 

@@ -114,6 +114,40 @@ describe("createFakeJolt", () => {
     });
   });
 
+  it("makes record restore retries idempotent and stale Tombstones conflicting", async () => {
+    const { client } = createFakeJolt("alice.jolt");
+    const ref = { identity: "alice.jolt", path: "/app/profile" };
+    await client.publishJson(ref.path, { name: "Alice" });
+    const present = await client.readRecord(ref);
+    if (present.state !== "present") throw new Error("expected a present record");
+    const deleted = await client.deleteRecord(ref, {
+      revision: present.revision,
+      mutationId: "mut_delete_before_restore",
+    });
+    await expect(client.restoreRecord(
+      ref,
+      { name: "Wrong replay" },
+      { revision: deleted.revision, mutationId: "mut_delete_before_restore" },
+    )).rejects.toMatchObject({
+      status: 400,
+      code: "invalid_input",
+    });
+    const mutation = { revision: deleted.revision, mutationId: "mut_restore_retry" };
+
+    const first = await client.restoreRecord(ref, { name: "Alice again" }, mutation);
+    const retried = await client.restoreRecord(ref, { name: "ignored retry body" }, mutation);
+
+    expect(retried).toEqual(first);
+    await expect(client.restoreRecord(
+      ref,
+      { name: "stale" },
+      { revision: deleted.revision, mutationId: "mut_restore_stale" },
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "record_conflict",
+    });
+  });
+
   it("separates public and encrypted reads", async () => {
     const { client, encryptedRecipients } = createFakeJolt("alice.jolt");
     await client.publishEncryptedJson("/app/secret", { s: 1 }, ["alice.jolt"]);
