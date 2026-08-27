@@ -267,6 +267,39 @@ describe("createJoltClient", () => {
     }]);
   });
 
+  it("sends opaque compare-and-set context when deleting a stable record", async () => {
+    const { transport, calls } = recordingTransport({
+      "/records/delete": {
+        path: "/chirp/posts/jlt_1",
+        revision: "revision_tombstone",
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_1" };
+
+    await expect(jolt.deleteRecord(
+      ref,
+      { revision: "revision_1", mutationId: "mut_delete_1" },
+    )).resolves.toEqual({
+      state: "deleted",
+      ref,
+      revision: "revision_tombstone",
+    });
+    expect(calls).toEqual([{
+      kind: "request",
+      base: "app",
+      path: "/records/delete",
+      detail: {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_1",
+          mutation_id: "mut_delete_1",
+        },
+      },
+    }]);
+  });
+
   it("can request a session before the local identity is known", async () => {
     const { transport, calls } = recordingTransport({
       "/sessions/request": { request_id: "req_1", status: "pending" },

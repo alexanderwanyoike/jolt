@@ -111,6 +111,7 @@ export type {
   FetchResult,
   HomeRelayPinResponse,
   IngressRecord,
+  LocalRecordDeleteResponse,
   LocalRecordReadResponse,
   LocalRecordUpdateResponse,
   NodeStatus,

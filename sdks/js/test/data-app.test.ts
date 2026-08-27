@@ -403,8 +403,10 @@ describe("Data SDK applications", () => {
     expect(missing.isDeleted()).toBe(false);
     expect("update" in created).toBe(false);
     expect("replace" in created).toBe(false);
+    expect("delete" in created).toBe(false);
     expectTypeOf(created).not.toHaveProperty("update");
     expectTypeOf(created).not.toHaveProperty("replace");
+    expectTypeOf(created).not.toHaveProperty("delete");
   });
 
   it("omits Collection creation when Resource access does not declare it", () => {

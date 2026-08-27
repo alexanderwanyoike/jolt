@@ -283,6 +283,8 @@ export type PresentItem<
 } & (TAccess extends { readonly update: true } ? {
   update(patch: ShallowPatch<T>): Promise<PresentItem<T, TAccess>>;
   replace(value: T): Promise<PresentItem<T, TAccess>>;
+} : object) & (TAccess extends { readonly delete: true } ? {
+  delete(): Promise<DeletedItem<T, TAccess>>;
 } : object);
 
 /** An immutable Item snapshot whose current state is a Tombstone. */
@@ -567,7 +569,7 @@ export type AppConnectOptions = {
   readonly identity: Identity;
   readonly client: Pick<
     JoltSdk,
-    "publishJson" | "read" | "readRecord" | "updateRecord"
+    "publishJson" | "read" | "readRecord" | "updateRecord" | "deleteRecord"
   >;
 };
 
@@ -623,7 +625,7 @@ function requirePathSegment(value: string, label: string): void {
 }
 
 type TestWorldState = {
-  readonly store: Map<string, BackendPresentRecord>;
+  readonly store: Map<string, BackendPresentRecord | BackendDeletedRecord>;
   nextId: number;
   nextMutationId: number;
   nextRevision: number;
@@ -720,6 +722,13 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
     item.replace = async (input: T) => {
       const current = currentStoredValue(resource.schema, input);
       return commit(current.stored);
+    };
+  }
+  if (mutable && resource.access.delete === true && record.revision !== null) {
+    const revision = record.revision;
+    item.delete = async () => {
+      await backend.delete(ref, revision, backend.nextMutationId());
+      return deletedItem(ref);
     };
   }
   return Object.freeze(item) as PresentItem<T, TAccess>;
@@ -860,6 +869,11 @@ type DataBackend = {
     revision: string,
     mutationId: string,
   ): Promise<BackendPresentRecord>;
+  delete<T extends object>(
+    ref: Ref<T>,
+    revision: string,
+    mutationId: string,
+  ): Promise<BackendDeletedRecord>;
   for(identity: Identity): DataBackend;
 };
 
@@ -879,10 +893,31 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
     async update(ref, stored, revision) {
       const key = testStoreKey(ref);
       const current = state.store.get(key);
-      if (current === undefined || current.revision !== revision) {
+      if (
+        current === undefined
+        || isBackendDeletedRecord(current)
+        || current.revision !== revision
+      ) {
         throw new ConflictError(ref);
       }
       const record = { stored, revision: `revision_${++state.nextRevision}` };
+      state.store.set(key, record);
+      return record;
+    },
+    async delete(ref, revision) {
+      const key = testStoreKey(ref);
+      const current = state.store.get(key);
+      if (
+        current === undefined
+        || isBackendDeletedRecord(current)
+        || current.revision !== revision
+      ) {
+        throw new ConflictError(ref);
+      }
+      const record = {
+        state: State.Deleted,
+        revision: `revision_${++state.nextRevision}`,
+      } as const;
       state.store.set(key, record);
       return record;
     },
@@ -944,6 +979,20 @@ function createConnectedBackend(
           { revision, mutationId },
         );
         return backendRecord(record.bytes, record.revision);
+      } catch (error) {
+        if (error instanceof JoltApiError && error.code === "record_conflict") {
+          throw new ConflictError(ref);
+        }
+        throw error;
+      }
+    },
+    async delete(ref, revision, mutationId) {
+      try {
+        const record = await options.client.deleteRecord(
+          ref,
+          { revision, mutationId },
+        );
+        return { state: State.Deleted, revision: record.revision };
       } catch (error) {
         if (error instanceof JoltApiError && error.code === "record_conflict") {
           throw new ConflictError(ref);

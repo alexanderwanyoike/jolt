@@ -16,6 +16,8 @@ import type {
   EnumeratedRecord,
   JoltClient,
   PublishResult,
+  RecordDeletedResult,
+  RecordPresentResult,
   Reference,
   Versioned,
 } from "./client.js";
@@ -92,13 +94,14 @@ let fakeCounter = 0;
  */
 export function createFakeJolt(identity: string, options: FakeJoltOptions = {}): FakeJolt {
   const published = new Map<string, StoredPublication>();
+  const tombstones = new Map<string, RecordDeletedResult>();
   const appends = new Map<string, StoredPublication[]>();
   const contentById = new Map<string, unknown>();
   const ingress = new Map<string, IngressRecord & { payload: unknown }>();
   const sent: RecordedSend[] = [];
   const encryptedRecipients = new Map<string, string[]>();
   const homeRelayPins = new Set<string>();
-  const recordMutations = new Map<string, import("./client.js").RecordPresentResult>();
+  const recordMutations = new Map<string, RecordPresentResult | RecordDeletedResult>();
   const featureDiscovery = options.featureDiscovery ?? "advertised";
   const appApiFeatures = featureDiscovery === "legacy"
     ? { app_api: 1, features: {} }
@@ -113,6 +116,7 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
       recipients,
     };
     published.set(path, record);
+    tombstones.delete(path);
     contentById.set(record.contentId, body);
     return record;
   }
@@ -141,6 +145,7 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
     encrypted: boolean
   ): Versioned<T> | null {
     if (ref.identity !== identity) return null;
+    if (tombstones.has(ref.path)) return null;
     const record = published.get(ref.path);
     if (!record) return null;
     if (encrypted !== (record.recipients !== null)) return null;
@@ -196,6 +201,8 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
 
     async readRecord(ref) {
       if (ref.identity !== identity) return { state: "missing", ref };
+      const tombstone = tombstones.get(ref.path);
+      if (tombstone !== undefined) return tombstone;
       const record = published.get(ref.path);
       if (!record || record.recipients !== null) return { state: "missing", ref };
       return {
@@ -209,11 +216,20 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
 
     async updateRecord(ref, body, mutation) {
       const retried = recordMutations.get(mutation.mutationId);
-      if (retried !== undefined) return retried;
+      if (retried !== undefined) {
+        if (retried.state !== "present") {
+          throw new JoltApiError("Mutation ID was already used", {
+            status: 400,
+            code: "invalid_input",
+          });
+        }
+        return retried;
+      }
       const current = published.get(ref.path);
       if (
         ref.identity !== identity
         || current === undefined
+        || tombstones.has(ref.path)
         || current.recipients !== null
         || mutation.revision !== `revision_${current.seq}`
       ) {
@@ -230,6 +246,39 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
         revision: `revision_${record.seq}`,
         bytes: Array.from(new TextEncoder().encode(JSON.stringify(record.body))),
       };
+      recordMutations.set(mutation.mutationId, result);
+      return result;
+    },
+
+    async deleteRecord(ref, mutation) {
+      const retried = recordMutations.get(mutation.mutationId);
+      if (retried !== undefined) {
+        if (retried.state !== "deleted") {
+          throw new JoltApiError("Mutation ID was already used", {
+            status: 400,
+            code: "invalid_input",
+          });
+        }
+        return retried;
+      }
+      const current = published.get(ref.path);
+      if (
+        ref.identity !== identity
+        || current === undefined
+        || tombstones.has(ref.path)
+        || mutation.revision !== `revision_${current.seq}`
+      ) {
+        throw new JoltApiError("Record revision changed", {
+          status: 409,
+          code: "record_conflict",
+        });
+      }
+      const result = {
+        state: "deleted" as const,
+        ref,
+        revision: `revision_tombstone_${++fakeCounter}`,
+      };
+      tombstones.set(ref.path, result);
       recordMutations.set(mutation.mutationId, result);
       return result;
     },
