@@ -173,6 +173,13 @@ export interface JoltSdk {
     mutation: RecordMutationContext,
     options?: CallOptions,
   ): Promise<RecordDeletedResult>;
+  /** Compare-and-set one local Tombstone to new immutable content. */
+  restoreRecord(
+    ref: Reference,
+    body: object,
+    mutation: RecordMutationContext,
+    options?: CallOptions,
+  ): Promise<RecordPresentResult>;
 }
 
 /** Coexisting append records and their enumeration. */
@@ -468,6 +475,25 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
         state: "deleted",
         ref,
         revision: response.revision,
+      };
+    },
+
+    async restoreRecord(ref, body, mutation, call) {
+      const response = await ops.restoreLocalRecord(
+        transport,
+        getSessionToken(),
+        ref.path,
+        body,
+        mutation.revision,
+        mutation.mutationId,
+        call,
+      );
+      return {
+        state: "present",
+        ref,
+        contentId: response.content_id,
+        revision: response.revision,
+        bytes: response.data,
       };
     },
 

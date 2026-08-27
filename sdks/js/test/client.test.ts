@@ -300,6 +300,45 @@ describe("createJoltClient", () => {
     }]);
   });
 
+  it("sends content and opaque Tombstone context when restoring a stable record", async () => {
+    const { transport, calls } = recordingTransport({
+      "/records/restore": {
+        path: "/chirp/posts/jlt_1",
+        content_id: "cid_restored",
+        revision: "revision_restored",
+        data: [123, 125],
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_1" };
+
+    await expect(jolt.restoreRecord(
+      ref,
+      { version: 1, value: { text: "Restored" } },
+      { revision: "revision_tombstone", mutationId: "mut_restore_1" },
+    )).resolves.toEqual({
+      state: "present",
+      ref,
+      contentId: "cid_restored",
+      revision: "revision_restored",
+      bytes: [123, 125],
+    });
+    expect(calls).toEqual([{
+      kind: "request",
+      base: "app",
+      path: "/records/restore",
+      detail: {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_tombstone",
+          mutation_id: "mut_restore_1",
+          data: expect.any(Array),
+        },
+      },
+    }]);
+  });
+
   it("can request a session before the local identity is known", async () => {
     const { transport, calls } = recordingTransport({
       "/sessions/request": { request_id: "req_1", status: "pending" },

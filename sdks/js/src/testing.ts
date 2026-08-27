@@ -101,7 +101,10 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
   const sent: RecordedSend[] = [];
   const encryptedRecipients = new Map<string, string[]>();
   const homeRelayPins = new Set<string>();
-  const recordMutations = new Map<string, RecordPresentResult | RecordDeletedResult>();
+  const recordMutations = new Map<string, {
+    operation: "update" | "delete" | "restore";
+    result: RecordPresentResult | RecordDeletedResult;
+  }>();
   const featureDiscovery = options.featureDiscovery ?? "advertised";
   const appApiFeatures = featureDiscovery === "legacy"
     ? { app_api: 1, features: {} }
@@ -238,13 +241,13 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
     async updateRecord(ref, body, mutation) {
       const retried = recordMutations.get(mutation.mutationId);
       if (retried !== undefined) {
-        if (retried.state !== "present") {
+        if (retried.operation !== "update" || retried.result.state !== "present") {
           throw new JoltApiError("Mutation ID was already used", {
             status: 400,
             code: "invalid_input",
           });
         }
-        return retried;
+        return retried.result;
       }
       const current = published.get(ref.path);
       if (
@@ -267,20 +270,20 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
         revision: `revision_${record.seq}`,
         bytes: Array.from(new TextEncoder().encode(JSON.stringify(record.body))),
       };
-      recordMutations.set(mutation.mutationId, result);
+      recordMutations.set(mutation.mutationId, { operation: "update", result });
       return result;
     },
 
     async deleteRecord(ref, mutation) {
       const retried = recordMutations.get(mutation.mutationId);
       if (retried !== undefined) {
-        if (retried.state !== "deleted") {
+        if (retried.operation !== "delete" || retried.result.state !== "deleted") {
           throw new JoltApiError("Mutation ID was already used", {
             status: 400,
             code: "invalid_input",
           });
         }
-        return retried;
+        return retried.result;
       }
       const current = published.get(ref.path);
       if (
@@ -300,7 +303,41 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
         revision: `revision_tombstone_${++fakeCounter}`,
       };
       tombstones.set(ref.path, result);
-      recordMutations.set(mutation.mutationId, result);
+      recordMutations.set(mutation.mutationId, { operation: "delete", result });
+      return result;
+    },
+
+    async restoreRecord(ref, body, mutation) {
+      const retried = recordMutations.get(mutation.mutationId);
+      if (retried !== undefined) {
+        if (retried.operation !== "restore" || retried.result.state !== "present") {
+          throw new JoltApiError("Mutation ID was already used", {
+            status: 400,
+            code: "invalid_input",
+          });
+        }
+        return retried.result;
+      }
+      const tombstone = tombstones.get(ref.path);
+      if (
+        ref.identity !== identity
+        || tombstone === undefined
+        || mutation.revision !== tombstone.revision
+      ) {
+        throw new JoltApiError("Record revision changed", {
+          status: 409,
+          code: "record_conflict",
+        });
+      }
+      const record = store(ref.path, body, null);
+      const result = {
+        state: "present" as const,
+        ref,
+        contentId: record.contentId,
+        revision: `revision_${record.seq}`,
+        bytes: Array.from(new TextEncoder().encode(JSON.stringify(record.body))),
+      };
+      recordMutations.set(mutation.mutationId, { operation: "restore", result });
       return result;
     },
 

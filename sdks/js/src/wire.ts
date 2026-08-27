@@ -64,6 +64,9 @@ export type LocalRecordUpdateResponse = {
   data: number[];
 };
 
+/** Successful compare-and-set restoration of one local stable record. */
+export type LocalRecordRestoreResponse = LocalRecordUpdateResponse;
+
 /** Successful compare-and-set deletion of one local stable record. */
 export type LocalRecordDeleteResponse = {
   path: string;

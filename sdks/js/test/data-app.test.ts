@@ -4,6 +4,7 @@ import {
   App,
   Collection,
   DeleteConflict,
+  type DeletedItem,
   Document,
   Field,
   Migrations,
@@ -407,6 +408,7 @@ describe("Data SDK applications", () => {
     expectTypeOf(created).not.toHaveProperty("update");
     expectTypeOf(created).not.toHaveProperty("replace");
     expectTypeOf(created).not.toHaveProperty("delete");
+    expectTypeOf<DeletedItem<Post, typeof Posts.access>>().not.toHaveProperty("restore");
   });
 
   it("omits Collection creation when Resource access does not declare it", () => {

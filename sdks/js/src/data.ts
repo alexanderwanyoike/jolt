@@ -291,7 +291,11 @@ export type PresentItem<
 export type DeletedItem<
   T extends object,
   TAccess extends ResourceAccess = ResourceAccess,
-> = ItemSnapshot<T, typeof State.Deleted, TAccess>;
+> = ItemSnapshot<T, typeof State.Deleted, TAccess> & (
+  TAccess extends { readonly restore: true } ? {
+    restore(value: T): Promise<PresentItem<T, TAccess>>;
+  } : object
+);
 
 /** An immutable Item snapshot for a logical reference with no observed record. */
 export type MissingItem<
@@ -571,6 +575,7 @@ export type DataSdkClient = Pick<
   | "resolve"
   | "updateRecord"
   | "deleteRecord"
+  | "restoreRecord"
 >;
 
 /**
@@ -736,7 +741,7 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
   if (resource.access.delete === true && revision !== null) {
     item.delete = async () => {
       const deleted = await backend.delete(ref, revision, backend.nextMutationId());
-      return deletedItem(ref, { backend, revision: deleted.revision });
+      return deletedItem(resource, ref, { backend, revision: deleted.revision });
     };
   }
   return Object.freeze(item) as PresentItem<T, TAccess>;
@@ -753,28 +758,33 @@ function missingItem<T extends object, TAccess extends ResourceAccess>(
   });
 }
 
-const deletedItemMutationContexts = new WeakMap<object, {
-  readonly backend: DataBackend;
-  readonly revision: string;
-}>();
-
 function deletedItem<T extends object, TAccess extends ResourceAccess>(
+  resource: ResourceDefinition<T, TAccess, ResourceKindValue>,
   ref: Ref<T>,
   mutationContext?: {
     readonly backend: DataBackend;
     readonly revision: string;
   },
 ): DeletedItem<T, TAccess> {
-  const item = Object.freeze({
+  const item: Record<string, unknown> = {
     state: State.Deleted,
     ref,
     isPresent: falseIsPresent,
     isDeleted: trueIsDeleted,
-  });
-  if (mutationContext !== undefined) {
-    deletedItemMutationContexts.set(item, mutationContext);
+  };
+  if (resource.access.restore === true && mutationContext !== undefined) {
+    item.restore = async (input: T) => {
+      const current = currentStoredValue(resource.schema, input);
+      const restored = await mutationContext.backend.restore(
+        ref,
+        current.stored,
+        mutationContext.revision,
+        mutationContext.backend.nextMutationId(),
+      );
+      return presentItem(resource, mutationContext.backend, ref, restored, true);
+    };
   }
-  return item;
+  return Object.freeze(item) as DeletedItem<T, TAccess>;
 }
 
 function unavailableItem<T extends object, TAccess extends ResourceAccess>(
@@ -895,6 +905,12 @@ type DataBackend = {
     revision: string,
     mutationId: string,
   ): Promise<BackendDeletedRecord & { readonly revision: string }>;
+  restore<T extends object>(
+    ref: Ref<T>,
+    stored: StoredSchemaValue,
+    revision: string,
+    mutationId: string,
+  ): Promise<BackendPresentRecord & { readonly revision: string }>;
   for(identity: Identity): DataBackend;
 };
 
@@ -939,6 +955,20 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
         state: State.Deleted,
         revision: `revision_${++state.nextRevision}`,
       } as const;
+      state.store.set(key, record);
+      return record;
+    },
+    async restore(ref, stored, revision) {
+      const key = testStoreKey(ref);
+      const current = state.store.get(key);
+      if (
+        current === undefined
+        || !isBackendDeletedRecord(current)
+        || current.revision !== revision
+      ) {
+        throw new ConflictError(ref);
+      }
+      const record = { stored, revision: `revision_${++state.nextRevision}` };
       state.store.set(key, record);
       return record;
     },
@@ -1035,6 +1065,23 @@ function createConnectedBackend(
         throw error;
       }
     },
+    async restore(ref, stored, revision, mutationId) {
+      try {
+        const record = await options.client.restoreRecord(
+          ref,
+          stored,
+          { revision, mutationId },
+        );
+        return backendRecord(record.bytes, record.revision) as BackendPresentRecord & {
+          readonly revision: string;
+        };
+      } catch (error) {
+        if (error instanceof JoltApiError && error.code === "record_conflict") {
+          throw new ConflictError(ref);
+        }
+        throw error;
+      }
+    },
     for: identity => createConnectedBackend({ ...options, identity }, localIdentity),
   };
 }
@@ -1060,6 +1107,7 @@ async function readItem<T extends object, TAccess extends ResourceAccess>(
   if (stored === State.Unavailable) return unavailableItem(ref);
   if (isBackendDeletedRecord(stored)) {
     return deletedItem(
+      resource,
       ref,
       mutable && stored.revision !== null
         ? { backend, revision: stored.revision }
