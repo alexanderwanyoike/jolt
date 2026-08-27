@@ -727,8 +727,8 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
   if (mutable && resource.access.delete === true && record.revision !== null) {
     const revision = record.revision;
     item.delete = async () => {
-      await backend.delete(ref, revision, backend.nextMutationId());
-      return deletedItem(ref);
+      const deleted = await backend.delete(ref, revision, backend.nextMutationId());
+      return deletedItem(ref, { backend, revision: deleted.revision });
     };
   }
   return Object.freeze(item) as PresentItem<T, TAccess>;
@@ -886,7 +886,7 @@ type DataBackend = {
     ref: Ref<T>,
     revision: string,
     mutationId: string,
-  ): Promise<BackendDeletedRecord>;
+  ): Promise<BackendDeletedRecord & { readonly revision: string }>;
   for(identity: Identity): DataBackend;
 };
 
