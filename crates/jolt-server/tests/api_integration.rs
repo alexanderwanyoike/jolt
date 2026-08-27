@@ -2489,7 +2489,12 @@ async fn test_app_reads_authoritative_local_record_state_across_restart() {
         start_test_server_with_profile_dir(profile.path().to_path_buf()).await;
     let client = reqwest::Client::new();
     let identity = first_handle.status().await.unwrap().identity_address;
-    let capabilities = ["resolve:public", "fetch:public", "publish:/chirp/*"];
+    let capabilities = [
+        "resolve:public",
+        "fetch:public",
+        "publish:/chirp/*",
+        "inventory:/chirp/*",
+    ];
     for incomplete_capabilities in [&["resolve:public"][..], &["fetch:public"][..]] {
         let incomplete_token =
             approve_app_session(&client, first_port, &identity, incomplete_capabilities).await;
@@ -2628,6 +2633,22 @@ async fn test_app_reads_authoritative_local_record_state_across_restart() {
                 .collect()
         )
     );
+
+    let inventory = client
+        .get(format!("{}/app/v1/published", base_url(first_port)))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(inventory.status(), 200);
+    assert!(inventory
+        .json::<Vec<serde_json::Value>>()
+        .await
+        .unwrap()
+        .iter()
+        .any(|item| {
+            item["path"] == path && item["content_id"] == successful_update["content_id"]
+        }));
 
     let retried_update = client
         .post(format!("{}/app/v1/records/update", base_url(first_port)))

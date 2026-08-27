@@ -202,6 +202,13 @@ impl NetworkNode {
         // Content is immutable and may safely remain unreferenced if the
         // subsequent durable log append fails.
         let content_id = self.publish_bytes(data)?;
+        self.publish_local_update_log_action(
+            &identity,
+            UpdateAction::SetPath {
+                path: address.path().to_string(),
+                content_id: content_id.clone(),
+            },
+        )?;
         let (_, result_revision) = self.publish_local_device_writer_path(
             identity,
             address.path().to_string(),
