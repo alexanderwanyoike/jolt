@@ -333,6 +333,26 @@ describe("createJoltClient", () => {
     ).resolves.toBeNull();
   });
 
+  it("read preserves a verified path-tombstoned result", async () => {
+    const tombstoned = new JoltApiError("Path is tombstoned", {
+      status: 410,
+      code: "path_tombstoned",
+    });
+    const transport: JoltTransport = {
+      async request(): Promise<never> {
+        throw tombstoned;
+      },
+      async upload(): Promise<never> {
+        throw new Error("unused");
+      },
+    };
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    await expect(
+      jolt.read({ identity: "alice.jolt", path: "/posts/deleted" }, value => value),
+    ).rejects.toBe(tombstoned);
+  });
+
   it("reads explicit local record state without collapsing daemon failures", async () => {
     const responses: Record<string, unknown> = {
       "/records/read": {

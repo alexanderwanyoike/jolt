@@ -470,4 +470,32 @@ describe("Data SDK client-backed content validation", () => {
     expect(item.state).toBe(State.Unavailable);
     expect(localRecordReads).toBe(0);
   });
+
+  it("maps a verified remote Tombstone to a Deleted Item", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        publishJson: jolt.client.publishJson,
+        readRecord: jolt.client.readRecord,
+        updateRecord: jolt.client.updateRecord,
+        async read() {
+          throw new JoltApiError("Path is tombstoned", {
+            status: 410,
+            code: "path_tombstoned",
+          });
+        },
+      },
+    });
+    const ref = {
+      identity: "bob.jolt",
+      path: "/chirp/posts/jlt_deleted",
+    };
+
+    const item = await chirp.posts.for("bob.jolt").get(ref);
+
+    expect(item.state).toBe(State.Deleted);
+    expect(item.ref).toEqual(ref);
+    expect(item.isDeleted()).toBe(true);
+  });
 });

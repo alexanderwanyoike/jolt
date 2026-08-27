@@ -50,7 +50,7 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Pick"
 												},
 												"typeArguments": [
@@ -173,7 +173,7 @@
 							"type": {
 								"type": "reference",
 								"target": {
-									"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+									"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 									"qualifiedName": "Pick"
 								},
 								"typeArguments": [
@@ -250,7 +250,7 @@
 						{
 							"type": "reference",
 							"target": {
-								"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+								"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 								"qualifiedName": "Error"
 							},
 							"name": "Error",
@@ -296,7 +296,7 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Pick"
 												},
 												"typeArguments": [
@@ -419,7 +419,7 @@
 							"type": {
 								"type": "reference",
 								"target": {
-									"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+									"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 									"qualifiedName": "Pick"
 								},
 								"typeArguments": [
@@ -496,7 +496,7 @@
 						{
 							"type": "reference",
 							"target": {
-								"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+								"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 								"qualifiedName": "Error"
 							},
 							"name": "Error",
@@ -542,7 +542,7 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Pick"
 												},
 												"typeArguments": [
@@ -665,7 +665,7 @@
 							"type": {
 								"type": "reference",
 								"target": {
-									"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+									"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 									"qualifiedName": "Pick"
 								},
 								"typeArguments": [
@@ -742,7 +742,7 @@
 						{
 							"type": "reference",
 							"target": {
-								"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+								"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 								"qualifiedName": "Error"
 							},
 							"name": "Error",
@@ -891,7 +891,7 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es2022.error.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es2022.error.d.ts",
 													"qualifiedName": "ErrorOptions"
 												},
 												"name": "ErrorOptions",
@@ -1046,7 +1046,7 @@
 						{
 							"type": "reference",
 							"target": {
-								"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+								"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 								"qualifiedName": "Error"
 							},
 							"name": "Error",
@@ -1239,7 +1239,7 @@
 						{
 							"type": "reference",
 							"target": {
-								"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+								"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 								"qualifiedName": "Error"
 							},
 							"name": "Error",
@@ -1544,7 +1544,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Pick"
 										},
 										"typeArguments": [
@@ -1625,14 +1625,14 @@
 					"type": {
 						"type": "reference",
 						"target": {
-							"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+							"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 							"qualifiedName": "Readonly"
 						},
 						"typeArguments": [
 							{
 								"type": "reference",
 								"target": {
-									"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+									"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 									"qualifiedName": "Record"
 								},
 								"typeArguments": [
@@ -1837,7 +1837,7 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Promise"
 												},
 												"typeArguments": [
@@ -2830,7 +2830,7 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Promise"
 												},
 												"typeArguments": [
@@ -3036,7 +3036,7 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Promise"
 												},
 												"typeArguments": [
@@ -3515,7 +3515,7 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Promise"
 												},
 												"typeArguments": [
@@ -3697,7 +3697,7 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Promise"
 												},
 												"typeArguments": [
@@ -4128,7 +4128,7 @@
 						"extendsType": {
 							"type": "reference",
 							"target": {
-								"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+								"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 								"qualifiedName": "Date"
 							},
 							"name": "Date",
@@ -4676,14 +4676,14 @@
 					"type": {
 						"type": "reference",
 						"target": {
-							"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+							"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 							"qualifiedName": "Readonly"
 						},
 						"typeArguments": [
 							{
 								"type": "reference",
 								"target": {
-									"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+									"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 									"qualifiedName": "Record"
 								},
 								"typeArguments": [
@@ -4721,14 +4721,14 @@
 					"type": {
 						"type": "reference",
 						"target": {
-							"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+							"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 							"qualifiedName": "Readonly"
 						},
 						"typeArguments": [
 							{
 								"type": "reference",
 								"target": {
-									"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+									"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 									"qualifiedName": "Record"
 								},
 								"typeArguments": [
@@ -5034,7 +5034,7 @@
 														"type": {
 															"type": "reference",
 															"target": {
-																"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+																"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 																"qualifiedName": "Promise"
 															},
 															"typeArguments": [
@@ -5116,7 +5116,7 @@
 														"type": {
 															"type": "reference",
 															"target": {
-																"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+																"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 																"qualifiedName": "Promise"
 															},
 															"typeArguments": [
@@ -5938,7 +5938,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
@@ -6147,7 +6147,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
@@ -6285,7 +6285,7 @@
 					"type": {
 						"type": "reference",
 						"target": {
-							"sourceFileName": "node_modules/typescript/lib/lib.decorators.legacy.d.ts",
+							"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.decorators.legacy.d.ts",
 							"qualifiedName": "PropertyDecorator"
 						},
 						"name": "PropertyDecorator",
@@ -6679,14 +6679,14 @@
 															"type": {
 																"type": "reference",
 																"target": {
-																	"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+																	"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 																	"qualifiedName": "Readonly"
 																},
 																"typeArguments": [
 																	{
 																		"type": "reference",
 																		"target": {
-																			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+																			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 																			"qualifiedName": "Record"
 																		},
 																		"typeArguments": [
@@ -7065,7 +7065,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
@@ -7118,7 +7118,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
@@ -7171,7 +7171,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
@@ -7761,14 +7761,14 @@
 															"type": {
 																"type": "reference",
 																"target": {
-																	"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+																	"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 																	"qualifiedName": "Readonly"
 																},
 																"typeArguments": [
 																	{
 																		"type": "reference",
 																		"target": {
-																			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+																			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 																			"qualifiedName": "Record"
 																		},
 																		"typeArguments": [
@@ -7798,14 +7798,14 @@
 															"type": {
 																"type": "reference",
 																"target": {
-																	"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+																	"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 																	"qualifiedName": "Readonly"
 																},
 																"typeArguments": [
 																	{
 																		"type": "reference",
 																		"target": {
-																			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+																			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 																			"qualifiedName": "Record"
 																		},
 																		"typeArguments": [
@@ -7830,7 +7830,7 @@
 													"type": {
 														"type": "reference",
 														"target": {
-															"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+															"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 															"qualifiedName": "Record"
 														},
 														"typeArguments": [
@@ -7902,7 +7902,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
@@ -7955,7 +7955,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
@@ -8047,7 +8047,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
@@ -8100,7 +8100,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
@@ -8370,7 +8370,7 @@
 							"type": {
 								"type": "reference",
 								"target": {
-									"sourceFileName": "node_modules/typescript/lib/lib.decorators.legacy.d.ts",
+									"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.decorators.legacy.d.ts",
 									"qualifiedName": "ClassDecorator"
 								},
 								"name": "ClassDecorator",
@@ -8785,7 +8785,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -8907,7 +8907,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9000,7 +9000,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9104,7 +9104,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9200,7 +9200,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9271,7 +9271,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9353,7 +9353,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9443,7 +9443,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9514,7 +9514,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9596,7 +9596,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9681,7 +9681,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9790,7 +9790,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9883,7 +9883,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -9989,7 +9989,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -10072,14 +10072,14 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Uint8Array"
 												},
 												"typeArguments": [
 													{
 														"type": "reference",
 														"target": {
-															"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+															"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 															"qualifiedName": "ArrayBufferLike"
 														},
 														"name": "ArrayBufferLike",
@@ -10159,7 +10159,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -10250,14 +10250,14 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Uint8Array"
 												},
 												"typeArguments": [
 													{
 														"type": "reference",
 														"target": {
-															"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+															"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 															"qualifiedName": "ArrayBufferLike"
 														},
 														"name": "ArrayBufferLike",
@@ -10340,7 +10340,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -10466,7 +10466,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -10570,7 +10570,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -10663,7 +10663,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -10756,7 +10756,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -10840,7 +10840,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -10941,7 +10941,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -11106,7 +11106,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -11232,7 +11232,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -11612,7 +11612,7 @@
 						{
 							"type": "reference",
 							"target": {
-								"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+								"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 								"qualifiedName": "Error"
 							},
 							"name": "Error",
@@ -11831,7 +11831,7 @@
 						{
 							"type": "reference",
 							"target": {
-								"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+								"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 								"qualifiedName": "Error"
 							},
 							"name": "Error",
@@ -11917,7 +11917,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -12008,7 +12008,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -12116,7 +12116,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -12204,7 +12204,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -12287,7 +12287,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -12372,7 +12372,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -12492,7 +12492,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -12602,7 +12602,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -12709,7 +12709,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -12757,7 +12757,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -12837,7 +12837,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -12896,7 +12896,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -13001,7 +13001,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -13110,7 +13110,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -13228,7 +13228,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -13370,7 +13370,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -13459,7 +13459,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -13554,7 +13554,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -13641,7 +13641,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -13710,7 +13710,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -13768,7 +13768,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -13839,7 +13839,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -13994,7 +13994,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -14100,7 +14100,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -14232,14 +14232,14 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
 											{
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Record"
 												},
 												"typeArguments": [
@@ -14321,7 +14321,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Record"
 										},
 										"typeArguments": [
@@ -14396,14 +14396,14 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
 											{
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Record"
 												},
 												"typeArguments": [
@@ -14435,14 +14435,14 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
 											{
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Record"
 												},
 												"typeArguments": [
@@ -14520,14 +14520,14 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
 											{
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Record"
 												},
 												"typeArguments": [
@@ -14557,14 +14557,14 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
 											{
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Record"
 												},
 												"typeArguments": [
@@ -14657,14 +14657,14 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
 											{
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Record"
 												},
 												"typeArguments": [
@@ -14696,14 +14696,14 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Readonly"
 										},
 										"typeArguments": [
 											{
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Record"
 												},
 												"typeArguments": [
@@ -15219,7 +15219,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.dom.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.dom.d.ts",
 											"qualifiedName": "AbortSignal"
 										},
 										"name": "AbortSignal",
@@ -19124,7 +19124,7 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Uint8Array"
 												},
 												"name": "Uint8Array",
@@ -19894,7 +19894,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es2015.collection.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es2015.collection.d.ts",
 											"qualifiedName": "Map"
 										},
 										"typeArguments": [
@@ -20145,14 +20145,14 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Readonly"
 												},
 												"typeArguments": [
 													{
 														"type": "reference",
 														"target": {
-															"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+															"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 															"qualifiedName": "Record"
 														},
 														"typeArguments": [
@@ -20618,7 +20618,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -20734,7 +20734,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -20811,7 +20811,7 @@
 											"type": {
 												"type": "reference",
 												"target": {
-													"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+													"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 													"qualifiedName": "Omit"
 												},
 												"typeArguments": [
@@ -21238,7 +21238,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -21354,7 +21354,7 @@
 									"type": {
 										"type": "reference",
 										"target": {
-											"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+											"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 											"qualifiedName": "Promise"
 										},
 										"typeArguments": [
@@ -21919,19 +21919,19 @@
 			"qualifiedName": "SchemaValidationError.field"
 		},
 		"25": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.name"
 		},
 		"26": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.message"
 		},
 		"27": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.stack"
 		},
 		"28": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es2022.error.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es2022.error.d.ts",
 			"qualifiedName": "Error.cause"
 		},
 		"29": {
@@ -21971,19 +21971,19 @@
 			"qualifiedName": "SchemaMigrationError.toVersion"
 		},
 		"38": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.name"
 		},
 		"39": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.message"
 		},
 		"40": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.stack"
 		},
 		"41": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es2022.error.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es2022.error.d.ts",
 			"qualifiedName": "Error.cause"
 		},
 		"42": {
@@ -22271,19 +22271,19 @@
 			"qualifiedName": "ItemUnavailableError.ref"
 		},
 		"117": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.name"
 		},
 		"118": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.message"
 		},
 		"119": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.stack"
 		},
 		"120": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es2022.error.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es2022.error.d.ts",
 			"qualifiedName": "Error.cause"
 		},
 		"121": {
@@ -22307,19 +22307,19 @@
 			"qualifiedName": "ConflictError.ref"
 		},
 		"126": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.name"
 		},
 		"127": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.message"
 		},
 		"128": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.stack"
 		},
 		"129": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es2022.error.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es2022.error.d.ts",
 			"qualifiedName": "Error.cause"
 		},
 		"130": {
@@ -22723,19 +22723,19 @@
 			"qualifiedName": "DeletedError.ref"
 		},
 		"230": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.name"
 		},
 		"231": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.message"
 		},
 		"232": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.stack"
 		},
 		"233": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es2022.error.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es2022.error.d.ts",
 			"qualifiedName": "Error.cause"
 		},
 		"234": {
@@ -24759,19 +24759,19 @@
 			"qualifiedName": "JoltApiError.body"
 		},
 		"759": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.name"
 		},
 		"760": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.message"
 		},
 		"761": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.stack"
 		},
 		"762": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es2022.error.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es2022.error.d.ts",
 			"qualifiedName": "Error.cause"
 		},
 		"763": {
@@ -24803,19 +24803,19 @@
 			"qualifiedName": "__type.cause"
 		},
 		"770": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.name"
 		},
 		"771": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.message"
 		},
 		"772": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es5.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es5.d.ts",
 			"qualifiedName": "Error.stack"
 		},
 		"773": {
-			"sourceFileName": "node_modules/typescript/lib/lib.es2022.error.d.ts",
+			"sourceFileName": "../../../../home/alexander/Code/Apps/jolt/sdks/js/node_modules/typescript/lib/lib.es2022.error.d.ts",
 			"qualifiedName": "Error.cause"
 		},
 		"774": {

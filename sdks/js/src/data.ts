@@ -736,15 +736,28 @@ function missingItem<T extends object, TAccess extends ResourceAccess>(
   });
 }
 
+const deletedItemMutationContexts = new WeakMap<object, {
+  readonly backend: DataBackend;
+  readonly revision: string;
+}>();
+
 function deletedItem<T extends object, TAccess extends ResourceAccess>(
   ref: Ref<T>,
+  mutationContext?: {
+    readonly backend: DataBackend;
+    readonly revision: string;
+  },
 ): DeletedItem<T, TAccess> {
-  return Object.freeze({
+  const item = Object.freeze({
     state: State.Deleted,
     ref,
     isPresent: falseIsPresent,
     isDeleted: trueIsDeleted,
   });
+  if (mutationContext !== undefined) {
+    deletedItemMutationContexts.set(item, mutationContext);
+  }
+  return item;
 }
 
 function unavailableItem<T extends object, TAccess extends ResourceAccess>(
@@ -833,7 +846,7 @@ type BackendPresentRecord = {
 
 type BackendDeletedRecord = {
   readonly state: typeof State.Deleted;
-  readonly revision: string;
+  readonly revision: string | null;
 };
 
 type BackendReadResult =
@@ -900,7 +913,15 @@ function createConnectedBackend(
     nextMutationId: () => makeId("mut"),
     async read(ref) {
       if (ref.identity !== localIdentity) {
-        const versioned = await options.client.read(ref, value => ({ value }));
+        let versioned;
+        try {
+          versioned = await options.client.read(ref, value => ({ value }));
+        } catch (error) {
+          if (error instanceof JoltApiError && error.code === "path_tombstoned") {
+            return { state: State.Deleted, revision: null };
+          }
+          throw error;
+        }
         if (versioned === null) return State.Unavailable;
         return {
           stored: requireStoredSchemaValue(versioned.value.value),
@@ -974,7 +995,14 @@ async function readItem<T extends object, TAccess extends ResourceAccess>(
   const stored = await backend.read(ref);
   if (stored === State.Missing) return missingItem(ref);
   if (stored === State.Unavailable) return unavailableItem(ref);
-  if (isBackendDeletedRecord(stored)) return deletedItem(ref);
+  if (isBackendDeletedRecord(stored)) {
+    return deletedItem(
+      ref,
+      mutable && stored.revision !== null
+        ? { backend, revision: stored.revision }
+        : undefined,
+    );
+  }
   return presentItem(resource, backend, ref, stored, mutable);
 }
 
