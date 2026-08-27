@@ -333,6 +333,27 @@ describe("createJoltClient", () => {
     ).resolves.toBeNull();
   });
 
+  it("keeps read tolerant while strict resolution preserves a verified Tombstone", async () => {
+    const tombstoned = new JoltApiError("Path is tombstoned", {
+      status: 410,
+      code: "path_tombstoned",
+    });
+    const transport: JoltTransport = {
+      async request(): Promise<never> {
+        throw tombstoned;
+      },
+      async upload(): Promise<never> {
+        throw new Error("unused");
+      },
+    };
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    const ref = { identity: "alice.jolt", path: "/posts/deleted" };
+
+    await expect(jolt.read(ref, value => value)).resolves.toBeNull();
+    await expect(jolt.resolve(ref)).rejects.toBe(tombstoned);
+  });
+
   it("reads explicit local record state without collapsing daemon failures", async () => {
     const responses: Record<string, unknown> = {
       "/records/read": {
@@ -371,6 +392,17 @@ describe("createJoltClient", () => {
     await expect(jolt.readRecord(ref)).resolves.toEqual({
       state: "missing",
       ref,
+    });
+
+    responses["/records/read"] = {
+      state: "deleted",
+      path: "/chirp/posts/jlt_record",
+      revision: "revision_tombstone",
+    };
+    await expect(jolt.readRecord(ref)).resolves.toEqual({
+      state: "deleted",
+      ref,
+      revision: "revision_tombstone",
     });
 
     const failure = new JoltTransportError("daemon unavailable");

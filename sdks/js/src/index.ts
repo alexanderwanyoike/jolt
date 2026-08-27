@@ -59,11 +59,13 @@ export type {
   JoltSessionSdk,
   OpenEncryptedResult,
   PublishResult,
+  RecordDeletedResult,
   RecordMissingResult,
   RecordMutationContext,
   RecordPresentResult,
   RecordReadResult,
   Reference,
+  ResolvedReference,
   Versioned,
 } from "./client.js";
 

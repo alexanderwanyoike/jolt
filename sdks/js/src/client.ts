@@ -19,6 +19,7 @@
 import * as ops from "./operations.js";
 import { createCompatibilityChecker } from "./compatibility.js";
 import type { JoltCompatibilitySdk } from "./compatibility.js";
+import { JoltApiError } from "./errors.js";
 import type { CallOptions, JoltTransport } from "./transport.js";
 import type {
   AppSessionRequestResponse,
@@ -61,10 +62,24 @@ export type Versioned<T> = {
   contentId: string;
 };
 
+/** Strict resolution metadata for one logical reference, before content fetch. */
+export type ResolvedReference = {
+  ref: Reference;
+  latestSequence: number;
+  contentId: string;
+};
+
 /** One authoritative local stable record reference that has no current value. */
 export type RecordMissingResult = {
   state: "missing";
   ref: Reference;
+};
+
+/** One authoritative local stable record whose current state is a Tombstone. */
+export type RecordDeletedResult = {
+  state: "deleted";
+  ref: Reference;
+  revision: string;
 };
 
 /** One present authoritative local stable record. */
@@ -77,7 +92,10 @@ export type RecordPresentResult = {
 };
 
 /** Strict authoritative state for one local stable record reference. */
-export type RecordReadResult = RecordMissingResult | RecordPresentResult;
+export type RecordReadResult =
+  | RecordMissingResult
+  | RecordDeletedResult
+  | RecordPresentResult;
 
 /** Opaque compare-and-set context used by advanced record mutations. */
 export type RecordMutationContext = {
@@ -122,6 +140,8 @@ export type HomeRelayPinResult = {
 export interface JoltSdk {
   /** Publish a JSON object at a signed path (last-writer-wins). */
   publishJson(path: string, body: object, options?: CallOptions): Promise<PublishResult>;
+  /** Resolve a reference strictly, preserving daemon errors such as Tombstones. */
+  resolve(ref: Reference, options?: CallOptions): Promise<ResolvedReference>;
   /**
    * Resolve, fetch, parse, and decode a publication. Returns `null` when the
    * reference is missing/unreachable or the bytes do not decode to `T`.
@@ -308,6 +328,24 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
   const { transport, getSessionToken } = options;
   const checkCompatibility = createCompatibilityChecker(transport);
 
+  async function resolveReference(
+    ref: Reference,
+    call?: CallOptions,
+    token = getSessionToken(),
+  ): Promise<ResolvedReference> {
+    const resolved = await ops.resolveAddress(
+      transport,
+      token,
+      referenceTarget(ref),
+      call,
+    );
+    return {
+      ref,
+      latestSequence: resolved.latest_sequence,
+      contentId: resolved.content_id,
+    };
+  }
+
   async function resolveDecode<T>(
     ref: Reference,
     getBytes: (token: string, contentId: string, call?: CallOptions) => Promise<number[]>,
@@ -318,8 +356,8 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
     let resolved;
     let bytes: number[];
     try {
-      resolved = await ops.resolveAddress(transport, token, referenceTarget(ref), call);
-      bytes = await getBytes(token, resolved.content_id, call);
+      resolved = await resolveReference(ref, call, token);
+      bytes = await getBytes(token, resolved.contentId, call);
     } catch {
       return null; // missing or unreachable
     }
@@ -330,8 +368,8 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
     return {
       ref,
       value,
-      latestSequence: resolved.latest_sequence,
-      contentId: resolved.content_id,
+      latestSequence: resolved.latestSequence,
+      contentId: resolved.contentId,
     };
   }
 
@@ -344,6 +382,8 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
       const response = await ops.publishJson(transport, getSessionToken(), path, body, call);
       return toPublishResult(response, path);
     },
+
+    resolve: resolveReference,
 
     async read(ref, decode, call) {
       return resolveDecode(
@@ -377,6 +417,9 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
       );
       if (result.state === "missing") {
         return { state: "missing", ref };
+      }
+      if (result.state === "deleted") {
+        return { state: "deleted", ref, revision: result.revision };
       }
       return {
         state: "present",

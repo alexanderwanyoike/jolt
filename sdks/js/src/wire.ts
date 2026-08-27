@@ -121,6 +121,11 @@ export type LocalRecordReadResponse =
       path: string;
     }
   | {
+      state: "deleted";
+      path: string;
+      revision: string;
+    }
+  | {
       state: "present";
       path: string;
       content_id: string;

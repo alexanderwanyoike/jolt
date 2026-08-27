@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   App,
   Collection,
   ConflictError,
+  type DeletedItem,
+  DeletedError,
   DeleteConflict,
   Document,
   Field,
@@ -187,6 +189,8 @@ describe("Data SDK client-backed content validation", () => {
           };
         },
         read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
         updateRecord: jolt.client.updateRecord,
         async readRecord() {
           recordReads += 1;
@@ -215,6 +219,8 @@ describe("Data SDK client-backed content validation", () => {
           return published;
         },
         read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
         updateRecord: jolt.client.updateRecord,
         async readRecord(ref) {
           recordReads += 1;
@@ -334,6 +340,8 @@ describe("Data SDK client-backed content validation", () => {
       client: {
         publishJson: jolt.client.publishJson,
         read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
         updateRecord: jolt.client.updateRecord,
         async readRecord(ref) {
           return {
@@ -362,6 +370,8 @@ describe("Data SDK client-backed content validation", () => {
           return jolt.client.publishJson(...args);
         },
         read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
         updateRecord: jolt.client.updateRecord,
         async readRecord() {
           throw unavailable;
@@ -380,6 +390,48 @@ describe("Data SDK client-backed content validation", () => {
     expect(publishes).toBe(0);
   });
 
+  it("returns a Deleted Item for a verified local Tombstone", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    let publishes = 0;
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        async publishJson(...args) {
+          publishes += 1;
+          return jolt.client.publishJson(...args);
+        },
+        read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
+        updateRecord: jolt.client.updateRecord,
+        async readRecord(ref) {
+          return {
+            state: "deleted",
+            ref,
+            revision: "revision_tombstone",
+          };
+        },
+      },
+    });
+
+    const item = await chirp.follows.get();
+
+    expect(item.state).toBe(State.Deleted);
+    expect(item.ref).toEqual({
+      identity: "alice.jolt",
+      path: "/chirp/follows",
+    });
+    expect(item.isPresent()).toBe(false);
+    expect(item.isDeleted()).toBe(true);
+    if (item.isDeleted()) {
+      expectTypeOf(item).toMatchTypeOf<DeletedItem<FollowList>>();
+    }
+    await expect(
+      chirp.follows.getOrCreate({ identities: ["bob.jolt"] }),
+    ).rejects.toBeInstanceOf(DeletedError);
+    expect(publishes).toBe(0);
+  });
+
   it("maps a daemon-classified content fetch failure to Unavailable", async () => {
     const jolt = createFakeJolt("alice.jolt");
     const chirp = await Chirp.connect({
@@ -387,6 +439,8 @@ describe("Data SDK client-backed content validation", () => {
       client: {
         publishJson: jolt.client.publishJson,
         read: jolt.client.read,
+        readContent: jolt.client.readContent,
+        resolve: jolt.client.resolve,
         updateRecord: jolt.client.updateRecord,
         async readRecord() {
           throw new JoltApiError("No content provider", {
@@ -409,6 +463,7 @@ describe("Data SDK client-backed content validation", () => {
       identity: jolt.identity,
       client: {
         publishJson: jolt.client.publishJson,
+        readContent: jolt.client.readContent,
         updateRecord: jolt.client.updateRecord,
         async readRecord(ref) {
           localRecordReads += 1;
@@ -427,5 +482,37 @@ describe("Data SDK client-backed content validation", () => {
 
     expect(item.state).toBe(State.Unavailable);
     expect(localRecordReads).toBe(0);
+  });
+
+  it("maps a verified remote Tombstone to a Deleted Item", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        publishJson: jolt.client.publishJson,
+        readContent: jolt.client.readContent,
+        readRecord: jolt.client.readRecord,
+        updateRecord: jolt.client.updateRecord,
+        async read() {
+          return null;
+        },
+        async resolve() {
+          throw new JoltApiError("Path is tombstoned", {
+            status: 410,
+            code: "path_tombstoned",
+          });
+        },
+      },
+    });
+    const ref = {
+      identity: "bob.jolt",
+      path: "/chirp/posts/jlt_deleted",
+    };
+
+    const item = await chirp.posts.for("bob.jolt").get(ref);
+
+    expect(item.state).toBe(State.Deleted);
+    expect(item.ref).toEqual(ref);
+    expect(item.isDeleted()).toBe(true);
   });
 });

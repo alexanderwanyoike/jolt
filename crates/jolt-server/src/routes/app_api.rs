@@ -80,6 +80,10 @@ pub enum LocalRecordReadResponse {
     Missing {
         path: String,
     },
+    Deleted {
+        path: String,
+        revision: String,
+    },
     Present {
         path: String,
         content_id: String,
@@ -98,8 +102,14 @@ pub async fn read_local_record(
     require_capability(&session, "resolve:public")?;
     require_capability(&session, "fetch:public")?;
     let path = normalize_path(&req.path)?;
-    let Some(record) = state.daemon.inspect_local_record(path.clone()).await? else {
-        return Ok(Json(LocalRecordReadResponse::Missing { path }));
+    let record = match state.daemon.inspect_local_record(path).await? {
+        jolt_network::LocalRecordState::Missing { path } => {
+            return Ok(Json(LocalRecordReadResponse::Missing { path }));
+        }
+        jolt_network::LocalRecordState::Deleted { path, revision } => {
+            return Ok(Json(LocalRecordReadResponse::Deleted { path, revision }));
+        }
+        jolt_network::LocalRecordState::Present(record) => record,
     };
     let fetched = state
         .daemon

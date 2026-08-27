@@ -2771,6 +2771,70 @@ async fn test_app_reads_authoritative_local_record_state_across_restart() {
 }
 
 #[tokio::test]
+async fn test_app_reads_local_tombstone_as_deleted_with_its_revision() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = NodeIdentity::generate();
+    let device = NodeIdentity::generate();
+    let identity = root.identity_id();
+    let path = "/chirp/posts/jlt_deleted";
+    let authority = vec![device_authority_record(&root, &device, "dev_phone")];
+    let present = DeviceWriterLogEntry::genesis(
+        identity.clone(),
+        "dev_phone",
+        DeviceWriterOperation::set_path(
+            path,
+            ContentId::from_bytes(b"post before delete"),
+            DeviceWriterPathMode::Singleton,
+        ),
+        100,
+        |bytes| device.sign(bytes),
+    )
+    .unwrap();
+    let tombstone = present
+        .append(DeviceWriterOperation::tombstone_path(path), 101, |bytes| {
+            device.sign(bytes)
+        })
+        .unwrap();
+    let revision = tombstone.entry_hash().to_hex();
+    let session_path = dir.path().join("app-sessions.json");
+    let (port, handle, _dir) =
+        start_test_server_with_identity_and_session_path(root, session_path, dir).await;
+    handle
+        .store_device_writer_logs(identity.clone(), authority, vec![vec![present, tombstone]])
+        .await
+        .unwrap();
+
+    let client = reqwest::Client::new();
+    let session_identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &session_identity,
+        &["resolve:public", "fetch:public"],
+    )
+    .await;
+    let response = client
+        .post(format!("{}/app/v1/records/read", base_url(port)))
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({
+            "state": "deleted",
+            "path": path,
+            "revision": revision,
+        })
+    );
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_any_enumeration_is_path_scoped_across_identities() {
     let (port, handle, _dir) = start_test_server().await;
     let session_identity = handle.status().await.unwrap().identity_address;
@@ -4431,6 +4495,60 @@ async fn test_resolve_endpoint_uses_verified_device_writer_cache() {
     assert_eq!(body["content_id"], content_id.to_string());
     assert_eq!(body["reachability_hints"].as_array().unwrap().len(), 0);
     assert_eq!(body["source"], "device_writer_cache");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_resolve_endpoint_returns_structured_path_tombstoned_error() {
+    let (port, handle, _dir) = start_test_server().await;
+    let root = NodeIdentity::generate();
+    let device = NodeIdentity::generate();
+    let identity = root.identity_id();
+    let path = "/profile";
+    let present = DeviceWriterLogEntry::genesis(
+        identity.clone(),
+        "dev_phone",
+        DeviceWriterOperation::set_path(
+            path,
+            ContentId::from_bytes(b"profile before delete"),
+            DeviceWriterPathMode::Singleton,
+        ),
+        100,
+        |bytes| device.sign(bytes),
+    )
+    .unwrap();
+    let tombstone = present
+        .append(DeviceWriterOperation::tombstone_path(path), 101, |bytes| {
+            device.sign(bytes)
+        })
+        .unwrap();
+    handle
+        .store_device_writer_logs(
+            identity.clone(),
+            vec![device_authority_record(&root, &device, "dev_phone")],
+            vec![vec![present, tombstone]],
+        )
+        .await
+        .unwrap();
+
+    let response = reqwest::Client::new()
+        .post(format!("{}/api/v1/resolve", base_url(port)))
+        .json(&serde_json::json!({
+            "address": JoltAddress::new(identity, path).unwrap().to_string(),
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 410);
+    assert_eq!(
+        response.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({
+            "error": format!("Path is tombstoned: {path}"),
+            "code": "path_tombstoned",
+        })
+    );
 
     handle.shutdown().await.ok();
 }

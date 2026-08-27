@@ -441,6 +441,17 @@ export const Collection = {
   ),
 } as const;
 
+/** Creation was refused because the logical Item is explicitly deleted. */
+export class DeletedError extends Error {
+  readonly ref: Pick<Ref<object>, "identity" | "path">;
+
+  constructor(ref: Pick<Ref<object>, "identity" | "path">) {
+    super(`Item is deleted: ${ref.identity}${ref.path}`);
+    this.name = "DeletedError";
+    this.ref = ref;
+  }
+}
+
 /** Defines an unbound typed Document. App.create derives its path. */
 export const Document = {
   create: <T extends object, const TAccess extends ResourceAccess>(
@@ -556,7 +567,7 @@ export type AppConnectOptions = {
   readonly identity: Identity;
   readonly client: Pick<
     JoltSdk,
-    "publishJson" | "read" | "readRecord" | "updateRecord"
+    "publishJson" | "read" | "readContent" | "readRecord" | "resolve" | "updateRecord"
   >;
 };
 
@@ -653,6 +664,12 @@ function falseIsDeleted<T extends object, TAccess extends ResourceAccess>(
   return false;
 }
 
+function trueIsDeleted<T extends object, TAccess extends ResourceAccess>(
+  this: Item<T, TAccess>,
+): this is DeletedItem<T, TAccess> {
+  return true;
+}
+
 function freezeValue<T>(value: T, seen = new WeakSet<object>()): ImmutableValue<T> {
   if (value === null || typeof value !== "object" || seen.has(value)) {
     return value as ImmutableValue<T>;
@@ -717,6 +734,30 @@ function missingItem<T extends object, TAccess extends ResourceAccess>(
     isPresent: falseIsPresent,
     isDeleted: falseIsDeleted,
   });
+}
+
+const deletedItemMutationContexts = new WeakMap<object, {
+  readonly backend: DataBackend;
+  readonly revision: string;
+}>();
+
+function deletedItem<T extends object, TAccess extends ResourceAccess>(
+  ref: Ref<T>,
+  mutationContext?: {
+    readonly backend: DataBackend;
+    readonly revision: string;
+  },
+): DeletedItem<T, TAccess> {
+  const item = Object.freeze({
+    state: State.Deleted,
+    ref,
+    isPresent: falseIsPresent,
+    isDeleted: trueIsDeleted,
+  });
+  if (mutationContext !== undefined) {
+    deletedItemMutationContexts.set(item, mutationContext);
+  }
+  return item;
 }
 
 function unavailableItem<T extends object, TAccess extends ResourceAccess>(
@@ -803,10 +844,22 @@ type BackendPresentRecord = {
   readonly revision: string | null;
 };
 
+type BackendDeletedRecord = {
+  readonly state: typeof State.Deleted;
+  readonly revision: string | null;
+};
+
 type BackendReadResult =
   | BackendPresentRecord
+  | BackendDeletedRecord
   | typeof State.Missing
   | typeof State.Unavailable;
+
+function isBackendDeletedRecord(
+  record: BackendPresentRecord | BackendDeletedRecord,
+): record is BackendDeletedRecord {
+  return "state" in record && record.state === State.Deleted;
+}
 
 type DataBackend = {
   readonly identity: Identity;
@@ -860,7 +913,21 @@ function createConnectedBackend(
     nextMutationId: () => makeId("mut"),
     async read(ref) {
       if (ref.identity !== localIdentity) {
-        const versioned = await options.client.read(ref, value => ({ value }));
+        let resolved;
+        try {
+          resolved = await options.client.resolve(ref);
+        } catch (error) {
+          if (error instanceof JoltApiError && error.code === "path_tombstoned") {
+            return { state: State.Deleted, revision: null };
+          }
+          return State.Unavailable;
+        }
+        const versioned = await options.client.readContent(
+          resolved.contentId,
+          ref,
+          resolved.latestSequence,
+          value => ({ value }),
+        );
         if (versioned === null) return State.Unavailable;
         return {
           stored: requireStoredSchemaValue(versioned.value.value),
@@ -880,6 +947,9 @@ function createConnectedBackend(
         throw error;
       }
       if (record.state === "missing") return State.Missing;
+      if (record.state === "deleted") {
+        return { state: State.Deleted, revision: record.revision };
+      }
       return backendRecord(record.bytes, record.revision);
     },
     async write(ref, stored) {
@@ -888,7 +958,7 @@ function createConnectedBackend(
         return { stored, revision: published.revision };
       }
       const record = await options.client.readRecord(ref);
-      if (record.state === "missing") {
+      if (record.state !== "present") {
         throw new ItemUnavailableError(ref);
       }
       return backendRecord(record.bytes, record.revision);
@@ -931,6 +1001,14 @@ async function readItem<T extends object, TAccess extends ResourceAccess>(
   const stored = await backend.read(ref);
   if (stored === State.Missing) return missingItem(ref);
   if (stored === State.Unavailable) return unavailableItem(ref);
+  if (isBackendDeletedRecord(stored)) {
+    return deletedItem(
+      ref,
+      mutable && stored.revision !== null
+        ? { backend, revision: stored.revision }
+        : undefined,
+    );
+  }
   return presentItem(resource, backend, ref, stored, mutable);
 }
 
@@ -995,6 +1073,9 @@ function createDocument<T extends object, TAccess extends ResourceAccess>(
       if (existing.isPresent()) return existing;
       if (existing.state === State.Unavailable) {
         throw new ItemUnavailableError(ref);
+      }
+      if (existing.state === State.Deleted) {
+        throw new DeletedError(ref);
       }
       const { stored } = currentStoredValue(resource.schema, input);
       const record = await backend.write(ref, stored);
