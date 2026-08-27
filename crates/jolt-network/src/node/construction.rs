@@ -123,11 +123,16 @@ impl NetworkNode {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::time::Duration;
 
-    use jolt_core::{ContentId, UpdateAction, UpdateLogEntry};
+    use jolt_core::{
+        ContentId, DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+        DeviceWriterOperation, DeviceWriterPathMode, DeviceWriterPathState, JoltAddress,
+        UpdateAction, UpdateLogEntry,
+    };
     use jolt_identity::NodeIdentity;
-    use jolt_store::{CacheConfig, ContentStore};
+    use jolt_store::{CacheConfig, ContentStore, PersistedDeviceWriterLog};
     use tempfile::tempdir;
 
     use crate::config::NetworkConfig;
@@ -273,6 +278,80 @@ mod tests {
             2,
             "both pre- and post-restart records enumerate"
         );
+    }
+
+    #[tokio::test]
+    async fn persisted_tombstone_is_rebuilt_as_deleted_state_after_restart() {
+        let dir = tempdir().unwrap();
+        let key_dir = tempdir().unwrap();
+        let root = NodeIdentity::generate();
+        root.save(key_dir.path()).unwrap();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let path = "/posts/post-1";
+        let authority_records = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_a",
+                device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Phone".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        let present = DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            "dev_a",
+            DeviceWriterOperation::set_path(
+                path,
+                ContentId::from_bytes(b"post before delete"),
+                DeviceWriterPathMode::Singleton,
+            ),
+            101,
+            |bytes| device.sign(bytes),
+        )
+        .unwrap();
+        let tombstone = present
+            .append(DeviceWriterOperation::tombstone_path(path), 102, |bytes| {
+                device.sign(bytes)
+            })
+            .unwrap();
+        let tombstone_revision = tombstone.entry_hash();
+
+        {
+            let store = make_store(dir.path());
+            store
+                .save_device_writer_log(
+                    &identity,
+                    &PersistedDeviceWriterLog {
+                        authority_records,
+                        device_log: vec![present, tombstone],
+                        record_mutations: BTreeMap::new(),
+                    },
+                )
+                .unwrap();
+        }
+
+        let reloaded = NodeIdentity::load(key_dir.path()).unwrap();
+        let store = make_store(dir.path());
+        let node = NetworkNode::new_tcp(reloaded, store, NetworkConfig::test_config()).unwrap();
+        let current = node.device_writer_states[&identity]
+            .merged
+            .singleton_paths
+            .get(path)
+            .unwrap();
+
+        assert_eq!(current.state, DeviceWriterPathState::Tombstone);
+        assert_eq!(current.entry_hash, tombstone_revision);
+        let address = JoltAddress::new(identity, path).unwrap();
+        let error = node
+            .resolve_device_writer_response_from_cache(&address, "restart_test")
+            .unwrap_err();
+        assert!(error.to_string().contains("Tombstoned"));
     }
 
     fn encrypted_envelope_for(node_identity: &NodeIdentity) -> Vec<u8> {

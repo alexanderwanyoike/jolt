@@ -20,7 +20,7 @@ impl NetworkNode {
             .get(path)?;
         Some(LocalRecordInfo {
             path: path.to_string(),
-            content_id: entry.content_id.to_string(),
+            content_id: entry.content_id()?.to_string(),
             revision: entry.entry_hash.to_hex(),
         })
     }

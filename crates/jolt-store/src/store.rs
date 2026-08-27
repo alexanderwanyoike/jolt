@@ -866,8 +866,9 @@ mod tests {
     use super::*;
     use jolt_core::{
         decrypt_encrypted_object_for_recipient, generate_identity_encryption_keypair,
-        EncryptedObjectEnvelope, EncryptedObjectRecipient, RelayRecord, RelayRecordCapability,
-        UpdateAction, UpdateLogEntry, UpdateLogEntryBody,
+        DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+        DeviceWriterOperation, EncryptedObjectEnvelope, EncryptedObjectRecipient, RelayRecord,
+        RelayRecordCapability, UpdateAction, UpdateLogEntry, UpdateLogEntryBody,
     };
     use jolt_identity::NodeIdentity;
     use tempfile::tempdir;
@@ -1166,6 +1167,52 @@ mod tests {
 
         let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
         assert_eq!(store.load_update_log(&identity).unwrap(), Some(entries));
+    }
+
+    #[test]
+    fn reopen_loads_signed_tombstone_from_persisted_device_writer_log() {
+        let dir = tempdir().unwrap();
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let authority_records = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_a",
+                device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Phone".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        let device_log = vec![DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            "dev_a",
+            DeviceWriterOperation::tombstone_path("/posts/post-1"),
+            101,
+            |bytes| device.sign(bytes),
+        )
+        .unwrap()];
+        let persisted = PersistedDeviceWriterLog {
+            authority_records,
+            device_log,
+            record_mutations: BTreeMap::new(),
+        };
+
+        {
+            let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+            store.save_device_writer_log(&identity, &persisted).unwrap();
+        }
+
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        assert_eq!(
+            store.load_device_writer_log(&identity).unwrap(),
+            Some(persisted)
+        );
     }
 
     #[test]

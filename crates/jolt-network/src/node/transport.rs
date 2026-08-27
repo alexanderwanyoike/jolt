@@ -9,6 +9,9 @@ use crate::behaviour::JoltBehaviour;
 use crate::config::NetworkConfig;
 use crate::error::NetworkError;
 
+const DEVICE_WRITER_SYNC_PROTOCOLS: [&str; 2] =
+    ["/jolt/device-writer/2.0.0", "/jolt/device-writer/1.0.0"];
+
 pub(super) struct BuiltTransport {
     pub swarm: Swarm<JoltBehaviour>,
     pub iroh_endpoint: Option<iroh::Endpoint>,
@@ -115,10 +118,8 @@ fn build_behaviour(
         request_response::Config::default(),
     );
     let device_writer_sync = request_response::cbor::Behaviour::new(
-        [(
-            StreamProtocol::new("/jolt/device-writer/1.0.0"),
-            ProtocolSupport::Full,
-        )],
+        DEVICE_WRITER_SYNC_PROTOCOLS
+            .map(|protocol| (StreamProtocol::new(protocol), ProtocolSupport::Full)),
         request_response::Config::default(),
     );
     let relay_exchange = request_response::cbor::Behaviour::new(
@@ -156,4 +157,17 @@ fn build_behaviour(
         kademlia,
         identify,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn device_writer_sync_advertises_current_then_legacy_protocol() {
+        assert_eq!(
+            DEVICE_WRITER_SYNC_PROTOCOLS,
+            ["/jolt/device-writer/2.0.0", "/jolt/device-writer/1.0.0"]
+        );
+    }
 }

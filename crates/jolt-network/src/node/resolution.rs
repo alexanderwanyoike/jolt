@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use jolt_core::{
     merge_device_writer_logs, resolve_jolt_address, resolve_merged_device_jolt_address,
     verify_identity_authority_chain, verify_update_log_for_identity, DeviceAuthorizationRecord,
-    DeviceWriterLogEntry, IdentityId, JoltAddress, ResolvedJoltTarget,
+    DeviceWriterLogEntry, DeviceWriterLogError, IdentityId, JoltAddress, ResolvedJoltTarget,
 };
 use tokio::sync::oneshot;
 
@@ -122,8 +122,14 @@ impl NetworkNode {
                     address.identity()
                 ))
             })?;
-        let target = resolve_merged_device_jolt_address(address, &state.merged)
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+        let target = resolve_merged_device_jolt_address(address, &state.merged).map_err(
+            |error| match error {
+                DeviceWriterLogError::PathTombstoned { path } => {
+                    NetworkError::PathTombstoned { path }
+                }
+                error => NetworkError::Protocol(error.to_string()),
+            },
+        )?;
 
         Ok(ResolveResponse {
             address: address.to_string(),
@@ -428,9 +434,7 @@ impl NetworkNode {
         identity: IdentityId,
         provider: &libp2p::PeerId,
     ) {
-        let request = DeviceWriterSyncRequest {
-            identity: identity.clone(),
-        };
+        let request = DeviceWriterSyncRequest::new(identity.clone());
         let request_id = self
             .swarm
             .behaviour_mut()
@@ -725,6 +729,8 @@ mod tests {
                 message: request_response::Message::Response {
                     request_id,
                     response: DeviceWriterSyncResponse {
+                        required_operation_version:
+                            crate::protocol::LEGACY_DEVICE_WRITER_OPERATION_VERSION,
                         authority_records,
                         device_logs,
                     },
@@ -1046,6 +1052,63 @@ mod tests {
         assert_eq!(resolved.content_id, content_id.to_string());
         assert_eq!(resolved.path, "/profile");
         assert_eq!(resolved.source, "device_writer_cache");
+    }
+
+    #[tokio::test]
+    async fn daemon_resolution_does_not_resurrect_tombstoned_legacy_content() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let path = "/posts/post-1";
+        let old_content_id = ContentId::from_bytes(b"deleted post");
+        let legacy_entry = UpdateLogEntry::genesis(
+            root.public_key_bytes(),
+            UpdateAction::SetPath {
+                path: path.to_string(),
+                content_id: old_content_id.clone(),
+            },
+            |bytes| root.sign(bytes),
+        )
+        .unwrap();
+        node.store_verified_update_log(identity.clone(), vec![legacy_entry])
+            .unwrap();
+
+        let authority = vec![authorize_device(&root, &laptop, "dev_laptop")];
+        let present = DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            "dev_laptop",
+            DeviceWriterOperation::set_path(path, old_content_id, DeviceWriterPathMode::Singleton),
+            100,
+            |bytes| laptop.sign(bytes),
+        )
+        .unwrap();
+        let tombstone = present
+            .append(DeviceWriterOperation::tombstone_path(path), 101, |bytes| {
+                laptop.sign(bytes)
+            })
+            .unwrap();
+        node.store_verified_device_writer_logs(
+            identity.clone(),
+            authority,
+            vec![vec![present, tombstone]],
+        )
+        .unwrap();
+
+        let address = JoltAddress::new(identity, path).unwrap();
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::Resolve {
+            address: address.to_string(),
+            response_tx: tx,
+        });
+
+        let error = rx.await.unwrap().unwrap_err();
+        assert!(matches!(
+            error,
+            NetworkError::PathTombstoned { path: deleted_path } if deleted_path == path
+        ));
+        assert!(node.pending_daemon_resolutions.is_empty());
     }
 
     #[tokio::test]
@@ -1579,7 +1642,7 @@ mod tests {
             .merged
             .rejected_entries
             .iter()
-            .any(|entry| entry.content_id == revoked_record));
+            .any(|entry| entry.content_id.as_ref() == Some(&revoked_record)));
     }
 
     #[tokio::test]

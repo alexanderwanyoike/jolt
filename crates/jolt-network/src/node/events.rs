@@ -386,12 +386,13 @@ impl NetworkNode {
 
                 let response = self
                     .device_writer_sync_snapshot(&request.identity)
-                    .map(
-                        |(authority_records, device_logs)| DeviceWriterSyncResponse {
+                    .map(|(authority_records, device_logs)| {
+                        DeviceWriterSyncResponse::for_request(
+                            request.max_operation_version,
                             authority_records,
                             device_logs,
-                        },
-                    )
+                        )
+                    })
                     .unwrap_or_default();
 
                 if let Err(e) = self
@@ -420,7 +421,11 @@ impl NetworkNode {
                         pending.identity,
                         response.device_logs.len()
                     );
-                    let result = if response.authority_records.is_empty() {
+                    let result = if let Err(error) = response.ensure_supported(
+                        crate::protocol::TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION,
+                    ) {
+                        Err(error)
+                    } else if response.authority_records.is_empty() {
                         Err(Self::identity_head_invalid_failure(
                             &pending.identity,
                             "provider returned no device-authority records",

@@ -7,6 +7,13 @@ use jolt_core::{
 
 use crate::command::IngressRecord;
 
+pub const LEGACY_DEVICE_WRITER_OPERATION_VERSION: u16 = 1;
+pub const TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION: u16 = 2;
+
+fn legacy_device_writer_operation_version() -> u16 {
+    LEGACY_DEVICE_WRITER_OPERATION_VERSION
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentRequest {
     pub content_id: String,
@@ -36,16 +43,95 @@ pub struct UpdateLogResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceWriterSyncRequest {
     pub identity: IdentityId,
+    #[serde(default = "legacy_device_writer_operation_version")]
+    pub max_operation_version: u16,
+}
+
+impl DeviceWriterSyncRequest {
+    pub fn new(identity: IdentityId) -> Self {
+        Self {
+            identity,
+            max_operation_version: TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION,
+        }
+    }
 }
 
 /// A provider's view of an identity's device-writer state: the verified
 /// device-authority chain plus every per-device writer log it can serve. The
 /// requester re-verifies and re-merges these locally, so an unverified or
 /// hostile response cannot poison the cache.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceWriterSyncResponse {
+    #[serde(default = "legacy_device_writer_operation_version")]
+    pub required_operation_version: u16,
     pub authority_records: Vec<DeviceAuthorizationRecord>,
     pub device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+}
+
+impl DeviceWriterSyncResponse {
+    pub fn unsupported_operation_version(required_operation_version: u16) -> Self {
+        Self {
+            required_operation_version,
+            authority_records: Vec::new(),
+            device_logs: Vec::new(),
+        }
+    }
+
+    pub fn for_request(
+        max_operation_version: u16,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    ) -> Self {
+        let required_operation_version = device_logs
+            .iter()
+            .flatten()
+            .map(|entry| match entry.body.operation {
+                jolt_core::DeviceWriterOperation::SetPath { .. } => {
+                    LEGACY_DEVICE_WRITER_OPERATION_VERSION
+                }
+                jolt_core::DeviceWriterOperation::TombstonePath { .. } => {
+                    TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION
+                }
+            })
+            .max()
+            .unwrap_or(LEGACY_DEVICE_WRITER_OPERATION_VERSION);
+
+        if max_operation_version < required_operation_version {
+            return Self::unsupported_operation_version(required_operation_version);
+        }
+
+        Self {
+            required_operation_version,
+            authority_records,
+            device_logs,
+        }
+    }
+
+    pub fn ensure_supported(
+        &self,
+        supported_operation_version: u16,
+    ) -> Result<(), crate::error::NetworkError> {
+        if self.required_operation_version > supported_operation_version {
+            Err(
+                crate::error::NetworkError::UnsupportedDeviceWriterOperationVersion {
+                    supported: supported_operation_version,
+                    required: self.required_operation_version,
+                },
+            )
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Default for DeviceWriterSyncResponse {
+    fn default() -> Self {
+        Self {
+            required_operation_version: LEGACY_DEVICE_WRITER_OPERATION_VERSION,
+            authority_records: Vec::new(),
+            device_logs: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,15 +282,44 @@ mod tests {
     #[test]
     fn device_writer_sync_request_cbor_round_trip() {
         let identity = IdentityId::from_public_key([5; 32]);
-        let request = DeviceWriterSyncRequest {
-            identity: identity.clone(),
-        };
+        let request = DeviceWriterSyncRequest::new(identity.clone());
 
         let mut buf = Vec::new();
         ciborium::into_writer(&request, &mut buf).unwrap();
         let decoded: DeviceWriterSyncRequest = ciborium::from_reader(&buf[..]).unwrap();
 
         assert_eq!(decoded.identity, identity);
+    }
+
+    #[test]
+    fn device_writer_sync_request_is_compatible_with_legacy_peers() {
+        #[derive(Serialize, Deserialize)]
+        struct LegacyDeviceWriterSyncRequest {
+            identity: IdentityId,
+        }
+
+        let identity = IdentityId::from_public_key([6; 32]);
+        let current = DeviceWriterSyncRequest::new(identity.clone());
+        assert_eq!(current.max_operation_version, 2);
+
+        let mut current_bytes = Vec::new();
+        ciborium::into_writer(&current, &mut current_bytes).unwrap();
+        let decoded_by_legacy: LegacyDeviceWriterSyncRequest =
+            ciborium::from_reader(&current_bytes[..]).unwrap();
+        assert_eq!(decoded_by_legacy.identity, identity);
+
+        let mut legacy_bytes = Vec::new();
+        ciborium::into_writer(
+            &LegacyDeviceWriterSyncRequest {
+                identity: identity.clone(),
+            },
+            &mut legacy_bytes,
+        )
+        .unwrap();
+        let decoded_by_current: DeviceWriterSyncRequest =
+            ciborium::from_reader(&legacy_bytes[..]).unwrap();
+        assert_eq!(decoded_by_current.identity, identity);
+        assert_eq!(decoded_by_current.max_operation_version, 1);
     }
 
     #[test]
@@ -244,6 +359,7 @@ mod tests {
         )
         .unwrap()];
         let response = DeviceWriterSyncResponse {
+            required_operation_version: LEGACY_DEVICE_WRITER_OPERATION_VERSION,
             authority_records: authority.clone(),
             device_logs: vec![device_log.clone()],
         };
@@ -254,6 +370,170 @@ mod tests {
 
         assert_eq!(decoded.authority_records, authority);
         assert_eq!(decoded.device_logs, vec![device_log]);
+    }
+
+    #[test]
+    fn device_writer_sync_response_is_compatible_with_legacy_peers() {
+        #[derive(Serialize, Deserialize)]
+        struct LegacyDeviceWriterSyncResponse {
+            authority_records: Vec<DeviceAuthorizationRecord>,
+            device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+        }
+
+        let unsupported = DeviceWriterSyncResponse::unsupported_operation_version(2);
+        let mut current_bytes = Vec::new();
+        ciborium::into_writer(&unsupported, &mut current_bytes).unwrap();
+        let decoded_by_legacy: LegacyDeviceWriterSyncResponse =
+            ciborium::from_reader(&current_bytes[..]).unwrap();
+        assert!(decoded_by_legacy.authority_records.is_empty());
+        assert!(decoded_by_legacy.device_logs.is_empty());
+
+        let mut legacy_bytes = Vec::new();
+        ciborium::into_writer(
+            &LegacyDeviceWriterSyncResponse {
+                authority_records: Vec::new(),
+                device_logs: Vec::new(),
+            },
+            &mut legacy_bytes,
+        )
+        .unwrap();
+        let decoded_by_current: DeviceWriterSyncResponse =
+            ciborium::from_reader(&legacy_bytes[..]).unwrap();
+        assert_eq!(decoded_by_current.required_operation_version, 1);
+    }
+
+    #[test]
+    fn device_writer_sync_refuses_tombstone_history_for_legacy_requester() {
+        use jolt_core::{
+            DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+            DeviceWriterOperation,
+        };
+
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let authority = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_a",
+                device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Phone".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        let device_logs = vec![vec![DeviceWriterLogEntry::genesis(
+            identity,
+            "dev_a",
+            DeviceWriterOperation::tombstone_path("/posts/post-1"),
+            100,
+            |bytes| device.sign(bytes),
+        )
+        .unwrap()]];
+
+        let response = DeviceWriterSyncResponse::for_request(
+            LEGACY_DEVICE_WRITER_OPERATION_VERSION,
+            authority,
+            device_logs,
+        );
+
+        assert_eq!(
+            response.required_operation_version,
+            TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION
+        );
+        assert!(response.authority_records.is_empty());
+        assert!(response.device_logs.is_empty());
+    }
+
+    #[test]
+    fn device_writer_sync_serves_complete_restored_history_to_current_requester() {
+        use jolt_core::{
+            ContentId, DeviceAuthorizationOperation, DeviceAuthorizationRecord,
+            DeviceWriterLogEntry, DeviceWriterOperation, DeviceWriterPathMode,
+        };
+
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let authority = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_a",
+                device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Phone".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        let present = DeviceWriterLogEntry::genesis(
+            identity,
+            "dev_a",
+            DeviceWriterOperation::set_path(
+                "/posts/post-1",
+                ContentId::from_bytes(b"before delete"),
+                DeviceWriterPathMode::Singleton,
+            ),
+            100,
+            |bytes| device.sign(bytes),
+        )
+        .unwrap();
+        let tombstone = present
+            .append(
+                DeviceWriterOperation::tombstone_path("/posts/post-1"),
+                101,
+                |bytes| device.sign(bytes),
+            )
+            .unwrap();
+        let restored = tombstone
+            .append(
+                DeviceWriterOperation::set_path(
+                    "/posts/post-1",
+                    ContentId::from_bytes(b"after restore"),
+                    DeviceWriterPathMode::Singleton,
+                ),
+                102,
+                |bytes| device.sign(bytes),
+            )
+            .unwrap();
+        let device_logs = vec![vec![present, tombstone, restored]];
+
+        let response = DeviceWriterSyncResponse::for_request(
+            TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION,
+            authority.clone(),
+            device_logs.clone(),
+        );
+
+        assert_eq!(
+            response.required_operation_version,
+            TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION
+        );
+        assert_eq!(response.authority_records, authority);
+        assert_eq!(response.device_logs, device_logs);
+    }
+
+    #[test]
+    fn device_writer_sync_response_reports_unsupported_future_history() {
+        let response = DeviceWriterSyncResponse::unsupported_operation_version(3);
+
+        let err = response
+            .ensure_supported(TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION)
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            crate::error::NetworkError::UnsupportedDeviceWriterOperationVersion {
+                supported: 2,
+                required: 3,
+            }
+        ));
     }
 
     #[test]
