@@ -2785,6 +2785,7 @@ async fn test_app_delete_record_is_capability_scoped_idempotent_and_durable() {
         &[
             "publish:/chirp/*",
             "delete:/chirp/*",
+            "inventory:/chirp/*",
             "resolve:public",
             "fetch:public",
         ],
@@ -2853,6 +2854,20 @@ async fn test_app_delete_record_is_capability_scoped_idempotent_and_durable() {
             "revision": deleted["revision"],
         })
     );
+
+    let inventory = client
+        .get(format!("{}/app/v1/published", base_url(first_port)))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(inventory.status(), 200);
+    assert!(inventory
+        .json::<Vec<serde_json::Value>>()
+        .await
+        .unwrap()
+        .iter()
+        .all(|item| item["path"] != path));
 
     let old_content = client
         .post(format!("{}/app/v1/fetch", base_url(first_port)))
@@ -2938,6 +2953,65 @@ async fn test_app_delete_record_is_capability_scoped_idempotent_and_durable() {
     );
 
     second_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_delete_record_allows_one_concurrent_same_revision_winner() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let path = "/chirp/posts/jlt_concurrent_delete";
+    let token = approve_app_session(
+        &client,
+        port,
+        &identity,
+        &["publish:/chirp/*", "delete:/chirp/*"],
+    )
+    .await;
+
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"delete once".to_vec()).file_name("record.txt"),
+        )
+        .text("path", path.to_string());
+    let published = client
+        .post(format!("{}/app/v1/publish", base_url(port)))
+        .bearer_auth(&token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(published.status(), 200);
+    let published: serde_json::Value = published.json().await.unwrap();
+
+    let first = client
+        .post(format!("{}/app/v1/records/delete", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": published["revision"],
+            "mutation_id": "mut_concurrent_delete_first",
+        }))
+        .send();
+    let second = client
+        .post(format!("{}/app/v1/records/delete", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": published["revision"],
+            "mutation_id": "mut_concurrent_delete_second",
+        }))
+        .send();
+    let (first, second) = tokio::join!(first, second);
+    let mut statuses = [first.unwrap().status(), second.unwrap().status()];
+    statuses.sort();
+
+    assert_eq!(
+        statuses,
+        [reqwest::StatusCode::OK, reqwest::StatusCode::CONFLICT]
+    );
+    handle.shutdown().await.ok();
 }
 
 #[tokio::test]

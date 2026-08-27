@@ -21,6 +21,12 @@ use super::{unix_now, NetworkNode, RELAY_RECORD_TTL_SECS};
 
 const LEGACY_ROOT_DEVICE_ID: &str = "dev_legacy_root";
 
+struct RecordMutationIntent<'a> {
+    mutation_id: &'a str,
+    observed_revision: &'a str,
+    content_id: Option<&'a ContentId>,
+}
+
 fn validate_record_mutation_id(mutation_id: &str) -> Result<(), NetworkError> {
     if mutation_id.is_empty() || mutation_id.len() > 256 {
         return Err(NetworkError::InvalidInput(
@@ -86,10 +92,26 @@ impl NetworkNode {
             path: address.path().to_string(),
             content_id: content_id.clone(),
         };
+        let latest_sequence = self.publish_local_update_log_action(&identity, action)?;
+        let (_, revision) = self.publish_local_device_writer_path(
+            identity.clone(),
+            address.path().to_string(),
+            content_id.clone(),
+            DeviceWriterPathMode::Singleton,
+            None,
+        )?;
 
+        Ok((content_id, address, latest_sequence, revision))
+    }
+
+    fn publish_local_update_log_action(
+        &mut self,
+        identity: &IdentityId,
+        action: UpdateAction,
+    ) -> Result<u64, NetworkError> {
         let entry = match self
             .update_logs
-            .get(&identity)
+            .get(identity)
             .and_then(|entries| entries.last())
         {
             Some(previous) => previous
@@ -107,24 +129,16 @@ impl NetworkNode {
             entries.clone()
         };
         self.store
-            .save_update_log(&identity, &entries_to_save)
+            .save_update_log(identity, &entries_to_save)
             .map_err(|e| NetworkError::Protocol(e.to_string()))?;
 
-        if let Err(e) = self.announce_update_log_provider(&identity) {
+        if let Err(e) = self.announce_update_log_provider(identity) {
             debug!("Update-log DHT announcement skipped: {e}");
         }
-        if let Err(e) = self.refresh_local_identity_head_hint(&identity) {
+        if let Err(e) = self.refresh_local_identity_head_hint(identity) {
             debug!("Identity-head hint refresh skipped: {e}");
         }
-        let (_, revision) = self.publish_local_device_writer_path(
-            identity.clone(),
-            address.path().to_string(),
-            content_id.clone(),
-            DeviceWriterPathMode::Singleton,
-            None,
-        )?;
-
-        Ok((content_id, address, latest_sequence, revision))
+        Ok(latest_sequence)
     }
 
     pub(super) fn update_local_record(
@@ -235,11 +249,21 @@ impl NetworkNode {
             return Err(NetworkError::RecordConflict);
         }
 
+        self.publish_local_update_log_action(
+            &identity,
+            UpdateAction::RemovePath {
+                path: address.path().to_string(),
+            },
+        )?;
         let (_, result_revision) = self.publish_local_device_writer_operation(
             identity,
             address.path().to_string(),
             DeviceWriterOperation::tombstone_path(address.path()),
-            Some((mutation_id, observed_revision, None)),
+            Some(RecordMutationIntent {
+                mutation_id,
+                observed_revision,
+                content_id: None,
+            }),
         )?;
         Ok(LocalRecordDelete {
             path: address.path().to_string(),
@@ -288,9 +312,12 @@ impl NetworkNode {
         record_mutation: Option<(&str, &str)>,
     ) -> Result<(u64, String), NetworkError> {
         let operation = DeviceWriterOperation::set_path(path.clone(), content_id.clone(), mode);
-        let record_mutation = record_mutation.map(|(mutation_id, observed_revision)| {
-            (mutation_id, observed_revision, Some(&content_id))
-        });
+        let record_mutation =
+            record_mutation.map(|(mutation_id, observed_revision)| RecordMutationIntent {
+                mutation_id,
+                observed_revision,
+                content_id: Some(&content_id),
+            });
         self.publish_local_device_writer_operation(identity, path, operation, record_mutation)
     }
 
@@ -299,7 +326,7 @@ impl NetworkNode {
         identity: IdentityId,
         path: String,
         operation: DeviceWriterOperation,
-        record_mutation: Option<(&str, &str, Option<&ContentId>)>,
+        record_mutation: Option<RecordMutationIntent<'_>>,
     ) -> Result<(u64, String), NetworkError> {
         let created_at = unix_now();
         let entry = match self
@@ -350,13 +377,13 @@ impl NetworkNode {
             .get(&identity)
             .cloned()
             .unwrap_or_default();
-        if let Some((mutation_id, observed_revision, content_id)) = record_mutation {
+        if let Some(record_mutation) = record_mutation {
             record_mutations.insert(
-                mutation_id.to_string(),
+                record_mutation.mutation_id.to_string(),
                 PersistedRecordMutation {
                     path,
-                    observed_revision: observed_revision.to_string(),
-                    content_id: content_id.map(ToString::to_string),
+                    observed_revision: record_mutation.observed_revision.to_string(),
+                    content_id: record_mutation.content_id.map(ToString::to_string),
                     result_revision: revision.clone(),
                 },
             );
