@@ -14,12 +14,21 @@ use jolt_core::{
 use jolt_identity::NodeIdentity;
 use jolt_store::{ContentStore, PersistedDeviceWriterLog, PersistedRecordMutation};
 
-use crate::command::{LocalRecordUpdate, PublishReachabilityResponse};
+use crate::command::{LocalRecordDelete, LocalRecordUpdate, PublishReachabilityResponse};
 use crate::error::NetworkError;
 
 use super::{unix_now, NetworkNode, RELAY_RECORD_TTL_SECS};
 
 const LEGACY_ROOT_DEVICE_ID: &str = "dev_legacy_root";
+
+fn validate_record_mutation_id(mutation_id: &str) -> Result<(), NetworkError> {
+    if mutation_id.is_empty() || mutation_id.len() > 256 {
+        return Err(NetworkError::InvalidInput(
+            "mutation_id must contain 1 to 256 bytes".to_string(),
+        ));
+    }
+    Ok(())
+}
 
 impl NetworkNode {
     /// Publish a file to the content store. Returns the ContentId.
@@ -125,11 +134,7 @@ impl NetworkNode {
         observed_revision: &str,
         mutation_id: &str,
     ) -> Result<LocalRecordUpdate, NetworkError> {
-        if mutation_id.is_empty() || mutation_id.len() > 256 {
-            return Err(NetworkError::InvalidInput(
-                "mutation_id must contain 1 to 256 bytes".to_string(),
-            ));
-        }
+        validate_record_mutation_id(mutation_id)?;
         let identity = self.identity.identity_id();
         let address = JoltAddress::new(identity.clone(), path)
             .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
@@ -139,9 +144,14 @@ impl NetworkNode {
             .get(&identity)
             .and_then(|mutations| mutations.get(mutation_id))
         {
+            let Some(content_id) = previous.content_id.as_ref() else {
+                return Err(NetworkError::InvalidInput(
+                    "mutation_id was already used for a different record mutation".to_string(),
+                ));
+            };
             if previous.path != address.path()
                 || previous.observed_revision != observed_revision
-                || previous.content_id != proposed_content_id
+                || content_id != &proposed_content_id
             {
                 return Err(NetworkError::InvalidInput(
                     "mutation_id was already used for a different record mutation".to_string(),
@@ -149,11 +159,11 @@ impl NetworkNode {
             }
             let stored = self
                 .store
-                .get_content(&previous.content_id)
-                .ok_or_else(|| NetworkError::ContentNotFound(previous.content_id.clone()))?;
+                .get_content(content_id)
+                .ok_or_else(|| NetworkError::ContentNotFound(content_id.clone()))?;
             return Ok(LocalRecordUpdate {
                 path: previous.path.clone(),
-                content_id: previous.content_id.clone(),
+                content_id: content_id.clone(),
                 revision: previous.result_revision.clone(),
                 data: stored.data,
             });
@@ -184,6 +194,56 @@ impl NetworkNode {
             content_id: content_id.to_string(),
             revision: result_revision,
             data: data.to_vec(),
+        })
+    }
+
+    pub(super) fn delete_local_record(
+        &mut self,
+        path: &str,
+        observed_revision: &str,
+        mutation_id: &str,
+    ) -> Result<LocalRecordDelete, NetworkError> {
+        validate_record_mutation_id(mutation_id)?;
+        let identity = self.identity.identity_id();
+        let address = JoltAddress::new(identity.clone(), path)
+            .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        if let Some(previous) = self
+            .local_record_mutations
+            .get(&identity)
+            .and_then(|mutations| mutations.get(mutation_id))
+        {
+            if previous.path != address.path()
+                || previous.observed_revision != observed_revision
+                || previous.content_id.is_some()
+            {
+                return Err(NetworkError::InvalidInput(
+                    "mutation_id was already used for a different record mutation".to_string(),
+                ));
+            }
+            return Ok(LocalRecordDelete {
+                path: previous.path.clone(),
+                revision: previous.result_revision.clone(),
+            });
+        }
+
+        let crate::command::LocalRecordState::Present(current) =
+            self.inspect_local_record(address.path())
+        else {
+            return Err(NetworkError::RecordConflict);
+        };
+        if current.revision != observed_revision {
+            return Err(NetworkError::RecordConflict);
+        }
+
+        let (_, result_revision) = self.publish_local_device_writer_operation(
+            identity,
+            address.path().to_string(),
+            DeviceWriterOperation::tombstone_path(address.path()),
+            Some((mutation_id, observed_revision, None)),
+        )?;
+        Ok(LocalRecordDelete {
+            path: address.path().to_string(),
+            revision: result_revision,
         })
     }
 
@@ -227,8 +287,21 @@ impl NetworkNode {
         mode: DeviceWriterPathMode,
         record_mutation: Option<(&str, &str)>,
     ) -> Result<(u64, String), NetworkError> {
-        let created_at = unix_now();
         let operation = DeviceWriterOperation::set_path(path.clone(), content_id.clone(), mode);
+        let record_mutation = record_mutation.map(|(mutation_id, observed_revision)| {
+            (mutation_id, observed_revision, Some(&content_id))
+        });
+        self.publish_local_device_writer_operation(identity, path, operation, record_mutation)
+    }
+
+    fn publish_local_device_writer_operation(
+        &mut self,
+        identity: IdentityId,
+        path: String,
+        operation: DeviceWriterOperation,
+        record_mutation: Option<(&str, &str, Option<&ContentId>)>,
+    ) -> Result<(u64, String), NetworkError> {
+        let created_at = unix_now();
         let entry = match self
             .local_device_writer_logs
             .get(&identity)
@@ -277,13 +350,13 @@ impl NetworkNode {
             .get(&identity)
             .cloned()
             .unwrap_or_default();
-        if let Some((mutation_id, observed_revision)) = record_mutation {
+        if let Some((mutation_id, observed_revision, content_id)) = record_mutation {
             record_mutations.insert(
                 mutation_id.to_string(),
                 PersistedRecordMutation {
                     path,
                     observed_revision: observed_revision.to_string(),
-                    content_id: content_id.to_string(),
+                    content_id: content_id.map(ToString::to_string),
                     result_revision: revision.clone(),
                 },
             );

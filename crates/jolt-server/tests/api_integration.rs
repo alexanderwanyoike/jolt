@@ -2771,6 +2771,176 @@ async fn test_app_reads_authoritative_local_record_state_across_restart() {
 }
 
 #[tokio::test]
+async fn test_app_delete_record_is_capability_scoped_idempotent_and_durable() {
+    let profile = tempfile::tempdir().unwrap();
+    let (first_port, first_handle, _first_holder) =
+        start_test_server_with_profile_dir(profile.path().to_path_buf()).await;
+    let client = reqwest::Client::new();
+    let identity = first_handle.status().await.unwrap().identity_address;
+    let path = "/chirp/posts/jlt_deleted_by_app";
+    let token = approve_app_session(
+        &client,
+        first_port,
+        &identity,
+        &[
+            "publish:/chirp/*",
+            "delete:/chirp/*",
+            "resolve:public",
+            "fetch:public",
+        ],
+    )
+    .await;
+
+    let stored = br#"{"version":1,"value":{"text":"Keep immutable bytes"}}"#;
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(stored.to_vec()).file_name("record.json"),
+        )
+        .text("path", path.to_string());
+    let published = client
+        .post(format!("{}/app/v1/publish", base_url(first_port)))
+        .bearer_auth(&token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(published.status(), 200);
+    let published: serde_json::Value = published.json().await.unwrap();
+    let delete_request = serde_json::json!({
+        "path": path,
+        "revision": published["revision"],
+        "mutation_id": "mut_record_delete",
+    });
+
+    let no_delete_token =
+        approve_app_session(&client, first_port, &identity, &["publish:/chirp/*"]).await;
+    let denied = client
+        .post(format!("{}/app/v1/records/delete", base_url(first_port)))
+        .bearer_auth(no_delete_token)
+        .json(&delete_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 403);
+
+    let deleted = client
+        .post(format!("{}/app/v1/records/delete", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&delete_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 200);
+    let deleted: serde_json::Value = deleted.json().await.unwrap();
+    assert_eq!(deleted["path"], path);
+    assert_ne!(deleted["revision"], published["revision"]);
+    assert_eq!(deleted["revision"].as_str().unwrap().len(), 64);
+
+    let read_deleted = client
+        .post(format!("{}/app/v1/records/read", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(read_deleted.status(), 200);
+    assert_eq!(
+        read_deleted.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({
+            "state": "deleted",
+            "path": path,
+            "revision": deleted["revision"],
+        })
+    );
+
+    let old_content = client
+        .post(format!("{}/app/v1/fetch", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "target": published["content_id"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(old_content.status(), 200);
+    assert_eq!(
+        old_content.json::<serde_json::Value>().await.unwrap()["data"],
+        serde_json::Value::Array(
+            stored
+                .iter()
+                .copied()
+                .map(serde_json::Value::from)
+                .collect()
+        )
+    );
+
+    let retried = client
+        .post(format!("{}/app/v1/records/delete", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&delete_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retried.status(), 200);
+    assert_eq!(retried.json::<serde_json::Value>().await.unwrap(), deleted);
+
+    let reused_for_update = client
+        .post(format!("{}/app/v1/records/update", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": published["revision"],
+            "mutation_id": "mut_record_delete",
+            "data": br#"{"version":1,"value":{"text":"Wrong operation"}}"#.to_vec(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reused_for_update.status(), 400);
+    assert_eq!(
+        reused_for_update.json::<serde_json::Value>().await.unwrap()["code"],
+        "invalid_input"
+    );
+
+    let stale = client
+        .post(format!("{}/app/v1/records/delete", base_url(first_port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": published["revision"],
+            "mutation_id": "mut_stale_delete",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(stale.status(), 409);
+    assert_eq!(
+        stale.json::<serde_json::Value>().await.unwrap()["code"],
+        "record_conflict"
+    );
+
+    first_handle.shutdown().await.ok();
+    let (second_port, second_handle, _second_holder) =
+        start_test_server_with_profile_dir(profile.path().to_path_buf()).await;
+    let retry_after_restart = client
+        .post(format!("{}/app/v1/records/delete", base_url(second_port)))
+        .bearer_auth(&token)
+        .json(&delete_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retry_after_restart.status(), 200);
+    assert_eq!(
+        retry_after_restart
+            .json::<serde_json::Value>()
+            .await
+            .unwrap(),
+        deleted
+    );
+
+    second_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_reads_local_tombstone_as_deleted_with_its_revision() {
     let dir = tempfile::tempdir().unwrap();
     let root = NodeIdentity::generate();
@@ -4046,7 +4216,7 @@ async fn test_app_api_feature_manifest_is_public_and_generic() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["app_api"], 1);
-    assert_eq!(body["features"], serde_json::json!({ "data.records": 2 }));
+    assert_eq!(body["features"], serde_json::json!({ "data.records": 3 }));
     assert!(body.get("daemon_version").is_none());
     assert!(body.get("applications").is_none());
 

@@ -536,6 +536,7 @@ enum EnumerateIdentityScope {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum PathCapabilityAction {
     Publish,
+    Delete,
     PublishEncrypted,
     Inventory,
     PinOwn,
@@ -647,6 +648,7 @@ fn parse_path_capability(raw: &str) -> Option<AppCapability> {
     for (prefix, action) in [
         ("publish:encrypted:", PathCapabilityAction::PublishEncrypted),
         ("publish:", PathCapabilityAction::Publish),
+        ("delete:", PathCapabilityAction::Delete),
         ("inventory:", PathCapabilityAction::Inventory),
         ("pin:own:", PathCapabilityAction::PinOwn),
         ("encrypt:", PathCapabilityAction::Encrypt),

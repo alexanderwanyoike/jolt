@@ -80,6 +80,10 @@ pub fn build_router_with_stores(
             "/app/v1/records/update",
             post(routes::app_api::update_local_record),
         )
+        .route(
+            "/app/v1/records/delete",
+            post(routes::app_api::delete_local_record),
+        )
         .route("/app/v1/publish", post(routes::app_api::publish_file))
         .route("/app/v1/append", post(routes::app_api::append_record))
         .route(

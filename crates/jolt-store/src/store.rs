@@ -59,7 +59,9 @@ pub struct PersistedDeviceWriterLog {
 pub struct PersistedRecordMutation {
     pub path: String,
     pub observed_revision: String,
-    pub content_id: String,
+    /// Updated content CID, or `None` when the successful result is a Tombstone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_id: Option<String>,
     pub result_revision: String,
 }
 

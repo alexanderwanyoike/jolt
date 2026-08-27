@@ -131,6 +131,12 @@ pub enum DaemonCommand {
         mutation_id: String,
         response_tx: oneshot::Sender<Result<LocalRecordUpdate, NetworkError>>,
     },
+    DeleteLocalRecord {
+        path: String,
+        revision: String,
+        mutation_id: String,
+        response_tx: oneshot::Sender<Result<LocalRecordDelete, NetworkError>>,
+    },
     Pin {
         content_id: String,
         response_tx: oneshot::Sender<Result<(), NetworkError>>,
@@ -234,6 +240,12 @@ pub struct LocalRecordUpdate {
     pub content_id: String,
     pub revision: String,
     pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LocalRecordDelete {
+    pub path: String,
+    pub revision: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

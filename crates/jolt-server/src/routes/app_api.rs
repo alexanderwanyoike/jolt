@@ -149,6 +149,29 @@ pub async fn update_local_record(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct LocalRecordDeleteRequest {
+    pub path: String,
+    pub revision: String,
+    pub mutation_id: String,
+}
+
+pub async fn delete_local_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<LocalRecordDeleteRequest>,
+) -> Result<Json<jolt_network::LocalRecordDelete>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+    let path = normalize_path(&req.path)?;
+    require_path_capability(&session, "delete:", &path)?;
+    let deleted = state
+        .daemon
+        .delete_local_record(path, req.revision, req.mutation_id)
+        .await?;
+    Ok(Json(deleted))
+}
+
+#[derive(Debug, Deserialize)]
 pub struct EncryptedPublishRequest {
     pub path: String,
     pub plaintext: Vec<u8>,
