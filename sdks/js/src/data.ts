@@ -561,22 +561,25 @@ export type AppTestOptions = {
   readonly identity?: Identity;
 };
 
+/** Low-level authorized client operations used by the Data SDK connection seam. */
+export type DataSdkClient = Pick<
+  JoltSdk,
+  | "publishJson"
+  | "read"
+  | "readContent"
+  | "readRecord"
+  | "resolve"
+  | "updateRecord"
+  | "deleteRecord"
+>;
+
 /**
  * Advanced connection seam for an already-authorized Jolt client. It keeps
  * host bootstrap separate from typed Resource behavior.
  */
 export type AppConnectOptions = {
   readonly identity: Identity;
-  readonly client: Pick<
-    JoltSdk,
-    | "publishJson"
-    | "read"
-    | "readContent"
-    | "readRecord"
-    | "resolve"
-    | "updateRecord"
-    | "deleteRecord"
-  >;
+  readonly client: DataSdkClient;
 };
 
 /** Shared deterministic state that can expose several identity-bound App views. */
@@ -705,8 +708,8 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
     isPresent: trueIsPresent,
     isDeleted: falseIsDeleted,
   };
-  if (mutable && resource.access.update === true && record.revision !== null) {
-    const revision = record.revision;
+  const revision = mutable ? record.revision : null;
+  if (resource.access.update === true && revision !== null) {
     const commit = async (stored: StoredSchemaValue) => {
       const next = await backend.update(
         ref,
@@ -730,8 +733,7 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
       return commit(current.stored);
     };
   }
-  if (mutable && resource.access.delete === true && record.revision !== null) {
-    const revision = record.revision;
+  if (resource.access.delete === true && revision !== null) {
     item.delete = async () => {
       const deleted = await backend.delete(ref, revision, backend.nextMutationId());
       return deletedItem(ref, { backend, revision: deleted.revision });

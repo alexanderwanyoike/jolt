@@ -188,6 +188,12 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
     },
 
     async resolve(ref) {
+      if (ref.identity === identity && tombstones.has(ref.path)) {
+        throw new JoltApiError("Path is tombstoned", {
+          status: 410,
+          code: "path_tombstoned",
+        });
+      }
       const record = ref.identity === identity ? published.get(ref.path) : undefined;
       if (record === undefined) {
         throw new JoltApiError("Path not found", {

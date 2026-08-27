@@ -202,6 +202,49 @@ describe.each(implementations)("Data SDK $name conformance", ({ connect }) => {
   });
 });
 
+const remoteDeleteImplementations = [
+  {
+    name: "deterministic",
+    observeAfterDelete: async () => {
+      const world = Chirp.testWorld();
+      const alice = world.as("alice.jolt");
+      const bob = world.as("bob.jolt");
+      const created = await alice.posts.create({
+        text: "Remote goodbye",
+        postedAt: new Date("2026-08-27T08:00:00.000Z"),
+      });
+      await created.delete();
+      return bob.posts.for("alice.jolt").get(created.ref);
+    },
+  },
+  {
+    name: "client-backed",
+    observeAfterDelete: async () => {
+      const jolt = createFakeJolt("alice.jolt");
+      const alice = await Chirp.connect({ identity: jolt.identity, client: jolt.client });
+      const created = await alice.posts.create({
+        text: "Remote goodbye",
+        postedAt: new Date("2026-08-27T08:00:00.000Z"),
+      });
+      await created.delete();
+      const bob = await Chirp.connect({ identity: "bob.jolt", client: jolt.client });
+      return bob.posts.for("alice.jolt").get(created.ref);
+    },
+  },
+] as const;
+
+describe.each(remoteDeleteImplementations)(
+  "Data SDK $name remote delete conformance",
+  ({ observeAfterDelete }) => {
+    it("observes a deleted remote Item instead of its old immutable content", async () => {
+      const observed = await observeAfterDelete();
+
+      expect(observed.state).toBe(State.Deleted);
+      expect(observed.isDeleted()).toBe(true);
+    });
+  },
+);
+
 describe("Data SDK client-backed content validation", () => {
   it("creates from the publish revision without a follow-up record read", async () => {
     const jolt = createFakeJolt("alice.jolt");
