@@ -65,6 +65,7 @@ export type {
   RecordPresentResult,
   RecordReadResult,
   Reference,
+  ResolvedReference,
   Versioned,
 } from "./client.js";
 

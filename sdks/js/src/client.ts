@@ -62,6 +62,13 @@ export type Versioned<T> = {
   contentId: string;
 };
 
+/** Strict resolution metadata for one logical reference, before content fetch. */
+export type ResolvedReference = {
+  ref: Reference;
+  latestSequence: number;
+  contentId: string;
+};
+
 /** One authoritative local stable record reference that has no current value. */
 export type RecordMissingResult = {
   state: "missing";
@@ -133,6 +140,8 @@ export type HomeRelayPinResult = {
 export interface JoltSdk {
   /** Publish a JSON object at a signed path (last-writer-wins). */
   publishJson(path: string, body: object, options?: CallOptions): Promise<PublishResult>;
+  /** Resolve a reference strictly, preserving daemon errors such as Tombstones. */
+  resolve(ref: Reference, options?: CallOptions): Promise<ResolvedReference>;
   /**
    * Resolve, fetch, parse, and decode a publication. Returns `null` when the
    * reference is missing/unreachable or the bytes do not decode to `T`.
@@ -319,6 +328,24 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
   const { transport, getSessionToken } = options;
   const checkCompatibility = createCompatibilityChecker(transport);
 
+  async function resolveReference(
+    ref: Reference,
+    call?: CallOptions,
+    token = getSessionToken(),
+  ): Promise<ResolvedReference> {
+    const resolved = await ops.resolveAddress(
+      transport,
+      token,
+      referenceTarget(ref),
+      call,
+    );
+    return {
+      ref,
+      latestSequence: resolved.latest_sequence,
+      contentId: resolved.content_id,
+    };
+  }
+
   async function resolveDecode<T>(
     ref: Reference,
     getBytes: (token: string, contentId: string, call?: CallOptions) => Promise<number[]>,
@@ -329,12 +356,9 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
     let resolved;
     let bytes: number[];
     try {
-      resolved = await ops.resolveAddress(transport, token, referenceTarget(ref), call);
-      bytes = await getBytes(token, resolved.content_id, call);
-    } catch (error) {
-      if (error instanceof JoltApiError && error.code === "path_tombstoned") {
-        throw error;
-      }
+      resolved = await resolveReference(ref, call, token);
+      bytes = await getBytes(token, resolved.contentId, call);
+    } catch {
       return null; // missing or unreachable
     }
     const parsed = parseJsonBytes(bytes);
@@ -344,8 +368,8 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
     return {
       ref,
       value,
-      latestSequence: resolved.latest_sequence,
-      contentId: resolved.content_id,
+      latestSequence: resolved.latestSequence,
+      contentId: resolved.contentId,
     };
   }
 
@@ -358,6 +382,8 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
       const response = await ops.publishJson(transport, getSessionToken(), path, body, call);
       return toPublishResult(response, path);
     },
+
+    resolve: resolveReference,
 
     async read(ref, decode, call) {
       return resolveDecode(
