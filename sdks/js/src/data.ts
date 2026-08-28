@@ -711,8 +711,8 @@ export type AppTestWorld<TData extends AppDataDefinitions> = {
   as(identity: Identity): AppInstance<TData>;
   /**
    * Creates one isolated device replica for deterministic offline-branch tests.
-   * This slice exposes divergent reads through Resources using a Manual policy;
-   * automatic-policy evaluation is delivered by the following concurrency slice.
+   * After synchronization, each Resource applies its declared update and delete
+   * conflict policies without relying on device wall clocks.
    */
   device(identity: Identity, deviceId: string): AppInstance<TData>;
   /** Exchanges known histories so every device observes the same branches. */
