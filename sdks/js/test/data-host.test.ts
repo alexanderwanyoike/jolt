@@ -162,6 +162,47 @@ describe("Data SDK host bootstrap", () => {
     expect(client.requestSession).not.toHaveBeenCalled();
   });
 
+  it("replaces a stale stored token after fresh approval", async () => {
+    const storage = memoryStorage();
+    storage.setItem("jolt.data.session:chirp.example", "stale-session");
+    let getToken = () => "";
+    const client = {
+      checkCompatibility: vi.fn(async () => ({
+        status: "compatible",
+        manifest: { appApi: 1, features: { "data.records": 5 }, discovery: "advertised" },
+        appApi: { requiredLevel: 1, availableLevel: 1, supported: true },
+        requiredFeatures: {},
+        optionalFeatures: {},
+      })),
+      getStatus: vi.fn(async () => ({ identity_address: "alice.jolt" })),
+      getCurrentSession: vi.fn(async () => {
+        throw new Error("expired token");
+      }),
+      requestSession: vi.fn(async () => ({ request_id: "request-2", status: "pending" })),
+      getSessionRequestStatus: vi.fn(async () => ({
+        request_id: "request-2",
+        status: "active",
+        session_token: "fresh-session",
+        identity: "alice.jolt",
+        capabilities: [],
+      })),
+    } as unknown as DataAppHostClient;
+
+    await connectDataApp(app, {
+      createClient: tokenSource => {
+        getToken = tokenSource;
+        return client;
+      },
+      storage,
+      appOrigin: "tauri://chirp.example",
+      sleep: async () => undefined,
+    });
+
+    expect(client.requestSession).toHaveBeenCalledOnce();
+    expect(storage.values.get("jolt.data.session:chirp.example")).toBe("fresh-session");
+    expect(getToken()).toBe("fresh-session");
+  });
+
   it("fails by exported error type when the node is incompatible or approval is rejected", async () => {
     const storage = memoryStorage();
     const incompatible = {

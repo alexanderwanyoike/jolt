@@ -11,7 +11,6 @@ import type {
 } from "./data.js";
 
 const DATA_RECORDS_LEVEL = 5;
-const DEFAULT_DAEMON_URL = "http://127.0.0.1:9862";
 const fallbackStorage = new Map<string, string>();
 
 /** @internal Client behavior used while the Data SDK establishes an App session. */
@@ -129,7 +128,7 @@ async function createDefaultClient(
   }
   const { HttpTransport } = await import("./transport-http.js");
   return createJoltClient({
-    transport: new HttpTransport({ daemonUrl: DEFAULT_DAEMON_URL }),
+    transport: new HttpTransport({}),
     getSessionToken,
   });
 }
