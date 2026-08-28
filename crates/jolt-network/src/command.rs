@@ -413,6 +413,8 @@ pub struct NodeStatus {
     pub daemon_version: String,
     pub peer_id: String,
     pub identity_address: String,
+    /// Stable identifier for this installation's local signing device.
+    pub local_device_id: String,
     pub uptime_secs: u64,
     pub connected_peers: usize,
     pub direct_peers: usize,

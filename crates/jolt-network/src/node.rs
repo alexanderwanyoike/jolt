@@ -133,6 +133,7 @@ impl PeerConnectionInfo {
 pub struct NetworkNode {
     swarm: Swarm<JoltBehaviour>,
     identity: NodeIdentity,
+    local_device_identity: NodeIdentity,
     store: ContentStore,
     pending_fetches: HashMap<
         OutboundRequestId,

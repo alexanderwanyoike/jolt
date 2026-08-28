@@ -43,6 +43,7 @@ impl NetworkNode {
         config: NetworkConfig,
         built: BuiltTransport,
     ) -> Result<Self, NetworkError> {
+        let local_device_identity = Self::load_or_create_local_device_identity(&store)?;
         let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
         let bootstrap_peer_ids = Self::parse_bootstrap_peer_ids(&config.effective_bootstrap_relays);
         let local_encryption_key = Self::load_persisted_local_encryption_key(&store, &identity)?;
@@ -59,6 +60,7 @@ impl NetworkNode {
         let mut node = Self {
             swarm: built.swarm,
             identity,
+            local_device_identity,
             store,
             pending_fetches: HashMap::new(),
             pending_update_log_requests: HashMap::new(),
@@ -110,6 +112,28 @@ impl NetworkNode {
         node.load_persisted_local_device_writer_log()?;
 
         Ok(node)
+    }
+
+    fn load_or_create_local_device_identity(
+        store: &ContentStore,
+    ) -> Result<NodeIdentity, NetworkError> {
+        if let Some(signing_key) = store.load_local_device_signing_key().map_err(|error| {
+            NetworkError::Protocol(format!("failed to load local device signing key: {error}"))
+        })? {
+            return NodeIdentity::from_signing_key_bytes(&signing_key).map_err(|error| {
+                NetworkError::Protocol(format!("invalid local device signing key: {error}"))
+            });
+        }
+
+        let local_device_identity = NodeIdentity::generate();
+        store
+            .save_local_device_signing_key(&local_device_identity.signing_key_bytes())
+            .map_err(|error| {
+                NetworkError::Protocol(format!(
+                    "failed to persist local device signing key: {error}"
+                ))
+            })?;
+        Ok(local_device_identity)
     }
 
     pub(super) fn parse_bootstrap_peer_ids(relays: &[String]) -> HashSet<libp2p::PeerId> {
