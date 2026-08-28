@@ -887,28 +887,6 @@ impl NetworkNode {
                     libp2p::kad::Event::RoutingUpdated { peer, .. } => {
                         debug!("Kademlia routing updated: {peer}");
                     }
-                    libp2p::kad::Event::InboundRequest {
-                        request:
-                            libp2p::kad::InboundRequest::AddProvider {
-                                record: Some(record),
-                            },
-                    } => {
-                        let identity = self.identity.identity_id();
-                        let key = String::from_utf8_lossy(record.key.as_ref()).to_string();
-                        if key == Self::update_log_provider_key(&identity)
-                            && record.provider != *self.swarm.local_peer_id()
-                        {
-                            let providers = self.discovered_providers.entry(key).or_default();
-                            if !providers.contains(&record.provider) {
-                                providers.push(record.provider);
-                            }
-                            self.begin_device_writer_sync(
-                                super::resolution::DeviceWriterSyncWaiter::LocalRefresh {
-                                    identity,
-                                },
-                            );
-                        }
-                    }
                     _ => {}
                 }
             }
