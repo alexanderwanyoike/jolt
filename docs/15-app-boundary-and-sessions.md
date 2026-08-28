@@ -447,7 +447,10 @@ The daemon derives the canonical `dev_...` ID from the signing public key and
 returns the complete root-signed `authority_records` chain. It never generates
 or retains a private key for the joining installation. A label-only request or
 an enrollment without an encryption public key fails with
-`device_enrollment_invalid`.
+`device_enrollment_invalid`. The same error rejects malformed Ed25519 keys,
+unsupported or malformed encryption keys, duplicate encryption key IDs, and a
+device key already present in the authority chain; enrollment never doubles as
+implicit key rotation or device reactivation.
 
 plus network-settings, home-relay, relay status/diagnose, and reachability
 endpoints.

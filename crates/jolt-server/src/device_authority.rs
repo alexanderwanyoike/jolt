@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jolt_core::{
@@ -5,9 +6,12 @@ use jolt_core::{
     DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceEncryptionPublicKey,
     EncryptedObjectRecipient, IdentityAuthorityError, IdentityEncryptionKey, IdentityId,
 };
+use jolt_identity::verify_signature as verify_ed25519_signature;
 use jolt_network::{DaemonHandle, NetworkError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+const SUPPORTED_DEVICE_ENCRYPTION_SUITE_FAMILY: &str = "x25519-hkdf-sha256";
 
 #[derive(Clone, Default)]
 pub struct DeviceAuthorityStore;
@@ -91,9 +95,9 @@ impl DeviceAuthorityStore {
         request: AuthorizeDeviceRequest,
     ) -> Result<DeviceAuthorityMutationResponse, DeviceAuthorityError> {
         let existing_records = daemon.local_device_authority().await?;
-        existing_records
+        let identity = existing_records
             .first()
-            .map(|record| &record.body.identity)
+            .map(|record| record.body.identity.clone())
             .ok_or(DeviceAuthorityError::MissingLocalIdentity)?;
         let created_at = unix_now();
         let signing_public_key = request.signing_public_key.ok_or_else(|| {
@@ -106,12 +110,55 @@ impl DeviceAuthorityStore {
                 "signing public key must contain 32 bytes".to_string(),
             )
         })?;
+        verify_ed25519_signature(&signing_public_key, b"", &[0; 64]).map_err(|error| {
+            DeviceAuthorityError::InvalidEnrollment(format!(
+                "signing public key is not a valid Ed25519 key: {error}"
+            ))
+        })?;
         if request.encryption_keys.is_empty() {
             return Err(DeviceAuthorityError::InvalidEnrollment(
                 "joining installation must supply an encryption public key".to_string(),
             ));
         }
+        if request
+            .encryption_keys
+            .iter()
+            .any(|key| key.suite_family != SUPPORTED_DEVICE_ENCRYPTION_SUITE_FAMILY)
+        {
+            return Err(DeviceAuthorityError::InvalidEnrollment(format!(
+                "encryption keys must use {SUPPORTED_DEVICE_ENCRYPTION_SUITE_FAMILY}"
+            )));
+        }
+        if request
+            .encryption_keys
+            .iter()
+            .any(|key| key.public_key.len() != 32)
+        {
+            return Err(DeviceAuthorityError::InvalidEnrollment(
+                "encryption public keys must contain 32 bytes".to_string(),
+            ));
+        }
         let device_id = format!("dev_{}", IdentityId::from_public_key(public_key));
+        let authority = verify_identity_authority_chain(&identity, &existing_records)?;
+        if authority.devices.contains_key(&device_id) {
+            return Err(DeviceAuthorityError::InvalidEnrollment(format!(
+                "device {device_id} is already present in the authority chain"
+            )));
+        }
+        let mut encryption_key_ids: HashSet<&str> = authority
+            .devices
+            .values()
+            .flat_map(|device| device.encryption_keys.iter())
+            .map(|key| key.key_id.as_str())
+            .collect();
+        for key in &request.encryption_keys {
+            if !encryption_key_ids.insert(&key.key_id) {
+                return Err(DeviceAuthorityError::InvalidEnrollment(format!(
+                    "encryption key id {} is already present in the authority chain",
+                    key.key_id
+                )));
+            }
+        }
         let operation = DeviceAuthorizationOperation::authorize_device_with_encryption_keys(
             device_id.clone(),
             signing_public_key,
