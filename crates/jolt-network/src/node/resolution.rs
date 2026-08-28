@@ -532,9 +532,16 @@ impl NetworkNode {
             self.pending_local_device_writer_refresh = true;
             return;
         }
-        let provider = self.swarm.connected_peers().next().copied();
+        let provider = self
+            .swarm
+            .connected_peers()
+            .filter(|peer| self.local_device_sync_candidates.contains(peer))
+            .min()
+            .copied();
         if let Some(provider) = provider {
-            self.refresh_local_device_writer_state_from_peer(&provider);
+            // A completed local mutation carries new signed history, so it must
+            // not be suppressed by the connection-refresh cooldown.
+            self.refresh_local_device_writer_state_from_candidate(provider, true);
         }
     }
 

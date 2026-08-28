@@ -481,7 +481,7 @@ async fn same_owner_installations_sync_device_writer_records_over_local_tcp() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn same_owner_installations_converge_a_resolved_singleton_conflict_over_mdns() {
+async fn same_owner_installations_converge_a_resolved_singleton_conflict_over_local_tcp() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
     let _guard = integration_test_lock().lock().await;
     let first_dir = tempdir().unwrap();
@@ -528,11 +528,11 @@ async fn same_owner_installations_converge_a_resolved_singleton_conflict_over_md
         vec![vec![base]],
     );
 
-    let mut first = NetworkNode::new_tcp(owner, first_store, NetworkConfig::test_config()).unwrap();
+    let mut first = NetworkNode::new_tcp(owner, first_store, no_mdns_config()).unwrap();
     let mut second = NetworkNode::new_tcp(
         NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
         second_store,
-        NetworkConfig::test_config(),
+        no_mdns_config(),
     )
     .unwrap();
     let first_base_file = first_dir.path().join("base.json");
@@ -579,17 +579,21 @@ async fn same_owner_installations_converge_a_resolved_singleton_conflict_over_md
     let mut first = NetworkNode::new_tcp(
         NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
         make_store(first_dir.path()),
-        NetworkConfig::test_config(),
+        no_mdns_config(),
     )
     .unwrap();
     let mut second = NetworkNode::new_tcp(
         NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
         make_store(second_dir.path()),
-        NetworkConfig::test_config(),
+        no_mdns_config(),
     )
     .unwrap();
-    first.listen_on("/ip4/0.0.0.0/tcp/0").unwrap();
-    second.listen_on("/ip4/0.0.0.0/tcp/0").unwrap();
+    first.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    first = wait_for_listener(first).await;
+    second.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    second = wait_for_listener(second).await;
+    let second_addr = listener_with_peer(&second.listeners()[0], &second.local_peer_id());
+    first.dial(second_addr).unwrap();
     let (first_tx, first_rx) = tokio::sync::mpsc::channel::<DaemonCommand>(16);
     let (second_tx, second_rx) = tokio::sync::mpsc::channel::<DaemonCommand>(16);
     let first_handle = DaemonHandle::new(first_tx);
@@ -687,7 +691,7 @@ async fn same_owner_installations_converge_a_resolved_singleton_conflict_over_md
         let restarted = NetworkNode::new_tcp(
             NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
             make_store(directory),
-            NetworkConfig::test_config(),
+            no_mdns_config(),
         )
         .unwrap();
         assert_eq!(
