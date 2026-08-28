@@ -4,6 +4,7 @@ import {
   isContentUnavailableError,
   isJoltUnavailableError,
   JoltApiError,
+  JoltTransportError,
 } from "./errors.js";
 
 /** A decorated application value class used as both runtime schema and TypeScript type. */
@@ -287,6 +288,32 @@ export class ConflictError extends Error {
 /** A shallow update: omitted fields remain and supplied fields replace whole values. */
 export type ShallowPatch<T extends object> = {
   readonly [K in keyof T]?: T[K];
+};
+
+/** Errors retained on one failed item in a non-atomic bulk mutation. */
+export type DataMutationError =
+  | SchemaValidationError
+  | SchemaMigrationError
+  | ItemUnavailableError
+  | ConflictError
+  | DeletedError
+  | AccessRevokedError
+  | DeviceRevokedError
+  | DeviceSigningKeyMismatchError
+  | JoltApiError
+  | JoltTransportError
+  | TypeError;
+
+/** Indexed partial-success result from independent itemwise mutations. */
+export type BulkMutationResult<TItem> = {
+  readonly succeeded: readonly {
+    readonly index: number;
+    readonly item: TItem;
+  }[];
+  readonly failed: readonly {
+    readonly index: number;
+    readonly error: DataMutationError;
+  }[];
 };
 
 /** Shared immutable state and narrowing behavior for an Item snapshot. */
@@ -626,6 +653,48 @@ export type CollectionCreator<
   TConflicts extends ResourceConflicts = ResourceConflicts,
 > = {
   create(value: T): Promise<PresentItem<T, TAccess, TConflicts>>;
+  createMany(
+    values: readonly T[],
+  ): Promise<BulkMutationResult<PresentItem<T, TAccess, TConflicts>>>;
+};
+
+/** Itemwise Collection updates exposed only when declared in Resource access. */
+export type CollectionBulkUpdater<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
+  updateMany(
+    inputs: readonly {
+      readonly item: PresentItem<T, TAccess, TConflicts>;
+      readonly patch: ShallowPatch<T>;
+    }[],
+  ): Promise<BulkMutationResult<PresentItem<T, TAccess, TConflicts>>>;
+};
+
+/** Itemwise Collection deletions exposed only when declared in Resource access. */
+export type CollectionBulkDeleter<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
+  deleteMany(
+    items: readonly PresentItem<T, TAccess, TConflicts>[],
+  ): Promise<BulkMutationResult<DeletedItem<T, TAccess, TConflicts>>>;
+};
+
+/** Itemwise Collection restores exposed only when declared in Resource access. */
+export type CollectionBulkRestorer<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
+  restoreMany(
+    inputs: readonly {
+      readonly item: DeletedItem<T, TAccess, TConflicts>;
+      readonly value: T;
+    }[],
+  ): Promise<BulkMutationResult<PresentItem<T, TAccess, TConflicts>>>;
 };
 
 /** A read-only Collection view bound to another identity. */
@@ -650,6 +719,18 @@ export type CollectionResource<
 > = CollectionReader<T, TAccess, TConflicts> & (
   TAccess extends { readonly create: true }
     ? CollectionCreator<T, TAccess, TConflicts>
+    : object
+) & (
+  TAccess extends { readonly update: true }
+    ? CollectionBulkUpdater<T, TAccess, TConflicts>
+    : object
+) & (
+  TAccess extends { readonly delete: true }
+    ? CollectionBulkDeleter<T, TAccess, TConflicts>
+    : object
+) & (
+  TAccess extends { readonly restore: true }
+    ? CollectionBulkRestorer<T, TAccess, TConflicts>
     : object
 ) & (
   TAccess["read"] extends typeof Read.AnyIdentity
@@ -867,6 +948,15 @@ function usesManualConflict(conflicts: ResourceConflicts): boolean {
     || conflicts.delete === DeleteConflict.Manual;
 }
 
+async function retryAfterUnavailableResponse<T>(mutate: () => Promise<T>): Promise<T> {
+  try {
+    return await mutate();
+  } catch (error) {
+    if (!isJoltUnavailableError(error)) throw error;
+    return mutate();
+  }
+}
+
 function freezeValue<T>(value: T, seen = new WeakSet<object>()): ImmutableValue<T> {
   if (value === null || typeof value !== "object" || seen.has(value)) {
     return value as ImmutableValue<T>;
@@ -908,19 +998,20 @@ function presentItem<
     && (revision !== null || observedRevisions !== undefined)
   ) {
     const commit = async (stored: StoredSchemaValue) => {
+      const mutationId = backend.nextMutationId();
       const next = observedRevisions === undefined
-        ? await backend.update(
-          ref,
-          stored,
-          revision!,
-          backend.nextMutationId(),
-        )
-        : await backend.resolveConflict(
-          ref,
-          stored,
-          observedRevisions,
-          backend.nextMutationId(),
-        );
+        ? await retryAfterUnavailableResponse(() => backend.update(
+            ref,
+            stored,
+            revision!,
+            mutationId,
+          ))
+        : await retryAfterUnavailableResponse(() => backend.resolveConflict(
+            ref,
+            stored,
+            observedRevisions,
+            mutationId,
+          ));
       if (isBackendDeletedRecord(next)) throw new ConflictError(ref);
       return presentItem(resource, backend, ref, next, mutable);
     };
@@ -943,14 +1034,19 @@ function presentItem<
     && (revision !== null || observedRevisions !== undefined)
   ) {
     item.delete = async () => {
+      const mutationId = backend.nextMutationId();
       const deleted = observedRevisions === undefined
-        ? await backend.delete(ref, revision!, backend.nextMutationId())
-        : await backend.resolveConflict(
-          ref,
-          State.Deleted,
-          observedRevisions,
-          backend.nextMutationId(),
-        );
+        ? await retryAfterUnavailableResponse(() => backend.delete(
+            ref,
+            revision!,
+            mutationId,
+          ))
+        : await retryAfterUnavailableResponse(() => backend.resolveConflict(
+            ref,
+            State.Deleted,
+            observedRevisions,
+            mutationId,
+          ));
       if (!isBackendDeletedRecord(deleted)) throw new ConflictError(ref);
       return deletedItem(resource, ref, { backend, revision: deleted.revision });
     };
@@ -1003,19 +1099,21 @@ function deletedItem<
   if (resource.access.restore === true && mutationContext !== undefined) {
     item.restore = async (input: T) => {
       const current = currentStoredValue(resource.schema, input);
-      const restored = mutationContext.observedRevisions === undefined
-        ? await mutationContext.backend.restore(
-          ref,
-          current.stored,
-          mutationContext.revision,
-          mutationContext.backend.nextMutationId(),
-        )
-        : await mutationContext.backend.resolveConflict(
-          ref,
-          current.stored,
-          mutationContext.observedRevisions,
-          mutationContext.backend.nextMutationId(),
-        );
+      const mutationId = mutationContext.backend.nextMutationId();
+      const observedRevisions = mutationContext.observedRevisions;
+      const restored = observedRevisions === undefined
+        ? await retryAfterUnavailableResponse(() => mutationContext.backend.restore(
+            ref,
+            current.stored,
+            mutationContext.revision,
+            mutationId,
+          ))
+        : await retryAfterUnavailableResponse(() => mutationContext.backend.resolveConflict(
+            ref,
+            current.stored,
+            observedRevisions,
+            mutationId,
+          ));
       if (isBackendDeletedRecord(restored)) throw new ConflictError(ref);
       return presentItem(resource, mutationContext.backend, ref, restored, true);
     };
@@ -1933,6 +2031,28 @@ type ResourceViewOptions = {
   readonly remote?: boolean;
 };
 
+async function runBulkMutation<TInput, TItem>(
+  inputs: readonly TInput[],
+  mutate: (input: TInput) => Promise<TItem>,
+): Promise<BulkMutationResult<TItem>> {
+  const succeeded: Array<{ readonly index: number; readonly item: TItem }> = [];
+  const failed: Array<{ readonly index: number; readonly error: DataMutationError }> = [];
+  for (const [index, input] of inputs.entries()) {
+    try {
+      succeeded.push(Object.freeze({ index, item: await mutate(input) }));
+    } catch (error) {
+      failed.push(Object.freeze({
+        index,
+        error: error instanceof Error ? error as DataMutationError : new TypeError(String(error)),
+      }));
+    }
+  }
+  return Object.freeze({
+    succeeded: Object.freeze(succeeded),
+    failed: Object.freeze(failed),
+  });
+}
+
 function createCollection<
   T extends object,
   TAccess extends ResourceAccess,
@@ -1945,6 +2065,9 @@ function createCollection<
   const remote = options.remote ?? false;
   const collection: CollectionReader<T, TAccess, TConflicts>
     & Partial<CollectionCreator<T, TAccess, TConflicts>>
+    & Partial<CollectionBulkUpdater<T, TAccess, TConflicts>>
+    & Partial<CollectionBulkDeleter<T, TAccess, TConflicts>>
+    & Partial<CollectionBulkRestorer<T, TAccess, TConflicts>>
     & Partial<CollectionRemoteReader<T, TConflicts>> = {
     async get(ref) {
       if (
@@ -1956,13 +2079,49 @@ function createCollection<
       return readItem(resource, backend, ref, !remote);
     },
   };
+  const assertLocalItem = (item: {
+    readonly ref: Pick<Ref<T>, "identity" | "path">;
+  }) => {
+    if (
+      item.ref.identity !== backend.identity
+      || !item.ref.path.startsWith(`${resource.path}/`)
+    ) {
+      throw new TypeError("Bulk mutation Item does not belong to this Collection");
+    }
+  };
   if (!remote && resource.access.create === true) {
-    collection.create = async (input) => {
+    const create = async (input: T) => {
       const { stored } = currentStoredValue(resource.schema, input);
       const ref = createRef<T>(backend.identity, `${resource.path}/${backend.nextId()}`);
-      const record = await backend.write(ref, stored);
+      const record = await retryAfterUnavailableResponse(() => backend.write(ref, stored));
       return presentItem(resource, backend, ref, record, true);
     };
+    collection.create = create;
+    collection.createMany = values => runBulkMutation(values, create);
+  }
+  if (!remote && resource.access.update === true) {
+    collection.updateMany = inputs => runBulkMutation(inputs, async ({ item, patch }) => {
+      assertLocalItem(item);
+      return (item as PresentItem<T, TAccess, TConflicts> & {
+        update(value: ShallowPatch<T>): Promise<PresentItem<T, TAccess, TConflicts>>;
+      }).update(patch);
+    });
+  }
+  if (!remote && resource.access.delete === true) {
+    collection.deleteMany = items => runBulkMutation(items, async (item) => {
+      assertLocalItem(item);
+      return (item as PresentItem<T, TAccess, TConflicts> & {
+        delete(): Promise<DeletedItem<T, TAccess, TConflicts>>;
+      }).delete();
+    });
+  }
+  if (!remote && resource.access.restore === true) {
+    collection.restoreMany = inputs => runBulkMutation(inputs, async ({ item, value }) => {
+      assertLocalItem(item);
+      return (item as DeletedItem<T, TAccess, TConflicts> & {
+        restore(input: T): Promise<PresentItem<T, TAccess, TConflicts>>;
+      }).restore(value);
+    });
   }
   if (!remote && resource.access.read === Read.AnyIdentity) {
     collection.for = identity => createCollection(
