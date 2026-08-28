@@ -826,19 +826,6 @@ function usesManualConflict(conflicts: ResourceConflicts): boolean {
     || conflicts.delete === DeleteConflict.Manual;
 }
 
-function conflictNeedsManualResolution(
-  conflicts: ResourceConflicts,
-  conflict: BackendConflictRecord,
-): boolean {
-  const hasDeleted = conflict.alternatives.some(isBackendDeletedRecord);
-  const hasPresent = conflict.alternatives.some(alternative => (
-    !isBackendDeletedRecord(alternative)
-  ));
-  if (hasDeleted && hasPresent) return conflicts.delete === DeleteConflict.Manual;
-  if (hasPresent) return conflicts.update === UpdateConflict.Manual;
-  return false;
-}
-
 function freezeValue<T>(value: T, seen = new WeakSet<object>()): ImmutableValue<T> {
   if (value === null || typeof value !== "object" || seen.has(value)) {
     return value as ImmutableValue<T>;
@@ -1677,17 +1664,19 @@ function storedValuesEqual(left: unknown, right: unknown): boolean {
 function mergeConcurrentPresentUpdates<T extends object>(
   schemaClass: SchemaClass<T>,
   conflict: BackendConflictRecord,
-): BackendPresentRecord | null {
+  alternatives: readonly (BackendPresentRecord & { readonly revision: string })[],
+): {
+  readonly record: BackendPresentRecord;
+  readonly hasFieldConflict: boolean;
+} | null {
   if (conflict.base === undefined || isBackendDeletedRecord(conflict.base)) return null;
-  const alternatives = conflict.alternatives.filter(alternative => (
-    !isBackendDeletedRecord(alternative)
-  )) as readonly (BackendPresentRecord & { readonly revision: string })[];
   if (alternatives.length === 0) return null;
 
   const base = migratedStoredValue(schemaClass, conflict.base.stored).stored;
   const baseValue = base.value as Record<string, unknown>;
   const merged = { ...baseValue };
   const changes = new Map<string, { readonly present: boolean; readonly value?: unknown }>();
+  let hasFieldConflict = false;
 
   for (const alternative of alternatives) {
     const stored = migratedStoredValue(schemaClass, alternative.stored).stored;
@@ -1703,6 +1692,16 @@ function mergeConcurrentPresentUpdates<T extends object>(
         continue;
       }
       const next = { present, value: value[key] };
+      const previous = changes.get(key);
+      if (
+        previous !== undefined
+        && (
+          previous.present !== next.present
+          || (next.present && !storedValuesEqual(previous.value, next.value))
+        )
+      ) {
+        hasFieldConflict = true;
+      }
       changes.set(key, next);
     }
   }
@@ -1712,9 +1711,12 @@ function mergeConcurrentPresentUpdates<T extends object>(
     else delete merged[key];
   }
   return {
-    stored: { version: base.version, value: merged },
-    revision: conflict.revisions.at(-1) ?? null,
-    observedRevisions: conflict.revisions,
+    record: {
+      stored: { version: base.version, value: merged },
+      revision: conflict.revisions.at(-1) ?? null,
+      observedRevisions: conflict.revisions,
+    },
+    hasFieldConflict,
   };
 }
 
@@ -1732,20 +1734,28 @@ async function readItem<
   if (stored === State.Missing) return missingItem(resource, ref);
   if (stored === State.Unavailable) return unavailableItem(resource, ref);
   if (isBackendConflictRecord(stored)) {
-    if (conflictNeedsManualResolution(resource.conflicts, stored)) {
+    const deletedAlternatives = stored.alternatives.filter(isBackendDeletedRecord);
+    const presentAlternatives = stored.alternatives.filter(alternative => (
+      !isBackendDeletedRecord(alternative)
+    )) as readonly (BackendPresentRecord & { readonly revision: string })[];
+    if (
+      deletedAlternatives.length > 0
+      && presentAlternatives.length > 0
+      && resource.conflicts.delete === DeleteConflict.Manual
+    ) {
       return conflictItem(resource, backend, ref, stored, mutable) as Item<
         T,
         TAccess,
         TConflicts
       >;
     }
-    const deleted = [...stored.alternatives].reverse().find(isBackendDeletedRecord);
-    const hasPresent = stored.alternatives.some(alternative => (
-      !isBackendDeletedRecord(alternative)
-    ));
+    const deleted = deletedAlternatives.at(-1);
     if (
       deleted !== undefined
-      && (!hasPresent || resource.conflicts.delete === DeleteConflict.DeleteWins)
+      && (
+        presentAlternatives.length === 0
+        || resource.conflicts.delete === DeleteConflict.DeleteWins
+      )
     ) {
       return deletedItem(
         resource,
@@ -1756,12 +1766,32 @@ async function readItem<
             revision: deleted.revision,
             observedRevisions: stored.revisions,
           }
-          : undefined,
+        : undefined,
       );
     }
-    const merged = mergeConcurrentPresentUpdates(resource.schema, stored);
+    const merged = mergeConcurrentPresentUpdates(
+      resource.schema,
+      stored,
+      presentAlternatives,
+    );
     if (merged === null) throw new ConflictError(ref);
-    return presentItem(resource, backend, ref, merged, mutable);
+    if (
+      merged.hasFieldConflict
+      && resource.conflicts.update === UpdateConflict.Manual
+    ) {
+      const presentConflict = presentAlternatives.length === stored.alternatives.length
+        ? stored
+        : {
+          ...stored,
+          alternatives: Object.freeze(presentAlternatives),
+        };
+      return conflictItem(resource, backend, ref, presentConflict, mutable) as Item<
+        T,
+        TAccess,
+        TConflicts
+      >;
+    }
+    return presentItem(resource, backend, ref, merged.record, mutable);
   }
   if (isBackendDeletedRecord(stored)) {
     return deletedItem(
