@@ -87,6 +87,7 @@ impl NetworkNode {
             local_device_authority_records: HashMap::new(),
             local_record_mutations: HashMap::new(),
             blocked_local_device_writer_identities: HashSet::new(),
+            pending_local_device_writer_refresh: false,
             identity_head_hints: IdentityHeadHintBook::default(),
             peer_connections: HashMap::new(),
             local_device_sync_candidates: HashSet::new(),

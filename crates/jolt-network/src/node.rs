@@ -199,6 +199,9 @@ pub struct NetworkNode {
     /// copy. Further appends are refused so this installation cannot deepen the
     /// fork.
     blocked_local_device_writer_identities: HashSet<IdentityId>,
+    /// One local mutation arrived while a same-owner sync was already in
+    /// flight; start one coalesced follow-up round when that request settles.
+    pending_local_device_writer_refresh: bool,
     /// Signed, expiring identity-head hints learned through relay gossip.
     identity_head_hints: IdentityHeadHintBook,
     /// Connection quality tracking: peer -> connection info

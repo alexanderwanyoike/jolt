@@ -5,11 +5,14 @@ use std::{
 };
 
 use jolt_core::{
-    ContentId, DeviceAuthorizationOperation, DeviceAuthorizationRecord, IdentityHeadHint,
-    JoltAddress, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
+    ContentId, DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+    DeviceWriterOperation, DeviceWriterPathMode, IdentityHeadHint, JoltAddress, RelayRecord,
+    RelayRecordCapability, UpdateAction, UpdateLogEntry,
 };
 use jolt_identity::{verify_signature, NodeIdentity};
-use jolt_network::{DaemonCommand, DaemonHandle, NetworkConfig, NetworkNode};
+use jolt_network::{
+    DaemonCommand, DaemonHandle, LocalRecordHead, LocalRecordState, NetworkConfig, NetworkNode,
+};
 use jolt_store::{CacheConfig, ContentStore, PersistedDeviceWriterLog};
 use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use tempfile::tempdir;
@@ -133,6 +136,16 @@ fn provision_test_installation(
     device: &NodeIdentity,
     authority_records: &[DeviceAuthorizationRecord],
 ) {
+    provision_test_installation_with_history(store, owner, device, authority_records, Vec::new());
+}
+
+fn provision_test_installation_with_history(
+    store: &ContentStore,
+    owner: &NodeIdentity,
+    device: &NodeIdentity,
+    authority_records: &[DeviceAuthorizationRecord],
+    other_device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+) {
     store
         .save_local_device_signing_key(&device.signing_key_bytes())
         .unwrap();
@@ -142,11 +155,21 @@ fn provision_test_installation(
             &PersistedDeviceWriterLog {
                 authority_records: authority_records.to_vec(),
                 device_log: Vec::new(),
-                other_device_logs: Vec::new(),
+                other_device_logs,
                 record_mutations: BTreeMap::new(),
             },
         )
         .unwrap();
+}
+
+async fn inspect_restarted_local_record(mut node: NetworkNode, path: &str) -> LocalRecordState {
+    let (tx, rx) = tokio::sync::mpsc::channel::<DaemonCommand>(4);
+    let handle = DaemonHandle::new(tx);
+    let daemon = tokio::spawn(async move { node.run_daemon_loop(rx).await });
+    let state = handle.inspect_local_record(path.to_string()).await.unwrap();
+    handle.shutdown().await.unwrap();
+    daemon.await.unwrap();
+    state
 }
 
 fn signed_identity_head_hint(
@@ -455,6 +478,227 @@ async fn same_owner_installations_sync_device_writer_records_over_local_tcp() {
             .len(),
         2
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn same_owner_installations_converge_a_resolved_singleton_conflict_over_mdns() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
+    let first_dir = tempdir().unwrap();
+    let second_dir = tempdir().unwrap();
+    let owner = NodeIdentity::generate();
+    let owner_signing_key = owner.signing_key_bytes();
+    let first_device = NodeIdentity::generate();
+    let second_device = NodeIdentity::generate();
+    let seed_device = NodeIdentity::generate();
+    let authority_records =
+        authorize_test_devices(&owner, &[&first_device, &second_device, &seed_device]);
+    let identity = owner.identity_id();
+    let path = "/card130/profile";
+    let base_bytes = br#"{"version":1,"value":{"name":"Original"}}"#;
+    let base_content = ContentId::from_bytes(base_bytes);
+    let base = DeviceWriterLogEntry::genesis(
+        identity.clone(),
+        format!("dev_{}", seed_device.identity_id()),
+        DeviceWriterOperation::set_path(
+            path,
+            base_content.clone(),
+            DeviceWriterPathMode::Singleton,
+        ),
+        200,
+        |bytes| seed_device.sign(bytes),
+    )
+    .unwrap();
+    let base_revision = base.entry_hash().to_hex();
+
+    let first_store = make_store(first_dir.path());
+    provision_test_installation_with_history(
+        &first_store,
+        &owner,
+        &first_device,
+        &authority_records,
+        vec![vec![base.clone()]],
+    );
+    let second_store = make_store(second_dir.path());
+    provision_test_installation_with_history(
+        &second_store,
+        &owner,
+        &second_device,
+        &authority_records,
+        vec![vec![base]],
+    );
+
+    let mut first = NetworkNode::new_tcp(owner, first_store, NetworkConfig::test_config()).unwrap();
+    let mut second = NetworkNode::new_tcp(
+        NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
+        second_store,
+        NetworkConfig::test_config(),
+    )
+    .unwrap();
+    let first_base_file = first_dir.path().join("base.json");
+    let second_base_file = second_dir.path().join("base.json");
+    std::fs::write(&first_base_file, base_bytes).unwrap();
+    std::fs::write(&second_base_file, base_bytes).unwrap();
+    assert_eq!(first.publish_file(&first_base_file).unwrap(), base_content);
+    assert_eq!(
+        second.publish_file(&second_base_file).unwrap(),
+        base_content
+    );
+
+    let (first_tx, first_rx) = tokio::sync::mpsc::channel::<DaemonCommand>(16);
+    let (second_tx, second_rx) = tokio::sync::mpsc::channel::<DaemonCommand>(16);
+    let first_handle = DaemonHandle::new(first_tx);
+    let second_handle = DaemonHandle::new(second_tx);
+    let first_daemon = tokio::spawn(async move { first.run_daemon_loop(first_rx).await });
+    let second_daemon = tokio::spawn(async move { second.run_daemon_loop(second_rx).await });
+    let first_update = first_handle
+        .update_local_record(
+            path.to_string(),
+            br#"{"version":1,"value":{"name":"First"}}"#.to_vec(),
+            base_revision.clone(),
+            vec![base_revision.clone()],
+            "mut_first_offline".to_string(),
+        )
+        .await
+        .unwrap();
+    let second_update = second_handle
+        .update_local_record(
+            path.to_string(),
+            br#"{"version":1,"value":{"name":"Second"}}"#.to_vec(),
+            base_revision.clone(),
+            vec![base_revision.clone()],
+            "mut_second_offline".to_string(),
+        )
+        .await
+        .unwrap();
+    first_handle.shutdown().await.unwrap();
+    second_handle.shutdown().await.unwrap();
+    first_daemon.await.unwrap();
+    second_daemon.await.unwrap();
+
+    let mut first = NetworkNode::new_tcp(
+        NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
+        make_store(first_dir.path()),
+        NetworkConfig::test_config(),
+    )
+    .unwrap();
+    let mut second = NetworkNode::new_tcp(
+        NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
+        make_store(second_dir.path()),
+        NetworkConfig::test_config(),
+    )
+    .unwrap();
+    first.listen_on("/ip4/0.0.0.0/tcp/0").unwrap();
+    second.listen_on("/ip4/0.0.0.0/tcp/0").unwrap();
+    let (first_tx, first_rx) = tokio::sync::mpsc::channel::<DaemonCommand>(16);
+    let (second_tx, second_rx) = tokio::sync::mpsc::channel::<DaemonCommand>(16);
+    let first_handle = DaemonHandle::new(first_tx);
+    let second_handle = DaemonHandle::new(second_tx);
+    let first_daemon = tokio::spawn(async move { first.run_daemon_loop(first_rx).await });
+    let second_daemon = tokio::spawn(async move { second.run_daemon_loop(second_rx).await });
+
+    let conflict = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let first_state = first_handle
+                .inspect_local_record(path.to_string())
+                .await
+                .unwrap();
+            let second_state = second_handle
+                .inspect_local_record(path.to_string())
+                .await
+                .unwrap();
+            if matches!(first_state, LocalRecordState::Conflicted { .. })
+                && first_state == second_state
+            {
+                break first_state;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("same-owner installations did not expose the same conflict");
+    let (alternatives, base) = match conflict {
+        LocalRecordState::Conflicted {
+            alternatives, base, ..
+        } => (alternatives, base),
+        state => panic!("expected conflicted state, got {state:?}"),
+    };
+    let observed_revisions: Vec<String> = alternatives
+        .iter()
+        .map(|alternative| match alternative {
+            LocalRecordHead::Deleted { revision } => revision.clone(),
+            LocalRecordHead::Present(record) => record.revision.clone(),
+        })
+        .collect();
+    assert_eq!(observed_revisions.len(), 2);
+    assert!(observed_revisions.contains(&first_update.revision));
+    assert!(observed_revisions.contains(&second_update.revision));
+    assert_eq!(
+        base,
+        Some(LocalRecordHead::Present(jolt_network::LocalRecordInfo {
+            path: path.to_string(),
+            content_id: base_content.to_string(),
+            revision: base_revision,
+        }))
+    );
+
+    let resolved_bytes = br#"{"version":1,"value":{"name":"Resolved"}}"#.to_vec();
+    let resolved = first_handle
+        .update_local_record(
+            path.to_string(),
+            resolved_bytes,
+            observed_revisions.last().unwrap().clone(),
+            observed_revisions,
+            "mut_resolve_both_heads".to_string(),
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let expected = LocalRecordState::Present(jolt_network::LocalRecordInfo {
+                path: path.to_string(),
+                content_id: resolved.content_id.clone(),
+                revision: resolved.revision.clone(),
+            });
+            if first_handle
+                .inspect_local_record(path.to_string())
+                .await
+                .unwrap()
+                == expected
+                && second_handle
+                    .inspect_local_record(path.to_string())
+                    .await
+                    .unwrap()
+                    == expected
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("resolved singleton did not converge while both installations were connected");
+
+    first_handle.shutdown().await.unwrap();
+    second_handle.shutdown().await.unwrap();
+    first_daemon.await.unwrap();
+    second_daemon.await.unwrap();
+    for directory in [first_dir.path(), second_dir.path()] {
+        let restarted = NetworkNode::new_tcp(
+            NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
+            make_store(directory),
+            NetworkConfig::test_config(),
+        )
+        .unwrap();
+        assert_eq!(
+            inspect_restarted_local_record(restarted, path).await,
+            LocalRecordState::Present(jolt_network::LocalRecordInfo {
+                path: path.to_string(),
+                content_id: resolved.content_id.clone(),
+                revision: resolved.revision.clone(),
+            })
+        );
+    }
 }
 
 #[tokio::test]

@@ -459,7 +459,19 @@ impl NetworkNode {
         identity: IdentityId,
         provider: &libp2p::PeerId,
     ) {
-        let request = DeviceWriterSyncRequest::new(identity.clone());
+        let request = if identity == self.identity.identity_id() {
+            self.device_writer_sync_snapshot(&identity)
+                .map(|(authority_records, device_logs)| {
+                    DeviceWriterSyncRequest::offering(
+                        identity.clone(),
+                        authority_records,
+                        device_logs,
+                    )
+                })
+                .unwrap_or_else(|| DeviceWriterSyncRequest::new(identity.clone()))
+        } else {
+            DeviceWriterSyncRequest::new(identity.clone())
+        };
         let request_id = self
             .swarm
             .behaviour_mut()
@@ -508,6 +520,29 @@ impl NetworkNode {
                 identity: identity.clone(),
             });
         self.request_device_writer_sync_from_provider(identity, &peer_id);
+    }
+
+    pub(super) fn refresh_local_device_writer_state_from_connected_peer(&mut self) {
+        let identity = self.identity.identity_id();
+        if self
+            .pending_device_writer_syncs
+            .values()
+            .any(|pending| pending.identity == identity)
+        {
+            self.pending_local_device_writer_refresh = true;
+            return;
+        }
+        let provider = self.swarm.connected_peers().next().copied();
+        if let Some(provider) = provider {
+            self.refresh_local_device_writer_state_from_peer(&provider);
+        }
+    }
+
+    pub(super) fn retry_pending_local_device_writer_refresh(&mut self) {
+        if self.pending_local_device_writer_refresh {
+            self.pending_local_device_writer_refresh = false;
+            self.refresh_local_device_writer_state_from_connected_peer();
+        }
     }
 
     /// Dispatch parked device-writer sync waiters to a freshly discovered
@@ -569,6 +604,7 @@ impl NetworkNode {
                     &pending.provider,
                     Some(NetworkError::Timeout),
                 );
+                self.retry_pending_local_device_writer_refresh();
             }
         }
     }

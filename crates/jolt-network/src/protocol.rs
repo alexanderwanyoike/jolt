@@ -46,6 +46,10 @@ pub struct DeviceWriterSyncRequest {
     pub identity: IdentityId,
     #[serde(default = "legacy_device_writer_operation_version")]
     pub max_operation_version: u16,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub authority_records: Vec<DeviceAuthorizationRecord>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub device_logs: Vec<Vec<DeviceWriterLogEntry>>,
 }
 
 impl DeviceWriterSyncRequest {
@@ -53,6 +57,21 @@ impl DeviceWriterSyncRequest {
         Self {
             identity,
             max_operation_version: CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION,
+            authority_records: Vec::new(),
+            device_logs: Vec::new(),
+        }
+    }
+
+    pub fn offering(
+        identity: IdentityId,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    ) -> Self {
+        Self {
+            identity,
+            max_operation_version: CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION,
+            authority_records,
+            device_logs,
         }
     }
 }
@@ -296,6 +315,8 @@ mod tests {
         let decoded: DeviceWriterSyncRequest = ciborium::from_reader(&buf[..]).unwrap();
 
         assert_eq!(decoded.identity, identity);
+        assert!(decoded.authority_records.is_empty());
+        assert!(decoded.device_logs.is_empty());
     }
 
     #[test]
@@ -330,6 +351,8 @@ mod tests {
             ciborium::from_reader(&legacy_bytes[..]).unwrap();
         assert_eq!(decoded_by_current.identity, identity);
         assert_eq!(decoded_by_current.max_operation_version, 1);
+        assert!(decoded_by_current.authority_records.is_empty());
+        assert!(decoded_by_current.device_logs.is_empty());
     }
 
     #[test]

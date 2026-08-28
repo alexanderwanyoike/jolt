@@ -385,6 +385,25 @@ impl NetworkNode {
                     request.identity
                 );
 
+                if !request.authority_records.is_empty() {
+                    let offered_identity = request.identity.clone();
+                    if let Err(error) = self
+                        .store_verified_device_writer_logs(
+                            offered_identity.clone(),
+                            request.authority_records,
+                            request.device_logs,
+                        )
+                        .and_then(|_| {
+                            self.persist_synced_local_device_writer_state(&offered_identity)
+                        })
+                    {
+                        warn!(
+                            "Rejected offered device-writer state for {}: {error}",
+                            offered_identity
+                        );
+                    }
+                }
+
                 let response = self
                     .device_writer_sync_snapshot(&request.identity)
                     .map(|(authority_records, device_logs)| {
@@ -449,6 +468,7 @@ impl NetworkNode {
                         &pending.provider,
                         result.err(),
                     );
+                    self.retry_pending_local_device_writer_refresh();
                 }
             }
 
@@ -464,6 +484,7 @@ impl NetworkNode {
                         &pending.provider,
                         Some(NetworkError::Protocol(error.to_string())),
                     );
+                    self.retry_pending_local_device_writer_refresh();
                 }
             }
 
