@@ -424,6 +424,31 @@ POST /admin/v1/device-authority/devices
 POST /admin/v1/device-authority/devices/{device_id}/revoke
 ```
 
+Device enrollment is caller-keyed. The joining installation generates and
+retains its signing and encryption private keys, then submits only the matching
+public material for approval:
+
+```json
+{
+  "signing_public_key": [/* 32 Ed25519 public-key bytes */],
+  "encryption_keys": [
+    {
+      "key_id": "enc_x25519_dev_..._v0",
+      "suite_family": "x25519-hkdf-chacha20poly1305",
+      "public_key": [/* 32 X25519 public-key bytes */],
+      "created_at": 1788000000
+    }
+  ],
+  "label": "Joining installation"
+}
+```
+
+The daemon derives the canonical `dev_...` ID from the signing public key and
+returns the complete root-signed `authority_records` chain. It never generates
+or retains a private key for the joining installation. A label-only request or
+an enrollment without an encryption public key fails with
+`device_enrollment_invalid`.
+
 plus network-settings, home-relay, relay status/diagnose, and reachability
 endpoints.
 

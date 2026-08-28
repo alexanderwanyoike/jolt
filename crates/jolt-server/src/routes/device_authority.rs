@@ -67,6 +67,9 @@ impl IntoResponse for DeviceAuthorityApiError {
             DeviceAuthorityError::UnknownDevice(_) => {
                 (StatusCode::NOT_FOUND, "device_authority_unknown_device")
             }
+            DeviceAuthorityError::InvalidEnrollment(_) => {
+                (StatusCode::BAD_REQUEST, "device_enrollment_invalid")
+            }
             DeviceAuthorityError::MissingLocalIdentity
             | DeviceAuthorityError::InvalidLocalIdentity(_)
             | DeviceAuthorityError::Authority(_) => {
