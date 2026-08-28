@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use jolt_identity::NodeIdentity;
@@ -87,9 +87,12 @@ impl NetworkNode {
             local_device_authority_records: HashMap::new(),
             local_record_mutations: HashMap::new(),
             blocked_local_device_writer_identities: HashSet::new(),
+            pending_local_device_writer_refresh: false,
+            pending_local_device_writer_refresh_peers: VecDeque::new(),
             identity_head_hints: IdentityHeadHintBook::default(),
             peer_connections: HashMap::new(),
             local_device_sync_candidates: HashSet::new(),
+            verified_local_device_sync_peers: HashSet::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
             resolve_timeout: Duration::from_secs(10),

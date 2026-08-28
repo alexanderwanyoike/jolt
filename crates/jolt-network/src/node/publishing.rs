@@ -622,6 +622,8 @@ impl NetworkNode {
         self.local_record_mutations
             .insert(identity.clone(), record_mutations);
 
+        self.refresh_local_device_writer_state_from_connected_peer();
+
         // Announce this node as a provider for the identity so remote readers
         // can discover and sync the device-writer logs. Reuses the existing
         // update-log provider key, so device-writer sync rides the same

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod commands;
@@ -199,6 +199,12 @@ pub struct NetworkNode {
     /// copy. Further appends are refused so this installation cannot deepen the
     /// fork.
     blocked_local_device_writer_identities: HashSet<IdentityId>,
+    /// One local mutation arrived while a same-owner sync was already in
+    /// flight; start one coalesced follow-up round when that request settles.
+    pending_local_device_writer_refresh: bool,
+    /// Verified same-owner installation peers still awaiting the current
+    /// mutation offer. A later mutation coalesces into one subsequent round.
+    pending_local_device_writer_refresh_peers: VecDeque<libp2p::PeerId>,
     /// Signed, expiring identity-head hints learned through relay gossip.
     identity_head_hints: IdentityHeadHintBook,
     /// Connection quality tracking: peer -> connection info
@@ -207,6 +213,9 @@ pub struct NetworkNode {
     /// peers may be probed for this installation's own identity history;
     /// relays and incidental DHT neighbours are excluded.
     local_device_sync_candidates: HashSet<libp2p::PeerId>,
+    /// Candidate peers whose successful signed authority exchange proves that
+    /// their transport identity is an authorized device for the local owner.
+    verified_local_device_sync_peers: HashSet<libp2p::PeerId>,
     /// When the node was created (for uptime reporting)
     started_at: Instant,
     /// Manages in-flight fetch operations for the daemon loop

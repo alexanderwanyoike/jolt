@@ -3,8 +3,9 @@ use std::time::{Duration, Instant};
 
 use jolt_core::{
     merge_device_writer_logs, resolve_jolt_address, resolve_merged_device_jolt_address,
-    verify_identity_authority_chain, verify_update_log_for_identity, DeviceAuthorizationRecord,
-    DeviceWriterLogEntry, DeviceWriterLogError, IdentityId, JoltAddress, ResolvedJoltTarget,
+    verify_identity_authority_chain, verify_update_log_for_identity, AuthorizedDeviceStatus,
+    DeviceAuthorizationRecord, DeviceWriterLogEntry, DeviceWriterLogError, IdentityId, JoltAddress,
+    ResolvedJoltTarget,
 };
 use tokio::sync::oneshot;
 
@@ -30,8 +31,8 @@ pub(super) enum DeviceWriterSyncWaiter {
     /// device-writer cache while the legacy update-log path answers the resolve.
     Refresh { identity: IdentityId },
     /// A cooldown-bounded refresh for this installation's own identity. It is
-    /// attempted only against a peer discovered as an identity provider and
-    /// does not fan out to other providers after failure.
+    /// attempted only against an explicitly selected or mDNS-discovered peer
+    /// and does not fan out to other providers after failure.
     LocalRefresh { identity: IdentityId },
 }
 
@@ -459,7 +460,19 @@ impl NetworkNode {
         identity: IdentityId,
         provider: &libp2p::PeerId,
     ) {
-        let request = DeviceWriterSyncRequest::new(identity.clone());
+        let request = if identity == self.identity.identity_id() {
+            self.device_writer_sync_snapshot(&identity)
+                .map(|(authority_records, device_logs)| {
+                    DeviceWriterSyncRequest::offering(
+                        identity.clone(),
+                        authority_records,
+                        device_logs,
+                    )
+                })
+                .unwrap_or_else(|| DeviceWriterSyncRequest::new(identity.clone()))
+        } else {
+            DeviceWriterSyncRequest::new(identity.clone())
+        };
         let request_id = self
             .swarm
             .behaviour_mut()
@@ -508,6 +521,55 @@ impl NetworkNode {
                 identity: identity.clone(),
             });
         self.request_device_writer_sync_from_provider(identity, &peer_id);
+    }
+
+    pub(super) fn refresh_local_device_writer_state_from_connected_peer(&mut self) {
+        self.pending_local_device_writer_refresh = true;
+        self.retry_pending_local_device_writer_refresh();
+    }
+
+    pub(super) fn retry_pending_local_device_writer_refresh(&mut self) {
+        let identity = self.identity.identity_id();
+        if self
+            .pending_device_writer_syncs
+            .values()
+            .any(|pending| pending.identity == identity)
+        {
+            return;
+        }
+
+        if self.pending_local_device_writer_refresh_peers.is_empty() {
+            if !self.pending_local_device_writer_refresh {
+                return;
+            }
+            self.pending_local_device_writer_refresh = false;
+            let mut peers: Vec<_> = self
+                .swarm
+                .connected_peers()
+                .filter(|peer| {
+                    self.verified_local_device_sync_peers.contains(peer)
+                        && self.local_authority_authorizes_peer(peer)
+                })
+                .copied()
+                .collect();
+            peers.sort();
+            self.pending_local_device_writer_refresh_peers = peers.into();
+        }
+
+        if let Some(provider) = self.pending_local_device_writer_refresh_peers.pop_front() {
+            // A completed local mutation carries new signed history, so it must
+            // not be suppressed by the connection-refresh cooldown.
+            self.refresh_local_device_writer_state_from_candidate(provider, true);
+        }
+    }
+
+    pub(super) fn local_authority_authorizes_peer(&self, peer: &libp2p::PeerId) -> bool {
+        let identity = self.identity.identity_id();
+        self.device_writer_states
+            .get(&identity)
+            .is_some_and(|state| {
+                authority_records_authorize_peer(&identity, &state.authority_records, peer)
+            })
     }
 
     /// Dispatch parked device-writer sync waiters to a freshly discovered
@@ -569,6 +631,7 @@ impl NetworkNode {
                     &pending.provider,
                     Some(NetworkError::Timeout),
                 );
+                self.retry_pending_local_device_writer_refresh();
             }
         }
     }
@@ -717,6 +780,24 @@ pub(super) fn device_log_is_prefix(
             .all(|(left, right)| left.entry_hash() == right.entry_hash())
 }
 
+pub(super) fn authority_records_authorize_peer(
+    identity: &IdentityId,
+    authority_records: &[DeviceAuthorizationRecord],
+    peer: &libp2p::PeerId,
+) -> bool {
+    let Ok(authority) = verify_identity_authority_chain(identity, authority_records) else {
+        return false;
+    };
+    authority.devices.values().any(|device| {
+        if device.status != AuthorizedDeviceStatus::Active {
+            return false;
+        }
+        libp2p::identity::ed25519::PublicKey::try_from_bytes(&device.signing_public_key)
+            .map(libp2p::identity::PublicKey::from)
+            .is_ok_and(|public_key| public_key.to_peer_id() == *peer)
+    })
+}
+
 fn device_log_is_newer(candidate: &[DeviceWriterLogEntry], known: &[DeviceWriterLogEntry]) -> bool {
     match candidate.len().cmp(&known.len()) {
         std::cmp::Ordering::Greater => true,
@@ -792,6 +873,58 @@ mod tests {
             entries.push(entry);
         }
         entries
+    }
+
+    #[test]
+    fn only_an_active_authorized_device_peer_is_a_same_owner_sync_peer() {
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let stranger = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = format!("dev_{}", device.identity_id());
+        let authorized = DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                device_id.clone(),
+                device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Sibling".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap();
+
+        assert!(super::authority_records_authorize_peer(
+            &identity,
+            std::slice::from_ref(&authorized),
+            &device.peer_id(),
+        ));
+        assert!(!super::authority_records_authorize_peer(
+            &identity,
+            std::slice::from_ref(&authorized),
+            &stranger.peer_id(),
+        ));
+
+        let revoked = authorized
+            .append(
+                DeviceAuthorizationOperation::revoke_device(
+                    device_id,
+                    None,
+                    Some("Retired".to_string()),
+                    101,
+                ),
+                101,
+                |bytes| root.sign(bytes),
+            )
+            .unwrap();
+        assert!(!super::authority_records_authorize_peer(
+            &identity,
+            &[authorized, revoked],
+            &device.peer_id(),
+        ));
     }
 
     /// Drive a device-writer sync triggered by a daemon command: feed the
