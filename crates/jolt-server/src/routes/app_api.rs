@@ -76,6 +76,19 @@ pub struct LocalRecordReadRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
+pub enum LocalRecordReadHeadResponse {
+    Deleted {
+        revision: String,
+    },
+    Present {
+        content_id: String,
+        revision: String,
+        data: Vec<u8>,
+    },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
 pub enum LocalRecordReadResponse {
     Missing {
         path: String,
@@ -90,6 +103,37 @@ pub enum LocalRecordReadResponse {
         revision: String,
         data: Vec<u8>,
     },
+    Conflicted {
+        path: String,
+        alternatives: Vec<LocalRecordReadHeadResponse>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        base: Option<LocalRecordReadHeadResponse>,
+    },
+}
+
+async fn read_local_record_head(
+    state: &AppState,
+    head: jolt_network::LocalRecordHead,
+) -> Result<LocalRecordReadHeadResponse, AppApiError> {
+    match head {
+        jolt_network::LocalRecordHead::Deleted { revision } => {
+            Ok(LocalRecordReadHeadResponse::Deleted { revision })
+        }
+        jolt_network::LocalRecordHead::Present(record) => {
+            let fetched = state
+                .daemon
+                .fetch(record.content_id.clone())
+                .await
+                .map_err(|err| {
+                    AppApiError::Network(fetch_error_for_target(err, &record.content_id))
+                })?;
+            Ok(LocalRecordReadHeadResponse::Present {
+                content_id: record.content_id,
+                revision: record.revision,
+                data: fetched.data,
+            })
+        }
+    }
 }
 
 pub async fn read_local_record(
@@ -108,6 +152,25 @@ pub async fn read_local_record(
         }
         jolt_network::LocalRecordState::Deleted { path, revision } => {
             return Ok(Json(LocalRecordReadResponse::Deleted { path, revision }));
+        }
+        jolt_network::LocalRecordState::Conflicted {
+            path,
+            alternatives,
+            base,
+        } => {
+            let mut responses = Vec::with_capacity(alternatives.len());
+            for alternative in alternatives {
+                responses.push(read_local_record_head(&state, alternative).await?);
+            }
+            let base = match base {
+                Some(base) => Some(read_local_record_head(&state, base).await?),
+                None => None,
+            };
+            return Ok(Json(LocalRecordReadResponse::Conflicted {
+                path,
+                alternatives: responses,
+                base,
+            }));
         }
         jolt_network::LocalRecordState::Present(record) => record,
     };
@@ -128,6 +191,8 @@ pub async fn read_local_record(
 pub struct LocalRecordUpdateRequest {
     pub path: String,
     pub revision: String,
+    #[serde(default)]
+    pub observed_revisions: Vec<String>,
     pub mutation_id: String,
     pub data: Vec<u8>,
 }
@@ -143,7 +208,13 @@ pub async fn update_local_record(
     require_path_capability(&session, "publish:", &path)?;
     let updated = state
         .daemon
-        .update_local_record(path, req.data, req.revision, req.mutation_id)
+        .update_local_record(
+            path,
+            req.data,
+            req.revision,
+            req.observed_revisions,
+            req.mutation_id,
+        )
         .await?;
     Ok(Json(updated))
 }
@@ -152,6 +223,8 @@ pub async fn update_local_record(
 pub struct LocalRecordDeleteRequest {
     pub path: String,
     pub revision: String,
+    #[serde(default)]
+    pub observed_revisions: Vec<String>,
     pub mutation_id: String,
 }
 
@@ -166,7 +239,7 @@ pub async fn delete_local_record(
     require_path_capability(&session, "delete:", &path)?;
     let deleted = state
         .daemon
-        .delete_local_record(path, req.revision, req.mutation_id)
+        .delete_local_record(path, req.revision, req.observed_revisions, req.mutation_id)
         .await?;
     Ok(Json(deleted))
 }
@@ -182,7 +255,13 @@ pub async fn restore_local_record(
     require_path_capability(&session, "publish:", &path)?;
     let restored = state
         .daemon
-        .restore_local_record(path, req.data, req.revision, req.mutation_id)
+        .restore_local_record(
+            path,
+            req.data,
+            req.revision,
+            req.observed_revisions,
+            req.mutation_id,
+        )
         .await?;
     Ok(Json(restored))
 }

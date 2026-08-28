@@ -12,6 +12,7 @@ import {
   State,
   UpdateConflict,
 } from "jolt-sdk/data";
+import { createFakeJolt } from "jolt-sdk/testing";
 
 @Schema({ version: 1 })
 class Note {
@@ -381,6 +382,96 @@ describe("Data SDK Manual conflicts", () => {
     expect(converged.isPresent()).toBe(true);
     if (!converged.isPresent()) throw new Error("expected the later update to converge");
     expect(converged.value).toEqual({ text: "Edited after merge", pinned: true });
+  });
+
+  it("combines daemon conflict heads through the connected Data backend", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const path = "/collaborative-notebook/notes/jlt_connected";
+    const mutations: Array<{
+      readonly body: object;
+      readonly mutation: {
+        readonly revision: string;
+        readonly mutationId: string;
+        readonly observedRevisions?: readonly string[];
+      };
+    }> = [];
+    const bytes = (value: object) => Array.from(new TextEncoder().encode(JSON.stringify({
+      version: 1,
+      value,
+    })));
+    const client = {
+      ...jolt.client,
+      async readRecord(ref: { identity: string; path: string }) {
+        if (ref.path !== path) return jolt.client.readRecord(ref);
+        return {
+          state: "conflicted" as const,
+          ref,
+          alternatives: [
+            {
+              state: "present" as const,
+              ref,
+              contentId: "cid_laptop",
+              revision: "revision_laptop",
+              bytes: bytes({ text: "Original", pinned: true }),
+            },
+            {
+              state: "present" as const,
+              ref,
+              contentId: "cid_phone",
+              revision: "revision_phone",
+              bytes: bytes({ text: "Phone edit", pinned: false }),
+            },
+          ],
+          base: {
+            state: "present" as const,
+            ref,
+            contentId: "cid_base",
+            revision: "revision_base",
+            bytes: bytes({ text: "Original", pinned: false }),
+          },
+        };
+      },
+      async updateRecord(
+        ref: { identity: string; path: string },
+        body: object,
+        mutation: {
+          readonly revision: string;
+          readonly mutationId: string;
+          readonly observedRevisions?: readonly string[];
+        },
+      ) {
+        mutations.push({ body, mutation });
+        return {
+          state: "present" as const,
+          ref,
+          contentId: "cid_resolved",
+          revision: "revision_resolved",
+          bytes: bytes({ text: "After merge", pinned: true }),
+        };
+      },
+    };
+    const app = await CollaborativeNotebook.connect({ identity: jolt.identity, client });
+
+    const merged = await app.notes.get({ identity: jolt.identity, path });
+
+    expect(merged.isPresent()).toBe(true);
+    if (!merged.isPresent()) throw new Error("expected a connected automatic merge");
+    expect(merged.value).toEqual({ text: "Phone edit", pinned: true });
+
+    const resolved = await merged.update({ text: "After merge" });
+
+    expect(resolved.value).toEqual({ text: "After merge", pinned: true });
+    expect(mutations).toEqual([{
+      body: {
+        version: 1,
+        value: { text: "After merge", pinned: true },
+      },
+      mutation: {
+        revision: "revision_phone",
+        mutationId: expect.stringMatching(/^mut_/),
+        observedRevisions: ["revision_laptop", "revision_phone"],
+      },
+    }]);
   });
 
   it("combines different-field updates even when same-field conflicts are Manual", async () => {

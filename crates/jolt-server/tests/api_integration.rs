@@ -2792,6 +2792,264 @@ async fn test_app_reads_authoritative_local_record_state_across_restart() {
 }
 
 #[tokio::test]
+async fn test_app_reads_every_current_local_record_head_with_common_base() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = NodeIdentity::generate();
+    let phone = NodeIdentity::generate();
+    let laptop = NodeIdentity::generate();
+    let root_signing_key = root.signing_key_bytes();
+    let identity = root.identity_id();
+    let path = "/chirp/posts/jlt_conflicted";
+
+    let base_bytes = br#"{"version":1,"value":{"text":"Original","pinned":false}}"#;
+    let phone_bytes = br#"{"version":1,"value":{"text":"Phone edit","pinned":false}}"#;
+    let laptop_bytes = br#"{"version":1,"value":{"text":"Original","pinned":true}}"#;
+    let base_content = ContentId::from_bytes(base_bytes);
+    let phone_content = ContentId::from_bytes(phone_bytes);
+    let laptop_content = ContentId::from_bytes(laptop_bytes);
+
+    let phone_authority = DeviceAuthorizationRecord::genesis(
+        root.public_key_bytes(),
+        identity.clone(),
+        DeviceAuthorizationOperation::authorize_device(
+            "dev_phone",
+            phone.public_key_bytes(),
+            vec!["identity:write".to_string()],
+            Some("Phone".to_string()),
+            1_780_579_200,
+        ),
+        1_780_579_200,
+        |bytes| root.sign(bytes),
+    )
+    .unwrap();
+    let laptop_authority = phone_authority
+        .append(
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_laptop",
+                laptop.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Laptop".to_string()),
+                1_780_579_300,
+            ),
+            1_780_579_300,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap();
+    let root_authority = laptop_authority
+        .append(
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_legacy_root",
+                root.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Local daemon".to_string()),
+                1_780_579_400,
+            ),
+            1_780_579_400,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap();
+    let base = DeviceWriterLogEntry::genesis(
+        identity.clone(),
+        "dev_phone",
+        DeviceWriterOperation::set_path(
+            path,
+            base_content.clone(),
+            DeviceWriterPathMode::Singleton,
+        ),
+        100,
+        |bytes| phone.sign(bytes),
+    )
+    .unwrap();
+    let phone_update = base
+        .append(
+            DeviceWriterOperation::set_path(
+                path,
+                phone_content.clone(),
+                DeviceWriterPathMode::Singleton,
+            ),
+            101,
+            |bytes| phone.sign(bytes),
+        )
+        .unwrap();
+    let laptop_update = DeviceWriterLogEntry::genesis_observing(
+        identity.clone(),
+        "dev_laptop",
+        DeviceWriterOperation::set_path(
+            path,
+            laptop_content.clone(),
+            DeviceWriterPathMode::Singleton,
+        ),
+        vec![base.entry_hash()],
+        102,
+        |bytes| laptop.sign(bytes),
+    )
+    .unwrap();
+    let base_revision = base.entry_hash().to_hex();
+    let phone_revision = phone_update.entry_hash().to_hex();
+    let laptop_revision = laptop_update.entry_hash().to_hex();
+    let base_file = dir.path().join("base.json");
+    let phone_file = dir.path().join("phone.json");
+    let laptop_file = dir.path().join("laptop.json");
+    std::fs::write(&base_file, base_bytes).unwrap();
+    std::fs::write(&phone_file, phone_bytes).unwrap();
+    std::fs::write(&laptop_file, laptop_bytes).unwrap();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut node = NetworkNode::new_tcp(root, store, NetworkConfig::test_config()).unwrap();
+    assert_eq!(node.publish_file(&base_file).unwrap(), base_content);
+    assert_eq!(node.publish_file(&phone_file).unwrap(), phone_content);
+    assert_eq!(node.publish_file(&laptop_file).unwrap(), laptop_content);
+    node.store_verified_device_writer_logs(
+        identity.clone(),
+        vec![phone_authority, laptop_authority, root_authority],
+        vec![vec![base, phone_update], vec![laptop_update]],
+    )
+    .unwrap();
+
+    let (port, handle, holder) = start_test_server_from_node(node, dir).await;
+    let client = reqwest::Client::new();
+    let local_identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &local_identity,
+        &["resolve:public", "fetch:public", "publish:/chirp/posts/*"],
+    )
+    .await;
+    let response = client
+        .post(format!("{}/app/v1/records/read", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({
+            "state": "conflicted",
+            "path": path,
+            "alternatives": [
+                {
+                    "state": "present",
+                    "content_id": laptop_content.to_string(),
+                    "revision": laptop_revision,
+                    "data": laptop_bytes.to_vec(),
+                },
+                {
+                    "state": "present",
+                    "content_id": phone_content.to_string(),
+                    "revision": phone_revision,
+                    "data": phone_bytes.to_vec(),
+                },
+            ],
+            "base": {
+                "state": "present",
+                "content_id": base_content.to_string(),
+                "revision": base_revision,
+                "data": base_bytes.to_vec(),
+            },
+        })
+    );
+
+    let reordered = client
+        .post(format!("{}/app/v1/records/update", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": laptop_revision,
+            "observed_revisions": [phone_revision, laptop_revision],
+            "mutation_id": "mut_reordered_conflict",
+            "data": br#"{"version":1,"value":{"text":"Wrong order","pinned":true}}"#.to_vec(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reordered.status(), 409);
+
+    let resolve_request = serde_json::json!({
+        "path": path,
+        "revision": phone_revision,
+        "observed_revisions": [laptop_revision, phone_revision],
+        "mutation_id": "mut_resolve_conflict",
+        "data": br#"{"version":1,"value":{"text":"Resolved","pinned":true}}"#.to_vec(),
+    });
+    let resolved = client
+        .post(format!("{}/app/v1/records/update", base_url(port)))
+        .bearer_auth(&token)
+        .json(&resolve_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resolved.status(), 200);
+    let resolved: serde_json::Value = resolved.json().await.unwrap();
+
+    let after_resolution = client
+        .post(format!("{}/app/v1/records/read", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(after_resolution.status(), 200);
+    let after_resolution: serde_json::Value = after_resolution.json().await.unwrap();
+    assert_eq!(after_resolution["state"], "present");
+    assert_eq!(after_resolution["revision"], resolved["revision"]);
+    assert_eq!(after_resolution["data"], resolve_request["data"]);
+
+    let retry = client
+        .post(format!("{}/app/v1/records/update", base_url(port)))
+        .bearer_auth(&token)
+        .json(&resolve_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retry.status(), 200);
+    assert_eq!(retry.json::<serde_json::Value>().await.unwrap(), resolved);
+
+    handle.shutdown().await.ok();
+
+    let restarted_identity = NodeIdentity::from_signing_key_bytes(&root_signing_key).unwrap();
+    let restarted_store = ContentStore::open(holder.path(), CacheConfig::default()).unwrap();
+    let restarted_node = NetworkNode::new_tcp(
+        restarted_identity,
+        restarted_store,
+        NetworkConfig::test_config(),
+    )
+    .unwrap();
+    let (restarted_port, restarted_handle, _restarted_holder) =
+        start_test_server_from_node(restarted_node, holder).await;
+    let restarted_identity = restarted_handle.status().await.unwrap().identity_address;
+    let restarted_token = approve_app_session(
+        &client,
+        restarted_port,
+        &restarted_identity,
+        &["resolve:public", "fetch:public", "publish:/chirp/posts/*"],
+    )
+    .await;
+    let retry_after_restart = client
+        .post(format!(
+            "{}/app/v1/records/update",
+            base_url(restarted_port)
+        ))
+        .bearer_auth(&restarted_token)
+        .json(&resolve_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retry_after_restart.status(), 200);
+    assert_eq!(
+        retry_after_restart
+            .json::<serde_json::Value>()
+            .await
+            .unwrap(),
+        resolved
+    );
+
+    restarted_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_delete_record_is_capability_scoped_idempotent_and_durable() {
     let profile = tempfile::tempdir().unwrap();
     let (first_port, first_handle, _first_holder) =
@@ -4496,7 +4754,7 @@ async fn test_app_api_feature_manifest_is_public_and_generic() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["app_api"], 1);
-    assert_eq!(body["features"], serde_json::json!({ "data.records": 4 }));
+    assert_eq!(body["features"], serde_json::json!({ "data.records": 5 }));
     assert!(body.get("daemon_version").is_none());
     assert!(body.get("applications").is_none());
 

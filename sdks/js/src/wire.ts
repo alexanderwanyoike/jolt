@@ -123,23 +123,32 @@ export type FetchResult = {
   size: number;
 };
 
+/** One current or common-base head in a local record conflict. */
+export type LocalRecordHeadResponse =
+  | {
+      state: "deleted";
+      revision: string;
+    }
+  | {
+      state: "present";
+      content_id: string;
+      revision: string;
+      data: number[];
+    };
+
 /** Result of reading one authoritative local singleton path (`/app/v1/records/read`). */
 export type LocalRecordReadResponse =
   | {
       state: "missing";
       path: string;
     }
+  | ({ path: string } & LocalRecordHeadResponse)
   | {
-      state: "deleted";
+      state: "conflicted";
       path: string;
-      revision: string;
-    }
-  | {
-      state: "present";
-      path: string;
-      content_id: string;
-      revision: string;
-      data: number[];
+      /** Canonical deterministic winner order; the final alternative wins. */
+      alternatives: LocalRecordHeadResponse[];
+      base?: LocalRecordHeadResponse;
     };
 
 /** Lifecycle states of an app session. */

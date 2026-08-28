@@ -26,6 +26,7 @@ import type {
   AppSessionStatusResponse,
   CurrentAppSession,
   IngressRecord,
+  LocalRecordHeadResponse,
   NodeStatus,
   PublishedContent,
   PublishResponse,
@@ -91,17 +92,48 @@ export type RecordPresentResult = {
   bytes: number[];
 };
 
+/** One immutable current or common-base head in a local record conflict. */
+export type RecordHeadResult = RecordDeletedResult | RecordPresentResult;
+
+/** Every current local record head, plus an unambiguous common base when known. */
+export type RecordConflictResult = {
+  state: "conflicted";
+  ref: Reference;
+  /** Canonical deterministic winner order; the final alternative wins. */
+  alternatives: RecordHeadResult[];
+  base?: RecordHeadResult;
+};
+
 /** Strict authoritative state for one local stable record reference. */
 export type RecordReadResult =
   | RecordMissingResult
   | RecordDeletedResult
-  | RecordPresentResult;
+  | RecordPresentResult
+  | RecordConflictResult;
 
 /** Opaque compare-and-set context used by advanced record mutations. */
 export type RecordMutationContext = {
   readonly revision: string;
+  /** Every current conflict head in daemon canonical order. Omitted for ordinary CAS. */
+  readonly observedRevisions?: readonly string[];
   readonly mutationId: string;
 };
+
+function recordHeadResult(
+  ref: Reference,
+  head: LocalRecordHeadResponse,
+): RecordHeadResult {
+  if (head.state === "deleted") {
+    return { state: "deleted", ref, revision: head.revision };
+  }
+  return {
+    state: "present",
+    ref,
+    contentId: head.content_id,
+    revision: head.revision,
+    bytes: head.data,
+  };
+}
 
 /** One append record, marshalled into domain shape. */
 export type EnumeratedRecord = {
@@ -434,6 +466,16 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
       if (result.state === "deleted") {
         return { state: "deleted", ref, revision: result.revision };
       }
+      if (result.state === "conflicted") {
+        return {
+          state: "conflicted",
+          ref,
+          alternatives: result.alternatives.map(head => recordHeadResult(ref, head)),
+          ...(result.base === undefined
+            ? {}
+            : { base: recordHeadResult(ref, result.base) }),
+        };
+      }
       return {
         state: "present",
         ref,
@@ -451,6 +493,7 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
         body,
         mutation.revision,
         mutation.mutationId,
+        mutation.observedRevisions,
         call,
       );
       return {
@@ -469,6 +512,7 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
         ref.path,
         mutation.revision,
         mutation.mutationId,
+        mutation.observedRevisions,
         call,
       );
       return {
@@ -486,6 +530,7 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
         body,
         mutation.revision,
         mutation.mutationId,
+        mutation.observedRevisions,
         call,
       );
       return {

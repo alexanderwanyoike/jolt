@@ -1,5 +1,5 @@
 import { makeId } from "./client.js";
-import type { JoltSdk } from "./client.js";
+import type { JoltSdk, RecordHeadResult } from "./client.js";
 import {
   isContentUnavailableError,
   isJoltUnavailableError,
@@ -187,6 +187,41 @@ export const DeleteConflict = {
   UpdateWins: policy("delete-conflict:update-wins"),
   Manual: policy("delete-conflict:manual"),
 } as const;
+
+/** Complete conflict behavior resolved for one Resource definition. */
+export type ResourceConflicts = {
+  readonly update: typeof UpdateConflict[keyof typeof UpdateConflict];
+  readonly delete: typeof DeleteConflict[keyof typeof DeleteConflict];
+};
+
+/** Automatic conflict behavior used when a Resource declares no override. */
+export type AutomaticResourceConflicts = {
+  readonly update: typeof UpdateConflict.LastWriteWins;
+  readonly delete: typeof DeleteConflict.DeleteWins;
+};
+
+/** Optional advanced overrides for a Resource's automatic conflict behavior. */
+export type ResourceConflictOverrides = {
+  readonly update?: ResourceConflicts["update"];
+  readonly delete?: ResourceConflicts["delete"];
+};
+
+/** Complete literal conflict behavior derived from a Resource's overrides. */
+export type ResolvedResourceConflicts<
+  TOverrides extends ResourceConflictOverrides,
+> = {
+  readonly update: TOverrides extends {
+    readonly update: infer TUpdate extends ResourceConflicts["update"];
+  } ? TUpdate : typeof UpdateConflict.LastWriteWins;
+  readonly delete: TOverrides extends {
+    readonly delete: infer TDelete extends ResourceConflicts["delete"];
+  } ? TDelete : typeof DeleteConflict.DeleteWins;
+};
+
+const automaticResourceConflicts: AutomaticResourceConflicts = Object.freeze({
+  update: UpdateConflict.LastWriteWins,
+  delete: DeleteConflict.DeleteWins,
+});
 
 /**
  * Symbol-backed kinds used when inspecting a derived App access plan. The
@@ -391,19 +426,13 @@ export type ResourceAccess = {
   readonly restore?: true;
 };
 
-/** Conflict behavior required for one Resource definition. */
-export type ResourceConflicts = {
-  readonly update: typeof UpdateConflict[keyof typeof UpdateConflict];
-  readonly delete: typeof DeleteConflict[keyof typeof DeleteConflict];
-};
-
 /** Developer-facing access and conflict declarations for one Resource. */
 export type ResourceOptions<
   TAccess extends ResourceAccess,
-  TConflicts extends ResourceConflicts = ResourceConflicts,
+  TOverrides extends ResourceConflictOverrides = {},
 > = {
   readonly access: TAccess;
-  readonly conflicts: TConflicts;
+  readonly conflicts?: TOverrides;
 };
 
 /** Shared metadata and migration behavior for an unbound Resource. */
@@ -475,40 +504,52 @@ function validatedResourceAccess<TAccess extends ResourceAccess>(access: TAccess
   return Object.freeze({ ...access });
 }
 
-function validatedResourceConflicts<TConflicts extends ResourceConflicts>(
-  conflicts: TConflicts,
-): TConflicts {
-  if (conflicts === null || typeof conflicts !== "object" || Array.isArray(conflicts)) {
+function validatedResourceConflicts<TOverrides extends ResourceConflictOverrides>(
+  conflicts: TOverrides | undefined,
+): ResolvedResourceConflicts<TOverrides> {
+  if (conflicts !== undefined
+    && (conflicts === null || typeof conflicts !== "object" || Array.isArray(conflicts))) {
     throw new TypeError("Resource conflicts must be an object");
   }
-  if (!(Object.values(UpdateConflict) as readonly unknown[]).includes(conflicts.update)) {
+  const update = conflicts?.update ?? automaticResourceConflicts.update;
+  const deletion = conflicts?.delete ?? automaticResourceConflicts.delete;
+  if (!(Object.values(UpdateConflict) as readonly unknown[]).includes(update)) {
     throw new TypeError("Resource update conflict must be a value from UpdateConflict");
   }
-  if (!(Object.values(DeleteConflict) as readonly unknown[]).includes(conflicts.delete)) {
+  if (!(Object.values(DeleteConflict) as readonly unknown[]).includes(deletion)) {
     throw new TypeError("Resource delete conflict must be a value from DeleteConflict");
   }
-  return Object.freeze({ ...conflicts }) as TConflicts;
+  return Object.freeze({
+    update,
+    delete: deletion,
+  }) as ResolvedResourceConflicts<TOverrides>;
 }
 
 function defineResource<
   T extends object,
   const TAccess extends ResourceAccess,
-  const TConflicts extends ResourceConflicts,
   const TKind extends ResourceKindValue,
+  const TOverrides extends ResourceConflictOverrides = {},
 >(
   kind: TKind,
   schemaClass: SchemaClass<T>,
-  options: ResourceOptions<TAccess, TConflicts>,
-): ResourceDefinition<T, TAccess, TKind, TConflicts> {
+  options: ResourceOptions<TAccess, TOverrides>,
+): ResourceDefinition<T, TAccess, TKind, ResolvedResourceConflicts<TOverrides>> {
   const access = validatedResourceAccess(options.access);
   const conflicts = validatedResourceConflicts(options.conflicts);
-  return Object.freeze({
+  const definition: ResourceDefinition<
+    T,
+    TAccess,
+    TKind,
+    ResolvedResourceConflicts<TOverrides>
+  > = {
     schema: schemaClass,
     access,
     conflicts,
-    migrate: stored => migrate(schemaClass, stored),
+    migrate: (stored: StoredSchemaValue) => migrate(schemaClass, stored),
     [resourceDefinition]: kind,
-  });
+  };
+  return Object.freeze(definition);
 }
 
 /** Defines an unbound typed Collection. App.create derives its path. */
@@ -516,11 +557,11 @@ export const Collection = {
   create: <
     T extends object,
     const TAccess extends ResourceAccess,
-    const TConflicts extends ResourceConflicts,
+    const TOverrides extends ResourceConflictOverrides = {},
   >(
     schemaClass: SchemaClass<T>,
-    options: ResourceOptions<TAccess, TConflicts>,
-  ): CollectionDefinition<T, TAccess, TConflicts> => (
+    options: ResourceOptions<TAccess, TOverrides>,
+  ): CollectionDefinition<T, TAccess, ResolvedResourceConflicts<TOverrides>> => (
     defineResource(ResourceKind.Collection, schemaClass, options)
   ),
 } as const;
@@ -541,11 +582,11 @@ export const Document = {
   create: <
     T extends object,
     const TAccess extends ResourceAccess,
-    const TConflicts extends ResourceConflicts,
+    const TOverrides extends ResourceConflictOverrides = {},
   >(
     schemaClass: SchemaClass<T>,
-    options: ResourceOptions<TAccess, TConflicts>,
-  ): DocumentDefinition<T, TAccess, TConflicts> => (
+    options: ResourceOptions<TAccess, TOverrides>,
+  ): DocumentDefinition<T, TAccess, ResolvedResourceConflicts<TOverrides>> => (
     defineResource(ResourceKind.Document, schemaClass, options)
   ),
 } as const;
@@ -1557,6 +1598,17 @@ function createConnectedBackend(
       if (record.state === "deleted") {
         return { state: State.Deleted, revision: record.revision };
       }
+      if (record.state === "conflicted") {
+        const alternatives = record.alternatives.map(connectedBackendHead);
+        return {
+          state: State.Conflicted,
+          alternatives: Object.freeze(alternatives),
+          revisions: Object.freeze(alternatives.map(alternative => alternative.revision)),
+          ...(record.base === undefined
+            ? {}
+            : { base: connectedBackendHead(record.base) }),
+        };
+      }
       return backendRecord(record.bytes, record.revision);
     },
     async write(ref, stored) {
@@ -1618,8 +1670,31 @@ function createConnectedBackend(
         throw error;
       }
     },
-    async resolveConflict(ref) {
-      throw new ConflictError(ref);
+    async resolveConflict(ref, next, revisions, mutationId) {
+      const revision = revisions.at(-1);
+      if (revision === undefined) throw new ConflictError(ref);
+      try {
+        if (next === State.Deleted) {
+          const record = await withConnectedAccess(() => options.client.deleteRecord(
+            ref,
+            { revision, observedRevisions: revisions, mutationId },
+          ));
+          return { state: State.Deleted, revision: record.revision };
+        }
+        const record = await withConnectedAccess(() => options.client.updateRecord(
+          ref,
+          next,
+          { revision, observedRevisions: revisions, mutationId },
+        ));
+        return backendRecord(record.bytes, record.revision) as BackendPresentRecord & {
+          readonly revision: string;
+        };
+      } catch (error) {
+        if (error instanceof JoltApiError && error.code === "record_conflict") {
+          throw new ConflictError(ref);
+        }
+        throw error;
+      }
     },
     for: identity => createConnectedBackend({ ...options, identity }, localIdentity),
   };
@@ -1633,6 +1708,15 @@ function backendRecord(bytes: readonly number[], revision: string): BackendPrese
     throw new SchemaValidationError("$", "must be valid JSON");
   }
   return { stored: requireStoredSchemaValue(parsed), revision };
+}
+
+function connectedBackendHead(head: RecordHeadResult): BackendAlternativeRecord {
+  return head.state === "deleted"
+    ? { state: State.Deleted, revision: head.revision }
+    : {
+      ...backendRecord(head.bytes, head.revision),
+      revision: head.revision,
+    };
 }
 
 function storedValuesEqual(left: unknown, right: unknown): boolean {

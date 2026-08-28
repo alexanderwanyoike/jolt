@@ -6,10 +6,10 @@ use tracing::debug;
 
 use jolt_core::{
     verify_update_log_for_identity, ContentId, ContentManifest, DeviceAuthorizationOperation,
-    DeviceAuthorizationRecord, DeviceWriterLogEntry, DeviceWriterOperation, DeviceWriterPathMode,
-    IdentityHeadHint, IdentityId, JoltAddress, LiveReachabilityEndpoint, OfflineIngressEndpoint,
-    ReachabilityRecord, UpdateAction, UpdateLogEntry, VerifiedReachability,
-    SIGNED_REACHABILITY_PATH,
+    DeviceAuthorizationRecord, DeviceWriterLogEntry, DeviceWriterLogEntryHash,
+    DeviceWriterOperation, DeviceWriterPathMode, IdentityHeadHint, IdentityId, JoltAddress,
+    LiveReachabilityEndpoint, OfflineIngressEndpoint, ReachabilityRecord, UpdateAction,
+    UpdateLogEntry, VerifiedReachability, SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
 use jolt_store::{
@@ -28,9 +28,37 @@ const LEGACY_ROOT_DEVICE_ID: &str = "dev_legacy_root";
 
 struct RecordMutationIntent<'a> {
     mutation_id: &'a str,
-    observed_revision: &'a str,
+    observed_revisions: &'a [String],
     operation: PersistedRecordMutationOperation,
     content_id: Option<&'a ContentId>,
+}
+
+#[derive(Clone, Copy)]
+enum RequiredSingleRecordState {
+    Present,
+    Deleted,
+}
+
+fn local_record_head_revision(head: &crate::command::LocalRecordHead) -> &str {
+    match head {
+        crate::command::LocalRecordHead::Deleted { revision } => revision,
+        crate::command::LocalRecordHead::Present(record) => &record.revision,
+    }
+}
+
+fn requested_record_revisions(
+    revision: &str,
+    observed_revisions: &[String],
+) -> Result<Vec<String>, NetworkError> {
+    if observed_revisions.is_empty() {
+        return Ok(vec![revision.to_string()]);
+    }
+    if observed_revisions.last().map(String::as_str) != Some(revision) {
+        return Err(NetworkError::InvalidInput(
+            "revision must name the final observed_revisions head".to_string(),
+        ));
+    }
+    Ok(observed_revisions.to_vec())
 }
 
 fn validate_record_mutation_id(mutation_id: &str) -> Result<(), NetworkError> {
@@ -43,6 +71,66 @@ fn validate_record_mutation_id(mutation_id: &str) -> Result<(), NetworkError> {
 }
 
 impl NetworkNode {
+    fn validate_current_record_revisions(
+        &self,
+        path: &str,
+        requested_revisions: &[String],
+        required_single_state: RequiredSingleRecordState,
+    ) -> Result<(), NetworkError> {
+        let current_revisions = match self.inspect_local_record(path) {
+            crate::command::LocalRecordState::Present(current)
+                if requested_revisions.len() == 1
+                    && matches!(required_single_state, RequiredSingleRecordState::Present) =>
+            {
+                vec![current.revision]
+            }
+            crate::command::LocalRecordState::Deleted { revision, .. }
+                if requested_revisions.len() == 1
+                    && matches!(required_single_state, RequiredSingleRecordState::Deleted) =>
+            {
+                vec![revision]
+            }
+            crate::command::LocalRecordState::Conflicted { alternatives, .. }
+                if requested_revisions.len() > 1 =>
+            {
+                alternatives
+                    .iter()
+                    .map(local_record_head_revision)
+                    .map(ToString::to_string)
+                    .collect()
+            }
+            _ => return Err(NetworkError::RecordConflict),
+        };
+        if current_revisions != requested_revisions {
+            return Err(NetworkError::RecordConflict);
+        }
+        Ok(())
+    }
+
+    fn observed_record_head_hashes(
+        &self,
+        identity: &IdentityId,
+        revisions: &[String],
+    ) -> Result<Vec<DeviceWriterLogEntryHash>, NetworkError> {
+        let Some(state) = self.device_writer_states.get(identity) else {
+            return Err(NetworkError::RecordConflict);
+        };
+        revisions
+            .iter()
+            .map(|revision| {
+                state
+                    .device_logs
+                    .values()
+                    .flatten()
+                    .find_map(|entry| {
+                        let hash = entry.entry_hash();
+                        (hash.to_hex() == *revision).then_some(hash)
+                    })
+                    .ok_or(NetworkError::RecordConflict)
+            })
+            .collect()
+    }
+
     /// Publish a file to the content store. Returns the ContentId.
     pub fn publish_file(&mut self, file_path: &Path) -> Result<ContentId, NetworkError> {
         let data = std::fs::read(file_path).map_err(NetworkError::Io)?;
@@ -152,12 +240,15 @@ impl NetworkNode {
         path: &str,
         data: &[u8],
         observed_revision: &str,
+        observed_revisions: &[String],
         mutation_id: &str,
     ) -> Result<LocalRecordUpdate, NetworkError> {
         validate_record_mutation_id(mutation_id)?;
         let identity = self.identity.identity_id();
         let address = JoltAddress::new(identity.clone(), path)
             .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        let requested_revisions =
+            requested_record_revisions(observed_revision, observed_revisions)?;
         let proposed_content_id = ContentId::from_bytes(data).to_string();
         if let Some(previous) = self
             .local_record_mutations
@@ -171,7 +262,7 @@ impl NetworkNode {
             };
             if previous.operation() != PersistedRecordMutationOperation::Update
                 || previous.path != address.path()
-                || previous.observed_revision != observed_revision
+                || previous.observed_revisions() != requested_revisions
                 || content_id != &proposed_content_id
             {
                 return Err(NetworkError::InvalidInput(
@@ -190,14 +281,11 @@ impl NetworkNode {
             });
         }
 
-        let crate::command::LocalRecordState::Present(current) =
-            self.inspect_local_record(address.path())
-        else {
-            return Err(NetworkError::RecordConflict);
-        };
-        if current.revision != observed_revision {
-            return Err(NetworkError::RecordConflict);
-        }
+        self.validate_current_record_revisions(
+            address.path(),
+            &requested_revisions,
+            RequiredSingleRecordState::Present,
+        )?;
 
         // Content is immutable and may safely remain unreferenced if the
         // subsequent durable log append fails.
@@ -216,7 +304,7 @@ impl NetworkNode {
             DeviceWriterPathMode::Singleton,
             Some(RecordMutationIntent {
                 mutation_id,
-                observed_revision,
+                observed_revisions: &requested_revisions,
                 operation: PersistedRecordMutationOperation::Update,
                 content_id: Some(&content_id),
             }),
@@ -234,12 +322,15 @@ impl NetworkNode {
         &mut self,
         path: &str,
         observed_revision: &str,
+        observed_revisions: &[String],
         mutation_id: &str,
     ) -> Result<LocalRecordDelete, NetworkError> {
         validate_record_mutation_id(mutation_id)?;
         let identity = self.identity.identity_id();
         let address = JoltAddress::new(identity.clone(), path)
             .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        let requested_revisions =
+            requested_record_revisions(observed_revision, observed_revisions)?;
         if let Some(previous) = self
             .local_record_mutations
             .get(&identity)
@@ -247,7 +338,7 @@ impl NetworkNode {
         {
             if previous.operation() != PersistedRecordMutationOperation::Delete
                 || previous.path != address.path()
-                || previous.observed_revision != observed_revision
+                || previous.observed_revisions() != requested_revisions
                 || previous.content_id.is_some()
             {
                 return Err(NetworkError::InvalidInput(
@@ -260,14 +351,11 @@ impl NetworkNode {
             });
         }
 
-        let crate::command::LocalRecordState::Present(current) =
-            self.inspect_local_record(address.path())
-        else {
-            return Err(NetworkError::RecordConflict);
-        };
-        if current.revision != observed_revision {
-            return Err(NetworkError::RecordConflict);
-        }
+        self.validate_current_record_revisions(
+            address.path(),
+            &requested_revisions,
+            RequiredSingleRecordState::Present,
+        )?;
 
         self.publish_local_update_log_action(
             &identity,
@@ -281,7 +369,7 @@ impl NetworkNode {
             DeviceWriterOperation::tombstone_path(address.path()),
             Some(RecordMutationIntent {
                 mutation_id,
-                observed_revision,
+                observed_revisions: &requested_revisions,
                 operation: PersistedRecordMutationOperation::Delete,
                 content_id: None,
             }),
@@ -297,12 +385,15 @@ impl NetworkNode {
         path: &str,
         data: &[u8],
         observed_revision: &str,
+        observed_revisions: &[String],
         mutation_id: &str,
     ) -> Result<LocalRecordRestore, NetworkError> {
         validate_record_mutation_id(mutation_id)?;
         let identity = self.identity.identity_id();
         let address = JoltAddress::new(identity.clone(), path)
             .map_err(|e| NetworkError::InvalidInput(e.to_string()))?;
+        let requested_revisions =
+            requested_record_revisions(observed_revision, observed_revisions)?;
         let proposed_content_id = ContentId::from_bytes(data).to_string();
         if let Some(previous) = self
             .local_record_mutations
@@ -316,7 +407,7 @@ impl NetworkNode {
             };
             if previous.operation() != PersistedRecordMutationOperation::Restore
                 || previous.path != address.path()
-                || previous.observed_revision != observed_revision
+                || previous.observed_revisions() != requested_revisions
                 || content_id != &proposed_content_id
             {
                 return Err(NetworkError::InvalidInput(
@@ -335,14 +426,11 @@ impl NetworkNode {
             });
         }
 
-        let crate::command::LocalRecordState::Deleted { revision, .. } =
-            self.inspect_local_record(address.path())
-        else {
-            return Err(NetworkError::RecordConflict);
-        };
-        if revision != observed_revision {
-            return Err(NetworkError::RecordConflict);
-        }
+        self.validate_current_record_revisions(
+            address.path(),
+            &requested_revisions,
+            RequiredSingleRecordState::Deleted,
+        )?;
 
         let content_id = self.publish_bytes(data)?;
         self.publish_local_update_log_action(
@@ -359,7 +447,7 @@ impl NetworkNode {
             DeviceWriterPathMode::Singleton,
             Some(RecordMutationIntent {
                 mutation_id,
-                observed_revision,
+                observed_revisions: &requested_revisions,
                 operation: PersistedRecordMutationOperation::Restore,
                 content_id: Some(&content_id),
             }),
@@ -425,18 +513,27 @@ impl NetworkNode {
         record_mutation: Option<RecordMutationIntent<'_>>,
     ) -> Result<(u64, String), NetworkError> {
         let created_at = unix_now();
+        let observed_heads = match record_mutation {
+            Some(ref mutation) => {
+                self.observed_record_head_hashes(&identity, mutation.observed_revisions)?
+            }
+            None => Vec::new(),
+        };
         let entry = match self
             .local_device_writer_logs
             .get(&identity)
             .and_then(|entries| entries.last())
         {
             Some(previous) => previous
-                .append(operation, created_at, |bytes| self.identity.sign(bytes))
+                .append_observing(operation, observed_heads, created_at, |bytes| {
+                    self.identity.sign(bytes)
+                })
                 .map_err(|e| NetworkError::Protocol(e.to_string()))?,
-            None => DeviceWriterLogEntry::genesis(
+            None => DeviceWriterLogEntry::genesis_observing(
                 identity.clone(),
                 LEGACY_ROOT_DEVICE_ID,
                 operation,
+                observed_heads,
                 created_at,
                 |bytes| self.identity.sign(bytes),
             )
@@ -478,7 +575,20 @@ impl NetworkNode {
                 record_mutation.mutation_id.to_string(),
                 PersistedRecordMutation {
                     path,
-                    observed_revision: record_mutation.observed_revision.to_string(),
+                    observed_revision: record_mutation
+                        .observed_revisions
+                        .last()
+                        .cloned()
+                        .ok_or_else(|| {
+                            NetworkError::Protocol(
+                                "record mutation must observe at least one revision".to_string(),
+                            )
+                        })?,
+                    observed_revisions: if record_mutation.observed_revisions.len() > 1 {
+                        record_mutation.observed_revisions.to_vec()
+                    } else {
+                        Vec::new()
+                    },
                     operation: Some(record_mutation.operation),
                     content_id: record_mutation.content_id.map(ToString::to_string),
                     result_revision: revision.clone(),

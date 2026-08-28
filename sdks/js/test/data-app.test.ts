@@ -16,6 +16,58 @@ import {
 } from "jolt-sdk/data";
 
 describe("Data SDK applications", () => {
+  it("uses automatic conflict policies unless a Resource overrides them", () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: {
+        read: Read.AnyIdentity,
+        create: true,
+        update: true,
+      },
+    });
+
+    expect(Posts.conflicts).toEqual({
+      update: UpdateConflict.LastWriteWins,
+      delete: DeleteConflict.DeleteWins,
+    });
+    expectTypeOf(Posts.conflicts.update)
+      .toEqualTypeOf<typeof UpdateConflict.LastWriteWins>();
+    expectTypeOf(Posts.conflicts.delete)
+      .toEqualTypeOf<typeof DeleteConflict.DeleteWins>();
+  });
+
+  it("merges a declared conflict policy with the remaining automatic default", () => {
+    @Schema({ version: 1 })
+    class Note {
+      @Field.string()
+      text!: string;
+    }
+
+    const Notes = Collection.create(Note, {
+      access: {
+        read: Read.OwnIdentity,
+        update: true,
+      },
+      conflicts: {
+        update: UpdateConflict.Manual,
+      },
+    });
+
+    expect(Notes.conflicts).toEqual({
+      update: UpdateConflict.Manual,
+      delete: DeleteConflict.DeleteWins,
+    });
+    expectTypeOf(Notes.conflicts.update)
+      .toEqualTypeOf<typeof UpdateConflict.Manual>();
+    expectTypeOf(Notes.conflicts.delete)
+      .toEqualTypeOf<typeof DeleteConflict.DeleteWins>();
+  });
+
   it("binds a Collection to its App namespace and data property name", () => {
     @Schema({ version: 1 })
     class Post {
