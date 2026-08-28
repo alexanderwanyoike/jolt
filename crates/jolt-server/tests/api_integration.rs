@@ -2797,6 +2797,7 @@ async fn test_app_reads_every_current_local_record_head_with_common_base() {
     let root = NodeIdentity::generate();
     let phone = NodeIdentity::generate();
     let laptop = NodeIdentity::generate();
+    let root_signing_key = root.signing_key_bytes();
     let identity = root.identity_id();
     let path = "/chirp/posts/jlt_conflicted";
 
@@ -2831,6 +2832,19 @@ async fn test_app_reads_every_current_local_record_head_with_common_base() {
                 1_780_579_300,
             ),
             1_780_579_300,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap();
+    let root_authority = laptop_authority
+        .append(
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_legacy_root",
+                root.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Local daemon".to_string()),
+                1_780_579_400,
+            ),
+            1_780_579_400,
             |bytes| root.sign(bytes),
         )
         .unwrap();
@@ -2886,24 +2900,24 @@ async fn test_app_reads_every_current_local_record_head_with_common_base() {
     assert_eq!(node.publish_file(&laptop_file).unwrap(), laptop_content);
     node.store_verified_device_writer_logs(
         identity.clone(),
-        vec![phone_authority, laptop_authority],
+        vec![phone_authority, laptop_authority, root_authority],
         vec![vec![base, phone_update], vec![laptop_update]],
     )
     .unwrap();
 
-    let (port, handle, _holder) = start_test_server_from_node(node, dir).await;
+    let (port, handle, holder) = start_test_server_from_node(node, dir).await;
     let client = reqwest::Client::new();
     let local_identity = handle.status().await.unwrap().identity_address;
     let token = approve_app_session(
         &client,
         port,
         &local_identity,
-        &["resolve:public", "fetch:public"],
+        &["resolve:public", "fetch:public", "publish:/chirp/posts/*"],
     )
     .await;
     let response = client
         .post(format!("{}/app/v1/records/read", base_url(port)))
-        .bearer_auth(token)
+        .bearer_auth(&token)
         .json(&serde_json::json!({ "path": path }))
         .send()
         .await
@@ -2938,7 +2952,101 @@ async fn test_app_reads_every_current_local_record_head_with_common_base() {
         })
     );
 
+    let reordered = client
+        .post(format!("{}/app/v1/records/update", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": laptop_revision,
+            "observed_revisions": [phone_revision, laptop_revision],
+            "mutation_id": "mut_reordered_conflict",
+            "data": br#"{"version":1,"value":{"text":"Wrong order","pinned":true}}"#.to_vec(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reordered.status(), 409);
+
+    let resolve_request = serde_json::json!({
+        "path": path,
+        "revision": phone_revision,
+        "observed_revisions": [laptop_revision, phone_revision],
+        "mutation_id": "mut_resolve_conflict",
+        "data": br#"{"version":1,"value":{"text":"Resolved","pinned":true}}"#.to_vec(),
+    });
+    let resolved = client
+        .post(format!("{}/app/v1/records/update", base_url(port)))
+        .bearer_auth(&token)
+        .json(&resolve_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resolved.status(), 200);
+    let resolved: serde_json::Value = resolved.json().await.unwrap();
+
+    let after_resolution = client
+        .post(format!("{}/app/v1/records/read", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(after_resolution.status(), 200);
+    let after_resolution: serde_json::Value = after_resolution.json().await.unwrap();
+    assert_eq!(after_resolution["state"], "present");
+    assert_eq!(after_resolution["revision"], resolved["revision"]);
+    assert_eq!(after_resolution["data"], resolve_request["data"]);
+
+    let retry = client
+        .post(format!("{}/app/v1/records/update", base_url(port)))
+        .bearer_auth(&token)
+        .json(&resolve_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retry.status(), 200);
+    assert_eq!(retry.json::<serde_json::Value>().await.unwrap(), resolved);
+
     handle.shutdown().await.ok();
+
+    let restarted_identity = NodeIdentity::from_signing_key_bytes(&root_signing_key).unwrap();
+    let restarted_store = ContentStore::open(holder.path(), CacheConfig::default()).unwrap();
+    let restarted_node = NetworkNode::new_tcp(
+        restarted_identity,
+        restarted_store,
+        NetworkConfig::test_config(),
+    )
+    .unwrap();
+    let (restarted_port, restarted_handle, _restarted_holder) =
+        start_test_server_from_node(restarted_node, holder).await;
+    let restarted_identity = restarted_handle.status().await.unwrap().identity_address;
+    let restarted_token = approve_app_session(
+        &client,
+        restarted_port,
+        &restarted_identity,
+        &["resolve:public", "fetch:public", "publish:/chirp/posts/*"],
+    )
+    .await;
+    let retry_after_restart = client
+        .post(format!(
+            "{}/app/v1/records/update",
+            base_url(restarted_port)
+        ))
+        .bearer_auth(&restarted_token)
+        .json(&resolve_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retry_after_restart.status(), 200);
+    assert_eq!(
+        retry_after_restart
+            .json::<serde_json::Value>()
+            .await
+            .unwrap(),
+        resolved
+    );
+
+    restarted_handle.shutdown().await.ok();
 }
 
 #[tokio::test]

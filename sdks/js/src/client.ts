@@ -114,6 +114,8 @@ export type RecordReadResult =
 /** Opaque compare-and-set context used by advanced record mutations. */
 export type RecordMutationContext = {
   readonly revision: string;
+  /** Every current conflict head in daemon canonical order. Omitted for ordinary CAS. */
+  readonly observedRevisions?: readonly string[];
   readonly mutationId: string;
 };
 
@@ -491,6 +493,7 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
         body,
         mutation.revision,
         mutation.mutationId,
+        mutation.observedRevisions,
         call,
       );
       return {
@@ -509,6 +512,7 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
         ref.path,
         mutation.revision,
         mutation.mutationId,
+        mutation.observedRevisions,
         call,
       );
       return {
@@ -526,6 +530,7 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
         body,
         mutation.revision,
         mutation.mutationId,
+        mutation.observedRevisions,
         call,
       );
       return {

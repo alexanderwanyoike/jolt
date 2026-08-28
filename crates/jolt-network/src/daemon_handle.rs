@@ -482,6 +482,7 @@ impl DaemonHandle {
         path: String,
         data: Vec<u8>,
         revision: String,
+        observed_revisions: Vec<String>,
         mutation_id: String,
     ) -> Result<LocalRecordUpdate, NetworkError> {
         let (tx, rx) = oneshot::channel();
@@ -490,6 +491,7 @@ impl DaemonHandle {
                 path,
                 data,
                 revision,
+                observed_revisions,
                 mutation_id,
                 response_tx: tx,
             })
@@ -503,6 +505,7 @@ impl DaemonHandle {
         &self,
         path: String,
         revision: String,
+        observed_revisions: Vec<String>,
         mutation_id: String,
     ) -> Result<LocalRecordDelete, NetworkError> {
         let (tx, rx) = oneshot::channel();
@@ -510,6 +513,7 @@ impl DaemonHandle {
             .send(DaemonCommand::DeleteLocalRecord {
                 path,
                 revision,
+                observed_revisions,
                 mutation_id,
                 response_tx: tx,
             })
@@ -524,6 +528,7 @@ impl DaemonHandle {
         path: String,
         data: Vec<u8>,
         revision: String,
+        observed_revisions: Vec<String>,
         mutation_id: String,
     ) -> Result<LocalRecordRestore, NetworkError> {
         let (tx, rx) = oneshot::channel();
@@ -532,6 +537,7 @@ impl DaemonHandle {
                 path,
                 data,
                 revision,
+                observed_revisions,
                 mutation_id,
                 response_tx: tx,
             })

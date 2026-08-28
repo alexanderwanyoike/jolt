@@ -253,12 +253,19 @@ export function updateLocalRecord(
   body: object,
   revision: string,
   mutationId: string,
+  observedRevisions: readonly string[] | undefined,
   options?: CallOptions
 ): Promise<LocalRecordUpdateResponse> {
   const data = Array.from(new TextEncoder().encode(JSON.stringify(body)));
   return transport.request("app", "/records/update", {
     token,
-    json: { path, revision, mutation_id: mutationId, data },
+    json: {
+      path,
+      revision,
+      ...(observedRevisions === undefined ? {} : { observed_revisions: observedRevisions }),
+      mutation_id: mutationId,
+      data,
+    },
     ...options,
   });
 }
@@ -270,11 +277,17 @@ export function deleteLocalRecord(
   path: string,
   revision: string,
   mutationId: string,
+  observedRevisions: readonly string[] | undefined,
   options?: CallOptions
 ): Promise<LocalRecordDeleteResponse> {
   return transport.request("app", "/records/delete", {
     token,
-    json: { path, revision, mutation_id: mutationId },
+    json: {
+      path,
+      revision,
+      ...(observedRevisions === undefined ? {} : { observed_revisions: observedRevisions }),
+      mutation_id: mutationId,
+    },
     ...options,
   });
 }
@@ -287,12 +300,19 @@ export function restoreLocalRecord(
   body: object,
   revision: string,
   mutationId: string,
+  observedRevisions: readonly string[] | undefined,
   options?: CallOptions
 ): Promise<LocalRecordRestoreResponse> {
   const data = Array.from(new TextEncoder().encode(JSON.stringify(body)));
   return transport.request("app", "/records/restore", {
     token,
-    json: { path, revision, mutation_id: mutationId, data },
+    json: {
+      path,
+      revision,
+      ...(observedRevisions === undefined ? {} : { observed_revisions: observedRevisions }),
+      mutation_id: mutationId,
+      data,
+    },
     ...options,
   });
 }

@@ -191,6 +191,8 @@ pub async fn read_local_record(
 pub struct LocalRecordUpdateRequest {
     pub path: String,
     pub revision: String,
+    #[serde(default)]
+    pub observed_revisions: Vec<String>,
     pub mutation_id: String,
     pub data: Vec<u8>,
 }
@@ -206,7 +208,13 @@ pub async fn update_local_record(
     require_path_capability(&session, "publish:", &path)?;
     let updated = state
         .daemon
-        .update_local_record(path, req.data, req.revision, req.mutation_id)
+        .update_local_record(
+            path,
+            req.data,
+            req.revision,
+            req.observed_revisions,
+            req.mutation_id,
+        )
         .await?;
     Ok(Json(updated))
 }
@@ -215,6 +223,8 @@ pub async fn update_local_record(
 pub struct LocalRecordDeleteRequest {
     pub path: String,
     pub revision: String,
+    #[serde(default)]
+    pub observed_revisions: Vec<String>,
     pub mutation_id: String,
 }
 
@@ -229,7 +239,7 @@ pub async fn delete_local_record(
     require_path_capability(&session, "delete:", &path)?;
     let deleted = state
         .daemon
-        .delete_local_record(path, req.revision, req.mutation_id)
+        .delete_local_record(path, req.revision, req.observed_revisions, req.mutation_id)
         .await?;
     Ok(Json(deleted))
 }
@@ -245,7 +255,13 @@ pub async fn restore_local_record(
     require_path_capability(&session, "publish:", &path)?;
     let restored = state
         .daemon
-        .restore_local_record(path, req.data, req.revision, req.mutation_id)
+        .restore_local_record(
+            path,
+            req.data,
+            req.revision,
+            req.observed_revisions,
+            req.mutation_id,
+        )
         .await?;
     Ok(Json(restored))
 }

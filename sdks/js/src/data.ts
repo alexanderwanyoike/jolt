@@ -1629,8 +1629,31 @@ function createConnectedBackend(
         throw error;
       }
     },
-    async resolveConflict(ref) {
-      throw new ConflictError(ref);
+    async resolveConflict(ref, next, revisions, mutationId) {
+      const revision = revisions.at(-1);
+      if (revision === undefined) throw new ConflictError(ref);
+      try {
+        if (next === State.Deleted) {
+          const record = await withConnectedAccess(() => options.client.deleteRecord(
+            ref,
+            { revision, observedRevisions: revisions, mutationId },
+          ));
+          return { state: State.Deleted, revision: record.revision };
+        }
+        const record = await withConnectedAccess(() => options.client.updateRecord(
+          ref,
+          next,
+          { revision, observedRevisions: revisions, mutationId },
+        ));
+        return backendRecord(record.bytes, record.revision) as BackendPresentRecord & {
+          readonly revision: string;
+        };
+      } catch (error) {
+        if (error instanceof JoltApiError && error.code === "record_conflict") {
+          throw new ConflictError(ref);
+        }
+        throw error;
+      }
     },
     for: identity => createConnectedBackend({ ...options, identity }, localIdentity),
   };

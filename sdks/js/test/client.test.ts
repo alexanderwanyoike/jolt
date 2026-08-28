@@ -267,6 +267,45 @@ describe("createJoltClient", () => {
     }]);
   });
 
+  it("sends every observed head when resolving a stable-record conflict", async () => {
+    const { transport, calls } = recordingTransport({
+      "/records/update": {
+        path: "/chirp/posts/jlt_1",
+        content_id: "cid_resolved",
+        revision: "revision_resolved",
+        data: [123, 125],
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_1" };
+
+    await jolt.updateRecord(
+      ref,
+      { version: 1, value: { text: "Resolved" } },
+      {
+        revision: "revision_phone",
+        observedRevisions: ["revision_laptop", "revision_phone"],
+        mutationId: "mut_resolve_1",
+      },
+    );
+
+    expect(calls[0]).toEqual({
+      kind: "request",
+      base: "app",
+      path: "/records/update",
+      detail: {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_phone",
+          observed_revisions: ["revision_laptop", "revision_phone"],
+          mutation_id: "mut_resolve_1",
+          data: expect.any(Array),
+        },
+      },
+    });
+  });
+
   it("sends opaque compare-and-set context when deleting a stable record", async () => {
     const { transport, calls } = recordingTransport({
       "/records/delete": {
@@ -337,6 +376,61 @@ describe("createJoltClient", () => {
         },
       },
     }]);
+  });
+
+  it("sends every observed head for delete and restore conflict resolutions", async () => {
+    const { transport, calls } = recordingTransport({
+      "/records/delete": {
+        path: "/chirp/posts/jlt_1",
+        revision: "revision_deleted",
+      },
+      "/records/restore": {
+        path: "/chirp/posts/jlt_1",
+        content_id: "cid_restored",
+        revision: "revision_restored",
+        data: [123, 125],
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_1" };
+    const observedRevisions = ["revision_laptop", "revision_phone"];
+
+    await jolt.deleteRecord(ref, {
+      revision: "revision_phone",
+      observedRevisions,
+      mutationId: "mut_delete_conflict",
+    });
+    await jolt.restoreRecord(
+      ref,
+      { version: 1, value: { text: "Restored" } },
+      {
+        revision: "revision_phone",
+        observedRevisions,
+        mutationId: "mut_restore_conflict",
+      },
+    );
+
+    expect(calls.map(call => call.detail)).toEqual([
+      {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_phone",
+          observed_revisions: observedRevisions,
+          mutation_id: "mut_delete_conflict",
+        },
+      },
+      {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_phone",
+          observed_revisions: observedRevisions,
+          mutation_id: "mut_restore_conflict",
+          data: expect.any(Array),
+        },
+      },
+    ]);
   });
 
   it("can request a session before the local identity is known", async () => {

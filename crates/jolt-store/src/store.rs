@@ -67,6 +67,10 @@ pub enum PersistedRecordMutationOperation {
 pub struct PersistedRecordMutation {
     pub path: String,
     pub observed_revision: String,
+    /// Complete canonical head set for conflict resolutions. Older records
+    /// contain only `observed_revision` and continue to replay as one-head CAS.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub observed_revisions: Vec<String>,
     /// Explicit operation for new records. Older records infer update/delete
     /// from whether they contain a content CID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -78,6 +82,14 @@ pub struct PersistedRecordMutation {
 }
 
 impl PersistedRecordMutation {
+    pub fn observed_revisions(&self) -> Vec<String> {
+        if self.observed_revisions.is_empty() {
+            vec![self.observed_revision.clone()]
+        } else {
+            self.observed_revisions.clone()
+        }
+    }
+
     pub fn operation(&self) -> PersistedRecordMutationOperation {
         self.operation.unwrap_or_else(|| {
             if self.content_id.is_some() {
@@ -950,6 +962,7 @@ mod tests {
         let restore = PersistedRecordMutation {
             path: "/posts/hello".to_string(),
             observed_revision: "revision_3".to_string(),
+            observed_revisions: Vec::new(),
             operation: Some(PersistedRecordMutationOperation::Restore),
             content_id: Some("cid_restored".to_string()),
             result_revision: "revision_4".to_string(),
@@ -963,12 +976,28 @@ mod tests {
             legacy_delete.operation(),
             PersistedRecordMutationOperation::Delete
         );
+        assert_eq!(
+            legacy_update.observed_revisions(),
+            vec!["revision_1".to_string()]
+        );
 
         let restored: PersistedRecordMutation =
             serde_json::from_value(serde_json::to_value(&restore).unwrap()).unwrap();
         assert_eq!(
             restored.operation(),
             PersistedRecordMutationOperation::Restore
+        );
+
+        let conflict_resolution = PersistedRecordMutation {
+            observed_revision: "revision_phone".to_string(),
+            observed_revisions: vec!["revision_laptop".to_string(), "revision_phone".to_string()],
+            ..restore
+        };
+        let conflict_resolution: PersistedRecordMutation =
+            serde_json::from_value(serde_json::to_value(&conflict_resolution).unwrap()).unwrap();
+        assert_eq!(
+            conflict_resolution.observed_revisions(),
+            vec!["revision_laptop".to_string(), "revision_phone".to_string(),]
         );
     }
 
