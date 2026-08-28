@@ -29,13 +29,17 @@ pub(super) enum DeviceWriterSyncWaiter {
     /// answered. This is how a `.jolt` resolve opportunistically warms the
     /// device-writer cache while the legacy update-log path answers the resolve.
     Refresh { identity: IdentityId },
+    /// A cooldown-bounded refresh for this installation's own identity. It is
+    /// attempted only against a peer discovered as an identity provider and
+    /// does not fan out to other providers after failure.
+    LocalRefresh { identity: IdentityId },
 }
 
 impl DeviceWriterSyncWaiter {
     fn identity(&self) -> &IdentityId {
         match self {
             Self::Enumerate { identity, .. } => identity,
-            Self::Refresh { identity } => identity,
+            Self::Refresh { identity } | Self::LocalRefresh { identity } => identity,
         }
     }
 }
@@ -214,6 +218,24 @@ impl NetworkNode {
                 continue;
             };
             let device_id = first.body.device_id.clone();
+            if identity == self.identity.identity_id() && device_id == self.local_device_id() {
+                let local_log = self
+                    .local_device_writer_logs
+                    .get(&identity)
+                    .cloned()
+                    .unwrap_or_default();
+                let local_is_prefix = device_log_is_prefix(&local_log, &log);
+                let offered_is_prefix = device_log_is_prefix(&log, &local_log);
+                if !local_is_prefix && !offered_is_prefix {
+                    merge_device_writer_logs(&authority, [log.clone()])
+                        .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+                    self.blocked_local_device_writer_identities
+                        .insert(identity.clone());
+                    return Err(NetworkError::Protocol(format!(
+                        "local device-writer history diverged for {identity}"
+                    )));
+                }
+            }
             let keep = accumulated
                 .get(&device_id)
                 .map(|known| device_log_is_newer(&log, known))
@@ -340,7 +362,10 @@ impl NetworkNode {
     /// response is verified and merged, or when discovery/sync gives up.
     pub(super) fn begin_device_writer_sync(&mut self, waiter: DeviceWriterSyncWaiter) {
         let identity = waiter.identity().clone();
-        let is_background_refresh = matches!(&waiter, DeviceWriterSyncWaiter::Refresh { .. });
+        let is_background_refresh = matches!(
+            &waiter,
+            DeviceWriterSyncWaiter::Refresh { .. } | DeviceWriterSyncWaiter::LocalRefresh { .. }
+        );
 
         // Explicit enumerations wait for an in-flight sync. Background refresh
         // waiters carry no response, so accumulating one per cache hit only
@@ -360,10 +385,6 @@ impl NetworkNode {
             return;
         }
 
-        if is_background_refresh && !self.mark_device_writer_refresh_if_due(&identity) {
-            return;
-        }
-
         // Peek (do not consume) so the legacy update-log resolve path can still
         // take the same provider; both paths share the provider pool.
         let provider = self.peek_discovered_update_log_provider_except(&identity, None);
@@ -378,6 +399,10 @@ impl NetworkNode {
                 .or_default()
                 .push(waiter);
             self.answer_device_writer_waiters(&identity);
+            return;
+        }
+
+        if is_background_refresh && !self.mark_device_writer_refresh_if_due(&identity) {
             return;
         }
 
@@ -450,6 +475,41 @@ impl NetworkNode {
         );
     }
 
+    pub(super) fn refresh_local_device_writer_state_from_candidate(
+        &mut self,
+        peer_id: libp2p::PeerId,
+        explicit: bool,
+    ) {
+        let identity = self.identity.identity_id();
+        if !self.has_device_writer_state(&identity) {
+            return;
+        }
+        let key = Self::update_log_provider_key(&identity);
+        let providers = self.discovered_providers.entry(key).or_default();
+        providers.retain(|provider| provider != &peer_id);
+        providers.insert(0, peer_id);
+        let already_in_flight = self
+            .pending_device_writer_syncs
+            .values()
+            .any(|pending| pending.identity == identity);
+        if already_in_flight {
+            return;
+        }
+        if explicit {
+            self.device_writer_refreshes
+                .insert(identity.clone(), Instant::now());
+        } else if !self.mark_device_writer_refresh_if_due(&identity) {
+            return;
+        }
+        self.pending_device_writer_waiters
+            .entry(identity.clone())
+            .or_default()
+            .push(DeviceWriterSyncWaiter::LocalRefresh {
+                identity: identity.clone(),
+            });
+        self.request_device_writer_sync_from_provider(identity, &peer_id);
+    }
+
     /// Dispatch parked device-writer sync waiters to a freshly discovered
     /// provider for `identity`.
     pub(super) fn request_pending_device_writer_syncs_from_provider(
@@ -488,7 +548,8 @@ impl NetworkNode {
                     let _ =
                         response_tx.send(self.enumerate_append_records(&identity, &path_prefix));
                 }
-                DeviceWriterSyncWaiter::Refresh { .. } => {}
+                DeviceWriterSyncWaiter::Refresh { .. }
+                | DeviceWriterSyncWaiter::LocalRefresh { .. } => {}
             }
         }
     }
@@ -523,6 +584,20 @@ impl NetworkNode {
         error: Option<NetworkError>,
     ) {
         if error.is_none() {
+            self.answer_device_writer_waiters(identity);
+            return;
+        }
+
+        let local_refresh_only = self
+            .pending_device_writer_waiters
+            .get(identity)
+            .is_some_and(|waiters| {
+                !waiters.is_empty()
+                    && waiters
+                        .iter()
+                        .all(|waiter| matches!(waiter, DeviceWriterSyncWaiter::LocalRefresh { .. }))
+            });
+        if local_refresh_only {
             self.answer_device_writer_waiters(identity);
             return;
         }
@@ -629,6 +704,17 @@ impl NetworkNode {
     pub fn set_resolve_timeout(&mut self, timeout: Duration) {
         self.resolve_timeout = timeout;
     }
+}
+
+pub(super) fn device_log_is_prefix(
+    prefix: &[DeviceWriterLogEntry],
+    candidate: &[DeviceWriterLogEntry],
+) -> bool {
+    prefix.len() <= candidate.len()
+        && prefix
+            .iter()
+            .zip(candidate)
+            .all(|(left, right)| left.entry_hash() == right.entry_hash())
 }
 
 fn device_log_is_newer(candidate: &[DeviceWriterLogEntry], known: &[DeviceWriterLogEntry]) -> bool {

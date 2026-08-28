@@ -1,15 +1,16 @@
 use std::{
+    collections::BTreeMap,
     sync::OnceLock,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use jolt_core::{
-    ContentId, IdentityHeadHint, JoltAddress, RelayRecord, RelayRecordCapability, UpdateAction,
-    UpdateLogEntry,
+    ContentId, DeviceAuthorizationOperation, DeviceAuthorizationRecord, IdentityHeadHint,
+    JoltAddress, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
 };
 use jolt_identity::{verify_signature, NodeIdentity};
-use jolt_network::{NetworkConfig, NetworkNode};
-use jolt_store::{CacheConfig, ContentStore};
+use jolt_network::{DaemonCommand, DaemonHandle, NetworkConfig, NetworkNode};
+use jolt_store::{CacheConfig, ContentStore, PersistedDeviceWriterLog};
 use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use tempfile::tempdir;
 
@@ -89,6 +90,63 @@ async fn wait_for_listener(mut node: NetworkNode) -> NetworkNode {
 
 fn listener_with_peer(addr: &Multiaddr, peer: &PeerId) -> Multiaddr {
     addr.clone().with(Protocol::P2p(*peer))
+}
+
+fn authorize_test_devices(
+    owner: &NodeIdentity,
+    devices: &[&NodeIdentity],
+) -> Vec<DeviceAuthorizationRecord> {
+    let identity = owner.identity_id();
+    let mut records: Vec<DeviceAuthorizationRecord> = Vec::new();
+
+    for (index, device) in devices.iter().enumerate() {
+        let device_id = format!("dev_{}", device.identity_id());
+        let operation = DeviceAuthorizationOperation::authorize_device(
+            device_id,
+            device.public_key_bytes(),
+            vec!["identity:write".to_string()],
+            Some(format!("Test installation {}", index + 1)),
+            100 + index as u64,
+        );
+        let record = match records.last() {
+            Some(previous) => previous
+                .append(operation, 100 + index as u64, |bytes| owner.sign(bytes))
+                .unwrap(),
+            None => DeviceAuthorizationRecord::genesis(
+                owner.public_key_bytes(),
+                identity.clone(),
+                operation,
+                100,
+                |bytes| owner.sign(bytes),
+            )
+            .unwrap(),
+        };
+        records.push(record);
+    }
+
+    records
+}
+
+fn provision_test_installation(
+    store: &ContentStore,
+    owner: &NodeIdentity,
+    device: &NodeIdentity,
+    authority_records: &[DeviceAuthorizationRecord],
+) {
+    store
+        .save_local_device_signing_key(&device.signing_key_bytes())
+        .unwrap();
+    store
+        .save_device_writer_log(
+            &owner.identity_id(),
+            &PersistedDeviceWriterLog {
+                authority_records: authority_records.to_vec(),
+                device_log: Vec::new(),
+                other_device_logs: Vec::new(),
+                record_mutations: BTreeMap::new(),
+            },
+        )
+        .unwrap();
 }
 
 fn signed_identity_head_hint(
@@ -249,6 +307,154 @@ async fn two_nodes_publish_and_fetch() {
 
     node_a_handle.abort();
     node_b_handle.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn same_owner_installations_sync_device_writer_records_over_local_tcp() {
+    let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
+    let _guard = integration_test_lock().lock().await;
+    let first_dir = tempdir().unwrap();
+    let second_dir = tempdir().unwrap();
+    let owner = NodeIdentity::generate();
+    let owner_signing_key = owner.signing_key_bytes();
+    let first_device = NodeIdentity::generate();
+    let second_device = NodeIdentity::generate();
+    let authority_records = authorize_test_devices(&owner, &[&first_device, &second_device]);
+
+    let first_store = make_store(first_dir.path());
+    provision_test_installation(&first_store, &owner, &first_device, &authority_records);
+    let second_store = make_store(second_dir.path());
+    provision_test_installation(&second_store, &owner, &second_device, &authority_records);
+
+    let mut first = NetworkNode::new_tcp(owner, first_store, no_mdns_config()).unwrap();
+    let mut second = NetworkNode::new_tcp(
+        NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
+        second_store,
+        no_mdns_config(),
+    )
+    .unwrap();
+    let first_file = first_dir.path().join("first.json");
+    std::fs::write(&first_file, br#"{"text":"first"}"#).unwrap();
+    first
+        .publish_file_appending_path(&first_file, "/card130/posts/first")
+        .unwrap();
+    let second_file = second_dir.path().join("second.json");
+    std::fs::write(&second_file, br#"{"text":"second"}"#).unwrap();
+    second
+        .publish_file_appending_path(&second_file, "/card130/posts/second")
+        .unwrap();
+
+    first.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    first = wait_for_listener(first).await;
+    let first_addr = listener_with_peer(&first.listeners()[0], &first.local_peer_id());
+    second.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    second = wait_for_listener(second).await;
+    let second_addr = listener_with_peer(&second.listeners()[0], &second.local_peer_id());
+    second.dial(first_addr.clone()).unwrap();
+    let (first_tx, first_rx) = tokio::sync::mpsc::channel::<DaemonCommand>(16);
+    let (second_tx, second_rx) = tokio::sync::mpsc::channel::<DaemonCommand>(16);
+    let first_handle = DaemonHandle::new(first_tx);
+    let second_handle = DaemonHandle::new(second_tx);
+    let first_daemon = tokio::spawn(async move { first.run_daemon_loop(first_rx).await });
+    let second_daemon = tokio::spawn(async move { second.run_daemon_loop(second_rx).await });
+    let identity = NodeIdentity::from_signing_key_bytes(&owner_signing_key)
+        .unwrap()
+        .identity_id();
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if !first_handle.peers().await.unwrap().is_empty()
+                && !second_handle.peers().await.unwrap().is_empty()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("same-owner installations did not connect over local TCP");
+    let (first_count, second_count) = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let first_count = first_handle
+                .enumerate_append_records(identity.clone(), "/card130/posts/".to_string())
+                .await
+                .unwrap()
+                .len();
+            let second_count = second_handle
+                .enumerate_append_records(identity.clone(), "/card130/posts/".to_string())
+                .await
+                .unwrap()
+                .len();
+            if first_count == 2 || second_count == 2 {
+                break (first_count, second_count);
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("the first local synchronization direction did not complete");
+    if first_count == 1 {
+        first_handle
+            .connect_peer(second_addr.to_string())
+            .await
+            .unwrap();
+    } else if second_count == 1 {
+        second_handle
+            .connect_peer(first_addr.to_string())
+            .await
+            .unwrap();
+    }
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let first_records = first_handle
+                .enumerate_append_records(identity.clone(), "/card130/posts/".to_string())
+                .await
+                .unwrap();
+            let second_records = second_handle
+                .enumerate_append_records(identity.clone(), "/card130/posts/".to_string())
+                .await
+                .unwrap();
+            if first_records.len() == 2 && second_records.len() == 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("same-owner installations did not synchronize over local TCP");
+
+    first_handle.shutdown().await.unwrap();
+    second_handle.shutdown().await.unwrap();
+    first_daemon.await.unwrap();
+    second_daemon.await.unwrap();
+
+    let first_restarted = NetworkNode::new_tcp(
+        NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
+        make_store(first_dir.path()),
+        no_mdns_config(),
+    )
+    .unwrap();
+    let second_restarted = NetworkNode::new_tcp(
+        NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
+        make_store(second_dir.path()),
+        no_mdns_config(),
+    )
+    .unwrap();
+    assert_eq!(
+        first_restarted
+            .enumerate_append_records(&identity, "/card130/posts/")
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        second_restarted
+            .enumerate_append_records(&identity, "/card130/posts/")
+            .unwrap()
+            .len(),
+        2
+    );
 }
 
 #[tokio::test]

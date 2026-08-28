@@ -86,8 +86,10 @@ impl NetworkNode {
             local_device_writer_logs: HashMap::new(),
             local_device_authority_records: HashMap::new(),
             local_record_mutations: HashMap::new(),
+            blocked_local_device_writer_identities: HashSet::new(),
             identity_head_hints: IdentityHeadHintBook::default(),
             peer_connections: HashMap::new(),
+            local_device_sync_candidates: HashSet::new(),
             started_at: Instant::now(),
             fetch_manager: FetchManager::new(),
             resolve_timeout: Duration::from_secs(10),
@@ -527,6 +529,179 @@ mod tests {
             .resolve_device_writer_response_from_cache(&address, "restart_test")
             .unwrap_err();
         assert!(error.to_string().contains("Tombstoned"));
+    }
+
+    #[tokio::test]
+    async fn synced_extension_of_local_device_log_is_adopted_before_next_append() {
+        let dir = tempdir().unwrap();
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = format!("dev_{}", device.identity_id());
+        let authority_records = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                device_id.clone(),
+                device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Restored installation".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        let base = DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            device_id,
+            DeviceWriterOperation::set_path(
+                "/posts/base",
+                ContentId::from_bytes(b"base"),
+                DeviceWriterPathMode::Append,
+            ),
+            101,
+            |bytes| device.sign(bytes),
+        )
+        .unwrap();
+        let later = base
+            .append(
+                DeviceWriterOperation::set_path(
+                    "/posts/later",
+                    ContentId::from_bytes(b"later"),
+                    DeviceWriterPathMode::Append,
+                ),
+                102,
+                |bytes| device.sign(bytes),
+            )
+            .unwrap();
+        let store = make_store(dir.path());
+        store
+            .save_local_device_signing_key(&device.signing_key_bytes())
+            .unwrap();
+        store
+            .save_device_writer_log(
+                &identity,
+                &PersistedDeviceWriterLog {
+                    authority_records: authority_records.clone(),
+                    device_log: vec![base.clone()],
+                    other_device_logs: Vec::new(),
+                    record_mutations: BTreeMap::new(),
+                },
+            )
+            .unwrap();
+        let mut node = NetworkNode::new_tcp(root, store, NetworkConfig::test_config()).unwrap();
+
+        node.store_verified_device_writer_logs(
+            identity.clone(),
+            authority_records,
+            vec![vec![base.clone(), later.clone()]],
+        )
+        .unwrap();
+        node.persist_synced_local_device_writer_state(&identity)
+            .unwrap();
+        let next_file = dir.path().join("next.json");
+        std::fs::write(&next_file, b"next").unwrap();
+        node.publish_file_appending_path(&next_file, "/posts/next")
+            .unwrap();
+
+        let persisted = node
+            .store
+            .load_device_writer_log(&identity)
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.device_log.len(), 3);
+        assert_eq!(persisted.device_log[0].entry_hash(), base.entry_hash());
+        assert_eq!(persisted.device_log[1].entry_hash(), later.entry_hash());
+        assert_eq!(persisted.device_log[2].body.device_sequence, 2);
+    }
+
+    #[tokio::test]
+    async fn divergent_synced_copy_of_local_device_log_blocks_future_appends() {
+        let dir = tempdir().unwrap();
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = format!("dev_{}", device.identity_id());
+        let authority_records = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                device_id.clone(),
+                device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Forked installation".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        let base = DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            device_id,
+            DeviceWriterOperation::set_path(
+                "/posts/base",
+                ContentId::from_bytes(b"base"),
+                DeviceWriterPathMode::Append,
+            ),
+            101,
+            |bytes| device.sign(bytes),
+        )
+        .unwrap();
+        let local_later = base
+            .append(
+                DeviceWriterOperation::set_path(
+                    "/posts/local",
+                    ContentId::from_bytes(b"local"),
+                    DeviceWriterPathMode::Append,
+                ),
+                102,
+                |bytes| device.sign(bytes),
+            )
+            .unwrap();
+        let remote_later = base
+            .append(
+                DeviceWriterOperation::set_path(
+                    "/posts/remote",
+                    ContentId::from_bytes(b"remote"),
+                    DeviceWriterPathMode::Append,
+                ),
+                103,
+                |bytes| device.sign(bytes),
+            )
+            .unwrap();
+        let store = make_store(dir.path());
+        store
+            .save_local_device_signing_key(&device.signing_key_bytes())
+            .unwrap();
+        store
+            .save_device_writer_log(
+                &identity,
+                &PersistedDeviceWriterLog {
+                    authority_records: authority_records.clone(),
+                    device_log: vec![base.clone(), local_later],
+                    other_device_logs: Vec::new(),
+                    record_mutations: BTreeMap::new(),
+                },
+            )
+            .unwrap();
+        let mut node = NetworkNode::new_tcp(root, store, NetworkConfig::test_config()).unwrap();
+
+        let sync_error = node
+            .store_verified_device_writer_logs(
+                identity.clone(),
+                authority_records,
+                vec![vec![base, remote_later]],
+            )
+            .unwrap_err();
+        assert!(sync_error.to_string().contains("diverged"));
+        let next_file = dir.path().join("next.json");
+        std::fs::write(&next_file, b"next").unwrap();
+        let append_error = node
+            .publish_file_appending_path(&next_file, "/posts/next")
+            .unwrap_err();
+        assert!(append_error.to_string().contains("diverged"));
     }
 
     fn encrypted_envelope_for(node_identity: &NodeIdentity) -> Vec<u8> {
