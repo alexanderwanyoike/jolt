@@ -111,6 +111,129 @@ fn merges_singleton_paths_deterministically_across_discovery_order() {
 }
 
 #[test]
+fn causal_resolution_supersedes_every_observed_singleton_head() {
+    let root = signing_key();
+    let laptop = signing_key();
+    let phone = signing_key();
+    let (identity, authority) = authority_for_devices(
+        &root,
+        &[
+            ("dev_laptop", &laptop, "Laptop"),
+            ("dev_phone", &phone, "Phone"),
+        ],
+    );
+    let laptop_entry = DeviceWriterLogEntry::genesis(
+        identity.clone(),
+        "dev_laptop",
+        DeviceWriterOperation::set_path(
+            "/profile",
+            content_id(b"laptop branch"),
+            DeviceWriterPathMode::Singleton,
+        ),
+        100,
+        |bytes| sign(&laptop, bytes),
+    )
+    .unwrap();
+    let phone_entry = DeviceWriterLogEntry::genesis(
+        identity,
+        "dev_phone",
+        DeviceWriterOperation::set_path(
+            "/profile",
+            content_id(b"phone branch"),
+            DeviceWriterPathMode::Singleton,
+        ),
+        101,
+        |bytes| sign(&phone, bytes),
+    )
+    .unwrap();
+    let resolved_content = content_id(b"resolved profile");
+    let resolution = laptop_entry
+        .append_observing(
+            DeviceWriterOperation::set_path(
+                "/profile",
+                resolved_content.clone(),
+                DeviceWriterPathMode::Singleton,
+            ),
+            vec![phone_entry.entry_hash(), laptop_entry.entry_hash()],
+            50,
+            |bytes| sign(&laptop, bytes),
+        )
+        .unwrap();
+
+    let merged = merge_device_writer_logs(
+        &authority,
+        vec![
+            vec![laptop_entry, resolution.clone()],
+            vec![phone_entry],
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(
+        merged
+            .singleton_paths
+            .get("/profile")
+            .and_then(|entry| entry.content_id()),
+        Some(&resolved_content)
+    );
+    assert_eq!(
+        merged.singleton_paths.get("/profile").unwrap().entry_hash,
+        resolution.entry_hash()
+    );
+    assert!(!merged.singleton_conflicts.contains_key("/profile"));
+}
+
+#[test]
+fn concurrent_singleton_order_does_not_use_device_wall_clock_time() {
+    let root = signing_key();
+    let device_a = signing_key();
+    let device_z = signing_key();
+    let (identity, authority) = authority_for_devices(
+        &root,
+        &[
+            ("dev_a", &device_a, "A"),
+            ("dev_z", &device_z, "Z"),
+        ],
+    );
+    let content_a = content_id(b"clock set far ahead");
+    let content_z = content_id(b"clock set far behind");
+    let entry_a = DeviceWriterLogEntry::genesis(
+        identity.clone(),
+        "dev_a",
+        DeviceWriterOperation::set_path(
+            "/profile",
+            content_a,
+            DeviceWriterPathMode::Singleton,
+        ),
+        u64::MAX,
+        |bytes| sign(&device_a, bytes),
+    )
+    .unwrap();
+    let entry_z = DeviceWriterLogEntry::genesis(
+        identity,
+        "dev_z",
+        DeviceWriterOperation::set_path(
+            "/profile",
+            content_z.clone(),
+            DeviceWriterPathMode::Singleton,
+        ),
+        0,
+        |bytes| sign(&device_z, bytes),
+    )
+    .unwrap();
+
+    let merged = merge_device_writer_logs(&authority, vec![vec![entry_a], vec![entry_z]]).unwrap();
+
+    assert_eq!(
+        merged
+            .singleton_paths
+            .get("/profile")
+            .and_then(|entry| entry.content_id()),
+        Some(&content_z)
+    );
+}
+
+#[test]
 fn resolves_jolt_address_from_merged_device_state() {
     let root = signing_key();
     let laptop = signing_key();
