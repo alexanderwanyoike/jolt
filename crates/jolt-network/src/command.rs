@@ -229,6 +229,15 @@ pub struct LocalRecordInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LocalRecordHead {
+    Deleted {
+        /// Opaque revision token naming this Tombstone entry.
+        revision: String,
+    },
+    Present(LocalRecordInfo),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum LocalRecordState {
     Missing {
         path: String,
@@ -239,6 +248,13 @@ pub enum LocalRecordState {
         revision: String,
     },
     Present(LocalRecordInfo),
+    Conflicted {
+        path: String,
+        /// Every current signed head in deterministic protocol order.
+        alternatives: Vec<LocalRecordHead>,
+        /// Latest unambiguous common singleton-path ancestor, when known.
+        base: Option<LocalRecordHead>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

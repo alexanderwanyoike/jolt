@@ -76,6 +76,19 @@ pub struct LocalRecordReadRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
+pub enum LocalRecordReadHeadResponse {
+    Deleted {
+        revision: String,
+    },
+    Present {
+        content_id: String,
+        revision: String,
+        data: Vec<u8>,
+    },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
 pub enum LocalRecordReadResponse {
     Missing {
         path: String,
@@ -90,6 +103,37 @@ pub enum LocalRecordReadResponse {
         revision: String,
         data: Vec<u8>,
     },
+    Conflicted {
+        path: String,
+        alternatives: Vec<LocalRecordReadHeadResponse>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        base: Option<LocalRecordReadHeadResponse>,
+    },
+}
+
+async fn read_local_record_head(
+    state: &AppState,
+    head: jolt_network::LocalRecordHead,
+) -> Result<LocalRecordReadHeadResponse, AppApiError> {
+    match head {
+        jolt_network::LocalRecordHead::Deleted { revision } => {
+            Ok(LocalRecordReadHeadResponse::Deleted { revision })
+        }
+        jolt_network::LocalRecordHead::Present(record) => {
+            let fetched = state
+                .daemon
+                .fetch(record.content_id.clone())
+                .await
+                .map_err(|err| {
+                    AppApiError::Network(fetch_error_for_target(err, &record.content_id))
+                })?;
+            Ok(LocalRecordReadHeadResponse::Present {
+                content_id: record.content_id,
+                revision: record.revision,
+                data: fetched.data,
+            })
+        }
+    }
 }
 
 pub async fn read_local_record(
@@ -108,6 +152,25 @@ pub async fn read_local_record(
         }
         jolt_network::LocalRecordState::Deleted { path, revision } => {
             return Ok(Json(LocalRecordReadResponse::Deleted { path, revision }));
+        }
+        jolt_network::LocalRecordState::Conflicted {
+            path,
+            alternatives,
+            base,
+        } => {
+            let mut responses = Vec::with_capacity(alternatives.len());
+            for alternative in alternatives {
+                responses.push(read_local_record_head(&state, alternative).await?);
+            }
+            let base = match base {
+                Some(base) => Some(read_local_record_head(&state, base).await?),
+                None => None,
+            };
+            return Ok(Json(LocalRecordReadResponse::Conflicted {
+                path,
+                alternatives: responses,
+                base,
+            }));
         }
         jolt_network::LocalRecordState::Present(record) => record,
     };

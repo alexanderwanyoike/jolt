@@ -1,26 +1,167 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use jolt_core::{ContentId, DeviceWriterPathState, JoltAddress, UpdateAction};
+use jolt_core::{
+    ContentId, DeviceWriterLogEntry, DeviceWriterLogEntryHash, DeviceWriterOperation,
+    DeviceWriterPathMode, DeviceWriterPathState, JoltAddress, MergedDeviceWriterEntry,
+    UpdateAction,
+};
 use jolt_store::HomeRelayPinRecord;
 
-use crate::command::{LocalRecordInfo, LocalRecordState, PublishedContentInfo, PublishedRelayInfo};
+use crate::command::{
+    LocalRecordHead, LocalRecordInfo, LocalRecordState, PublishedContentInfo, PublishedRelayInfo,
+};
 use crate::config::HomeRelayConfig;
 use crate::error::NetworkError;
 
-use super::{unix_now, NetworkNode};
+use super::{unix_now, CachedDeviceWriterState, NetworkNode};
+
+fn local_record_head(entry: &MergedDeviceWriterEntry, path: &str) -> LocalRecordHead {
+    let revision = entry.entry_hash.to_hex();
+    match &entry.state {
+        DeviceWriterPathState::Present { content_id } => {
+            LocalRecordHead::Present(LocalRecordInfo {
+                path: path.to_string(),
+                content_id: content_id.to_string(),
+                revision,
+            })
+        }
+        DeviceWriterPathState::Tombstone => LocalRecordHead::Deleted { revision },
+    }
+}
+
+fn entry_parent_hashes(entry: &DeviceWriterLogEntry) -> Vec<DeviceWriterLogEntryHash> {
+    entry
+        .body
+        .previous_entry_hash
+        .iter()
+        .chain(entry.body.observed_heads.iter())
+        .cloned()
+        .collect()
+}
+
+fn ancestor_hashes(
+    head: &DeviceWriterLogEntryHash,
+    entries: &HashMap<DeviceWriterLogEntryHash, &DeviceWriterLogEntry>,
+) -> HashSet<DeviceWriterLogEntryHash> {
+    let mut ancestors = HashSet::new();
+    let mut pending = entries
+        .get(head)
+        .map(|entry| entry_parent_hashes(entry))
+        .unwrap_or_default();
+    while let Some(revision) = pending.pop() {
+        if !ancestors.insert(revision.clone()) {
+            continue;
+        }
+        if let Some(entry) = entries.get(&revision) {
+            pending.extend(entry_parent_hashes(entry));
+        }
+    }
+    ancestors
+}
+
+fn entry_is_singleton_path(entry: &DeviceWriterLogEntry, path: &str) -> bool {
+    match &entry.body.operation {
+        DeviceWriterOperation::SetPath {
+            path: entry_path,
+            mode: DeviceWriterPathMode::Singleton,
+            ..
+        }
+        | DeviceWriterOperation::TombstonePath { path: entry_path } => entry_path == path,
+        DeviceWriterOperation::SetPath { .. } => false,
+    }
+}
+
+fn local_record_head_from_entry(
+    entry: &DeviceWriterLogEntry,
+    path: &str,
+) -> Option<LocalRecordHead> {
+    let revision = entry.entry_hash().to_hex();
+    match &entry.body.operation {
+        DeviceWriterOperation::SetPath {
+            path: entry_path,
+            content_id,
+            mode: DeviceWriterPathMode::Singleton,
+        } if entry_path == path => Some(LocalRecordHead::Present(LocalRecordInfo {
+            path: path.to_string(),
+            content_id: content_id.to_string(),
+            revision,
+        })),
+        DeviceWriterOperation::TombstonePath { path: entry_path } if entry_path == path => {
+            Some(LocalRecordHead::Deleted { revision })
+        }
+        _ => None,
+    }
+}
+
+fn local_record_common_base(
+    state: &CachedDeviceWriterState,
+    path: &str,
+    heads: &[MergedDeviceWriterEntry],
+) -> Option<LocalRecordHead> {
+    if heads.len() < 2 {
+        return None;
+    }
+    let entries: HashMap<_, _> = state
+        .device_logs
+        .values()
+        .flatten()
+        .map(|entry| (entry.entry_hash(), entry))
+        .collect();
+    let mut common = ancestor_hashes(&heads[0].entry_hash, &entries);
+    for head in &heads[1..] {
+        let ancestors = ancestor_hashes(&head.entry_hash, &entries);
+        common.retain(|revision| ancestors.contains(revision));
+    }
+    let candidates: Vec<_> = common
+        .into_iter()
+        .filter(|revision| {
+            entries
+                .get(revision)
+                .is_some_and(|entry| entry_is_singleton_path(entry, path))
+        })
+        .collect();
+    let latest: Vec<_> = candidates
+        .iter()
+        .filter(|candidate| {
+            !candidates.iter().any(|other| {
+                other != *candidate && ancestor_hashes(other, &entries).contains(*candidate)
+            })
+        })
+        .collect();
+    if latest.len() != 1 {
+        return None;
+    }
+    entries
+        .get(latest[0])
+        .and_then(|entry| local_record_head_from_entry(entry, path))
+}
 
 impl NetworkNode {
     pub(super) fn inspect_local_record(&self, path: &str) -> LocalRecordState {
         let identity = self.identity.identity_id();
-        let Some(entry) = self
-            .device_writer_states
-            .get(&identity)
-            .and_then(|state| state.merged.singleton_paths.get(path))
-        else {
+        let Some(state) = self.device_writer_states.get(&identity) else {
             return LocalRecordState::Missing {
                 path: path.to_string(),
             };
         };
+        let Some(entry) = state.merged.singleton_paths.get(path) else {
+            return LocalRecordState::Missing {
+                path: path.to_string(),
+            };
+        };
+        if let Some(conflicts) = state.merged.singleton_conflicts.get(path) {
+            let mut heads = conflicts.clone();
+            heads.push(entry.clone());
+            let base = local_record_common_base(state, path, &heads);
+            return LocalRecordState::Conflicted {
+                path: path.to_string(),
+                alternatives: heads
+                    .iter()
+                    .map(|head| local_record_head(head, path))
+                    .collect(),
+                base,
+            };
+        }
         let revision = entry.entry_hash.to_hex();
         match &entry.state {
             DeviceWriterPathState::Present { content_id } => {
