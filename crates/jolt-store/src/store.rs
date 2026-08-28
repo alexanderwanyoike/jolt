@@ -21,6 +21,7 @@ pub struct ContentStore {
     device_writer_logs_dir: PathBuf,
     home_relay_pins_path: PathBuf,
     ingress_queue_path: PathBuf,
+    local_device_signing_key_path: PathBuf,
     local_identity_encryption_keypair_path: PathBuf,
     discovered_peer_hints_path: PathBuf,
     relay_records_path: PathBuf,
@@ -168,6 +169,7 @@ impl ContentStore {
         let device_writer_logs_dir = base_dir.join("device_writer_logs");
         let home_relay_pins_path = base_dir.join("home_relay_pins.json");
         let ingress_queue_path = base_dir.join("ingress_queue.json");
+        let local_device_signing_key_path = base_dir.join("local_device_signing_key.bin");
         let local_identity_encryption_keypair_path =
             base_dir.join("local_identity_encryption_keypair.json");
         let discovered_peer_hints_path = base_dir.join("discovered_peer_hints.json");
@@ -194,6 +196,7 @@ impl ContentStore {
             device_writer_logs_dir,
             home_relay_pins_path,
             ingress_queue_path,
+            local_device_signing_key_path,
             local_identity_encryption_keypair_path,
             discovered_peer_hints_path,
             relay_records_path,
@@ -501,6 +504,35 @@ impl ContentStore {
         serde_json::from_str(&json)
             .map(Some)
             .map_err(|e| StoreError::Serialization(e.to_string()))
+    }
+
+    /// Persist the Ed25519 signing key owned by this installation's local
+    /// device. The identity root key remains separate authority material.
+    pub fn save_local_device_signing_key(&self, signing_key: &[u8; 32]) -> Result<(), StoreError> {
+        let tmp_path = self.local_device_signing_key_path.with_extension("bin.tmp");
+        std::fs::write(&tmp_path, signing_key)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        std::fs::rename(tmp_path, &self.local_device_signing_key_path)?;
+        Ok(())
+    }
+
+    /// Load this installation's local device signing key, if one exists.
+    pub fn load_local_device_signing_key(&self) -> Result<Option<[u8; 32]>, StoreError> {
+        if !self.local_device_signing_key_path.exists() {
+            return Ok(None);
+        }
+        let bytes = std::fs::read(&self.local_device_signing_key_path)?;
+        let signing_key = bytes.try_into().map_err(|bytes: Vec<u8>| {
+            StoreError::Serialization(format!(
+                "local device signing key must be 32 bytes, found {}",
+                bytes.len()
+            ))
+        })?;
+        Ok(Some(signing_key))
     }
 
     /// Persist a best-effort peer/relay address hint learned from the network.

@@ -31,6 +31,7 @@ impl NetworkNode {
             daemon_version: env!("CARGO_PKG_VERSION").to_string(),
             peer_id: self.swarm.local_peer_id().to_string(),
             identity_address: self.identity.jolt_address().to_string(),
+            local_device_id: format!("dev_{}", self.local_device_identity.identity_id()),
             uptime_secs: self.started_at.elapsed().as_secs(),
             connected_peers: self.swarm.connected_peers().count(),
             direct_peers: direct,
@@ -136,6 +137,48 @@ mod tests {
         assert_eq!(status.daemon_version, env!("CARGO_PKG_VERSION"));
         assert!(!status.peer_id.is_empty());
         assert_eq!(status.connected_peers, 0);
+
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn daemon_status_reports_stable_local_device_across_restart() {
+        let store_dir = tempdir().unwrap();
+        let identity_dir = tempdir().unwrap();
+        let identity = NodeIdentity::generate();
+        identity.save(identity_dir.path()).unwrap();
+
+        let first_device_id = {
+            let store = make_store(store_dir.path());
+            let mut node =
+                NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+            let (cmd_tx, cmd_rx) = mpsc::channel(16);
+            let handle = DaemonHandle::new(cmd_tx);
+            let daemon = tokio::spawn(async move {
+                node.run_daemon_loop(cmd_rx).await;
+            });
+
+            let status = handle.status().await.unwrap();
+            handle.shutdown().await.unwrap();
+            daemon.await.unwrap();
+            status.local_device_id
+        };
+
+        let reloaded_identity = NodeIdentity::load(identity_dir.path()).unwrap();
+        let store = make_store(store_dir.path());
+        let mut restarted =
+            NetworkNode::new_tcp(reloaded_identity, store, NetworkConfig::test_config()).unwrap();
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = DaemonHandle::new(cmd_tx);
+        let daemon = tokio::spawn(async move {
+            restarted.run_daemon_loop(cmd_rx).await;
+        });
+
+        let restarted_status = handle.status().await.unwrap();
+        assert_eq!(restarted_status.local_device_id, first_device_id);
+        assert!(restarted_status.local_device_id.starts_with("dev_"));
+        assert_ne!(restarted_status.local_device_id, "dev_legacy_root");
 
         handle.shutdown().await.unwrap();
         daemon.await.unwrap();
