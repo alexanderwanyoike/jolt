@@ -511,6 +511,14 @@ impl NetworkNode {
         operation: DeviceWriterOperation,
         record_mutation: Option<RecordMutationIntent<'_>>,
     ) -> Result<(u64, String), NetworkError> {
+        if self
+            .blocked_local_device_writer_identities
+            .contains(&identity)
+        {
+            return Err(NetworkError::Protocol(format!(
+                "local device-writer history diverged for {identity}; refusing to append"
+            )));
+        }
         let created_at = unix_now();
         let observed_heads = match record_mutation {
             Some(ref mutation) => {
@@ -776,15 +784,38 @@ impl NetworkNode {
         if identity != &self.identity.identity_id() {
             return Ok(());
         }
-        let authority_records = self
+        let (authority_records, synced_local_log) = self
             .device_writer_states
             .get(identity)
-            .map(|state| state.authority_records.clone())
+            .map(|state| {
+                (
+                    state.authority_records.clone(),
+                    state.device_logs.get(&self.local_device_id()).cloned(),
+                )
+            })
             .ok_or_else(|| {
                 NetworkError::Protocol(format!(
                     "cannot persist missing device-writer state for {identity}"
                 ))
             })?;
+        if let Some(synced_local_log) = synced_local_log {
+            let local_log = self
+                .local_device_writer_logs
+                .get(identity)
+                .cloned()
+                .unwrap_or_default();
+            if super::resolution::device_log_is_prefix(&local_log, &synced_local_log) {
+                self.local_device_writer_logs
+                    .insert(identity.clone(), synced_local_log);
+                self.blocked_local_device_writer_identities.remove(identity);
+            } else if !super::resolution::device_log_is_prefix(&synced_local_log, &local_log) {
+                self.blocked_local_device_writer_identities
+                    .insert(identity.clone());
+                return Err(NetworkError::Protocol(format!(
+                    "local device-writer history diverged for {identity}"
+                )));
+            }
+        }
         self.persist_device_writer_state(identity, &authority_records)?;
         self.local_device_authority_records
             .insert(identity.clone(), authority_records);

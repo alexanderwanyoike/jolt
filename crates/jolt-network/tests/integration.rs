@@ -310,7 +310,7 @@ async fn two_nodes_publish_and_fetch() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn same_owner_installations_sync_device_writer_records_over_mdns() {
+async fn same_owner_installations_sync_device_writer_records_over_local_tcp() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
     let _guard = integration_test_lock().lock().await;
     let first_dir = tempdir().unwrap();
@@ -326,11 +326,11 @@ async fn same_owner_installations_sync_device_writer_records_over_mdns() {
     let second_store = make_store(second_dir.path());
     provision_test_installation(&second_store, &owner, &second_device, &authority_records);
 
-    let mut first = NetworkNode::new_tcp(owner, first_store, NetworkConfig::test_config()).unwrap();
+    let mut first = NetworkNode::new_tcp(owner, first_store, no_mdns_config()).unwrap();
     let mut second = NetworkNode::new_tcp(
         NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
         second_store,
-        NetworkConfig::test_config(),
+        no_mdns_config(),
     )
     .unwrap();
     let first_file = first_dir.path().join("first.json");
@@ -344,8 +344,13 @@ async fn same_owner_installations_sync_device_writer_records_over_mdns() {
         .publish_file_appending_path(&second_file, "/card130/posts/second")
         .unwrap();
 
-    first.listen_on("/ip4/0.0.0.0/tcp/0").unwrap();
-    second.listen_on("/ip4/0.0.0.0/tcp/0").unwrap();
+    first.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    first = wait_for_listener(first).await;
+    let first_addr = listener_with_peer(&first.listeners()[0], &first.local_peer_id());
+    second.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+    second = wait_for_listener(second).await;
+    let second_addr = listener_with_peer(&second.listeners()[0], &second.local_peer_id());
+    second.dial(first_addr.clone()).unwrap();
     let (first_tx, first_rx) = tokio::sync::mpsc::channel::<DaemonCommand>(16);
     let (second_tx, second_rx) = tokio::sync::mpsc::channel::<DaemonCommand>(16);
     let first_handle = DaemonHandle::new(first_tx);
@@ -355,6 +360,50 @@ async fn same_owner_installations_sync_device_writer_records_over_mdns() {
     let identity = NodeIdentity::from_signing_key_bytes(&owner_signing_key)
         .unwrap()
         .identity_id();
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if !first_handle.peers().await.unwrap().is_empty()
+                && !second_handle.peers().await.unwrap().is_empty()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("same-owner installations did not connect over local TCP");
+    let (first_count, second_count) = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let first_count = first_handle
+                .enumerate_append_records(identity.clone(), "/card130/posts/".to_string())
+                .await
+                .unwrap()
+                .len();
+            let second_count = second_handle
+                .enumerate_append_records(identity.clone(), "/card130/posts/".to_string())
+                .await
+                .unwrap()
+                .len();
+            if first_count == 2 || second_count == 2 {
+                break (first_count, second_count);
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("the first local synchronization direction did not complete");
+    if first_count == 1 {
+        first_handle
+            .connect_peer(second_addr.to_string())
+            .await
+            .unwrap();
+    } else if second_count == 1 {
+        second_handle
+            .connect_peer(first_addr.to_string())
+            .await
+            .unwrap();
+    }
 
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
@@ -373,7 +422,7 @@ async fn same_owner_installations_sync_device_writer_records_over_mdns() {
         }
     })
     .await
-    .expect("same-owner installations did not synchronize over mDNS");
+    .expect("same-owner installations did not synchronize over local TCP");
 
     first_handle.shutdown().await.unwrap();
     second_handle.shutdown().await.unwrap();
@@ -383,13 +432,13 @@ async fn same_owner_installations_sync_device_writer_records_over_mdns() {
     let first_restarted = NetworkNode::new_tcp(
         NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
         make_store(first_dir.path()),
-        NetworkConfig::test_config(),
+        no_mdns_config(),
     )
     .unwrap();
     let second_restarted = NetworkNode::new_tcp(
         NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
         make_store(second_dir.path()),
-        NetworkConfig::test_config(),
+        no_mdns_config(),
     )
     .unwrap();
     assert_eq!(

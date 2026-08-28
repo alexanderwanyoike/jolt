@@ -39,6 +39,7 @@ impl NetworkNode {
             ))) => {
                 for (peer_id, addr) in peers {
                     info!("mDNS discovered peer: {peer_id} at {addr}");
+                    self.local_device_sync_candidates.insert(peer_id);
                     self.swarm.add_peer_address(peer_id, addr.clone());
                     if let Err(e) = self.swarm.dial(addr) {
                         debug!("Failed to dial discovered peer: {e}");
@@ -886,6 +887,28 @@ impl NetworkNode {
                     libp2p::kad::Event::RoutingUpdated { peer, .. } => {
                         debug!("Kademlia routing updated: {peer}");
                     }
+                    libp2p::kad::Event::InboundRequest {
+                        request:
+                            libp2p::kad::InboundRequest::AddProvider {
+                                record: Some(record),
+                            },
+                    } => {
+                        let identity = self.identity.identity_id();
+                        let key = String::from_utf8_lossy(record.key.as_ref()).to_string();
+                        if key == Self::update_log_provider_key(&identity)
+                            && record.provider != *self.swarm.local_peer_id()
+                        {
+                            let providers = self.discovered_providers.entry(key).or_default();
+                            if !providers.contains(&record.provider) {
+                                providers.push(record.provider);
+                            }
+                            self.begin_device_writer_sync(
+                                super::resolution::DeviceWriterSyncWaiter::LocalRefresh {
+                                    identity,
+                                },
+                            );
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -934,7 +957,16 @@ impl NetworkNode {
 
                 // Notify fetch manager in case this is a provider we're waiting for
                 self.fetch_manager.on_peer_connected(&peer_id);
-                self.refresh_local_device_writer_state_from_peer(&peer_id);
+                let identity = self.identity.identity_id();
+                if self.has_device_writer_state(&identity)
+                    && self.local_device_sync_candidates.contains(&peer_id)
+                {
+                    self.refresh_local_device_writer_state_from_candidate(peer_id, false);
+                } else if self.has_device_writer_state(&identity) {
+                    if let Err(error) = self.announce_update_log_provider(&identity) {
+                        debug!("Failed to announce local identity after connection: {error}");
+                    }
+                }
             }
 
             SwarmEvent::ConnectionClosed { peer_id, .. } => {

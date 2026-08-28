@@ -195,10 +195,18 @@ pub struct NetworkNode {
     /// Durable successful stable-record mutations, loaded once and carried
     /// through the same atomic save as each local device-writer append.
     local_record_mutations: HashMap<IdentityId, BTreeMap<String, PersistedRecordMutation>>,
+    /// Local device histories that were observed to fork from another verified
+    /// copy. Further appends are refused so this installation cannot deepen the
+    /// fork.
+    blocked_local_device_writer_identities: HashSet<IdentityId>,
     /// Signed, expiring identity-head hints learned through relay gossip.
     identity_head_hints: IdentityHeadHintBook,
     /// Connection quality tracking: peer -> connection info
     peer_connections: HashMap<libp2p::PeerId, PeerConnectionInfo>,
+    /// Peers reached through explicit user dialing or local mDNS. Only these
+    /// peers may be probed for this installation's own identity history;
+    /// relays and incidental DHT neighbours are excluded.
+    local_device_sync_candidates: HashSet<libp2p::PeerId>,
     /// When the node was created (for uptime reporting)
     started_at: Instant,
     /// Manages in-flight fetch operations for the daemon loop
