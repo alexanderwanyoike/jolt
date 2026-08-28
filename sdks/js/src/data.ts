@@ -211,6 +211,7 @@ export type ResourceKindValue =
 export class State {
   static readonly Present = Symbol("JoltDataStatePresent");
   static readonly Deleted = Symbol("JoltDataStateDeleted");
+  static readonly Conflicted = Symbol("JoltDataStateConflicted");
   static readonly Missing = Symbol("JoltDataStateMissing");
   static readonly Unavailable = Symbol("JoltDataStateUnavailable");
 
@@ -258,12 +259,18 @@ export type ItemSnapshot<
   T extends object,
   TState extends symbol,
   TAccess extends ResourceAccess = ResourceAccess,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
 > = {
   readonly state: TState;
   readonly ref: Ref<T>;
-  isPresent(): this is PresentItem<T, TAccess>;
-  isDeleted(): this is DeletedItem<T, TAccess>;
-};
+  isPresent(): this is PresentItem<T, TAccess, TConflicts>;
+  isDeleted(): this is DeletedItem<T, TAccess, TConflicts>;
+} & (TConflicts extends (
+  | { readonly update: typeof UpdateConflict.Manual }
+  | { readonly delete: typeof DeleteConflict.Manual }
+) ? {
+    isConflicted(): this is ConflictItem<T, TAccess, TConflicts>;
+  } : object);
 
 /** A schema value whose nested object properties and arrays cannot be mutated. */
 export type ImmutableValue<T> = T extends Date
@@ -278,22 +285,24 @@ export type ImmutableValue<T> = T extends Date
 export type PresentItem<
   T extends object,
   TAccess extends ResourceAccess = ResourceAccess,
-> = ItemSnapshot<T, typeof State.Present, TAccess> & {
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = ItemSnapshot<T, typeof State.Present, TAccess, TConflicts> & {
   readonly value: ImmutableValue<T>;
 } & (TAccess extends { readonly update: true } ? {
-  update(patch: ShallowPatch<T>): Promise<PresentItem<T, TAccess>>;
-  replace(value: T): Promise<PresentItem<T, TAccess>>;
+  update(patch: ShallowPatch<T>): Promise<PresentItem<T, TAccess, TConflicts>>;
+  replace(value: T): Promise<PresentItem<T, TAccess, TConflicts>>;
 } : object) & (TAccess extends { readonly delete: true } ? {
-  delete(): Promise<DeletedItem<T, TAccess>>;
+  delete(): Promise<DeletedItem<T, TAccess, TConflicts>>;
 } : object);
 
 /** An immutable Item snapshot whose current state is a Tombstone. */
 export type DeletedItem<
   T extends object,
   TAccess extends ResourceAccess = ResourceAccess,
-> = ItemSnapshot<T, typeof State.Deleted, TAccess> & (
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = ItemSnapshot<T, typeof State.Deleted, TAccess, TConflicts> & (
   TAccess extends { readonly restore: true } ? {
-    restore(value: T): Promise<PresentItem<T, TAccess>>;
+    restore(value: T): Promise<PresentItem<T, TAccess, TConflicts>>;
   } : object
 );
 
@@ -301,23 +310,77 @@ export type DeletedItem<
 export type MissingItem<
   T extends object,
   TAccess extends ResourceAccess = ResourceAccess,
-> = ItemSnapshot<T, typeof State.Missing, TAccess>;
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = ItemSnapshot<T, typeof State.Missing, TAccess, TConflicts>;
 
 /** An immutable Item snapshot whose current state cannot be determined. */
 export type UnavailableItem<
   T extends object,
   TAccess extends ResourceAccess = ResourceAccess,
-> = ItemSnapshot<T, typeof State.Unavailable, TAccess>;
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = ItemSnapshot<T, typeof State.Unavailable, TAccess, TConflicts>;
+
+/** One immutable signed state retained as an unresolved Manual alternative. */
+export type ConflictAlternative<T extends object> =
+  | PresentConflictAlternative<T>
+  | DeletedConflictAlternative<T>;
+
+/** One content-bearing alternative in a Manual conflict. */
+export type PresentConflictAlternative<T extends object> = {
+  readonly state: typeof State.Present;
+  readonly ref: Ref<T>;
+  readonly value: ImmutableValue<T>;
+  isPresent(): this is PresentConflictAlternative<T>;
+  isDeleted(): this is DeletedConflictAlternative<T>;
+};
+
+/** One deleted alternative in a Manual conflict. */
+export type DeletedConflictAlternative<T extends object> = {
+  readonly state: typeof State.Deleted;
+  readonly ref: Ref<T>;
+  isPresent(): this is PresentConflictAlternative<T>;
+  isDeleted(): this is DeletedConflictAlternative<T>;
+};
+
+/** An immutable unresolved state exposed only by a Resource using Manual policy. */
+export type ConflictItem<
+  T extends object,
+  TAccess extends ResourceAccess = ResourceAccess,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
+  readonly state: typeof State.Conflicted;
+  readonly ref: Ref<T>;
+  readonly alternatives: readonly ConflictAlternative<T>[];
+  isPresent(): this is PresentItem<T, TAccess, TConflicts>;
+  isDeleted(): this is DeletedItem<T, TAccess, TConflicts>;
+  isConflicted(): this is ConflictItem<T, TAccess, TConflicts>;
+} & (TAccess extends { readonly update: true } ? {
+  choose(
+    alternative: PresentConflictAlternative<T>,
+  ): Promise<PresentItem<T, TAccess, TConflicts>>;
+  resolve(value: T): Promise<PresentItem<T, TAccess, TConflicts>>;
+} : object) & (TAccess extends { readonly delete: true } ? {
+  choose(
+    alternative: DeletedConflictAlternative<T>,
+  ): Promise<DeletedItem<T, TAccess, TConflicts>>;
+} : object);
 
 /** Any current immutable state of one logical Item. */
 export type Item<
   T extends object,
   TAccess extends ResourceAccess = ResourceAccess,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
 > =
-  | PresentItem<T, TAccess>
-  | DeletedItem<T, TAccess>
-  | MissingItem<T, TAccess>
-  | UnavailableItem<T, TAccess>;
+  | PresentItem<T, TAccess, TConflicts>
+  | DeletedItem<T, TAccess, TConflicts>
+  | MissingItem<T, TAccess, TConflicts>
+  | UnavailableItem<T, TAccess, TConflicts>
+  | (TConflicts extends (
+    | { readonly update: typeof UpdateConflict.Manual }
+    | { readonly delete: typeof DeleteConflict.Manual }
+  )
+    ? ConflictItem<T, TAccess, TConflicts>
+    : never);
 
 /** Operations an application requests for one Resource. */
 export type ResourceAccess = {
@@ -335,9 +398,12 @@ export type ResourceConflicts = {
 };
 
 /** Developer-facing access and conflict declarations for one Resource. */
-export type ResourceOptions<TAccess extends ResourceAccess> = {
+export type ResourceOptions<
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
   readonly access: TAccess;
-  readonly conflicts: ResourceConflicts;
+  readonly conflicts: TConflicts;
 };
 
 /** Shared metadata and migration behavior for an unbound Resource. */
@@ -345,10 +411,11 @@ export type ResourceDefinition<
   T extends object,
   TAccess extends ResourceAccess,
   TKind extends ResourceKindValue,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
 > = {
   readonly schema: SchemaClass<T>;
   readonly access: TAccess;
-  readonly conflicts: ResourceConflicts;
+  readonly conflicts: TConflicts;
   readonly migrate: (stored: StoredSchemaValue) => T;
   readonly [resourceDefinition]: TKind;
 };
@@ -357,19 +424,22 @@ export type ResourceDefinition<
 export type CollectionDefinition<
   T extends object,
   TAccess extends ResourceAccess,
-> = ResourceDefinition<T, TAccess, typeof ResourceKind.Collection>;
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = ResourceDefinition<T, TAccess, typeof ResourceKind.Collection, TConflicts>;
 
 /** An unbound Document definition created before it belongs to an App. */
 export type DocumentDefinition<
   T extends object,
   TAccess extends ResourceAccess,
-> = ResourceDefinition<T, TAccess, typeof ResourceKind.Document>;
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = ResourceDefinition<T, TAccess, typeof ResourceKind.Document, TConflicts>;
 
 /** A Collection definition bound to its canonical App path prefix. */
 export type BoundCollectionDefinition<
   T extends object,
   TAccess extends ResourceAccess,
-> = CollectionDefinition<T, TAccess> & {
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = CollectionDefinition<T, TAccess, TConflicts> & {
   readonly path: string;
 };
 
@@ -377,7 +447,8 @@ export type BoundCollectionDefinition<
 export type BoundDocumentDefinition<
   T extends object,
   TAccess extends ResourceAccess,
-> = DocumentDefinition<T, TAccess> & {
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = DocumentDefinition<T, TAccess, TConflicts> & {
   readonly path: string;
 };
 
@@ -404,7 +475,9 @@ function validatedResourceAccess<TAccess extends ResourceAccess>(access: TAccess
   return Object.freeze({ ...access });
 }
 
-function validatedResourceConflicts(conflicts: ResourceConflicts): ResourceConflicts {
+function validatedResourceConflicts<TConflicts extends ResourceConflicts>(
+  conflicts: TConflicts,
+): TConflicts {
   if (conflicts === null || typeof conflicts !== "object" || Array.isArray(conflicts)) {
     throw new TypeError("Resource conflicts must be an object");
   }
@@ -414,18 +487,19 @@ function validatedResourceConflicts(conflicts: ResourceConflicts): ResourceConfl
   if (!(Object.values(DeleteConflict) as readonly unknown[]).includes(conflicts.delete)) {
     throw new TypeError("Resource delete conflict must be a value from DeleteConflict");
   }
-  return Object.freeze({ ...conflicts });
+  return Object.freeze({ ...conflicts }) as TConflicts;
 }
 
 function defineResource<
   T extends object,
   const TAccess extends ResourceAccess,
+  const TConflicts extends ResourceConflicts,
   const TKind extends ResourceKindValue,
 >(
   kind: TKind,
   schemaClass: SchemaClass<T>,
-  options: ResourceOptions<TAccess>,
-): ResourceDefinition<T, TAccess, TKind> {
+  options: ResourceOptions<TAccess, TConflicts>,
+): ResourceDefinition<T, TAccess, TKind, TConflicts> {
   const access = validatedResourceAccess(options.access);
   const conflicts = validatedResourceConflicts(options.conflicts);
   return Object.freeze({
@@ -439,10 +513,14 @@ function defineResource<
 
 /** Defines an unbound typed Collection. App.create derives its path. */
 export const Collection = {
-  create: <T extends object, const TAccess extends ResourceAccess>(
+  create: <
+    T extends object,
+    const TAccess extends ResourceAccess,
+    const TConflicts extends ResourceConflicts,
+  >(
     schemaClass: SchemaClass<T>,
-    options: ResourceOptions<TAccess>,
-  ): CollectionDefinition<T, TAccess> => (
+    options: ResourceOptions<TAccess, TConflicts>,
+  ): CollectionDefinition<T, TAccess, TConflicts> => (
     defineResource(ResourceKind.Collection, schemaClass, options)
   ),
 } as const;
@@ -460,10 +538,14 @@ export class DeletedError extends Error {
 
 /** Defines an unbound typed Document. App.create derives its path. */
 export const Document = {
-  create: <T extends object, const TAccess extends ResourceAccess>(
+  create: <
+    T extends object,
+    const TAccess extends ResourceAccess,
+    const TConflicts extends ResourceConflicts,
+  >(
     schemaClass: SchemaClass<T>,
-    options: ResourceOptions<TAccess>,
-  ): DocumentDefinition<T, TAccess> => (
+    options: ResourceOptions<TAccess, TConflicts>,
+  ): DocumentDefinition<T, TAccess, TConflicts> => (
     defineResource(ResourceKind.Document, schemaClass, options)
   ),
 } as const;
@@ -471,88 +553,124 @@ export const Document = {
 /** Named unbound Resources accepted by App.create. */
 export type AppDataDefinitions = Readonly<Record<
   string,
-  | CollectionDefinition<object, ResourceAccess>
-  | DocumentDefinition<object, ResourceAccess>
+  | CollectionDefinition<object, ResourceAccess, ResourceConflicts>
+  | DocumentDefinition<object, ResourceAccess, ResourceConflicts>
 >>;
 
 /** App data definitions after canonical paths have been derived. */
 export type BoundAppData<TData extends AppDataDefinitions> = {
   readonly [K in keyof TData]: TData[K] extends CollectionDefinition<
     infer TValue,
-    infer TAccess
-  > ? BoundCollectionDefinition<TValue, TAccess>
-    : TData[K] extends DocumentDefinition<infer TValue, infer TAccess>
-      ? BoundDocumentDefinition<TValue, TAccess>
+    infer TAccess,
+    infer TConflicts
+  > ? BoundCollectionDefinition<TValue, TAccess, TConflicts>
+    : TData[K] extends DocumentDefinition<infer TValue, infer TAccess, infer TConflicts>
+      ? BoundDocumentDefinition<TValue, TAccess, TConflicts>
       : never;
 };
 
 /** Read operations shared by every connected Collection surface. */
-export type CollectionReader<T extends object, TAccess extends ResourceAccess> = {
-  get(ref: Ref<T>): Promise<Item<T, TAccess>>;
+export type CollectionReader<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
+  get(ref: Ref<T>): Promise<Item<T, TAccess, TConflicts>>;
 };
 
 /** Collection creation exposed only when declared in Resource access. */
-export type CollectionCreator<T extends object, TAccess extends ResourceAccess> = {
-  create(value: T): Promise<PresentItem<T, TAccess>>;
+export type CollectionCreator<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
+  create(value: T): Promise<PresentItem<T, TAccess, TConflicts>>;
 };
 
 /** A read-only Collection view bound to another identity. */
-export type RemoteCollection<T extends object> = CollectionReader<T, {
-  readonly read: typeof Read.AnyIdentity;
-}>;
+export type RemoteCollection<
+  T extends object,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = CollectionReader<T, { readonly read: typeof Read.AnyIdentity }, TConflicts>;
 
 /** Remote Collection reads exposed only for AnyIdentity access. */
-export type CollectionRemoteReader<T extends object> = {
-  for(identity: Identity): RemoteCollection<T>;
+export type CollectionRemoteReader<
+  T extends object,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
+  for(identity: Identity): RemoteCollection<T, TConflicts>;
 };
 
 /** A connected Collection surface derived from its access declaration. */
 export type CollectionResource<
   T extends object,
   TAccess extends ResourceAccess,
-> = CollectionReader<T, TAccess> & (
-  TAccess extends { readonly create: true } ? CollectionCreator<T, TAccess> : object
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = CollectionReader<T, TAccess, TConflicts> & (
+  TAccess extends { readonly create: true }
+    ? CollectionCreator<T, TAccess, TConflicts>
+    : object
 ) & (
-  TAccess["read"] extends typeof Read.AnyIdentity ? CollectionRemoteReader<T> : object
+  TAccess["read"] extends typeof Read.AnyIdentity
+    ? CollectionRemoteReader<T, TConflicts>
+    : object
 );
 
 /** Read operations shared by every connected Document surface. */
-export type DocumentReader<T extends object, TAccess extends ResourceAccess> = {
-  get(): Promise<Item<T, TAccess>>;
+export type DocumentReader<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
+  get(): Promise<Item<T, TAccess, TConflicts>>;
 };
 
 /** Document creation exposed only when declared in Resource access. */
-export type DocumentCreator<T extends object, TAccess extends ResourceAccess> = {
-  getOrCreate(value: T): Promise<PresentItem<T, TAccess>>;
+export type DocumentCreator<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
+  getOrCreate(value: T): Promise<PresentItem<T, TAccess, TConflicts>>;
 };
 
 /** A read-only Document view bound to another identity. */
-export type RemoteDocument<T extends object> = DocumentReader<T, {
-  readonly read: typeof Read.AnyIdentity;
-}>;
+export type RemoteDocument<
+  T extends object,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = DocumentReader<T, { readonly read: typeof Read.AnyIdentity }, TConflicts>;
 
 /** Remote Document reads exposed only for AnyIdentity access. */
-export type DocumentRemoteReader<T extends object> = {
-  for(identity: Identity): RemoteDocument<T>;
+export type DocumentRemoteReader<
+  T extends object,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
+  for(identity: Identity): RemoteDocument<T, TConflicts>;
 };
 
 /** A connected Document surface derived from its access declaration. */
 export type DocumentResource<
   T extends object,
   TAccess extends ResourceAccess,
-> = DocumentReader<T, TAccess> & (
-  TAccess extends { readonly create: true } ? DocumentCreator<T, TAccess> : object
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = DocumentReader<T, TAccess, TConflicts> & (
+  TAccess extends { readonly create: true }
+    ? DocumentCreator<T, TAccess, TConflicts>
+    : object
 ) & (
-  TAccess["read"] extends typeof Read.AnyIdentity ? DocumentRemoteReader<T> : object
+  TAccess["read"] extends typeof Read.AnyIdentity
+    ? DocumentRemoteReader<T, TConflicts>
+    : object
 );
 
 /** The connected Resource surface generated from one Resource definition. */
 export type AppResource<TDefinition> = TDefinition extends CollectionDefinition<
   infer TValue,
-  infer TAccess
-> ? CollectionResource<TValue, TAccess>
-  : TDefinition extends DocumentDefinition<infer TValue, infer TAccess>
-    ? DocumentResource<TValue, TAccess>
+  infer TAccess,
+  infer TConflicts
+> ? CollectionResource<TValue, TAccess, TConflicts>
+  : TDefinition extends DocumentDefinition<infer TValue, infer TAccess, infer TConflicts>
+    ? DocumentResource<TValue, TAccess, TConflicts>
     : object;
 
 /** The direct named Resource surface returned by App.test or App.connect. */
@@ -589,7 +707,12 @@ export type AppConnectOptions = {
 
 /** Shared deterministic state that can expose several identity-bound App views. */
 export type AppTestWorld<TData extends AppDataDefinitions> = {
+  /** Returns a view over the world's immediately shared application state. */
   as(identity: Identity): AppInstance<TData>;
+  /** Creates one isolated device replica for deterministic offline-branch tests. */
+  device(identity: Identity, deviceId: string): AppInstance<TData>;
+  /** Exchanges known histories so every device observes the same branches. */
+  sync(): Promise<void>;
 };
 
 /** High-level node behavior required by one declared Resource. */
@@ -686,6 +809,19 @@ function trueIsDeleted<T extends object, TAccess extends ResourceAccess>(
   return true;
 }
 
+function falseIsConflicted(): false {
+  return false;
+}
+
+function trueIsConflicted(): true {
+  return true;
+}
+
+function usesManualConflict(conflicts: ResourceConflicts): boolean {
+  return conflicts.update === UpdateConflict.Manual
+    || conflicts.delete === DeleteConflict.Manual;
+}
+
 function freezeValue<T>(value: T, seen = new WeakSet<object>()): ImmutableValue<T> {
   if (value === null || typeof value !== "object" || seen.has(value)) {
     return value as ImmutableValue<T>;
@@ -697,13 +833,17 @@ function freezeValue<T>(value: T, seen = new WeakSet<object>()): ImmutableValue<
   return Object.freeze(value) as ImmutableValue<T>;
 }
 
-function presentItem<T extends object, TAccess extends ResourceAccess>(
-  resource: ResourceDefinition<T, TAccess, ResourceKindValue>,
+function presentItem<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts,
+>(
+  resource: ResourceDefinition<T, TAccess, ResourceKindValue, TConflicts>,
   backend: DataBackend,
   ref: Ref<T>,
   record: BackendPresentRecord,
   mutable: boolean,
-): PresentItem<T, TAccess> {
+): PresentItem<T, TAccess, TConflicts> {
   const migrated = migratedStoredValue(resource.schema, record.stored);
   const value = migrated.value;
   const item: Record<string, unknown> = {
@@ -713,6 +853,9 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
     isPresent: trueIsPresent,
     isDeleted: falseIsDeleted,
   };
+  if (usesManualConflict(resource.conflicts)) {
+    item.isConflicted = falseIsConflicted;
+  }
   const revision = mutable ? record.revision : null;
   if (resource.access.update === true && revision !== null) {
     const commit = async (stored: StoredSchemaValue) => {
@@ -744,34 +887,50 @@ function presentItem<T extends object, TAccess extends ResourceAccess>(
       return deletedItem(resource, ref, { backend, revision: deleted.revision });
     };
   }
-  return Object.freeze(item) as PresentItem<T, TAccess>;
+  return Object.freeze(item) as PresentItem<T, TAccess, TConflicts>;
 }
 
-function missingItem<T extends object, TAccess extends ResourceAccess>(
+function missingItem<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts,
+>(
+  resource: ResourceDefinition<T, TAccess, ResourceKindValue, TConflicts>,
   ref: Ref<T>,
-): MissingItem<T, TAccess> {
-  return Object.freeze({
+): MissingItem<T, TAccess, TConflicts> {
+  const item: Record<string, unknown> = {
     state: State.Missing,
     ref,
     isPresent: falseIsPresent,
     isDeleted: falseIsDeleted,
-  });
+  };
+  if (usesManualConflict(resource.conflicts)) {
+    item.isConflicted = falseIsConflicted;
+  }
+  return Object.freeze(item) as MissingItem<T, TAccess, TConflicts>;
 }
 
-function deletedItem<T extends object, TAccess extends ResourceAccess>(
-  resource: ResourceDefinition<T, TAccess, ResourceKindValue>,
+function deletedItem<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts,
+>(
+  resource: ResourceDefinition<T, TAccess, ResourceKindValue, TConflicts>,
   ref: Ref<T>,
   mutationContext?: {
     readonly backend: DataBackend;
     readonly revision: string;
   },
-): DeletedItem<T, TAccess> {
+): DeletedItem<T, TAccess, TConflicts> {
   const item: Record<string, unknown> = {
     state: State.Deleted,
     ref,
     isPresent: falseIsPresent,
     isDeleted: trueIsDeleted,
   };
+  if (usesManualConflict(resource.conflicts)) {
+    item.isConflicted = falseIsConflicted;
+  }
   if (resource.access.restore === true && mutationContext !== undefined) {
     item.restore = async (input: T) => {
       const current = currentStoredValue(resource.schema, input);
@@ -784,18 +943,108 @@ function deletedItem<T extends object, TAccess extends ResourceAccess>(
       return presentItem(resource, mutationContext.backend, ref, restored, true);
     };
   }
-  return Object.freeze(item) as DeletedItem<T, TAccess>;
+  return Object.freeze(item) as DeletedItem<T, TAccess, TConflicts>;
 }
 
-function unavailableItem<T extends object, TAccess extends ResourceAccess>(
+function conflictItem<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts,
+>(
+  resource: ResourceDefinition<T, TAccess, ResourceKindValue, TConflicts>,
+  backend: DataBackend,
   ref: Ref<T>,
-): UnavailableItem<T, TAccess> {
-  return Object.freeze({
+  record: BackendConflictRecord,
+  mutable: boolean,
+): ConflictItem<T, TAccess, TConflicts> {
+  const recordsByAlternative = new Map<ConflictAlternative<T>, BackendAlternativeRecord>();
+  const alternatives = Object.freeze(record.alternatives.map(alternativeRecord => {
+    let alternative: ConflictAlternative<T>;
+    if (isBackendDeletedRecord(alternativeRecord)) {
+      alternative = Object.freeze({
+        state: State.Deleted,
+        ref,
+        isPresent: falseIsPresent,
+        isDeleted: trueIsDeleted,
+      }) as DeletedConflictAlternative<T>;
+    } else {
+      const migrated = migratedStoredValue(resource.schema, alternativeRecord.stored);
+      alternative = Object.freeze({
+        state: State.Present,
+        ref,
+        value: freezeValue(migrated.value),
+        isPresent: trueIsPresent,
+        isDeleted: falseIsDeleted,
+      }) as PresentConflictAlternative<T>;
+    }
+    recordsByAlternative.set(alternative, alternativeRecord);
+    return alternative;
+  }));
+  const item: Record<string, unknown> = {
+    state: State.Conflicted,
+    ref,
+    alternatives,
+    isPresent: falseIsPresent,
+    isDeleted: falseIsDeleted,
+    isConflicted: trueIsConflicted,
+  };
+  if (mutable && (resource.access.update === true || resource.access.delete === true)) {
+    item.choose = async (alternative: ConflictAlternative<T>) => {
+      const selected = recordsByAlternative.get(alternative);
+      if (selected === undefined) {
+        throw new TypeError("Conflict alternative does not belong to this Item");
+      }
+      if (isBackendDeletedRecord(selected) && resource.access.delete !== true) {
+        throw new TypeError("Resource does not allow choosing a deleted alternative");
+      }
+      if (!isBackendDeletedRecord(selected) && resource.access.update !== true) {
+        throw new TypeError("Resource does not allow choosing a present alternative");
+      }
+      const resolved = await backend.resolveConflict(
+        ref,
+        isBackendDeletedRecord(selected) ? State.Deleted : selected.stored,
+        record.revisions,
+        backend.nextMutationId(),
+      );
+      return isBackendDeletedRecord(resolved)
+        ? deletedItem(resource, ref, { backend, revision: resolved.revision })
+        : presentItem(resource, backend, ref, resolved, true);
+    };
+  }
+  if (mutable && resource.access.update === true) {
+    item.resolve = async (input: T) => {
+      const current = currentStoredValue(resource.schema, input);
+      const resolved = await backend.resolveConflict(
+        ref,
+        current.stored,
+        record.revisions,
+        backend.nextMutationId(),
+      );
+      if (isBackendDeletedRecord(resolved)) throw new ConflictError(ref);
+      return presentItem(resource, backend, ref, resolved, true);
+    };
+  }
+  return Object.freeze(item) as ConflictItem<T, TAccess, TConflicts>;
+}
+
+function unavailableItem<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts,
+>(
+  resource: ResourceDefinition<T, TAccess, ResourceKindValue, TConflicts>,
+  ref: Ref<T>,
+): UnavailableItem<T, TAccess, TConflicts> {
+  const item: Record<string, unknown> = {
     state: State.Unavailable,
     ref,
     isPresent: falseIsPresent,
     isDeleted: falseIsDeleted,
-  });
+  };
+  if (usesManualConflict(resource.conflicts)) {
+    item.isConflicted = falseIsConflicted;
+  }
+  return Object.freeze(item) as UnavailableItem<T, TAccess, TConflicts>;
 }
 
 function decodeStoredSchemaValue(input: unknown): StoredSchemaValue | null {
@@ -876,16 +1125,33 @@ type BackendDeletedRecord = {
   readonly revision: string | null;
 };
 
+type BackendAlternativeRecord =
+  | (BackendPresentRecord & { readonly revision: string })
+  | (BackendDeletedRecord & { readonly revision: string });
+
+type BackendConflictRecord = {
+  readonly state: typeof State.Conflicted;
+  readonly alternatives: readonly BackendAlternativeRecord[];
+  readonly revisions: readonly string[];
+};
+
 type BackendReadResult =
   | BackendPresentRecord
   | BackendDeletedRecord
+  | BackendConflictRecord
   | typeof State.Missing
   | typeof State.Unavailable;
 
 function isBackendDeletedRecord(
-  record: BackendPresentRecord | BackendDeletedRecord,
+  record: BackendPresentRecord | BackendDeletedRecord | BackendConflictRecord,
 ): record is BackendDeletedRecord {
   return "state" in record && record.state === State.Deleted;
+}
+
+function isBackendConflictRecord(
+  record: BackendPresentRecord | BackendDeletedRecord | BackendConflictRecord,
+): record is BackendConflictRecord {
+  return "state" in record && record.state === State.Conflicted;
 }
 
 type DataBackend = {
@@ -911,6 +1177,12 @@ type DataBackend = {
     revision: string,
     mutationId: string,
   ): Promise<BackendPresentRecord & { readonly revision: string }>;
+  resolveConflict<T extends object>(
+    ref: Ref<T>,
+    next: StoredSchemaValue | typeof State.Deleted,
+    revisions: readonly string[],
+    mutationId: string,
+  ): Promise<BackendAlternativeRecord>;
   for(identity: Identity): DataBackend;
 };
 
@@ -972,7 +1244,179 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
       state.store.set(key, record);
       return record;
     },
+    async resolveConflict(ref) {
+      throw new ConflictError(ref);
+    },
     for: remoteIdentity => createTestBackend(state, remoteIdentity),
+  };
+}
+
+type TestDeviceBranch = {
+  readonly revision: string;
+  readonly parents: readonly string[];
+  readonly record: BackendAlternativeRecord;
+};
+
+type TestDeviceState = {
+  readonly id: string;
+  readonly history: Map<string, Map<string, TestDeviceBranch>>;
+};
+
+type TestDeviceWorldState = {
+  readonly devices: Map<string, TestDeviceState>;
+  nextId: number;
+  nextMutationId: number;
+  nextRevision: number;
+};
+
+function createTestDeviceWorldState(): TestDeviceWorldState {
+  return {
+    devices: new Map(),
+    nextId: 0,
+    nextMutationId: 0,
+    nextRevision: 0,
+  };
+}
+
+function testDeviceHeads(
+  device: TestDeviceState,
+  key: string,
+): readonly TestDeviceBranch[] {
+  const branches = device.history.get(key);
+  if (branches === undefined) return [];
+  const superseded = new Set(
+    [...branches.values()].flatMap(branch => branch.parents),
+  );
+  return [...branches.values()]
+    .filter(branch => !superseded.has(branch.revision))
+    .sort((left, right) => left.revision.localeCompare(right.revision));
+}
+
+function syncTestDevices(world: TestDeviceWorldState): void {
+  const merged = new Map<string, Map<string, TestDeviceBranch>>();
+  for (const device of world.devices.values()) {
+    for (const [key, branches] of device.history) {
+      const mergedBranches = merged.get(key) ?? new Map<string, TestDeviceBranch>();
+      for (const [revision, branch] of branches) {
+        mergedBranches.set(revision, branch);
+      }
+      merged.set(key, mergedBranches);
+    }
+  }
+  for (const device of world.devices.values()) {
+    device.history.clear();
+    for (const [key, branches] of merged) {
+      device.history.set(key, new Map(branches));
+    }
+  }
+}
+
+function createTestDeviceBackend(
+  world: TestDeviceWorldState,
+  device: TestDeviceState,
+  identity: Identity,
+): DataBackend {
+  function commit(
+    ref: Pick<Ref<object>, "identity" | "path">,
+    record: { readonly stored: StoredSchemaValue },
+    parents: readonly string[],
+  ): BackendPresentRecord & { readonly revision: string };
+  function commit(
+    ref: Pick<Ref<object>, "identity" | "path">,
+    record: { readonly state: typeof State.Deleted },
+    parents: readonly string[],
+  ): BackendDeletedRecord & { readonly revision: string };
+  function commit(
+    ref: Pick<Ref<object>, "identity" | "path">,
+    record: { readonly stored: StoredSchemaValue }
+      | { readonly state: typeof State.Deleted },
+    parents: readonly string[],
+  ): BackendAlternativeRecord {
+    const revision = `${device.id}:${++world.nextRevision}`;
+    const next = { ...record, revision } as BackendAlternativeRecord;
+    const key = testStoreKey(ref);
+    const history = device.history.get(key) ?? new Map<string, TestDeviceBranch>();
+    history.set(revision, Object.freeze({
+      revision,
+      parents: Object.freeze([...parents]),
+      record: next,
+    }));
+    device.history.set(key, history);
+    return next;
+  }
+
+  function matchingHead(
+    ref: Pick<Ref<object>, "identity" | "path">,
+    revision: string,
+  ): TestDeviceBranch {
+    const heads = testDeviceHeads(device, testStoreKey(ref));
+    if (heads.length !== 1 || heads[0]?.revision !== revision) {
+      throw new ConflictError(ref);
+    }
+    return heads[0];
+  }
+
+  return {
+    identity,
+    nextId: () => `jlt_${(++world.nextId).toString(36).padStart(12, "0")}`,
+    nextMutationId: () => `mut_${(++world.nextMutationId).toString(36).padStart(12, "0")}`,
+    async read(ref) {
+      const heads = testDeviceHeads(device, testStoreKey(ref));
+      if (heads.length === 0) return State.Missing;
+      if (heads.length === 1) return heads[0]!.record;
+      return {
+        state: State.Conflicted,
+        alternatives: Object.freeze(heads.map(head => head.record)),
+        revisions: Object.freeze(heads.map(head => head.revision)),
+      };
+    },
+    async write(ref, stored) {
+      if (ref.identity !== identity || testDeviceHeads(device, testStoreKey(ref)).length > 0) {
+        throw new ConflictError(ref);
+      }
+      return commit(ref, { stored }, []);
+    },
+    async update(ref, stored, revision) {
+      const current = matchingHead(ref, revision);
+      if (ref.identity !== identity || isBackendDeletedRecord(current.record)) {
+        throw new ConflictError(ref);
+      }
+      return commit(ref, { stored }, [revision]);
+    },
+    async delete(ref, revision) {
+      const current = matchingHead(ref, revision);
+      if (ref.identity !== identity || isBackendDeletedRecord(current.record)) {
+        throw new ConflictError(ref);
+      }
+      return commit(ref, { state: State.Deleted }, [revision]) as (
+        BackendDeletedRecord & { readonly revision: string }
+      );
+    },
+    async restore(ref, stored, revision) {
+      const current = matchingHead(ref, revision);
+      if (ref.identity !== identity || !isBackendDeletedRecord(current.record)) {
+        throw new ConflictError(ref);
+      }
+      return commit(ref, { stored }, [revision]) as (
+        BackendPresentRecord & { readonly revision: string }
+      );
+    },
+    async resolveConflict(ref, next, revisions) {
+      const heads = testDeviceHeads(device, testStoreKey(ref));
+      const currentRevisions = heads.map(head => head.revision);
+      if (
+        ref.identity !== identity
+        || heads.length < 2
+        || currentRevisions.length !== revisions.length
+        || currentRevisions.some((revision, index) => revision !== revisions[index])
+      ) {
+        throw new ConflictError(ref);
+      }
+      return next === State.Deleted
+        ? commit(ref, { state: State.Deleted }, revisions)
+        : commit(ref, { stored: next }, revisions);
+    },
+    for: remoteIdentity => createTestDeviceBackend(world, device, remoteIdentity),
   };
 }
 
@@ -1096,6 +1540,9 @@ function createConnectedBackend(
         throw error;
       }
     },
+    async resolveConflict(ref) {
+      throw new ConflictError(ref);
+    },
     for: identity => createConnectedBackend({ ...options, identity }, localIdentity),
   };
 }
@@ -1110,15 +1557,27 @@ function backendRecord(bytes: readonly number[], revision: string): BackendPrese
   return { stored: requireStoredSchemaValue(parsed), revision };
 }
 
-async function readItem<T extends object, TAccess extends ResourceAccess>(
-  resource: ResourceDefinition<T, TAccess, ResourceKindValue>,
+async function readItem<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts,
+>(
+  resource: ResourceDefinition<T, TAccess, ResourceKindValue, TConflicts>,
   backend: DataBackend,
   ref: Ref<T>,
   mutable: boolean,
-): Promise<Item<T, TAccess>> {
+): Promise<Item<T, TAccess, TConflicts>> {
   const stored = await backend.read(ref);
-  if (stored === State.Missing) return missingItem(ref);
-  if (stored === State.Unavailable) return unavailableItem(ref);
+  if (stored === State.Missing) return missingItem(resource, ref);
+  if (stored === State.Unavailable) return unavailableItem(resource, ref);
+  if (isBackendConflictRecord(stored)) {
+    if (!usesManualConflict(resource.conflicts)) throw new ConflictError(ref);
+    return conflictItem(resource, backend, ref, stored, mutable) as Item<
+      T,
+      TAccess,
+      TConflicts
+    >;
+  }
   if (isBackendDeletedRecord(stored)) {
     return deletedItem(
       resource,
@@ -1135,15 +1594,19 @@ type ResourceViewOptions = {
   readonly remote?: boolean;
 };
 
-function createCollection<T extends object, TAccess extends ResourceAccess>(
-  resource: BoundCollectionDefinition<T, TAccess>,
+function createCollection<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts,
+>(
+  resource: BoundCollectionDefinition<T, TAccess, TConflicts>,
   backend: DataBackend,
   options: ResourceViewOptions = {},
-): CollectionResource<T, TAccess> {
+): CollectionResource<T, TAccess, TConflicts> {
   const remote = options.remote ?? false;
-  const collection: CollectionReader<T, TAccess>
-    & Partial<CollectionCreator<T, TAccess>>
-    & Partial<CollectionRemoteReader<T>> = {
+  const collection: CollectionReader<T, TAccess, TConflicts>
+    & Partial<CollectionCreator<T, TAccess, TConflicts>>
+    & Partial<CollectionRemoteReader<T, TConflicts>> = {
     async get(ref) {
       if (
         ref.identity !== backend.identity
@@ -1167,21 +1630,25 @@ function createCollection<T extends object, TAccess extends ResourceAccess>(
       resource,
       backend.for(identity),
       { remote: true },
-    ) as RemoteCollection<T>;
+    ) as RemoteCollection<T, TConflicts>;
   }
-  return Object.freeze(collection) as CollectionResource<T, TAccess>;
+  return Object.freeze(collection) as CollectionResource<T, TAccess, TConflicts>;
 }
 
-function createDocument<T extends object, TAccess extends ResourceAccess>(
-  resource: BoundDocumentDefinition<T, TAccess>,
+function createDocument<
+  T extends object,
+  TAccess extends ResourceAccess,
+  TConflicts extends ResourceConflicts,
+>(
+  resource: BoundDocumentDefinition<T, TAccess, TConflicts>,
   backend: DataBackend,
   options: ResourceViewOptions = {},
-): DocumentResource<T, TAccess> {
+): DocumentResource<T, TAccess, TConflicts> {
   const remote = options.remote ?? false;
   const ref = createRef<T>(backend.identity, resource.path);
-  const document: DocumentReader<T, TAccess>
-    & Partial<DocumentCreator<T, TAccess>>
-    & Partial<DocumentRemoteReader<T>> = {
+  const document: DocumentReader<T, TAccess, TConflicts>
+    & Partial<DocumentCreator<T, TAccess, TConflicts>>
+    & Partial<DocumentRemoteReader<T, TConflicts>> = {
     async get() {
       return readItem(resource, backend, ref, !remote);
     },
@@ -1206,9 +1673,9 @@ function createDocument<T extends object, TAccess extends ResourceAccess>(
       resource,
       backend.for(identity),
       { remote: true },
-    ) as RemoteDocument<T>;
+    ) as RemoteDocument<T, TConflicts>;
   }
-  return Object.freeze(document) as DocumentResource<T, TAccess>;
+  return Object.freeze(document) as DocumentResource<T, TAccess, TConflicts>;
 }
 
 function createAppInstance<TData extends AppDataDefinitions>(
@@ -1283,8 +1750,25 @@ export const App = {
       test: testOptions => createTestApp(data, testOptions),
       testWorld: () => {
         const state = createTestWorldState();
+        const deviceWorld = createTestDeviceWorldState();
         return Object.freeze({
           as: (identity: Identity) => createTestApp(data, { identity }, state),
+          device: (identity: Identity, deviceId: string) => {
+            if (deviceId.length === 0) {
+              throw new TypeError("Test device ID must not be empty");
+            }
+            const key = `${identity}\u0000${deviceId}`;
+            if (deviceWorld.devices.has(key)) {
+              throw new TypeError(`Test device already exists: ${identity}/${deviceId}`);
+            }
+            const device = { id: deviceId, history: new Map() };
+            deviceWorld.devices.set(key, device);
+            return createAppInstance(
+              data,
+              createTestDeviceBackend(deviceWorld, device, identity),
+            );
+          },
+          sync: async () => syncTestDevices(deviceWorld),
         });
       },
     };
