@@ -373,6 +373,7 @@ impl NetworkNode {
             // --- Device Writer Sync ---
             SwarmEvent::Behaviour(JoltBehaviourEvent::DeviceWriterSync(
                 request_response::Event::Message {
+                    peer,
                     message:
                         request_response::Message::Request {
                             request, channel, ..
@@ -385,9 +386,16 @@ impl NetworkNode {
                     request.identity
                 );
 
-                if !request.authority_records.is_empty() {
+                if !request.authority_records.is_empty()
+                    && request.identity == self.identity.identity_id()
+                    && super::resolution::authority_records_authorize_peer(
+                        &request.identity,
+                        &request.authority_records,
+                        &peer,
+                    )
+                {
                     let offered_identity = request.identity.clone();
-                    if let Err(error) = self
+                    match self
                         .store_verified_device_writer_logs(
                             offered_identity.clone(),
                             request.authority_records,
@@ -395,13 +403,22 @@ impl NetworkNode {
                         )
                         .and_then(|_| {
                             self.persist_synced_local_device_writer_state(&offered_identity)
-                        })
-                    {
-                        warn!(
-                            "Rejected offered device-writer state for {}: {error}",
-                            offered_identity
-                        );
+                        }) {
+                        Ok(()) => {
+                            self.verified_local_device_sync_peers.insert(peer);
+                        }
+                        Err(error) => {
+                            warn!(
+                                "Rejected offered device-writer state for {}: {error}",
+                                offered_identity
+                            );
+                        }
                     }
+                } else if !request.authority_records.is_empty() {
+                    debug!(
+                        "Ignored device-writer offer for non-local or unauthorized identity {} from {peer}",
+                        request.identity
+                    );
                 }
 
                 let response = self
@@ -441,6 +458,13 @@ impl NetworkNode {
                         pending.identity,
                         response.device_logs.len()
                     );
+                    let provider_is_authorized_local_device = pending.identity
+                        == self.identity.identity_id()
+                        && super::resolution::authority_records_authorize_peer(
+                            &pending.identity,
+                            &response.authority_records,
+                            &pending.provider,
+                        );
                     let result = if let Err(error) = response.ensure_supported(
                         crate::protocol::CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION,
                     ) {
@@ -463,6 +487,10 @@ impl NetworkNode {
                             Self::identity_head_invalid_failure(&pending.identity, e.to_string())
                         })
                     };
+                    if result.is_ok() && provider_is_authorized_local_device {
+                        self.verified_local_device_sync_peers
+                            .insert(pending.provider);
+                    }
                     self.on_device_writer_sync_settled(
                         &pending.identity,
                         &pending.provider,
