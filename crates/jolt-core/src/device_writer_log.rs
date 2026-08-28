@@ -696,6 +696,8 @@ fn append_record_order(
     left: &MergedAppendRecord,
     right: &MergedAppendRecord,
 ) -> std::cmp::Ordering {
+    // Append records are retained feed entries, not competing singleton winners;
+    // their signed timestamp is presentation order rather than conflict resolution.
     (
         left.created_at,
         left.device_sequence,
