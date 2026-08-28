@@ -861,14 +861,26 @@ function presentItem<
     item.isConflicted = falseIsConflicted;
   }
   const revision = mutable ? record.revision : null;
-  if (resource.access.update === true && revision !== null) {
+  const observedRevisions = mutable ? record.observedRevisions : undefined;
+  if (
+    resource.access.update === true
+    && (revision !== null || observedRevisions !== undefined)
+  ) {
     const commit = async (stored: StoredSchemaValue) => {
-      const next = await backend.update(
-        ref,
-        stored,
-        revision,
-        backend.nextMutationId(),
-      );
+      const next = observedRevisions === undefined
+        ? await backend.update(
+          ref,
+          stored,
+          revision!,
+          backend.nextMutationId(),
+        )
+        : await backend.resolveConflict(
+          ref,
+          stored,
+          observedRevisions,
+          backend.nextMutationId(),
+        );
+      if (isBackendDeletedRecord(next)) throw new ConflictError(ref);
       return presentItem(resource, backend, ref, next, mutable);
     };
     item.update = async (patch: ShallowPatch<T>) => {
@@ -885,9 +897,20 @@ function presentItem<
       return commit(current.stored);
     };
   }
-  if (resource.access.delete === true && revision !== null) {
+  if (
+    resource.access.delete === true
+    && (revision !== null || observedRevisions !== undefined)
+  ) {
     item.delete = async () => {
-      const deleted = await backend.delete(ref, revision, backend.nextMutationId());
+      const deleted = observedRevisions === undefined
+        ? await backend.delete(ref, revision!, backend.nextMutationId())
+        : await backend.resolveConflict(
+          ref,
+          State.Deleted,
+          observedRevisions,
+          backend.nextMutationId(),
+        );
+      if (!isBackendDeletedRecord(deleted)) throw new ConflictError(ref);
       return deletedItem(resource, ref, { backend, revision: deleted.revision });
     };
   }
@@ -1122,6 +1145,7 @@ function patchedStoredValue<T extends object>(
 type BackendPresentRecord = {
   readonly stored: StoredSchemaValue;
   readonly revision: string | null;
+  readonly observedRevisions?: readonly string[];
 };
 
 type BackendDeletedRecord = {
@@ -1137,6 +1161,7 @@ type BackendConflictRecord = {
   readonly state: typeof State.Conflicted;
   readonly alternatives: readonly BackendAlternativeRecord[];
   readonly revisions: readonly string[];
+  readonly base?: BackendAlternativeRecord;
 };
 
 type BackendReadResult =
@@ -1298,6 +1323,40 @@ function testDeviceHeads(
     ));
 }
 
+function testDeviceAncestorRevisions(
+  branch: TestDeviceBranch,
+  branches: ReadonlyMap<string, TestDeviceBranch>,
+): ReadonlySet<string> {
+  const ancestors = new Set<string>();
+  const pending = [...branch.parents];
+  while (pending.length > 0) {
+    const revision = pending.pop()!;
+    if (ancestors.has(revision)) continue;
+    ancestors.add(revision);
+    const parent = branches.get(revision);
+    if (parent !== undefined) pending.push(...parent.parents);
+  }
+  return ancestors;
+}
+
+function testDeviceCommonAncestor(
+  device: TestDeviceState,
+  key: string,
+  heads: readonly TestDeviceBranch[],
+): BackendAlternativeRecord | undefined {
+  const branches = device.history.get(key);
+  if (branches === undefined || heads.length < 2) return undefined;
+  const ancestorSets = heads.map(head => testDeviceAncestorRevisions(head, branches));
+  const common = [...ancestorSets[0]!].filter(revision => (
+    ancestorSets.slice(1).every(ancestors => ancestors.has(revision))
+  ));
+  const latest = common.filter(revision => !common.some(other => (
+    other !== revision
+    && testDeviceAncestorRevisions(branches.get(other)!, branches).has(revision)
+  )));
+  return latest.length === 1 ? branches.get(latest[0]!)?.record : undefined;
+}
+
 function syncTestDevices(world: TestDeviceWorldState): void {
   const merged = new Map<string, Map<string, TestDeviceBranch>>();
   for (const device of world.devices.values()) {
@@ -1367,13 +1426,15 @@ function createTestDeviceBackend(
     nextId: () => `jlt_${(++world.nextId).toString(36).padStart(12, "0")}`,
     nextMutationId: () => `mut_${(++world.nextMutationId).toString(36).padStart(12, "0")}`,
     async read(ref) {
-      const heads = testDeviceHeads(device, testStoreKey(ref));
+      const key = testStoreKey(ref);
+      const heads = testDeviceHeads(device, key);
       if (heads.length === 0) return State.Missing;
       if (heads.length === 1) return heads[0]!.record;
       return {
         state: State.Conflicted,
         alternatives: Object.freeze(heads.map(head => head.record)),
         revisions: Object.freeze(heads.map(head => head.revision)),
+        base: testDeviceCommonAncestor(device, key, heads),
       };
     },
     async write(ref, stored) {
@@ -1563,6 +1624,85 @@ function backendRecord(bytes: readonly number[], revision: string): BackendPrese
   return { stored: requireStoredSchemaValue(parsed), revision };
 }
 
+function storedValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left)
+      && Array.isArray(right)
+      && left.length === right.length
+      && left.every((value, index) => storedValuesEqual(value, right[index]));
+  }
+  if (
+    left === null
+    || right === null
+    || typeof left !== "object"
+    || typeof right !== "object"
+  ) {
+    return false;
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  const rightKeys = Object.keys(rightRecord);
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every(key => (
+      Object.prototype.hasOwnProperty.call(rightRecord, key)
+      && storedValuesEqual(leftRecord[key], rightRecord[key])
+    ));
+}
+
+function mergeDifferentFieldUpdates<T extends object>(
+  schemaClass: SchemaClass<T>,
+  conflict: BackendConflictRecord,
+): BackendPresentRecord | null {
+  if (conflict.base === undefined || isBackendDeletedRecord(conflict.base)) return null;
+  if (conflict.alternatives.some(isBackendDeletedRecord)) return null;
+
+  const base = migratedStoredValue(schemaClass, conflict.base.stored).stored;
+  const baseValue = base.value as Record<string, unknown>;
+  const merged = { ...baseValue };
+  const changes = new Map<string, { readonly present: boolean; readonly value?: unknown }>();
+
+  for (const alternative of conflict.alternatives) {
+    if (isBackendDeletedRecord(alternative)) return null;
+    const stored = migratedStoredValue(schemaClass, alternative.stored).stored;
+    const value = stored.value as Record<string, unknown>;
+    const keys = new Set([...Object.keys(baseValue), ...Object.keys(value)]);
+    for (const key of keys) {
+      const basePresent = Object.prototype.hasOwnProperty.call(baseValue, key);
+      const present = Object.prototype.hasOwnProperty.call(value, key);
+      if (
+        basePresent === present
+        && (!present || storedValuesEqual(baseValue[key], value[key]))
+      ) {
+        continue;
+      }
+      const next = { present, value: value[key] };
+      const existing = changes.get(key);
+      if (
+        existing !== undefined
+        && (
+          existing.present !== next.present
+          || (next.present && !storedValuesEqual(existing.value, next.value))
+        )
+      ) {
+        return null;
+      }
+      changes.set(key, next);
+    }
+  }
+
+  for (const [key, change] of changes) {
+    if (change.present) merged[key] = change.value;
+    else delete merged[key];
+  }
+  return {
+    stored: { version: base.version, value: merged },
+    revision: conflict.revisions.at(-1) ?? null,
+    observedRevisions: conflict.revisions,
+  };
+}
+
 async function readItem<
   T extends object,
   TAccess extends ResourceAccess,
@@ -1577,12 +1717,16 @@ async function readItem<
   if (stored === State.Missing) return missingItem(resource, ref);
   if (stored === State.Unavailable) return unavailableItem(resource, ref);
   if (isBackendConflictRecord(stored)) {
-    if (!usesManualConflict(resource.conflicts)) throw new ConflictError(ref);
-    return conflictItem(resource, backend, ref, stored, mutable) as Item<
-      T,
-      TAccess,
-      TConflicts
-    >;
+    if (usesManualConflict(resource.conflicts)) {
+      return conflictItem(resource, backend, ref, stored, mutable) as Item<
+        T,
+        TAccess,
+        TConflicts
+      >;
+    }
+    const merged = mergeDifferentFieldUpdates(resource.schema, stored);
+    if (merged === null) throw new ConflictError(ref);
+    return presentItem(resource, backend, ref, merged, mutable);
   }
   if (isBackendDeletedRecord(stored)) {
     return deletedItem(
