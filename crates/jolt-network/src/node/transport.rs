@@ -9,8 +9,11 @@ use crate::behaviour::JoltBehaviour;
 use crate::config::NetworkConfig;
 use crate::error::NetworkError;
 
-const DEVICE_WRITER_SYNC_PROTOCOLS: [&str; 2] =
-    ["/jolt/device-writer/2.0.0", "/jolt/device-writer/1.0.0"];
+const DEVICE_WRITER_SYNC_PROTOCOLS: [&str; 3] = [
+    "/jolt/device-writer/3.0.0",
+    "/jolt/device-writer/2.0.0",
+    "/jolt/device-writer/1.0.0",
+];
 
 pub(super) struct BuiltTransport {
     pub swarm: Swarm<JoltBehaviour>,
@@ -167,7 +170,11 @@ mod tests {
     fn device_writer_sync_advertises_current_then_legacy_protocol() {
         assert_eq!(
             DEVICE_WRITER_SYNC_PROTOCOLS,
-            ["/jolt/device-writer/2.0.0", "/jolt/device-writer/1.0.0"]
+            [
+                "/jolt/device-writer/3.0.0",
+                "/jolt/device-writer/2.0.0",
+                "/jolt/device-writer/1.0.0",
+            ]
         );
     }
 }

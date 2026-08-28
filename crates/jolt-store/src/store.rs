@@ -893,8 +893,9 @@ mod tests {
     use jolt_core::{
         decrypt_encrypted_object_for_recipient, generate_identity_encryption_keypair,
         DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
-        DeviceWriterOperation, EncryptedObjectEnvelope, EncryptedObjectRecipient, RelayRecord,
-        RelayRecordCapability, UpdateAction, UpdateLogEntry, UpdateLogEntryBody,
+        DeviceWriterOperation, DeviceWriterPathMode, EncryptedObjectEnvelope,
+        EncryptedObjectRecipient, RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry,
+        UpdateLogEntryBody,
     };
     use jolt_identity::NodeIdentity;
     use tempfile::tempdir;
@@ -1266,6 +1267,68 @@ mod tests {
         let persisted = PersistedDeviceWriterLog {
             authority_records,
             device_log,
+            record_mutations: BTreeMap::new(),
+        };
+
+        {
+            let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+            store.save_device_writer_log(&identity, &persisted).unwrap();
+        }
+
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        assert_eq!(
+            store.load_device_writer_log(&identity).unwrap(),
+            Some(persisted)
+        );
+    }
+
+    #[test]
+    fn reopen_preserves_observed_heads_in_persisted_device_writer_log() {
+        let dir = tempdir().unwrap();
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let authority_records = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_a",
+                device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Phone".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        let first = DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            "dev_a",
+            DeviceWriterOperation::set_path(
+                "/posts/post-1",
+                ContentId::from_bytes(b"first"),
+                DeviceWriterPathMode::Singleton,
+            ),
+            101,
+            |bytes| device.sign(bytes),
+        )
+        .unwrap();
+        let second = first
+            .append_observing(
+                DeviceWriterOperation::set_path(
+                    "/posts/post-1",
+                    ContentId::from_bytes(b"resolved"),
+                    DeviceWriterPathMode::Singleton,
+                ),
+                vec![first.entry_hash()],
+                102,
+                |bytes| device.sign(bytes),
+            )
+            .unwrap();
+        let persisted = PersistedDeviceWriterLog {
+            authority_records,
+            device_log: vec![first, second],
             record_mutations: BTreeMap::new(),
         };
 

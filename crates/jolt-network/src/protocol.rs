@@ -9,6 +9,7 @@ use crate::command::IngressRecord;
 
 pub const LEGACY_DEVICE_WRITER_OPERATION_VERSION: u16 = 1;
 pub const TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION: u16 = 2;
+pub const CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION: u16 = 3;
 
 fn legacy_device_writer_operation_version() -> u16 {
     LEGACY_DEVICE_WRITER_OPERATION_VERSION
@@ -51,7 +52,7 @@ impl DeviceWriterSyncRequest {
     pub fn new(identity: IdentityId) -> Self {
         Self {
             identity,
-            max_operation_version: TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION,
+            max_operation_version: CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION,
         }
     }
 }
@@ -85,12 +86,18 @@ impl DeviceWriterSyncResponse {
         let required_operation_version = device_logs
             .iter()
             .flatten()
-            .map(|entry| match entry.body.operation {
-                jolt_core::DeviceWriterOperation::SetPath { .. } => {
-                    LEGACY_DEVICE_WRITER_OPERATION_VERSION
+            .map(|entry| {
+                if !entry.body.observed_heads.is_empty() {
+                    return CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION;
                 }
-                jolt_core::DeviceWriterOperation::TombstonePath { .. } => {
-                    TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION
+
+                match entry.body.operation {
+                    jolt_core::DeviceWriterOperation::SetPath { .. } => {
+                        LEGACY_DEVICE_WRITER_OPERATION_VERSION
+                    }
+                    jolt_core::DeviceWriterOperation::TombstonePath { .. } => {
+                        TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION
+                    }
                 }
             })
             .max()
@@ -300,7 +307,10 @@ mod tests {
 
         let identity = IdentityId::from_public_key([6; 32]);
         let current = DeviceWriterSyncRequest::new(identity.clone());
-        assert_eq!(current.max_operation_version, 2);
+        assert_eq!(
+            current.max_operation_version,
+            CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION
+        );
 
         let mut current_bytes = Vec::new();
         ciborium::into_writer(&current, &mut current_bytes).unwrap();
@@ -450,6 +460,83 @@ mod tests {
     }
 
     #[test]
+    fn device_writer_sync_refuses_causal_history_for_v2_requester() {
+        use jolt_core::{
+            ContentId, DeviceAuthorizationOperation, DeviceAuthorizationRecord,
+            DeviceWriterLogEntry, DeviceWriterOperation, DeviceWriterPathMode,
+        };
+
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let authority = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_a",
+                device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Phone".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        let first = DeviceWriterLogEntry::genesis(
+            identity,
+            "dev_a",
+            DeviceWriterOperation::set_path(
+                "/posts/post-1",
+                ContentId::from_bytes(b"first"),
+                DeviceWriterPathMode::Singleton,
+            ),
+            100,
+            |bytes| device.sign(bytes),
+        )
+        .unwrap();
+        let second = first
+            .append_observing(
+                DeviceWriterOperation::set_path(
+                    "/posts/post-1",
+                    ContentId::from_bytes(b"resolved"),
+                    DeviceWriterPathMode::Singleton,
+                ),
+                vec![first.entry_hash()],
+                101,
+                |bytes| device.sign(bytes),
+            )
+            .unwrap();
+
+        let device_logs = vec![vec![first, second]];
+        let response = DeviceWriterSyncResponse::for_request(
+            TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION,
+            authority.clone(),
+            device_logs.clone(),
+        );
+
+        assert_eq!(
+            response.required_operation_version,
+            CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION
+        );
+        assert!(response.authority_records.is_empty());
+        assert!(response.device_logs.is_empty());
+
+        let response = DeviceWriterSyncResponse::for_request(
+            CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION,
+            authority.clone(),
+            device_logs.clone(),
+        );
+
+        assert_eq!(
+            response.required_operation_version,
+            CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION
+        );
+        assert_eq!(response.authority_records, authority);
+        assert_eq!(response.device_logs, device_logs);
+    }
+
+    #[test]
     fn device_writer_sync_serves_complete_restored_history_to_current_requester() {
         use jolt_core::{
             ContentId, DeviceAuthorizationOperation, DeviceAuthorizationRecord,
@@ -521,17 +608,17 @@ mod tests {
 
     #[test]
     fn device_writer_sync_response_reports_unsupported_future_history() {
-        let response = DeviceWriterSyncResponse::unsupported_operation_version(3);
+        let response = DeviceWriterSyncResponse::unsupported_operation_version(4);
 
         let err = response
-            .ensure_supported(TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION)
+            .ensure_supported(CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION)
             .unwrap_err();
 
         assert!(matches!(
             err,
             crate::error::NetworkError::UnsupportedDeviceWriterOperationVersion {
-                supported: 2,
-                required: 3,
+                supported: 3,
+                required: 4,
             }
         ));
     }
