@@ -1,5 +1,5 @@
 import { makeId } from "./client.js";
-import type { JoltSdk } from "./client.js";
+import type { JoltSdk, RecordHeadResult } from "./client.js";
 import {
   isContentUnavailableError,
   isJoltUnavailableError,
@@ -1557,6 +1557,17 @@ function createConnectedBackend(
       if (record.state === "deleted") {
         return { state: State.Deleted, revision: record.revision };
       }
+      if (record.state === "conflicted") {
+        const alternatives = record.alternatives.map(connectedBackendHead);
+        return {
+          state: State.Conflicted,
+          alternatives: Object.freeze(alternatives),
+          revisions: Object.freeze(alternatives.map(alternative => alternative.revision)),
+          ...(record.base === undefined
+            ? {}
+            : { base: connectedBackendHead(record.base) }),
+        };
+      }
       return backendRecord(record.bytes, record.revision);
     },
     async write(ref, stored) {
@@ -1633,6 +1644,15 @@ function backendRecord(bytes: readonly number[], revision: string): BackendPrese
     throw new SchemaValidationError("$", "must be valid JSON");
   }
   return { stored: requireStoredSchemaValue(parsed), revision };
+}
+
+function connectedBackendHead(head: RecordHeadResult): BackendAlternativeRecord {
+  return head.state === "deleted"
+    ? { state: State.Deleted, revision: head.revision }
+    : {
+      ...backendRecord(head.bytes, head.revision),
+      revision: head.revision,
+    };
 }
 
 function storedValuesEqual(left: unknown, right: unknown): boolean {

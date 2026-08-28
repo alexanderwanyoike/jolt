@@ -477,6 +477,54 @@ describe("createJoltClient", () => {
       revision: "revision_tombstone",
     });
 
+    responses["/records/read"] = {
+      state: "conflicted",
+      path: "/chirp/posts/jlt_record",
+      alternatives: [
+        {
+          state: "deleted",
+          revision: "revision_deleted",
+        },
+        {
+          state: "present",
+          content_id: "cid_present",
+          revision: "revision_present",
+          data: [4, 5, 6],
+        },
+      ],
+      base: {
+        state: "present",
+        content_id: "cid_base",
+        revision: "revision_base",
+        data: [1, 2, 3],
+      },
+    };
+    await expect(jolt.readRecord(ref)).resolves.toEqual({
+      state: "conflicted",
+      ref,
+      alternatives: [
+        {
+          state: "deleted",
+          ref,
+          revision: "revision_deleted",
+        },
+        {
+          state: "present",
+          ref,
+          contentId: "cid_present",
+          revision: "revision_present",
+          bytes: [4, 5, 6],
+        },
+      ],
+      base: {
+        state: "present",
+        ref,
+        contentId: "cid_base",
+        revision: "revision_base",
+        bytes: [1, 2, 3],
+      },
+    });
+
     const failure = new JoltTransportError("daemon unavailable");
     const unavailableTransport: JoltTransport = {
       async request(): Promise<never> {
