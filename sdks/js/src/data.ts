@@ -290,6 +290,14 @@ export type ShallowPatch<T extends object> = {
   readonly [K in keyof T]?: T[K];
 };
 
+/** Wraps an unrecognized Error thrown by a custom Data SDK client. */
+export class UnexpectedDataMutationError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("An unexpected error interrupted a Data mutation", options);
+    this.name = "UnexpectedDataMutationError";
+  }
+}
+
 /** Errors retained on one failed item in a non-atomic bulk mutation. */
 export type DataMutationError =
   | SchemaValidationError
@@ -302,7 +310,8 @@ export type DataMutationError =
   | DeviceSigningKeyMismatchError
   | JoltApiError
   | JoltTransportError
-  | TypeError;
+  | TypeError
+  | UnexpectedDataMutationError;
 
 /** Indexed partial-success result from independent itemwise mutations. */
 export type BulkMutationResult<TItem> = {
@@ -955,6 +964,29 @@ async function retryAfterUnavailableResponse<T>(mutate: () => Promise<T>): Promi
     if (!isJoltUnavailableError(error)) throw error;
     return mutate();
   }
+}
+
+function dataMutationError(error: unknown): DataMutationError {
+  if (
+    error instanceof SchemaValidationError
+    || error instanceof SchemaMigrationError
+    || error instanceof ItemUnavailableError
+    || error instanceof ConflictError
+    || error instanceof DeletedError
+    || error instanceof AccessRevokedError
+    || error instanceof DeviceRevokedError
+    || error instanceof DeviceSigningKeyMismatchError
+    || error instanceof JoltApiError
+    || error instanceof JoltTransportError
+    || error instanceof TypeError
+    || error instanceof UnexpectedDataMutationError
+  ) {
+    return error;
+  }
+  if (error instanceof Error) {
+    return new UnexpectedDataMutationError({ cause: error });
+  }
+  return new TypeError(String(error));
 }
 
 function freezeValue<T>(value: T, seen = new WeakSet<object>()): ImmutableValue<T> {
@@ -2043,7 +2075,7 @@ async function runBulkMutation<TInput, TItem>(
     } catch (error) {
       failed.push(Object.freeze({
         index,
-        error: error instanceof Error ? error as DataMutationError : new TypeError(String(error)),
+        error: dataMutationError(error),
       }));
     }
   }
@@ -2093,7 +2125,25 @@ function createCollection<
     const create = async (input: T) => {
       const { stored } = currentStoredValue(resource.schema, input);
       const ref = createRef<T>(backend.identity, `${resource.path}/${backend.nextId()}`);
-      const record = await retryAfterUnavailableResponse(() => backend.write(ref, stored));
+      let record: BackendPresentRecord;
+      try {
+        record = await backend.write(ref, stored);
+      } catch (error) {
+        if (!isJoltUnavailableError(error)) throw error;
+        const observed = await backend.read(ref);
+        if (observed === State.Missing) {
+          record = await backend.write(ref, stored);
+        } else if (observed === State.Unavailable) {
+          throw error;
+        } else if (
+          isBackendDeletedRecord(observed)
+          || isBackendConflictRecord(observed)
+        ) {
+          throw new ConflictError(ref);
+        } else {
+          record = observed;
+        }
+      }
       return presentItem(resource, backend, ref, record, true);
     };
     collection.create = create;

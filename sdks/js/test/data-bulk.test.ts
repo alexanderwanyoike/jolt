@@ -11,6 +11,7 @@ import {
   State,
   type DeletedItem,
   type PresentItem,
+  UnexpectedDataMutationError,
 } from "jolt-sdk/data";
 import { JoltTransportError } from "jolt-sdk";
 import { createFakeJolt } from "jolt-sdk/testing";
@@ -195,6 +196,7 @@ it("retries a lost client response without changing an item mutation ID", async 
     delete: [],
     restore: [],
   };
+  let createCalls = 0;
   const loseOnce = <T>(operation: string, result: T): T => {
     if (lostResponses.delete(operation)) {
       throw new JoltTransportError(`Lost ${operation} response`);
@@ -204,6 +206,10 @@ it("retries a lost client response without changing an item mutation ID", async 
   const client = {
     ...jolt.client,
     async publishJson(...args: Parameters<typeof jolt.client.publishJson>) {
+      createCalls += 1;
+      if (createCalls > 1) {
+        throw new Error("create was published twice after an uncertain response");
+      }
       return loseOnce("create", await jolt.client.publishJson(...args));
     },
     async updateRecord(...args: Parameters<typeof jolt.client.updateRecord>) {
@@ -231,7 +237,27 @@ it("retries a lost client response without changing an item mutation ID", async 
   ])).succeeded[0]!.item;
 
   expect(restored.value.text).toBe("Restored");
+  expect(createCalls).toBe(1);
   expect(mutationIds.update[0]).toBe(mutationIds.update[1]);
   expect(mutationIds.delete[0]).toBe(mutationIds.delete[1]);
   expect(mutationIds.restore[0]).toBe(mutationIds.restore[1]);
+});
+
+it("wraps an unexpected custom-client Error instead of mislabelling its type", async () => {
+  const jolt = createFakeJolt("alice.jolt");
+  const cause = new Error("custom client failed");
+  const notebook = await Notebook.connect({
+    identity: jolt.identity,
+    client: {
+      ...jolt.client,
+      async publishJson() {
+        throw cause;
+      },
+    },
+  });
+
+  const result = await notebook.notes.createMany([{ text: "Nope" }]);
+
+  expect(result.failed[0]?.error).toBeInstanceOf(UnexpectedDataMutationError);
+  expect(result.failed[0]?.error.cause).toBe(cause);
 });
