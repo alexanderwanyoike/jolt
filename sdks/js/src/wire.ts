@@ -13,6 +13,7 @@ export type NodeStatus = {
   daemon_version: string;
   peer_id: string;
   identity_address: string;
+  local_device_id: string;
   uptime_secs: number;
   connected_peers: number;
   direct_peers: number;

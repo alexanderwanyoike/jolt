@@ -8,6 +8,8 @@ import {
   type DeletedItem,
   DeletedError,
   DeleteConflict,
+  DeviceRevokedError,
+  DeviceSigningKeyMismatchError,
   Document,
   Field,
   ItemUnavailableError,
@@ -52,6 +54,20 @@ function revokedSessionError(): JoltApiError {
   return new JoltApiError("App session is invalid or revoked", {
     status: 401,
     code: "app_session_unauthorized",
+  });
+}
+
+function revokedDeviceError(): JoltApiError {
+  return new JoltApiError("Local device is revoked", {
+    status: 403,
+    code: "device_revoked",
+  });
+}
+
+function mismatchedDeviceSigningKeyError(): JoltApiError {
+  return new JoltApiError("Local device signing key does not match", {
+    status: 403,
+    code: "device_signing_key_mismatch",
   });
 }
 
@@ -645,6 +661,42 @@ describe("Data SDK client-backed content validation", () => {
       text: "Denied",
       postedAt: new Date("2026-08-27T09:00:00.000Z"),
     })).rejects.toBeInstanceOf(AccessRevokedError);
+  });
+
+  it("maps revoked device mutations to DeviceRevokedError", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        ...jolt.client,
+        async publishJson() {
+          throw revokedDeviceError();
+        },
+      },
+    });
+
+    await expect(chirp.posts.create({
+      text: "Denied",
+      postedAt: new Date("2026-08-28T13:00:00.000Z"),
+    })).rejects.toBeInstanceOf(DeviceRevokedError);
+  });
+
+  it("maps mismatched device credentials to DeviceSigningKeyMismatchError", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        ...jolt.client,
+        async publishJson() {
+          throw mismatchedDeviceSigningKeyError();
+        },
+      },
+    });
+
+    await expect(chirp.posts.create({
+      text: "Denied",
+      postedAt: new Date("2026-08-28T13:01:00.000Z"),
+    })).rejects.toBeInstanceOf(DeviceSigningKeyMismatchError);
   });
 
   it("does not misclassify revoked remote reads as Unavailable", async () => {

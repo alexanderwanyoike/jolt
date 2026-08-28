@@ -5,11 +5,12 @@ use libp2p::multiaddr::Protocol;
 use tracing::debug;
 
 use jolt_core::{
-    verify_update_log_for_identity, ContentId, ContentManifest, DeviceAuthorizationOperation,
-    DeviceAuthorizationRecord, DeviceWriterLogEntry, DeviceWriterLogEntryHash,
-    DeviceWriterOperation, DeviceWriterPathMode, IdentityHeadHint, IdentityId, JoltAddress,
-    LiveReachabilityEndpoint, OfflineIngressEndpoint, ReachabilityRecord, UpdateAction,
-    UpdateLogEntry, VerifiedReachability, SIGNED_REACHABILITY_PATH,
+    verify_identity_authority_chain, verify_update_log_for_identity, AuthorizedDeviceStatus,
+    ContentId, ContentManifest, DeviceAuthorizationOperation, DeviceAuthorizationRecord,
+    DeviceWriterLogEntry, DeviceWriterLogEntryHash, DeviceWriterOperation, DeviceWriterPathMode,
+    IdentityHeadHint, IdentityId, JoltAddress, LiveReachabilityEndpoint, OfflineIngressEndpoint,
+    ReachabilityRecord, UpdateAction, UpdateLogEntry, VerifiedReachability,
+    IDENTITY_AUTHORITY_PATH, SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
 use jolt_store::{
@@ -23,8 +24,6 @@ use crate::command::{
 use crate::error::NetworkError;
 
 use super::{unix_now, NetworkNode, RELAY_RECORD_TTL_SECS};
-
-const LEGACY_ROOT_DEVICE_ID: &str = "dev_legacy_root";
 
 struct RecordMutationIntent<'a> {
     mutation_id: &'a str,
@@ -519,6 +518,7 @@ impl NetworkNode {
             }
             None => Vec::new(),
         };
+        let local_device_id = self.local_device_id();
         let entry = match self
             .local_device_writer_logs
             .get(&identity)
@@ -526,37 +526,22 @@ impl NetworkNode {
         {
             Some(previous) => previous
                 .append_observing(operation, observed_heads, created_at, |bytes| {
-                    self.identity.sign(bytes)
+                    self.local_device_identity.sign(bytes)
                 })
                 .map_err(|e| NetworkError::Protocol(e.to_string()))?,
             None => DeviceWriterLogEntry::genesis_observing(
                 identity.clone(),
-                LEGACY_ROOT_DEVICE_ID,
+                local_device_id.clone(),
                 operation,
                 observed_heads,
                 created_at,
-                |bytes| self.identity.sign(bytes),
+                |bytes| self.local_device_identity.sign(bytes),
             )
             .map_err(|e| NetworkError::Protocol(e.to_string()))?,
         };
 
-        let authority_records = match self.local_device_authority_records.get(&identity) {
-            Some(records) => records.clone(),
-            None => vec![DeviceAuthorizationRecord::genesis(
-                self.identity.public_key_bytes(),
-                identity.clone(),
-                DeviceAuthorizationOperation::authorize_device(
-                    LEGACY_ROOT_DEVICE_ID,
-                    self.identity.public_key_bytes(),
-                    vec!["identity:write".to_string()],
-                    Some("Legacy root device".to_string()),
-                    created_at,
-                ),
-                created_at,
-                |bytes| self.identity.sign(bytes),
-            )
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?],
-        };
+        let authority_records =
+            self.authority_records_for_local_device(&identity, &local_device_id, created_at, true)?;
         let device_sequence = entry.body.device_sequence;
         let revision = entry.entry_hash().to_hex();
         let mut device_log = self
@@ -565,6 +550,7 @@ impl NetworkNode {
             .cloned()
             .unwrap_or_default();
         device_log.push(entry);
+        let other_device_logs = self.other_device_logs_for_persistence(&identity, &local_device_id);
         let mut record_mutations = self
             .local_record_mutations
             .get(&identity)
@@ -606,6 +592,7 @@ impl NetworkNode {
                 &PersistedDeviceWriterLog {
                     authority_records: authority_records.clone(),
                     device_log: device_log.clone(),
+                    other_device_logs,
                     record_mutations: record_mutations.clone(),
                 },
             )
@@ -636,6 +623,181 @@ impl NetworkNode {
             debug!("Device-writer provider announcement skipped: {e}");
         }
         Ok((device_sequence, revision))
+    }
+
+    fn authority_records_for_local_device(
+        &self,
+        identity: &IdentityId,
+        local_device_id: &str,
+        created_at: u64,
+        require_active: bool,
+    ) -> Result<Vec<DeviceAuthorizationRecord>, NetworkError> {
+        let mut records = self
+            .local_device_authority_records
+            .get(identity)
+            .cloned()
+            .unwrap_or_default();
+        if !records.is_empty() {
+            let authority = verify_identity_authority_chain(identity, &records)
+                .map_err(|error| NetworkError::Protocol(error.to_string()))?;
+            if let Some(device) = authority.devices.get(local_device_id) {
+                if require_active && device.status != AuthorizedDeviceStatus::Active {
+                    return Err(NetworkError::LocalDeviceRevoked {
+                        device_id: local_device_id.to_string(),
+                    });
+                }
+                if device.signing_public_key != self.local_device_identity.public_key_bytes() {
+                    return Err(NetworkError::LocalDeviceSigningKeyMismatch {
+                        device_id: local_device_id.to_string(),
+                    });
+                }
+                return Ok(records);
+            }
+        }
+
+        let operation = DeviceAuthorizationOperation::authorize_device(
+            local_device_id,
+            self.local_device_identity.public_key_bytes(),
+            vec!["identity:write".to_string()],
+            Some("Local device".to_string()),
+            created_at,
+        );
+        let record = match records.last() {
+            Some(previous) => {
+                previous.append(operation, created_at, |bytes| self.identity.sign(bytes))
+            }
+            None => DeviceAuthorizationRecord::genesis(
+                self.identity.public_key_bytes(),
+                identity.clone(),
+                operation,
+                created_at,
+                |bytes| self.identity.sign(bytes),
+            ),
+        }
+        .map_err(|error| NetworkError::Protocol(error.to_string()))?;
+        records.push(record);
+        Ok(records)
+    }
+
+    pub(super) fn ensure_local_device_authority(&mut self) -> Result<(), NetworkError> {
+        let identity = self.identity.identity_id();
+        let local_device_id = self.local_device_id();
+        let authority_records = self.authority_records_for_local_device(
+            &identity,
+            &local_device_id,
+            unix_now(),
+            false,
+        )?;
+        self.persist_device_writer_state(&identity, &authority_records)?;
+        self.store_verified_device_writer_logs(
+            identity.clone(),
+            authority_records.clone(),
+            Vec::new(),
+        )?;
+        self.local_device_authority_records
+            .insert(identity, authority_records);
+        Ok(())
+    }
+
+    pub(super) fn local_device_authority_records(&self) -> Vec<DeviceAuthorizationRecord> {
+        self.local_device_authority_records
+            .get(&self.identity.identity_id())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub(super) fn append_local_device_authority_operation(
+        &mut self,
+        operation: DeviceAuthorizationOperation,
+    ) -> Result<Vec<DeviceAuthorizationRecord>, NetworkError> {
+        let identity = self.identity.identity_id();
+        let mut authority_records = self.local_device_authority_records();
+        let previous = authority_records.last().ok_or_else(|| {
+            NetworkError::Protocol("local device authority is not initialized".to_string())
+        })?;
+        let created_at = unix_now();
+        let record = previous
+            .append(operation, created_at, |bytes| self.identity.sign(bytes))
+            .map_err(|error| NetworkError::Protocol(error.to_string()))?;
+        authority_records.push(record);
+        verify_identity_authority_chain(&identity, &authority_records)
+            .map_err(|error| NetworkError::InvalidInput(error.to_string()))?;
+        let authority_bytes = serde_json::to_vec(&authority_records)
+            .map_err(|error| NetworkError::Protocol(error.to_string()))?;
+        self.publish_bytes_at_path(&authority_bytes, IDENTITY_AUTHORITY_PATH)?;
+        self.persist_device_writer_state(&identity, &authority_records)?;
+        self.store_verified_device_writer_logs(
+            identity.clone(),
+            authority_records.clone(),
+            Vec::new(),
+        )?;
+        self.local_device_authority_records
+            .insert(identity, authority_records.clone());
+        Ok(authority_records)
+    }
+
+    fn persist_device_writer_state(
+        &self,
+        identity: &IdentityId,
+        authority_records: &[DeviceAuthorizationRecord],
+    ) -> Result<(), NetworkError> {
+        let local_device_id = self.local_device_id();
+        let device_log = self
+            .local_device_writer_logs
+            .get(identity)
+            .cloned()
+            .unwrap_or_default();
+        let other_device_logs = self.other_device_logs_for_persistence(identity, &local_device_id);
+        self.store
+            .save_device_writer_log(
+                identity,
+                &PersistedDeviceWriterLog {
+                    authority_records: authority_records.to_vec(),
+                    device_log,
+                    other_device_logs,
+                    record_mutations: self
+                        .local_record_mutations
+                        .get(identity)
+                        .cloned()
+                        .unwrap_or_default(),
+                },
+            )
+            .map_err(|error| {
+                NetworkError::Protocol(format!(
+                    "failed to persist device-writer state for {identity}: {error}"
+                ))
+            })
+    }
+
+    fn other_device_logs_for_persistence(
+        &self,
+        identity: &IdentityId,
+        local_device_id: &str,
+    ) -> Vec<Vec<DeviceWriterLogEntry>> {
+        let mut logs: Vec<Vec<DeviceWriterLogEntry>> = self
+            .device_writer_states
+            .get(identity)
+            .map(|state| {
+                state
+                    .device_logs
+                    .iter()
+                    .filter(|(device_id, _)| *device_id != &local_device_id)
+                    .map(|(_, log)| log.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        logs.sort_by(|left, right| {
+            let left_id = left
+                .first()
+                .map(|entry| entry.body.device_id.as_str())
+                .unwrap_or("");
+            let right_id = right
+                .first()
+                .map(|entry| entry.body.device_id.as_str())
+                .unwrap_or("");
+            left_id.cmp(right_id)
+        });
+        logs
     }
 
     pub(super) fn publish_reachability(
@@ -812,10 +974,11 @@ impl NetworkNode {
         // store_verified_device_writer_logs verifies the authority chain and
         // merges the log into device_writer_states; reject a tampered log just
         // as the persisted update-log path does.
+        let device_logs = record.device_logs();
         self.store_verified_device_writer_logs(
             identity_id.clone(),
             record.authority_records.clone(),
-            vec![record.device_log.clone()],
+            device_logs.clone(),
         )
         .map_err(|e| {
             NetworkError::Protocol(format!(
@@ -825,8 +988,14 @@ impl NetworkNode {
 
         self.local_device_authority_records
             .insert(identity_id.clone(), record.authority_records);
-        self.local_device_writer_logs
-            .insert(identity_id.clone(), record.device_log);
+        let local_device_id = self.local_device_id();
+        if let Some(local_device_log) = device_logs.into_iter().find(|log| {
+            log.first()
+                .is_some_and(|entry| entry.body.device_id == local_device_id)
+        }) {
+            self.local_device_writer_logs
+                .insert(identity_id.clone(), local_device_log);
+        }
         self.local_record_mutations
             .insert(identity_id, record.record_mutations);
         Ok(())

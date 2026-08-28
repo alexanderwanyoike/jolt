@@ -327,6 +327,16 @@ impl NetworkNode {
             } => {
                 let _ = response_tx.send(self.identity.sign(&payload));
             }
+            DaemonCommand::GetLocalDeviceAuthority { response_tx } => {
+                let _ = response_tx.send(self.local_device_authority_records());
+            }
+            DaemonCommand::AppendLocalDeviceAuthority {
+                operation,
+                response_tx,
+            } => {
+                let result = self.append_local_device_authority_operation(operation);
+                let _ = response_tx.send(result);
+            }
             DaemonCommand::GetPeers { response_tx } => {
                 let peers = self
                     .swarm

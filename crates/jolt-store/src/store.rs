@@ -43,16 +43,32 @@ pub struct PublishedContentEntry {
     pub content_type: String,
 }
 
-/// This node's own persisted device-writer state for one local identity: the
-/// verified device-authority chain plus the local device's append-record log.
-/// Persisted so append records survive a daemon restart and can be rebuilt into
-/// the in-memory device-writer state and re-served to peers.
+/// This node's persisted device-writer state for one local identity: the
+/// verified device-authority chain, its local writer log, and every retained
+/// peer-device history. Persisted so all signed branches survive restart and
+/// can be rebuilt into the in-memory state and re-served to peers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PersistedDeviceWriterLog {
     pub authority_records: Vec<DeviceAuthorizationRecord>,
+    /// The writer log owned by this installation. Kept under its original
+    /// field name so existing persisted JSON remains readable.
     pub device_log: Vec<DeviceWriterLogEntry>,
+    /// Other verified device histories retained alongside the local writer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub other_device_logs: Vec<Vec<DeviceWriterLogEntry>>,
     #[serde(default)]
     pub record_mutations: BTreeMap<String, PersistedRecordMutation>,
+}
+
+impl PersistedDeviceWriterLog {
+    pub fn device_logs(&self) -> Vec<Vec<DeviceWriterLogEntry>> {
+        let mut logs = Vec::with_capacity(1 + self.other_device_logs.len());
+        if !self.device_log.is_empty() {
+            logs.push(self.device_log.clone());
+        }
+        logs.extend(self.other_device_logs.clone());
+        logs
+    }
 }
 
 /// Durable idempotency result for one successful local stable-record mutation.
@@ -395,12 +411,12 @@ impl ContentStore {
         Ok(Some(entries))
     }
 
-    /// Persist this node's own device-writer log for a local identity: the
-    /// device-authority chain plus the local device's append-record log. Append
-    /// records (e.g. Spoke posts and accepted-reply refs) live only in the
-    /// device-writer log, never the last-writer-wins update log, so without this
-    /// they would not survive a daemon restart. Writes atomically via a temp
-    /// file, mirroring `save_update_log`.
+    /// Persist the authority chain, local writer log, and every retained
+    /// peer-device history for a local identity. Append records (e.g. Spoke
+    /// posts and accepted-reply refs) live only here, never the
+    /// last-writer-wins update log, so without this they would not survive a
+    /// daemon restart. Writes atomically via a temp file, mirroring
+    /// `save_update_log`.
     pub fn save_device_writer_log(
         &self,
         identity: &IdentityId,
@@ -438,8 +454,8 @@ impl ContentStore {
     /// them (jolt#194). Written atomically via a temp file.
     pub fn save_ingress_queue(&self, records: &[PersistedIngressRecord]) -> Result<(), StoreError> {
         let tmp_path = self.ingress_queue_path.with_extension("json.tmp");
-        let json = serde_json::to_string(records)
-            .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        let json =
+            serde_json::to_string(records).map_err(|e| StoreError::Serialization(e.to_string()))?;
         std::fs::write(&tmp_path, json)?;
         std::fs::rename(tmp_path, &self.ingress_queue_path)?;
         Ok(())
@@ -1328,6 +1344,7 @@ mod tests {
         let persisted = PersistedDeviceWriterLog {
             authority_records,
             device_log,
+            other_device_logs: Vec::new(),
             record_mutations: BTreeMap::new(),
         };
 
@@ -1390,6 +1407,7 @@ mod tests {
         let persisted = PersistedDeviceWriterLog {
             authority_records,
             device_log: vec![first, second],
+            other_device_logs: Vec::new(),
             record_mutations: BTreeMap::new(),
         };
 

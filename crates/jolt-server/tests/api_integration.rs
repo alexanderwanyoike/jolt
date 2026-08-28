@@ -12,7 +12,8 @@ use jolt_network::{
     PeerId,
 };
 use jolt_server::identity_recovery::IdentityRecoveryStore;
-use jolt_store::{CacheConfig, ContentStore};
+use jolt_store::{CacheConfig, ContentStore, PersistedDeviceWriterLog};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -1327,7 +1328,8 @@ async fn test_admin_can_export_and_import_identity_recovery_bundle() {
 async fn test_admin_device_authority_can_authorize_and_revoke_local_device() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
-    let daemon_identity = handle.status().await.unwrap().identity_address;
+    let daemon_status = handle.status().await.unwrap();
+    let daemon_identity = daemon_status.identity_address;
 
     let initial_resp = client
         .get(format!("{}/admin/v1/device-authority", base_url(port)))
@@ -1339,7 +1341,10 @@ async fn test_admin_device_authority_can_authorize_and_revoke_local_device() {
     assert_eq!(initial["identity"], daemon_identity);
     assert_eq!(initial["latest_sequence"], 0);
     assert_eq!(initial["devices"].as_array().unwrap().len(), 1);
-    assert_eq!(initial["devices"][0]["device_id"], "dev_legacy_root");
+    assert_eq!(
+        initial["devices"][0]["device_id"],
+        daemon_status.local_device_id
+    );
     assert_eq!(initial["devices"][0]["status"], "active");
 
     let authorize_resp = client
@@ -2254,6 +2259,7 @@ async fn test_revoking_local_device_revokes_its_app_sessions() {
     let (port, handle, _dir) = start_test_server_with_session_path(session_path).await;
     let client = reqwest::Client::new();
     let local_identity = handle.local_identity_address().unwrap().to_string();
+    let local_device_id = handle.status().await.unwrap().local_device_id;
 
     let request_resp = client
         .post(format!("{}/app/v1/sessions/request", base_url(port)))
@@ -2286,7 +2292,7 @@ async fn test_revoking_local_device_revokes_its_app_sessions() {
     assert_eq!(approve_resp.status(), 200);
     let approved: serde_json::Value = approve_resp.json().await.unwrap();
     let session_token = approved["session_token"].as_str().unwrap();
-    assert_eq!(approved["device_id"], "dev_legacy_root");
+    assert_eq!(approved["device_id"], local_device_id);
 
     let current_resp = client
         .get(format!("{}/app/v1/session", base_url(port)))
@@ -2298,8 +2304,8 @@ async fn test_revoking_local_device_revokes_its_app_sessions() {
 
     let revoke_device_resp = client
         .post(format!(
-            "{}/admin/v1/device-authority/devices/dev_legacy_root/revoke",
-            base_url(port)
+            "{}/admin/v1/device-authority/devices/{local_device_id}/revoke",
+            base_url(port),
         ))
         .json(&serde_json::json!({
             "accepted_through_device_sequence": 0,
@@ -2894,16 +2900,21 @@ async fn test_app_reads_every_current_local_record_head_with_common_base() {
     std::fs::write(&phone_file, phone_bytes).unwrap();
     std::fs::write(&laptop_file, laptop_bytes).unwrap();
     let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    store
+        .save_device_writer_log(
+            &identity,
+            &PersistedDeviceWriterLog {
+                authority_records: vec![phone_authority, laptop_authority, root_authority],
+                device_log: vec![base, phone_update],
+                other_device_logs: vec![vec![laptop_update]],
+                record_mutations: BTreeMap::new(),
+            },
+        )
+        .unwrap();
     let mut node = NetworkNode::new_tcp(root, store, NetworkConfig::test_config()).unwrap();
     assert_eq!(node.publish_file(&base_file).unwrap(), base_content);
     assert_eq!(node.publish_file(&phone_file).unwrap(), phone_content);
     assert_eq!(node.publish_file(&laptop_file).unwrap(), laptop_content);
-    node.store_verified_device_writer_logs(
-        identity.clone(),
-        vec![phone_authority, laptop_authority, root_authority],
-        vec![vec![base, phone_update], vec![laptop_update]],
-    )
-    .unwrap();
 
     let (port, handle, holder) = start_test_server_from_node(node, dir).await;
     let client = reqwest::Client::new();
@@ -4612,6 +4623,53 @@ async fn test_app_pin_requires_own_published_content_in_granted_prefix() {
         .await
         .unwrap();
     assert_eq!(authorized_without_home_relay.status(), 400);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_publish_reports_revoked_local_device() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let status = handle.status().await.unwrap();
+    let token = approve_app_session(
+        &client,
+        port,
+        &status.identity_address,
+        &["publish:/chirp/*"],
+    )
+    .await;
+    handle
+        .append_local_device_authority(DeviceAuthorizationOperation::revoke_device(
+            status.local_device_id.clone(),
+            Some(0),
+            Some("replaced installation".to_string()),
+            1_788_000_000,
+        ))
+        .await
+        .unwrap();
+
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"blocked post".to_vec()).file_name("post.json"),
+        )
+        .text("path", "/chirp/posts/blocked");
+    let response = client
+        .post(format!("{}/app/v1/publish", base_url(port)))
+        .bearer_auth(&token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 403);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "device_revoked");
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains(&status.local_device_id));
 
     handle.shutdown().await.ok();
 }

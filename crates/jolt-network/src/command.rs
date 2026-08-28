@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
 use jolt_core::{
-    DeviceAuthorizationRecord, DeviceWriterLogEntry, EncryptedObjectRecipient,
-    IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint, OfflineIngressEndpoint,
-    PinRequest, RelayHint, RelayRecord, VerifiedReachability,
+    DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
+    OfflineIngressEndpoint, PinRequest, RelayHint, RelayRecord, VerifiedReachability,
 };
 
 use crate::config::HomeRelayConfig;
@@ -107,6 +107,13 @@ pub enum DaemonCommand {
     SignLocalIdentity {
         payload: Vec<u8>,
         response_tx: oneshot::Sender<Vec<u8>>,
+    },
+    GetLocalDeviceAuthority {
+        response_tx: oneshot::Sender<Vec<DeviceAuthorizationRecord>>,
+    },
+    AppendLocalDeviceAuthority {
+        operation: DeviceAuthorizationOperation,
+        response_tx: oneshot::Sender<Result<Vec<DeviceAuthorizationRecord>, NetworkError>>,
     },
     GetPeers {
         response_tx: oneshot::Sender<Vec<PeerInfo>>,

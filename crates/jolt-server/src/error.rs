@@ -41,6 +41,18 @@ impl IntoResponse for ApiError {
                 "record_conflict",
                 "Record changed since it was read".to_string(),
             ),
+            NetworkError::LocalDeviceRevoked { device_id } => (
+                StatusCode::FORBIDDEN,
+                "device_revoked",
+                format!("Local device is revoked: {device_id}"),
+            ),
+            NetworkError::LocalDeviceSigningKeyMismatch { device_id } => (
+                StatusCode::FORBIDDEN,
+                "device_signing_key_mismatch",
+                format!(
+                    "Local device signing key does not match its authority record: {device_id}"
+                ),
+            ),
             NetworkError::PathTombstoned { path } => (
                 StatusCode::GONE,
                 "path_tombstoned",
@@ -70,5 +82,26 @@ impl IntoResponse for ApiError {
 impl From<NetworkError> for ApiError {
     fn from(err: NetworkError) -> Self {
         ApiError(err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::to_bytes;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn local_device_signing_key_mismatch_is_a_structured_forbidden_response() {
+        let response = ApiError(NetworkError::LocalDeviceSigningKeyMismatch {
+            device_id: "dev_local".to_string(),
+        })
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["code"], "device_signing_key_mismatch");
+        assert!(body["error"].as_str().unwrap().contains("dev_local"));
     }
 }
