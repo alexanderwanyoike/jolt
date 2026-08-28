@@ -75,7 +75,11 @@ pub async fn approve_request(
             });
         }
     }
-    let response = state.sessions.approve_request(&request_id, request).await?;
+    let local_device_id = state.daemon.status().await?.local_device_id;
+    let response = state
+        .sessions
+        .approve_request(&request_id, request, &local_device_id)
+        .await?;
     if grants_private_content_authority(&response.capabilities) {
         state.daemon.ensure_local_identity_encryption_key().await?;
     }

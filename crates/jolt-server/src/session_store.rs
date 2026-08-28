@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-const DEFAULT_LOCAL_DEVICE_ID: &str = "dev_legacy_root";
-
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AppSessionStatus {
@@ -268,6 +266,7 @@ impl AppSessionStore {
         &self,
         request_id: &str,
         approval: ApproveAppSessionRequest,
+        local_device_id: &str,
     ) -> Result<ApproveAppSessionResponse, AppSessionStoreError> {
         let mut state = self.state.lock().await;
         let record = state
@@ -308,7 +307,7 @@ impl AppSessionStore {
 
         record.session_id = Some(session_id.clone());
         record.identity = Some(identity.clone());
-        record.device_id = Some(DEFAULT_LOCAL_DEVICE_ID.to_string());
+        record.device_id = Some(local_device_id.to_string());
         record.granted_capabilities = capabilities.clone();
         record.status = AppSessionStatus::Active;
         record.approved_at = Some(now_secs());
@@ -322,7 +321,7 @@ impl AppSessionStore {
             app_id: record.app_id.clone(),
             app_name: record.app_name.clone(),
             identity,
-            device_id: DEFAULT_LOCAL_DEVICE_ID.to_string(),
+            device_id: local_device_id.to_string(),
             capabilities,
             status: record.status.clone(),
             expires_at: record.expires_at,

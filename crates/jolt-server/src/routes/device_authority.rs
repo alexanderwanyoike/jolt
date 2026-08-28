@@ -72,6 +72,9 @@ impl IntoResponse for DeviceAuthorityApiError {
             | DeviceAuthorityError::Authority(_) => {
                 (StatusCode::BAD_REQUEST, "device_authority_invalid")
             }
+            DeviceAuthorityError::Network(jolt_network::NetworkError::InvalidInput(_)) => {
+                (StatusCode::BAD_REQUEST, "device_authority_invalid")
+            }
             DeviceAuthorityError::Network(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "device_authority_daemon_error",

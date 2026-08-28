@@ -110,6 +110,7 @@ impl NetworkNode {
         // so posts/accepted-reply refs published before a restart still
         // enumerate and are served to peers.
         node.load_persisted_local_device_writer_log()?;
+        node.ensure_local_device_authority()?;
 
         Ok(node)
     }
@@ -305,6 +306,82 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn legacy_and_local_device_appends_survive_upgrade_and_restart() {
+        let dir = tempdir().unwrap();
+        let key_dir = tempdir().unwrap();
+        let root = NodeIdentity::generate();
+        root.save(key_dir.path()).unwrap();
+        let identity = root.identity_id();
+        let legacy_device_id = "dev_legacy_root";
+        let authority_records = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                legacy_device_id,
+                root.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Legacy root device".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        let legacy_append = DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            legacy_device_id,
+            DeviceWriterOperation::set_path(
+                "/spoke/posts/legacy",
+                ContentId::from_bytes(b"legacy post"),
+                DeviceWriterPathMode::Append,
+            ),
+            101,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap();
+        let store = make_store(dir.path());
+        store
+            .save_device_writer_log(
+                &identity,
+                &PersistedDeviceWriterLog {
+                    authority_records,
+                    device_log: vec![legacy_append],
+                    other_device_logs: Vec::new(),
+                    record_mutations: BTreeMap::new(),
+                },
+            )
+            .unwrap();
+        drop(store);
+
+        let local_device_id = {
+            let reloaded = NodeIdentity::load(key_dir.path()).unwrap();
+            let store = make_store(dir.path());
+            let mut node =
+                NetworkNode::new_tcp(reloaded, store, NetworkConfig::test_config()).unwrap();
+            let local_device_id = format!("dev_{}", node.local_device_identity.identity_id());
+            let file = dir.path().join("local.json");
+            std::fs::write(&file, b"{\"post\":\"local\"}").unwrap();
+            node.publish_file_appending_path(&file, "/spoke/posts/local")
+                .unwrap();
+            local_device_id
+        };
+
+        let reloaded = NodeIdentity::load(key_dir.path()).unwrap();
+        let store = make_store(dir.path());
+        let node = NetworkNode::new_tcp(reloaded, store, NetworkConfig::test_config()).unwrap();
+        let records = node
+            .enumerate_append_records(&identity, "/spoke/posts/")
+            .unwrap();
+        let writers: BTreeMap<_, _> = records
+            .into_iter()
+            .map(|record| (record.path, record.device_id))
+            .collect();
+
+        assert_eq!(writers["/spoke/posts/legacy"], legacy_device_id);
+        assert_eq!(writers["/spoke/posts/local"], local_device_id);
+    }
+
+    #[tokio::test]
     async fn persisted_tombstone_is_rebuilt_as_deleted_state_after_restart() {
         let dir = tempdir().unwrap();
         let key_dir = tempdir().unwrap();
@@ -354,6 +431,7 @@ mod tests {
                     &PersistedDeviceWriterLog {
                         authority_records,
                         device_log: vec![present, tombstone],
+                        other_device_logs: Vec::new(),
                         record_mutations: BTreeMap::new(),
                     },
                 )

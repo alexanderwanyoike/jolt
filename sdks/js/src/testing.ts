@@ -507,6 +507,7 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
         daemon_version: "fake",
         peer_id: "12D3KooWFake",
         identity_address: identity,
+        local_device_id: "dev_fake_local",
         uptime_secs: 1,
         connected_peers: 0,
         direct_peers: 0,

@@ -3,9 +3,9 @@ use std::{path::PathBuf, time::Duration};
 use tokio::sync::{mpsc, oneshot};
 
 use jolt_core::{
-    DeviceAuthorizationRecord, DeviceWriterLogEntry, EncryptedObjectRecipient,
-    IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint, OfflineIngressEndpoint,
-    PinRequest, UpdateLogEntry,
+    DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
+    OfflineIngressEndpoint, PinRequest, UpdateLogEntry,
 };
 
 use crate::command::{
@@ -418,6 +418,34 @@ impl DaemonHandle {
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
         receive_plain(rx).await
+    }
+
+    /// Return the daemon's single persisted root-signed device authority chain.
+    pub async fn local_device_authority(
+        &self,
+    ) -> Result<Vec<DeviceAuthorizationRecord>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::GetLocalDeviceAuthority { response_tx: tx })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_plain(rx).await
+    }
+
+    /// Append one root-signed operation to the daemon's persisted authority chain.
+    pub async fn append_local_device_authority(
+        &self,
+        operation: DeviceAuthorizationOperation,
+    ) -> Result<Vec<DeviceAuthorizationRecord>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::AppendLocalDeviceAuthority {
+                operation,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
     }
 
     /// Get the list of connected peers.

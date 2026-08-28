@@ -8,6 +8,7 @@ describe("createFakeJolt", () => {
 
     await expect(client.getStatus()).resolves.toMatchObject({
       identity_address: "alice.jolt",
+      local_device_id: "dev_fake_local",
       direct_peers: 0,
       relayed_peers: 0,
       active_relays: 0,
