@@ -57,6 +57,142 @@ const AutomaticNotebook = App.create({
   data: { notes: AutomaticNotes },
 });
 
+@Schema({ version: 1 })
+class CollaborativeNote {
+  @Field.string()
+  text!: string;
+
+  @Field.boolean()
+  pinned!: boolean;
+}
+
+const CollaborativeNotes = Collection.create(CollaborativeNote, {
+  access: {
+    read: Read.OwnIdentity,
+    create: true,
+    update: true,
+  },
+  conflicts: {
+    update: UpdateConflict.LastWriteWins,
+    delete: DeleteConflict.DeleteWins,
+  },
+});
+
+const CollaborativeNotebook = App.create({
+  id: "collaborative-notebook.example",
+  name: "Collaborative Notebook",
+  namespace: "collaborative-notebook",
+  data: { notes: CollaborativeNotes },
+});
+
+const ManualCollaborativeNotes = Collection.create(CollaborativeNote, {
+  access: {
+    read: Read.OwnIdentity,
+    create: true,
+    update: true,
+  },
+  conflicts: {
+    update: UpdateConflict.Manual,
+    delete: DeleteConflict.DeleteWins,
+  },
+});
+
+const ManualCollaborativeNotebook = App.create({
+  id: "manual-collaborative-notebook.example",
+  name: "Manual Collaborative Notebook",
+  namespace: "manual-collaborative-notebook",
+  data: { notes: ManualCollaborativeNotes },
+});
+
+@Schema({ version: 1 })
+class DeletionNote {
+  @Field.string()
+  text!: string;
+}
+
+const DeleteWinsNotes = Collection.create(DeletionNote, {
+  access: {
+    read: Read.OwnIdentity,
+    create: true,
+    update: true,
+    delete: true,
+    restore: true,
+  },
+  conflicts: {
+    update: UpdateConflict.LastWriteWins,
+    delete: DeleteConflict.DeleteWins,
+  },
+});
+
+const DeleteWinsNotebook = App.create({
+  id: "delete-wins-notebook.example",
+  name: "Delete Wins Notebook",
+  namespace: "delete-wins-notebook",
+  data: { notes: DeleteWinsNotes },
+});
+
+const UpdateWinsNotes = Collection.create(DeletionNote, {
+  access: {
+    read: Read.OwnIdentity,
+    create: true,
+    update: true,
+    delete: true,
+    restore: true,
+  },
+  conflicts: {
+    update: UpdateConflict.LastWriteWins,
+    delete: DeleteConflict.UpdateWins,
+  },
+});
+
+const UpdateWinsNotebook = App.create({
+  id: "update-wins-notebook.example",
+  name: "Update Wins Notebook",
+  namespace: "update-wins-notebook",
+  data: { notes: UpdateWinsNotes },
+});
+
+const ManualDeleteNotes = Collection.create(DeletionNote, {
+  access: {
+    read: Read.OwnIdentity,
+    create: true,
+    update: true,
+    delete: true,
+    restore: true,
+  },
+  conflicts: {
+    update: UpdateConflict.LastWriteWins,
+    delete: DeleteConflict.Manual,
+  },
+});
+
+const ManualDeleteNotebook = App.create({
+  id: "manual-delete-notebook.example",
+  name: "Manual Delete Notebook",
+  namespace: "manual-delete-notebook",
+  data: { notes: ManualDeleteNotes },
+});
+
+const UpdateWinsManualNotes = Collection.create(DeletionNote, {
+  access: {
+    read: Read.OwnIdentity,
+    create: true,
+    update: true,
+    delete: true,
+  },
+  conflicts: {
+    update: UpdateConflict.Manual,
+    delete: DeleteConflict.UpdateWins,
+  },
+});
+
+const UpdateWinsManualNotebook = App.create({
+  id: "update-wins-manual-notebook.example",
+  name: "Update Wins Manual Notebook",
+  namespace: "update-wins-manual-notebook",
+  data: { notes: UpdateWinsManualNotes },
+});
+
 describe("Data SDK Manual conflicts", () => {
   it("exposes concurrent alternatives and resolves by choosing one", async () => {
     const world = Notebook.testWorld();
@@ -215,5 +351,243 @@ describe("Data SDK Manual conflicts", () => {
     expect(conflicted.alternatives.map(alternative => (
       alternative.isPresent() ? alternative.value.text : "deleted"
     ))).toEqual(["Z edit", "Umlaut edit"]);
+  });
+
+  it("combines concurrent updates to different schema fields", async () => {
+    const world = CollaborativeNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original", pinned: false });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.update({ text: "Edited on phone" });
+    await laptopCopy.update({ pinned: true });
+    await world.sync();
+
+    const merged = await phone.notes.get(created.ref);
+
+    expect(merged.isPresent()).toBe(true);
+    if (!merged.isPresent()) throw new Error("expected an automatic merged note");
+    expect(merged.value).toEqual({ text: "Edited on phone", pinned: true });
+
+    await merged.update({ text: "Edited after merge" });
+    await world.sync();
+    const converged = await laptop.notes.get(created.ref);
+    expect(converged.isPresent()).toBe(true);
+    if (!converged.isPresent()) throw new Error("expected the later update to converge");
+    expect(converged.value).toEqual({ text: "Edited after merge", pinned: true });
+  });
+
+  it("combines different-field updates even when same-field conflicts are Manual", async () => {
+    const world = ManualCollaborativeNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original", pinned: false });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.update({ text: "Edited on phone" });
+    await laptopCopy.update({ pinned: true });
+    await world.sync();
+
+    const merged = await phone.notes.get(created.ref);
+
+    expect(merged.isPresent()).toBe(true);
+    if (!merged.isPresent()) throw new Error("expected an automatic merged note");
+    expect(merged.value).toEqual({ text: "Edited on phone", pinned: true });
+  });
+
+  it("uses deterministic revision order for concurrent same-field updates", async () => {
+    const world = AutomaticNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original" });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.update({ text: "Phone edit" });
+    await laptopCopy.update({ text: "Laptop edit" });
+    await world.sync();
+
+    const winner = await laptop.notes.get(created.ref);
+
+    expect(winner.isPresent()).toBe(true);
+    if (!winner.isPresent()) throw new Error("expected an automatic winner");
+    expect(winner.value.text).toBe("Phone edit");
+  });
+
+  it("falls back to deterministic whole-value order after criss-cross resolutions", async () => {
+    const world = AutomaticNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original" });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.update({ text: "Phone first edit" });
+    await laptopCopy.update({ text: "Laptop first edit" });
+    await world.sync();
+
+    const phoneWinner = await phone.notes.get(created.ref);
+    const laptopWinner = await laptop.notes.get(created.ref);
+    if (!phoneWinner.isPresent() || !laptopWinner.isPresent()) {
+      throw new Error("expected both devices to evaluate the first conflict");
+    }
+    await phoneWinner.update({ text: "Phone second edit" });
+    await laptopWinner.update({ text: "Laptop second edit" });
+    await world.sync();
+
+    const resolved = await phone.notes.get(created.ref);
+
+    expect(resolved.isPresent()).toBe(true);
+    if (!resolved.isPresent()) throw new Error("expected a deterministic fallback winner");
+    expect(resolved.value.text).toBe("Phone second edit");
+    await resolved.update({ text: "Converged after criss-cross" });
+    await world.sync();
+    const converged = await laptop.notes.get(created.ref);
+    expect(converged.isPresent()).toBe(true);
+    if (!converged.isPresent()) throw new Error("expected the later update to converge");
+    expect(converged.value.text).toBe("Converged after criss-cross");
+  });
+
+  it("applies DeleteWins to a concurrent deletion and update", async () => {
+    const world = DeleteWinsNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original" });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.delete();
+    await laptopCopy.update({ text: "Laptop edit" });
+    await world.sync();
+
+    const winner = await laptop.notes.get(created.ref);
+
+    expect(winner.isDeleted()).toBe(true);
+    if (!winner.isDeleted()) throw new Error("expected the deletion to win");
+    await winner.restore({ text: "Restored after delete won" });
+    await world.sync();
+    const converged = await phone.notes.get(created.ref);
+    expect(converged.isPresent()).toBe(true);
+    if (!converged.isPresent()) throw new Error("expected the restore to converge");
+    expect(converged.value.text).toBe("Restored after delete won");
+  });
+
+  it("applies UpdateWins to a concurrent deletion and update", async () => {
+    const world = UpdateWinsNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original" });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.delete();
+    await laptopCopy.update({ text: "Laptop edit" });
+    await world.sync();
+
+    const winner = await phone.notes.get(created.ref);
+
+    expect(winner.isPresent()).toBe(true);
+    if (!winner.isPresent()) throw new Error("expected the update to win");
+    expect(winner.value.text).toBe("Laptop edit");
+    await winner.update({ text: "Updated after update won" });
+    await world.sync();
+    const converged = await phone.notes.get(created.ref);
+    expect(converged.isPresent()).toBe(true);
+    if (!converged.isPresent()) throw new Error("expected the later update to converge");
+    expect(converged.value.text).toBe("Updated after update won");
+  });
+
+  it("exposes deletion and update alternatives for DeleteConflict.Manual", async () => {
+    const world = ManualDeleteNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original" });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.delete();
+    await laptopCopy.update({ text: "Laptop edit" });
+    await world.sync();
+
+    const conflicted = await laptop.notes.get(created.ref);
+
+    expect(conflicted.isConflicted()).toBe(true);
+    if (!conflicted.isConflicted()) throw new Error("expected a Manual conflict");
+    expect(conflicted.alternatives.map(alternative => alternative.state)).toEqual([
+      State.Present,
+      State.Deleted,
+    ]);
+    const deletion = conflicted.alternatives.find(alternative => alternative.isDeleted());
+    if (deletion === undefined) throw new Error("expected a deleted alternative");
+    await conflicted.choose(deletion);
+    await world.sync();
+    const converged = await phone.notes.get(created.ref);
+    expect(converged.isDeleted()).toBe(true);
+  });
+
+  it("applies UpdateWins before Manual same-field resolution", async () => {
+    const world = UpdateWinsManualNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const tablet = world.device("alice.jolt", "tablet");
+    const created = await phone.notes.create({ text: "Original" });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    const tabletCopy = await tablet.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent() || !tabletCopy.isPresent()) {
+      throw new Error("expected every device to observe the original note");
+    }
+    await phoneCopy.delete();
+    await laptopCopy.update({ text: "Laptop edit" });
+    await tabletCopy.update({ text: "Tablet edit" });
+    await world.sync();
+
+    const conflicted = await phone.notes.get(created.ref);
+
+    expect(conflicted.isConflicted()).toBe(true);
+    if (!conflicted.isConflicted()) throw new Error("expected a Manual update conflict");
+    expect(conflicted.alternatives).toHaveLength(2);
+    expect(conflicted.alternatives.every(alternative => alternative.isPresent())).toBe(true);
+    const selected = conflicted.alternatives[0];
+    if (selected === undefined || !selected.isPresent()) {
+      throw new Error("expected a present update alternative");
+    }
+    await conflicted.choose(selected);
+    await world.sync();
+    const converged = await tablet.notes.get(created.ref);
+    expect(converged.isPresent()).toBe(true);
   });
 });
