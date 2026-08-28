@@ -52,6 +52,9 @@ pub enum DeviceWriterLogError {
     #[error("device writer log genesis entry must not have a previous entry hash")]
     GenesisHasPreviousHash,
 
+    #[error("observed device writer heads must be sorted and unique")]
+    NonCanonicalObservedHeads,
+
     #[error("device writer log entry at index {index} has a broken previous-entry hash")]
     BrokenPreviousHash { index: usize },
 
@@ -247,6 +250,29 @@ impl DeviceWriterLogEntry {
     where
         F: FnOnce(&[u8]) -> Vec<u8>,
     {
+        Self::genesis_observing(
+            identity,
+            device_id,
+            operation,
+            Vec::new(),
+            created_at,
+            signer,
+        )
+    }
+
+    pub fn genesis_observing<F>(
+        identity: IdentityId,
+        device_id: impl Into<String>,
+        operation: DeviceWriterOperation,
+        mut observed_heads: Vec<DeviceWriterLogEntryHash>,
+        created_at: u64,
+        signer: F,
+    ) -> Result<Self, DeviceWriterLogError>
+    where
+        F: FnOnce(&[u8]) -> Vec<u8>,
+    {
+        observed_heads.sort_by(|left, right| left.0.cmp(&right.0));
+        observed_heads.dedup();
         let body = DeviceWriterLogEntryBody {
             record_type: RECORD_TYPE.to_string(),
             version: RECORD_VERSION,
@@ -256,7 +282,7 @@ impl DeviceWriterLogEntry {
             previous_entry_hash: None,
             operation,
             created_at,
-            observed_heads: Vec::new(),
+            observed_heads,
         };
         Self::sign_body(body, signer)
     }
@@ -270,18 +296,7 @@ impl DeviceWriterLogEntry {
     where
         F: FnOnce(&[u8]) -> Vec<u8>,
     {
-        let body = DeviceWriterLogEntryBody {
-            record_type: RECORD_TYPE.to_string(),
-            version: RECORD_VERSION,
-            identity: self.body.identity.clone(),
-            device_id: self.body.device_id.clone(),
-            device_sequence: self.body.device_sequence + 1,
-            previous_entry_hash: Some(self.entry_hash()),
-            operation,
-            created_at,
-            observed_heads: Vec::new(),
-        };
-        Self::sign_body(body, signer)
+        self.append_observing(operation, Vec::new(), created_at, signer)
     }
 
     pub fn append_observing<F>(
@@ -411,10 +426,9 @@ where
                     DeviceWriterPathMode::Singleton => {
                         let superseded = superseded_singletons.entry(path.clone()).or_default();
                         superseded.extend(entry.body.observed_heads.iter().cloned());
-                        if let Some(previous) = previous_singleton_by_path.insert(
-                            path.clone(),
-                            entry_hash.clone(),
-                        ) {
+                        if let Some(previous) =
+                            previous_singleton_by_path.insert(path.clone(), entry_hash.clone())
+                        {
                             superseded.insert(previous);
                         }
                         singleton_candidates.entry(path.clone()).or_default().push(
@@ -447,8 +461,8 @@ where
                 DeviceWriterOperation::TombstonePath { path } => {
                     let superseded = superseded_singletons.entry(path.clone()).or_default();
                     superseded.extend(entry.body.observed_heads.iter().cloned());
-                    if let Some(previous) = previous_singleton_by_path
-                        .insert(path.clone(), entry_hash.clone())
+                    if let Some(previous) =
+                        previous_singleton_by_path.insert(path.clone(), entry_hash.clone())
                     {
                         superseded.insert(previous);
                     }
@@ -603,6 +617,13 @@ fn validate_body(body: &DeviceWriterLogEntryBody) -> Result<(), DeviceWriterLogE
         return Err(DeviceWriterLogError::UnsupportedEntryVersion);
     }
     validate_device_id(&body.device_id)?;
+    if body
+        .observed_heads
+        .windows(2)
+        .any(|heads| heads[0].0 >= heads[1].0)
+    {
+        return Err(DeviceWriterLogError::NonCanonicalObservedHeads);
+    }
     match &body.operation {
         DeviceWriterOperation::SetPath { path, .. } => validate_path(&body.identity, path),
         DeviceWriterOperation::TombstonePath { path } => validate_path(&body.identity, path),
@@ -664,16 +685,11 @@ fn entry_order(
     left: &MergedDeviceWriterEntry,
     right: &MergedDeviceWriterEntry,
 ) -> std::cmp::Ordering {
-    (
-        left.device_sequence,
-        &left.device_id,
-        &left.entry_hash.0,
-    )
-        .cmp(&(
-            right.device_sequence,
-            &right.device_id,
-            &right.entry_hash.0,
-        ))
+    (left.device_sequence, &left.device_id, &left.entry_hash.0).cmp(&(
+        right.device_sequence,
+        &right.device_id,
+        &right.entry_hash.0,
+    ))
 }
 
 fn append_record_order(

@@ -422,7 +422,7 @@ impl NetworkNode {
                         response.device_logs.len()
                     );
                     let result = if let Err(error) = response.ensure_supported(
-                        crate::protocol::TOMBSTONE_DEVICE_WRITER_OPERATION_VERSION,
+                        crate::protocol::CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION,
                     ) {
                         Err(error)
                     } else if response.authority_records.is_empty() {
