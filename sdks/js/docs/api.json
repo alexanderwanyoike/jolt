@@ -2539,7 +2539,7 @@
 												"summary": [
 													{
 														"kind": "text",
-														"text": "Creates one isolated device replica for deterministic offline-branch tests."
+														"text": "Creates one isolated device replica for deterministic offline-branch tests.\nThis slice exposes divergent reads through Resources using a Manual policy;\nautomatic-policy evaluation is delivered by the following concurrency slice."
 													}
 												]
 											},

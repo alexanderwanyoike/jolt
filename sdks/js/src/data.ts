@@ -709,7 +709,11 @@ export type AppConnectOptions = {
 export type AppTestWorld<TData extends AppDataDefinitions> = {
   /** Returns a view over the world's immediately shared application state. */
   as(identity: Identity): AppInstance<TData>;
-  /** Creates one isolated device replica for deterministic offline-branch tests. */
+  /**
+   * Creates one isolated device replica for deterministic offline-branch tests.
+   * This slice exposes divergent reads through Resources using a Manual policy;
+   * automatic-policy evaluation is delivered by the following concurrency slice.
+   */
   device(identity: Identity, deviceId: string): AppInstance<TData>;
   /** Exchanges known histories so every device observes the same branches. */
   sync(): Promise<void>;
@@ -1289,7 +1293,9 @@ function testDeviceHeads(
   );
   return [...branches.values()]
     .filter(branch => !superseded.has(branch.revision))
-    .sort((left, right) => left.revision.localeCompare(right.revision));
+    .sort((left, right) => (
+      left.revision < right.revision ? -1 : left.revision > right.revision ? 1 : 0
+    ));
 }
 
 function syncTestDevices(world: TestDeviceWorldState): void {
@@ -1749,10 +1755,14 @@ export const App = {
       ),
       test: testOptions => createTestApp(data, testOptions),
       testWorld: () => {
-        const state = createTestWorldState();
         const deviceWorld = createTestDeviceWorldState();
+        const sharedDevice = { id: "default", history: new Map() };
+        deviceWorld.devices.set("default", sharedDevice);
         return Object.freeze({
-          as: (identity: Identity) => createTestApp(data, { identity }, state),
+          as: (identity: Identity) => createAppInstance(
+            data,
+            createTestDeviceBackend(deviceWorld, sharedDevice, identity),
+          ),
           device: (identity: Identity, deviceId: string) => {
             if (deviceId.length === 0) {
               throw new TypeError("Test device ID must not be empty");

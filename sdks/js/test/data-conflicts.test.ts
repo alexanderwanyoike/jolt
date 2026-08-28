@@ -21,7 +21,7 @@ class Note {
 
 const Notes = Collection.create(Note, {
   access: {
-    read: Read.OwnIdentity,
+    read: Read.AnyIdentity,
     create: true,
     update: true,
   },
@@ -178,5 +178,42 @@ describe("Data SDK Manual conflicts", () => {
     await expect(stale.resolve({ text: "Stale resolution" })).rejects.toBeInstanceOf(
       ConflictError,
     );
+  });
+
+  it("shares one synchronized history between named devices and default views", async () => {
+    const world = Notebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const bob = world.as("bob.jolt");
+    const created = await phone.notes.create({ text: "From Alice's phone" });
+
+    await world.sync();
+    const observed = await bob.notes.for("alice.jolt").get(created.ref);
+
+    expect(observed.isPresent()).toBe(true);
+    if (!observed.isPresent()) throw new Error("expected Alice's synchronized note");
+    expect(observed.value.text).toBe("From Alice's phone");
+  });
+
+  it("orders alternatives by locale-independent revision text", async () => {
+    const world = Notebook.testWorld();
+    const zDevice = world.device("alice.jolt", "z-device");
+    const umlautDevice = world.device("alice.jolt", "ä-device");
+    const created = await zDevice.notes.create({ text: "Original" });
+
+    await world.sync();
+    const zCopy = await zDevice.notes.get(created.ref);
+    const umlautCopy = await umlautDevice.notes.get(created.ref);
+    if (!zCopy.isPresent() || !umlautCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await zCopy.update({ text: "Z edit" });
+    await umlautCopy.update({ text: "Umlaut edit" });
+    await world.sync();
+
+    const conflicted = await zDevice.notes.get(created.ref);
+    if (!conflicted.isConflicted()) throw new Error("expected a Manual conflict");
+    expect(conflicted.alternatives.map(alternative => (
+      alternative.isPresent() ? alternative.value.text : "deleted"
+    ))).toEqual(["Z edit", "Umlaut edit"]);
   });
 });
