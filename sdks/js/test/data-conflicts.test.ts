@@ -274,4 +274,27 @@ describe("Data SDK Manual conflicts", () => {
     if (!converged.isPresent()) throw new Error("expected the later update to converge");
     expect(converged.value).toEqual({ text: "Edited after merge", pinned: true });
   });
+
+  it("uses deterministic revision order for concurrent same-field updates", async () => {
+    const world = AutomaticNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original" });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.update({ text: "Phone edit" });
+    await laptopCopy.update({ text: "Laptop edit" });
+    await world.sync();
+
+    const winner = await laptop.notes.get(created.ref);
+
+    expect(winner.isPresent()).toBe(true);
+    if (!winner.isPresent()) throw new Error("expected an automatic winner");
+    expect(winner.value.text).toBe("Phone edit");
+  });
 });

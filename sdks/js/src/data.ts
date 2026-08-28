@@ -826,6 +826,19 @@ function usesManualConflict(conflicts: ResourceConflicts): boolean {
     || conflicts.delete === DeleteConflict.Manual;
 }
 
+function conflictNeedsManualResolution(
+  conflicts: ResourceConflicts,
+  conflict: BackendConflictRecord,
+): boolean {
+  const hasDeleted = conflict.alternatives.some(isBackendDeletedRecord);
+  const hasPresent = conflict.alternatives.some(alternative => (
+    !isBackendDeletedRecord(alternative)
+  ));
+  if (hasDeleted && hasPresent) return conflicts.delete === DeleteConflict.Manual;
+  if (hasPresent) return conflicts.update === UpdateConflict.Manual;
+  return false;
+}
+
 function freezeValue<T>(value: T, seen = new WeakSet<object>()): ImmutableValue<T> {
   if (value === null || typeof value !== "object" || seen.has(value)) {
     return value as ImmutableValue<T>;
@@ -1651,7 +1664,7 @@ function storedValuesEqual(left: unknown, right: unknown): boolean {
     ));
 }
 
-function mergeDifferentFieldUpdates<T extends object>(
+function mergeConcurrentPresentUpdates<T extends object>(
   schemaClass: SchemaClass<T>,
   conflict: BackendConflictRecord,
 ): BackendPresentRecord | null {
@@ -1678,16 +1691,6 @@ function mergeDifferentFieldUpdates<T extends object>(
         continue;
       }
       const next = { present, value: value[key] };
-      const existing = changes.get(key);
-      if (
-        existing !== undefined
-        && (
-          existing.present !== next.present
-          || (next.present && !storedValuesEqual(existing.value, next.value))
-        )
-      ) {
-        return null;
-      }
       changes.set(key, next);
     }
   }
@@ -1717,14 +1720,14 @@ async function readItem<
   if (stored === State.Missing) return missingItem(resource, ref);
   if (stored === State.Unavailable) return unavailableItem(resource, ref);
   if (isBackendConflictRecord(stored)) {
-    if (usesManualConflict(resource.conflicts)) {
+    if (conflictNeedsManualResolution(resource.conflicts, stored)) {
       return conflictItem(resource, backend, ref, stored, mutable) as Item<
         T,
         TAccess,
         TConflicts
       >;
     }
-    const merged = mergeDifferentFieldUpdates(resource.schema, stored);
+    const merged = mergeConcurrentPresentUpdates(resource.schema, stored);
     if (merged === null) throw new ConflictError(ref);
     return presentItem(resource, backend, ref, merged, mutable);
   }
