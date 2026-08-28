@@ -4754,7 +4754,7 @@ async fn test_app_api_feature_manifest_is_public_and_generic() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["app_api"], 1);
-    assert_eq!(body["features"], serde_json::json!({ "data.records": 4 }));
+    assert_eq!(body["features"], serde_json::json!({ "data.records": 5 }));
     assert!(body.get("daemon_version").is_none());
     assert!(body.get("applications").is_none());
 
