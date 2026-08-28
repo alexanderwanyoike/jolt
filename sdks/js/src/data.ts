@@ -188,6 +188,41 @@ export const DeleteConflict = {
   Manual: policy("delete-conflict:manual"),
 } as const;
 
+/** Complete conflict behavior resolved for one Resource definition. */
+export type ResourceConflicts = {
+  readonly update: typeof UpdateConflict[keyof typeof UpdateConflict];
+  readonly delete: typeof DeleteConflict[keyof typeof DeleteConflict];
+};
+
+/** Automatic conflict behavior used when a Resource declares no override. */
+export type AutomaticResourceConflicts = {
+  readonly update: typeof UpdateConflict.LastWriteWins;
+  readonly delete: typeof DeleteConflict.DeleteWins;
+};
+
+/** Optional advanced overrides for a Resource's automatic conflict behavior. */
+export type ResourceConflictOverrides = {
+  readonly update?: ResourceConflicts["update"];
+  readonly delete?: ResourceConflicts["delete"];
+};
+
+/** Complete literal conflict behavior derived from a Resource's overrides. */
+export type ResolvedResourceConflicts<
+  TOverrides extends ResourceConflictOverrides,
+> = {
+  readonly update: TOverrides extends {
+    readonly update: infer TUpdate extends ResourceConflicts["update"];
+  } ? TUpdate : typeof UpdateConflict.LastWriteWins;
+  readonly delete: TOverrides extends {
+    readonly delete: infer TDelete extends ResourceConflicts["delete"];
+  } ? TDelete : typeof DeleteConflict.DeleteWins;
+};
+
+const automaticResourceConflicts: AutomaticResourceConflicts = Object.freeze({
+  update: UpdateConflict.LastWriteWins,
+  delete: DeleteConflict.DeleteWins,
+});
+
 /**
  * Symbol-backed kinds used when inspecting a derived App access plan. The
  * class preserves unique-symbol types for direct equality narrowing.
@@ -391,19 +426,13 @@ export type ResourceAccess = {
   readonly restore?: true;
 };
 
-/** Conflict behavior required for one Resource definition. */
-export type ResourceConflicts = {
-  readonly update: typeof UpdateConflict[keyof typeof UpdateConflict];
-  readonly delete: typeof DeleteConflict[keyof typeof DeleteConflict];
-};
-
 /** Developer-facing access and conflict declarations for one Resource. */
 export type ResourceOptions<
   TAccess extends ResourceAccess,
-  TConflicts extends ResourceConflicts = ResourceConflicts,
+  TOverrides extends ResourceConflictOverrides = {},
 > = {
   readonly access: TAccess;
-  readonly conflicts: TConflicts;
+  readonly conflicts?: TOverrides;
 };
 
 /** Shared metadata and migration behavior for an unbound Resource. */
@@ -475,40 +504,52 @@ function validatedResourceAccess<TAccess extends ResourceAccess>(access: TAccess
   return Object.freeze({ ...access });
 }
 
-function validatedResourceConflicts<TConflicts extends ResourceConflicts>(
-  conflicts: TConflicts,
-): TConflicts {
-  if (conflicts === null || typeof conflicts !== "object" || Array.isArray(conflicts)) {
+function validatedResourceConflicts<TOverrides extends ResourceConflictOverrides>(
+  conflicts: TOverrides | undefined,
+): ResolvedResourceConflicts<TOverrides> {
+  if (conflicts !== undefined
+    && (conflicts === null || typeof conflicts !== "object" || Array.isArray(conflicts))) {
     throw new TypeError("Resource conflicts must be an object");
   }
-  if (!(Object.values(UpdateConflict) as readonly unknown[]).includes(conflicts.update)) {
+  const update = conflicts?.update ?? automaticResourceConflicts.update;
+  const deletion = conflicts?.delete ?? automaticResourceConflicts.delete;
+  if (!(Object.values(UpdateConflict) as readonly unknown[]).includes(update)) {
     throw new TypeError("Resource update conflict must be a value from UpdateConflict");
   }
-  if (!(Object.values(DeleteConflict) as readonly unknown[]).includes(conflicts.delete)) {
+  if (!(Object.values(DeleteConflict) as readonly unknown[]).includes(deletion)) {
     throw new TypeError("Resource delete conflict must be a value from DeleteConflict");
   }
-  return Object.freeze({ ...conflicts }) as TConflicts;
+  return Object.freeze({
+    update,
+    delete: deletion,
+  }) as ResolvedResourceConflicts<TOverrides>;
 }
 
 function defineResource<
   T extends object,
   const TAccess extends ResourceAccess,
-  const TConflicts extends ResourceConflicts,
   const TKind extends ResourceKindValue,
+  const TOverrides extends ResourceConflictOverrides = {},
 >(
   kind: TKind,
   schemaClass: SchemaClass<T>,
-  options: ResourceOptions<TAccess, TConflicts>,
-): ResourceDefinition<T, TAccess, TKind, TConflicts> {
+  options: ResourceOptions<TAccess, TOverrides>,
+): ResourceDefinition<T, TAccess, TKind, ResolvedResourceConflicts<TOverrides>> {
   const access = validatedResourceAccess(options.access);
   const conflicts = validatedResourceConflicts(options.conflicts);
-  return Object.freeze({
+  const definition: ResourceDefinition<
+    T,
+    TAccess,
+    TKind,
+    ResolvedResourceConflicts<TOverrides>
+  > = {
     schema: schemaClass,
     access,
     conflicts,
-    migrate: stored => migrate(schemaClass, stored),
+    migrate: (stored: StoredSchemaValue) => migrate(schemaClass, stored),
     [resourceDefinition]: kind,
-  });
+  };
+  return Object.freeze(definition);
 }
 
 /** Defines an unbound typed Collection. App.create derives its path. */
@@ -516,11 +557,11 @@ export const Collection = {
   create: <
     T extends object,
     const TAccess extends ResourceAccess,
-    const TConflicts extends ResourceConflicts,
+    const TOverrides extends ResourceConflictOverrides = {},
   >(
     schemaClass: SchemaClass<T>,
-    options: ResourceOptions<TAccess, TConflicts>,
-  ): CollectionDefinition<T, TAccess, TConflicts> => (
+    options: ResourceOptions<TAccess, TOverrides>,
+  ): CollectionDefinition<T, TAccess, ResolvedResourceConflicts<TOverrides>> => (
     defineResource(ResourceKind.Collection, schemaClass, options)
   ),
 } as const;
@@ -541,11 +582,11 @@ export const Document = {
   create: <
     T extends object,
     const TAccess extends ResourceAccess,
-    const TConflicts extends ResourceConflicts,
+    const TOverrides extends ResourceConflictOverrides = {},
   >(
     schemaClass: SchemaClass<T>,
-    options: ResourceOptions<TAccess, TConflicts>,
-  ): DocumentDefinition<T, TAccess, TConflicts> => (
+    options: ResourceOptions<TAccess, TOverrides>,
+  ): DocumentDefinition<T, TAccess, ResolvedResourceConflicts<TOverrides>> => (
     defineResource(ResourceKind.Document, schemaClass, options)
   ),
 } as const;
