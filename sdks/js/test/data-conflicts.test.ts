@@ -429,6 +429,44 @@ describe("Data SDK Manual conflicts", () => {
     expect(winner.value.text).toBe("Phone edit");
   });
 
+  it("falls back to deterministic whole-value order after criss-cross resolutions", async () => {
+    const world = AutomaticNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original" });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.update({ text: "Phone first edit" });
+    await laptopCopy.update({ text: "Laptop first edit" });
+    await world.sync();
+
+    const phoneWinner = await phone.notes.get(created.ref);
+    const laptopWinner = await laptop.notes.get(created.ref);
+    if (!phoneWinner.isPresent() || !laptopWinner.isPresent()) {
+      throw new Error("expected both devices to evaluate the first conflict");
+    }
+    await phoneWinner.update({ text: "Phone second edit" });
+    await laptopWinner.update({ text: "Laptop second edit" });
+    await world.sync();
+
+    const resolved = await phone.notes.get(created.ref);
+
+    expect(resolved.isPresent()).toBe(true);
+    if (!resolved.isPresent()) throw new Error("expected a deterministic fallback winner");
+    expect(resolved.value.text).toBe("Phone second edit");
+    await resolved.update({ text: "Converged after criss-cross" });
+    await world.sync();
+    const converged = await laptop.notes.get(created.ref);
+    expect(converged.isPresent()).toBe(true);
+    if (!converged.isPresent()) throw new Error("expected the later update to converge");
+    expect(converged.value.text).toBe("Converged after criss-cross");
+  });
+
   it("applies DeleteWins to a concurrent deletion and update", async () => {
     const world = DeleteWinsNotebook.testWorld();
     const phone = world.device("alice.jolt", "phone");

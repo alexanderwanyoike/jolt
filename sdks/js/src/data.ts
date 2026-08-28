@@ -1169,6 +1169,7 @@ type BackendAlternativeRecord =
 
 type BackendConflictRecord = {
   readonly state: typeof State.Conflicted;
+  /** Canonical deterministic winner order; the final alternative wins. */
   readonly alternatives: readonly BackendAlternativeRecord[];
   readonly revisions: readonly string[];
   readonly base?: BackendAlternativeRecord;
@@ -1720,6 +1721,18 @@ function mergeConcurrentPresentUpdates<T extends object>(
   };
 }
 
+function presentOnlyConflict(
+  conflict: BackendConflictRecord,
+  alternatives: readonly (BackendPresentRecord & { readonly revision: string })[],
+): BackendConflictRecord {
+  return alternatives.length === conflict.alternatives.length
+    ? conflict
+    : {
+      ...conflict,
+      alternatives: Object.freeze(alternatives),
+    };
+}
+
 async function readItem<
   T extends object,
   TAccess extends ResourceAccess,
@@ -1774,22 +1787,43 @@ async function readItem<
       stored,
       presentAlternatives,
     );
-    if (merged === null) throw new ConflictError(ref);
+    if (merged === null) {
+      if (
+        presentAlternatives.length > 1
+        && resource.conflicts.update === UpdateConflict.Manual
+      ) {
+        return conflictItem(
+          resource,
+          backend,
+          ref,
+          presentOnlyConflict(stored, presentAlternatives),
+          mutable,
+        ) as Item<T, TAccess, TConflicts>;
+      }
+      const winner = presentAlternatives.at(-1);
+      if (winner === undefined) throw new ConflictError(ref);
+      return presentItem(
+        resource,
+        backend,
+        ref,
+        {
+          ...winner,
+          observedRevisions: stored.revisions,
+        },
+        mutable,
+      );
+    }
     if (
       merged.hasFieldConflict
       && resource.conflicts.update === UpdateConflict.Manual
     ) {
-      const presentConflict = presentAlternatives.length === stored.alternatives.length
-        ? stored
-        : {
-          ...stored,
-          alternatives: Object.freeze(presentAlternatives),
-        };
-      return conflictItem(resource, backend, ref, presentConflict, mutable) as Item<
-        T,
-        TAccess,
-        TConflicts
-      >;
+      return conflictItem(
+        resource,
+        backend,
+        ref,
+        presentOnlyConflict(stored, presentAlternatives),
+        mutable,
+      ) as Item<T, TAccess, TConflicts>;
     }
     return presentItem(resource, backend, ref, merged.record, mutable);
   }
