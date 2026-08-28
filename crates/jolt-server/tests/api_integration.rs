@@ -4628,6 +4628,53 @@ async fn test_app_pin_requires_own_published_content_in_granted_prefix() {
 }
 
 #[tokio::test]
+async fn test_app_publish_reports_revoked_local_device() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let status = handle.status().await.unwrap();
+    let token = approve_app_session(
+        &client,
+        port,
+        &status.identity_address,
+        &["publish:/chirp/*"],
+    )
+    .await;
+    handle
+        .append_local_device_authority(DeviceAuthorizationOperation::revoke_device(
+            status.local_device_id.clone(),
+            Some(0),
+            Some("replaced installation".to_string()),
+            1_788_000_000,
+        ))
+        .await
+        .unwrap();
+
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"blocked post".to_vec()).file_name("post.json"),
+        )
+        .text("path", "/chirp/posts/blocked");
+    let response = client
+        .post(format!("{}/app/v1/publish", base_url(port)))
+        .bearer_auth(&token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 403);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "device_revoked");
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains(&status.local_device_id));
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_sessions_persist_across_server_restart() {
     let session_dir = tempfile::tempdir().unwrap();
     let session_path = session_dir.path().join("app-sessions.json");

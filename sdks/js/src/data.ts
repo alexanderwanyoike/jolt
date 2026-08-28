@@ -1546,6 +1546,12 @@ async function withConnectedAccess<T>(call: () => Promise<T>): Promise<T> {
     if (error instanceof JoltApiError && error.code === "app_session_unauthorized") {
       throw new AccessRevokedError({ cause: error });
     }
+    if (error instanceof JoltApiError && error.code === "device_revoked") {
+      throw new DeviceRevokedError({ cause: error });
+    }
+    if (error instanceof JoltApiError && error.code === "device_signing_key_mismatch") {
+      throw new DeviceSigningKeyMismatchError({ cause: error });
+    }
     throw error;
   }
 }
@@ -2353,5 +2359,21 @@ export class AccessRevokedError extends Error {
   constructor(options?: ErrorOptions) {
     super("Jolt access was revoked; reconnect and request approval again", options);
     this.name = "AccessRevokedError";
+  }
+}
+
+/** This installation's local device no longer has authority to mutate data. */
+export class DeviceRevokedError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("This Jolt device was revoked and can no longer change data", options);
+    this.name = "DeviceRevokedError";
+  }
+}
+
+/** This installation's persisted device identity conflicts with its authority record. */
+export class DeviceSigningKeyMismatchError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("This Jolt device has invalid signing credentials and cannot change data", options);
+    this.name = "DeviceSigningKeyMismatchError";
   }
 }

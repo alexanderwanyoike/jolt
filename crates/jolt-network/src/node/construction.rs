@@ -214,6 +214,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn new_tcp_reports_mismatched_local_device_signing_key() {
+        let dir = tempdir().unwrap();
+        let root = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let local_device = NodeIdentity::generate();
+        let different_device = NodeIdentity::generate();
+        let local_device_id = format!("dev_{}", local_device.identity_id());
+        let store = make_store(dir.path());
+        store
+            .save_local_device_signing_key(&local_device.signing_key_bytes())
+            .unwrap();
+        let authority_records = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                local_device_id.clone(),
+                different_device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Mismatched local device".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        store
+            .save_device_writer_log(
+                &identity,
+                &PersistedDeviceWriterLog {
+                    authority_records,
+                    device_log: Vec::new(),
+                    other_device_logs: Vec::new(),
+                    record_mutations: BTreeMap::new(),
+                },
+            )
+            .unwrap();
+
+        let result = NetworkNode::new_tcp(root, store, NetworkConfig::test_config());
+
+        assert!(matches!(
+            result,
+            Err(NetworkError::LocalDeviceSigningKeyMismatch { device_id })
+                if device_id == local_device_id
+        ));
+    }
+
+    #[tokio::test]
     async fn local_append_records_survive_node_restart() {
         // Append records (Spoke posts, accepted-reply refs) are written to the
         // local device-writer log. That log must be persisted and rebuilt when

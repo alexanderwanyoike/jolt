@@ -5,6 +5,10 @@ use crate::command::NodeStatus;
 use super::{unix_now, NetworkNode};
 
 impl NetworkNode {
+    pub(super) fn local_device_id(&self) -> String {
+        format!("dev_{}", self.local_device_identity.identity_id())
+    }
+
     pub(super) fn build_status(&self) -> NodeStatus {
         let direct = self
             .peer_connections
@@ -31,7 +35,7 @@ impl NetworkNode {
             daemon_version: env!("CARGO_PKG_VERSION").to_string(),
             peer_id: self.swarm.local_peer_id().to_string(),
             identity_address: self.identity.jolt_address().to_string(),
-            local_device_id: format!("dev_{}", self.local_device_identity.identity_id()),
+            local_device_id: self.local_device_id(),
             uptime_secs: self.started_at.elapsed().as_secs(),
             connected_peers: self.swarm.connected_peers().count(),
             direct_peers: direct,

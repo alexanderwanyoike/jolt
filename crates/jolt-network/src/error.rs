@@ -41,6 +41,12 @@ pub enum NetworkError {
     #[error("Record changed since the observed revision")]
     RecordConflict,
 
+    #[error("Local device {device_id} is revoked")]
+    LocalDeviceRevoked { device_id: String },
+
+    #[error("Local device {device_id} signing key does not match its authority record")]
+    LocalDeviceSigningKeyMismatch { device_id: String },
+
     #[error("Path is Tombstoned: {path}")]
     PathTombstoned { path: String },
 

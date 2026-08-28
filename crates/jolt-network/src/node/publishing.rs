@@ -518,7 +518,7 @@ impl NetworkNode {
             }
             None => Vec::new(),
         };
-        let local_device_id = format!("dev_{}", self.local_device_identity.identity_id());
+        let local_device_id = self.local_device_id();
         let entry = match self
             .local_device_writer_logs
             .get(&identity)
@@ -642,14 +642,14 @@ impl NetworkNode {
                 .map_err(|error| NetworkError::Protocol(error.to_string()))?;
             if let Some(device) = authority.devices.get(local_device_id) {
                 if require_active && device.status != AuthorizedDeviceStatus::Active {
-                    return Err(NetworkError::Protocol(format!(
-                        "local device {local_device_id} is revoked"
-                    )));
+                    return Err(NetworkError::LocalDeviceRevoked {
+                        device_id: local_device_id.to_string(),
+                    });
                 }
                 if device.signing_public_key != self.local_device_identity.public_key_bytes() {
-                    return Err(NetworkError::Protocol(format!(
-                        "local device {local_device_id} signing key does not match its authority record"
-                    )));
+                    return Err(NetworkError::LocalDeviceSigningKeyMismatch {
+                        device_id: local_device_id.to_string(),
+                    });
                 }
                 return Ok(records);
             }
@@ -681,7 +681,7 @@ impl NetworkNode {
 
     pub(super) fn ensure_local_device_authority(&mut self) -> Result<(), NetworkError> {
         let identity = self.identity.identity_id();
-        let local_device_id = format!("dev_{}", self.local_device_identity.identity_id());
+        let local_device_id = self.local_device_id();
         let authority_records = self.authority_records_for_local_device(
             &identity,
             &local_device_id,
@@ -741,7 +741,7 @@ impl NetworkNode {
         identity: &IdentityId,
         authority_records: &[DeviceAuthorizationRecord],
     ) -> Result<(), NetworkError> {
-        let local_device_id = format!("dev_{}", self.local_device_identity.identity_id());
+        let local_device_id = self.local_device_id();
         let device_log = self
             .local_device_writer_logs
             .get(identity)
@@ -988,7 +988,7 @@ impl NetworkNode {
 
         self.local_device_authority_records
             .insert(identity_id.clone(), record.authority_records);
-        let local_device_id = format!("dev_{}", self.local_device_identity.identity_id());
+        let local_device_id = self.local_device_id();
         if let Some(local_device_log) = device_logs.into_iter().find(|log| {
             log.first()
                 .is_some_and(|entry| entry.body.device_id == local_device_id)
