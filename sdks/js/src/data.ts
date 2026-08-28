@@ -6,6 +6,12 @@ import {
   JoltApiError,
   JoltTransportError,
 } from "./errors.js";
+import { connectDataApp } from "./data-host.js";
+
+export {
+  AppIncompatibleError,
+  AppSessionRejectedError,
+} from "./data-errors.js";
 
 /** A decorated application value class used as both runtime schema and TypeScript type. */
 export type SchemaClass<T extends object> = new () => T;
@@ -880,6 +886,7 @@ export type AppDefinition<TData extends AppDataDefinitions> = {
   readonly namespace: string;
   readonly data: BoundAppData<TData>;
   readonly accessPlan: AppAccessPlan;
+  connect(): Promise<AppInstance<TData>>;
   connect(options: AppConnectOptions): Promise<AppInstance<TData>>;
   test(options?: AppTestOptions): AppInstance<TData>;
   testWorld(): AppTestWorld<TData>;
@@ -2291,10 +2298,14 @@ export const App = {
       namespace: options.namespace,
       data,
       accessPlan,
-      connect: async connectOptions => createAppInstance(
-        data,
-        createConnectedBackend(connectOptions),
-      ),
+      connect: async (connectOptions?: AppConnectOptions) => {
+        const connection = connectOptions ?? await connectDataApp({
+          id: options.id,
+          name: options.name,
+          accessPlan,
+        });
+        return createAppInstance(data, createConnectedBackend(connection));
+      },
       test: testOptions => createTestApp(data, testOptions),
       testWorld: () => {
         const deviceWorld = createTestDeviceWorldState();
