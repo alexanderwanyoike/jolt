@@ -1,9 +1,9 @@
 use jolt_core::{
-    generate_identity_encryption_keypair, ContentId, DeviceAuthorizationOperation,
-    DeviceAuthorizationRecord, DeviceWriterLogEntry, DeviceWriterOperation, DeviceWriterPathMode,
-    EncryptedObjectEnvelope, EncryptedObjectRecipient, IdentityEncryptionKey,
-    IdentityEncryptionKeyRecord, IdentityId, JoltAddress, PinRequest, RelayRecord,
-    RelayRecordCapability, UpdateAction, UpdateLogEntry, IDENTITY_AUTHORITY_PATH,
+    generate_identity_encryption_keypair, verify_identity_authority_chain, ContentId,
+    DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+    DeviceWriterOperation, DeviceWriterPathMode, EncryptedObjectEnvelope, EncryptedObjectRecipient,
+    IdentityEncryptionKey, IdentityEncryptionKeyRecord, IdentityId, JoltAddress, PinRequest,
+    RelayRecord, RelayRecordCapability, UpdateAction, UpdateLogEntry, IDENTITY_AUTHORITY_PATH,
     IDENTITY_ENCRYPTION_KEYS_PATH, SIGNED_REACHABILITY_PATH,
 };
 use jolt_identity::NodeIdentity;
@@ -224,6 +224,27 @@ fn device_authority_record(
 
 fn base_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
+}
+
+fn joining_device_request(identity_address: &str, label: &str) -> serde_json::Value {
+    let owner = JoltAddress::from_str(identity_address).unwrap();
+    let device = NodeIdentity::generate();
+    let device_id = format!("dev_{}", device.identity_id());
+    let (encryption_key, _encryption_private_key) = generate_identity_encryption_keypair(
+        owner.identity().clone(),
+        format!("enc_x25519_{device_id}_v0"),
+        1_788_000_000,
+    );
+    serde_json::json!({
+        "signing_public_key": device.public_key_bytes(),
+        "encryption_keys": [{
+            "key_id": encryption_key.key_id,
+            "suite_family": encryption_key.suite_family,
+            "public_key": encryption_key.public_key,
+            "created_at": encryption_key.created_at,
+        }],
+        "label": label,
+    })
 }
 
 async fn approve_app_session(
@@ -1352,7 +1373,7 @@ async fn test_admin_device_authority_can_authorize_and_revoke_local_device() {
             "{}/admin/v1/device-authority/devices",
             base_url(port)
         ))
-        .json(&serde_json::json!({ "label": "Laptop" }))
+        .json(&joining_device_request(&daemon_identity, "Laptop"))
         .send()
         .await
         .unwrap();
@@ -1407,6 +1428,305 @@ async fn test_admin_device_authority_can_authorize_and_revoke_local_device() {
 }
 
 #[tokio::test]
+async fn test_admin_device_authority_approves_joining_installation_public_keys() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let status = handle.status().await.unwrap();
+    let owner = JoltAddress::from_str(&status.identity_address).unwrap();
+    let joining_device = NodeIdentity::generate();
+    let joining_device_id = format!("dev_{}", joining_device.identity_id());
+    let (joining_encryption_key, _joining_encryption_private_key) =
+        generate_identity_encryption_keypair(
+            owner.identity().clone(),
+            format!("enc_x25519_{joining_device_id}_v0"),
+            1_788_000_000,
+        );
+
+    let response = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "signing_public_key": joining_device.public_key_bytes(),
+            "encryption_keys": [{
+                "key_id": joining_encryption_key.key_id,
+                "suite_family": joining_encryption_key.suite_family,
+                "public_key": joining_encryption_key.public_key,
+                "created_at": joining_encryption_key.created_at,
+            }],
+            "label": "Joining installation",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    let approved: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(approved["device"]["device_id"], joining_device_id);
+    assert_eq!(
+        approved["device"]["signing_public_key"],
+        serde_json::json!(joining_device.public_key_bytes())
+    );
+    assert_eq!(
+        approved["device"]["encryption_keys"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let authority_records: Vec<DeviceAuthorizationRecord> =
+        serde_json::from_value(approved["authority_records"].clone()).unwrap();
+    let authority = verify_identity_authority_chain(owner.identity(), &authority_records).unwrap();
+    assert_eq!(authority.latest_sequence, 1);
+    assert_eq!(
+        authority.devices[&joining_device_id].signing_public_key,
+        joining_device.public_key_bytes()
+    );
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_does_not_generate_joining_private_keys() {
+    let (port, handle, _dir) = start_test_server().await;
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({ "label": "Joining installation" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "device_enrollment_invalid");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_requires_joining_encryption_public_key() {
+    let (port, handle, _dir) = start_test_server().await;
+    let joining_device = NodeIdentity::generate();
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "signing_public_key": joining_device.public_key_bytes(),
+            "encryption_keys": [],
+            "label": "Joining installation",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "device_enrollment_invalid");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_cannot_reenroll_revoked_device_key() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let request = joining_device_request(&identity, "Revoked installation");
+
+    let first = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), 200);
+    let first: serde_json::Value = first.json().await.unwrap();
+    let device_id = first["device"]["device_id"].as_str().unwrap();
+
+    let revoked = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices/{device_id}/revoke",
+            base_url(port)
+        ))
+        .json(&serde_json::json!({
+            "accepted_through_device_sequence": 0,
+            "reason": "test_revocation",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoked.status(), 200);
+
+    let reenroll = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reenroll.status(), 400);
+    let body: serde_json::Value = reenroll.json().await.unwrap();
+    assert_eq!(body["code"], "device_enrollment_invalid");
+
+    let authority = client
+        .get(format!("{}/admin/v1/device-authority", base_url(port)))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    assert_eq!(authority["latest_sequence"], 2);
+    let device = authority["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|device| device["device_id"] == device_id)
+        .unwrap();
+    assert_eq!(device["status"], "revoked");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_rejects_invalid_signing_public_key() {
+    let (port, handle, _dir) = start_test_server().await;
+    let identity = handle.status().await.unwrap().identity_address;
+    let mut request = joining_device_request(&identity, "Invalid signing key");
+    let non_canonical_key = (0_u8..=u8::MAX)
+        .map(|byte| [byte; 32])
+        .find(|key| jolt_identity::verify_signature(key, b"", &[0; 64]).is_err())
+        .expect("at least one repeated-byte encoding is not an Ed25519 point");
+    request["signing_public_key"] = serde_json::json!(non_canonical_key);
+
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "device_enrollment_invalid");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_rejects_unsupported_encryption_suite() {
+    let (port, handle, _dir) = start_test_server().await;
+    let identity = handle.status().await.unwrap().identity_address;
+    let mut request = joining_device_request(&identity, "Unsupported encryption");
+    request["encryption_keys"][0]["suite_family"] = serde_json::json!("unsupported");
+
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "device_enrollment_invalid");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_rejects_invalid_encryption_public_key() {
+    let (port, handle, _dir) = start_test_server().await;
+    let identity = handle.status().await.unwrap().identity_address;
+    let mut request = joining_device_request(&identity, "Invalid encryption key");
+    request["encryption_keys"][0]["public_key"] = serde_json::json!(vec![7_u8; 31]);
+
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "device_enrollment_invalid");
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_admin_device_authority_rejects_duplicate_encryption_key_id() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
+    let first_request = joining_device_request(&identity, "First installation");
+    let duplicate_key_id = first_request["encryption_keys"][0]["key_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let first = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&first_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), 200);
+
+    let mut second_request = joining_device_request(&identity, "Second installation");
+    second_request["encryption_keys"][0]["key_id"] = serde_json::json!(duplicate_key_id);
+    let second = client
+        .post(format!(
+            "{}/admin/v1/device-authority/devices",
+            base_url(port)
+        ))
+        .json(&second_request)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(second.status(), 400);
+    let body: serde_json::Value = second.json().await.unwrap();
+    assert_eq!(body["code"], "device_enrollment_invalid");
+
+    let authority = client
+        .get(format!("{}/admin/v1/device-authority", base_url(port)))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    assert_eq!(authority["latest_sequence"], 1);
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_encrypted_publish_excludes_revoked_authorized_devices() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
@@ -1417,7 +1737,7 @@ async fn test_app_encrypted_publish_excludes_revoked_authorized_devices() {
             "{}/admin/v1/device-authority/devices",
             base_url(port)
         ))
-        .json(&serde_json::json!({ "label": "Lost phone" }))
+        .json(&joining_device_request(&identity, "Lost installation"))
         .send()
         .await
         .unwrap();
@@ -1430,7 +1750,10 @@ async fn test_app_encrypted_publish_excludes_revoked_authorized_devices() {
             "{}/admin/v1/device-authority/devices",
             base_url(port)
         ))
-        .json(&serde_json::json!({ "label": "Replacement phone" }))
+        .json(&joining_device_request(
+            &identity,
+            "Replacement installation",
+        ))
         .send()
         .await
         .unwrap();
@@ -1556,6 +1879,7 @@ async fn test_admin_device_authority_rejects_unknown_device_revocation() {
 async fn test_admin_device_authority_can_continue_after_rejected_revocation() {
     let (port, handle, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
+    let identity = handle.status().await.unwrap().identity_address;
 
     let rejected_resp = client
         .post(format!(
@@ -1576,7 +1900,7 @@ async fn test_admin_device_authority_can_continue_after_rejected_revocation() {
             "{}/admin/v1/device-authority/devices",
             base_url(port)
         ))
-        .json(&serde_json::json!({ "label": "Recovered laptop" }))
+        .json(&joining_device_request(&identity, "Recovered installation"))
         .send()
         .await
         .unwrap();
@@ -3649,7 +3973,10 @@ async fn test_app_can_encrypt_append_and_enumerate_records_by_prefix() {
             "{}/admin/v1/device-authority/devices",
             base_url(port)
         ))
-        .json(&serde_json::json!({ "label": "Tablet" }))
+        .json(&joining_device_request(
+            &identity,
+            "Additional installation",
+        ))
         .send()
         .await
         .unwrap();
@@ -3993,7 +4320,10 @@ async fn test_app_encrypts_self_private_content_for_active_authorized_devices() 
             "{}/admin/v1/device-authority/devices",
             base_url(port)
         ))
-        .json(&serde_json::json!({ "label": "Phone" }))
+        .json(&joining_device_request(
+            &identity,
+            "Additional installation",
+        ))
         .send()
         .await
         .unwrap();
@@ -4101,7 +4431,10 @@ async fn test_app_open_reports_historical_private_content_needs_rewrap() {
             "{}/admin/v1/device-authority/devices",
             base_url(port)
         ))
-        .json(&serde_json::json!({ "label": "Phone" }))
+        .json(&joining_device_request(
+            &identity,
+            "Additional installation",
+        ))
         .send()
         .await
         .unwrap();
@@ -4170,7 +4503,10 @@ async fn test_app_can_rewrap_historical_private_content_for_authorized_devices()
             "{}/admin/v1/device-authority/devices",
             base_url(port)
         ))
-        .json(&serde_json::json!({ "label": "Phone" }))
+        .json(&joining_device_request(
+            &identity,
+            "Additional installation",
+        ))
         .send()
         .await
         .unwrap();

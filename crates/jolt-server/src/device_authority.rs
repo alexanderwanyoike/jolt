@@ -1,36 +1,26 @@
-use std::sync::Arc;
+use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jolt_core::{
-    generate_identity_encryption_keypair, verify_identity_authority_chain, AuthorizedDevice,
-    AuthorizedDeviceStatus, DeviceAuthorizationOperation, DeviceAuthorizationRecord,
-    DeviceEncryptionPublicKey, EncryptedObjectRecipient, IdentityAuthorityError,
-    IdentityEncryptionKey, IdentityEncryptionPrivateKey,
+    verify_identity_authority_chain, AuthorizedDevice, AuthorizedDeviceStatus,
+    DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceEncryptionPublicKey,
+    EncryptedObjectRecipient, IdentityAuthorityError, IdentityEncryptionKey, IdentityId,
 };
-use jolt_identity::NodeIdentity;
+use jolt_identity::verify_signature as verify_ed25519_signature;
 use jolt_network::{DaemonHandle, NetworkError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::sync::Mutex;
 
-#[derive(Clone)]
-pub struct DeviceAuthorityStore {
-    state: Arc<Mutex<DeviceAuthorityState>>,
-}
+const SUPPORTED_DEVICE_ENCRYPTION_SUITE_FAMILY: &str = "x25519-hkdf-sha256";
 
-#[derive(Default)]
-struct DeviceAuthorityState {
-    generated_devices: Vec<GeneratedDeviceRecord>,
-}
-
-struct GeneratedDeviceRecord {
-    _device_id: String,
-    _identity: NodeIdentity,
-    _encryption_private_key: IdentityEncryptionPrivateKey,
-}
+#[derive(Clone, Default)]
+pub struct DeviceAuthorityStore;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AuthorizeDeviceRequest {
+    pub signing_public_key: Option<Vec<u8>>,
+    #[serde(default)]
+    pub encryption_keys: Vec<DeviceEncryptionPublicKey>,
     pub label: Option<String>,
 }
 
@@ -53,6 +43,7 @@ pub struct DeviceAuthorityMutationResponse {
     pub latest_sequence: u64,
     pub device: DeviceAuthorityDeviceView,
     pub devices: Vec<DeviceAuthorityDeviceView>,
+    pub authority_records: Vec<DeviceAuthorizationRecord>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -75,6 +66,8 @@ pub enum DeviceAuthorityError {
     MissingLocalIdentity,
     #[error("invalid local identity: {0}")]
     InvalidLocalIdentity(String),
+    #[error("invalid device enrollment: {0}")]
+    InvalidEnrollment(String),
     #[error("unknown device: {0}")]
     UnknownDevice(String),
     #[error("device authority verification failed: {0}")]
@@ -85,9 +78,7 @@ pub enum DeviceAuthorityError {
 
 impl DeviceAuthorityStore {
     pub fn new() -> Self {
-        Self {
-            state: Arc::new(Mutex::new(DeviceAuthorityState::default())),
-        }
+        Self
     }
 
     pub async fn list(
@@ -108,26 +99,76 @@ impl DeviceAuthorityStore {
             .first()
             .map(|record| record.body.identity.clone())
             .ok_or(DeviceAuthorityError::MissingLocalIdentity)?;
-        let device = NodeIdentity::generate();
-        let device_id = format!("dev_{}", device.identity_id());
         let created_at = unix_now();
-        let (device_encryption_key, device_encryption_private_key) =
-            generate_identity_encryption_keypair(
-                identity,
-                format!("enc_x25519_{device_id}_v0"),
-                created_at,
-            );
+        let signing_public_key = request.signing_public_key.ok_or_else(|| {
+            DeviceAuthorityError::InvalidEnrollment(
+                "joining installation must supply its signing public key".to_string(),
+            )
+        })?;
+        let public_key: [u8; 32] = signing_public_key.as_slice().try_into().map_err(|_| {
+            DeviceAuthorityError::InvalidEnrollment(
+                "signing public key must contain 32 bytes".to_string(),
+            )
+        })?;
+        verify_ed25519_signature(&signing_public_key, b"", &[0; 64]).map_err(|error| {
+            DeviceAuthorityError::InvalidEnrollment(format!(
+                "signing public key is not a valid Ed25519 key: {error}"
+            ))
+        })?;
+        if request.encryption_keys.is_empty() {
+            return Err(DeviceAuthorityError::InvalidEnrollment(
+                "joining installation must supply an encryption public key".to_string(),
+            ));
+        }
+        if request
+            .encryption_keys
+            .iter()
+            .any(|key| key.suite_family != SUPPORTED_DEVICE_ENCRYPTION_SUITE_FAMILY)
+        {
+            return Err(DeviceAuthorityError::InvalidEnrollment(format!(
+                "encryption keys must use {SUPPORTED_DEVICE_ENCRYPTION_SUITE_FAMILY}"
+            )));
+        }
+        if request
+            .encryption_keys
+            .iter()
+            .any(|key| key.public_key.len() != 32)
+        {
+            return Err(DeviceAuthorityError::InvalidEnrollment(
+                "encryption public keys must contain 32 bytes".to_string(),
+            ));
+        }
+        let device_id = format!("dev_{}", IdentityId::from_public_key(public_key));
+        let authority = verify_identity_authority_chain(&identity, &existing_records)?;
+        if authority.devices.contains_key(&device_id) {
+            return Err(DeviceAuthorityError::InvalidEnrollment(format!(
+                "device {device_id} is already present in the authority chain"
+            )));
+        }
+        let mut encryption_key_ids: HashSet<&str> = authority
+            .devices
+            .values()
+            .flat_map(|device| device.encryption_keys.iter())
+            .map(|key| key.key_id.as_str())
+            .collect();
+        for key in &request.encryption_keys {
+            if !encryption_key_ids.insert(&key.key_id) {
+                return Err(DeviceAuthorityError::InvalidEnrollment(format!(
+                    "encryption key id {} is already present in the authority chain",
+                    key.key_id
+                )));
+            }
+        }
         let operation = DeviceAuthorizationOperation::authorize_device_with_encryption_keys(
             device_id.clone(),
-            device.public_key_bytes(),
-            vec![device_encryption_public_key(&device_encryption_key)],
+            signing_public_key,
+            request.encryption_keys,
             default_device_capabilities(),
             request.label,
             created_at,
         );
         let records = daemon.append_local_device_authority(operation).await?;
 
-        let mut state = self.state.lock().await;
         let response = response_from_records(&records)?;
         let authorized_device = response
             .devices
@@ -135,17 +176,12 @@ impl DeviceAuthorityStore {
             .find(|device| device.device_id == device_id)
             .cloned()
             .ok_or_else(|| DeviceAuthorityError::UnknownDevice(device_id.clone()))?;
-        state.generated_devices.push(GeneratedDeviceRecord {
-            _device_id: device_id.clone(),
-            _identity: device,
-            _encryption_private_key: device_encryption_private_key,
-        });
-        drop(state);
         Ok(DeviceAuthorityMutationResponse {
             identity: response.identity,
             latest_sequence: response.latest_sequence,
             device: authorized_device,
             devices: response.devices,
+            authority_records: records,
         })
     }
 
@@ -200,6 +236,7 @@ impl DeviceAuthorityStore {
             latest_sequence: response.latest_sequence,
             device,
             devices: response.devices,
+            authority_records: records,
         })
     }
 }
@@ -235,15 +272,6 @@ fn device_view(device: &AuthorizedDevice) -> DeviceAuthorityDeviceView {
         revoked_at: device.revoked_at,
         revocation_reason: device.revocation_reason.clone(),
         accepted_through_device_sequence: device.accepted_through_device_sequence,
-    }
-}
-
-fn device_encryption_public_key(key: &IdentityEncryptionKey) -> DeviceEncryptionPublicKey {
-    DeviceEncryptionPublicKey {
-        key_id: key.key_id.clone(),
-        suite_family: key.suite_family.clone(),
-        public_key: key.public_key.clone(),
-        created_at: key.created_at,
     }
 }
 
