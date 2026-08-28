@@ -20,8 +20,9 @@ impl NetworkNode {
         store: ContentStore,
         config: NetworkConfig,
     ) -> Result<Self, NetworkError> {
-        let built = transport::build_iroh_swarm(&identity, &config).await?;
-        Self::from_built_transport(identity, store, config, built)
+        let local_device_identity = Self::load_or_create_local_device_identity(&store)?;
+        let built = transport::build_iroh_swarm(&local_device_identity, &config).await?;
+        Self::from_built_transport(identity, local_device_identity, store, config, built)
     }
 
     /// Create a new network node with TCP transport (for testing in isolated namespaces).
@@ -33,17 +34,18 @@ impl NetworkNode {
         store: ContentStore,
         config: NetworkConfig,
     ) -> Result<Self, NetworkError> {
-        let built = transport::build_tcp_swarm(&identity, &config)?;
-        Self::from_built_transport(identity, store, config, built)
+        let local_device_identity = Self::load_or_create_local_device_identity(&store)?;
+        let built = transport::build_tcp_swarm(&local_device_identity, &config)?;
+        Self::from_built_transport(identity, local_device_identity, store, config, built)
     }
 
     fn from_built_transport(
         identity: NodeIdentity,
+        local_device_identity: NodeIdentity,
         store: ContentStore,
         config: NetworkConfig,
         built: BuiltTransport,
     ) -> Result<Self, NetworkError> {
-        let local_device_identity = Self::load_or_create_local_device_identity(&store)?;
         let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
         let bootstrap_peer_ids = Self::parse_bootstrap_peer_ids(&config.effective_bootstrap_relays);
         let local_encryption_key = Self::load_persisted_local_encryption_key(&store, &identity)?;
@@ -187,6 +189,30 @@ mod tests {
         let store = make_store(dir.path());
         let node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config());
         assert!(node.is_ok());
+    }
+
+    #[tokio::test]
+    async fn installations_with_the_same_owner_are_distinct_network_peers() {
+        let first_dir = tempdir().unwrap();
+        let second_dir = tempdir().unwrap();
+        let owner = NodeIdentity::generate();
+        let owner_signing_key = owner.signing_key_bytes();
+
+        let first = NetworkNode::new_tcp(
+            owner,
+            make_store(first_dir.path()),
+            NetworkConfig::test_config(),
+        )
+        .unwrap();
+        let second = NetworkNode::new_tcp(
+            NodeIdentity::from_signing_key_bytes(&owner_signing_key).unwrap(),
+            make_store(second_dir.path()),
+            NetworkConfig::test_config(),
+        )
+        .unwrap();
+
+        assert_ne!(first.local_device_id(), second.local_device_id());
+        assert_ne!(first.local_peer_id(), second.local_peer_id());
     }
 
     #[tokio::test]

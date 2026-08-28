@@ -980,7 +980,6 @@ async fn two_nodes_deliver_ingress_over_p2p() {
 
     let recipient = NodeIdentity::generate();
     let recipient_identity = recipient.identity_id();
-    let recipient_peer = recipient.peer_id();
     let sender = NodeIdentity::generate();
 
     // The envelope names the recipient identity; the wrapped key does not
@@ -1011,6 +1010,7 @@ async fn two_nodes_deliver_ingress_over_p2p() {
     let mut node_r = NetworkNode::new_tcp(recipient, store_r, no_mdns_config()).unwrap();
     node_r.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     let node_r = wait_for_listener(node_r).await;
+    let recipient_peer = *node_r.local_peer_id();
     let addr_r = node_r.listeners()[0].clone();
 
     let store_s = make_store(dir_s.path());
