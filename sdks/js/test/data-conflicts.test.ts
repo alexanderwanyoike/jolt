@@ -85,6 +85,75 @@ const CollaborativeNotebook = App.create({
   data: { notes: CollaborativeNotes },
 });
 
+@Schema({ version: 1 })
+class DeletionNote {
+  @Field.string()
+  text!: string;
+}
+
+const DeleteWinsNotes = Collection.create(DeletionNote, {
+  access: {
+    read: Read.OwnIdentity,
+    create: true,
+    update: true,
+    delete: true,
+    restore: true,
+  },
+  conflicts: {
+    update: UpdateConflict.LastWriteWins,
+    delete: DeleteConflict.DeleteWins,
+  },
+});
+
+const DeleteWinsNotebook = App.create({
+  id: "delete-wins-notebook.example",
+  name: "Delete Wins Notebook",
+  namespace: "delete-wins-notebook",
+  data: { notes: DeleteWinsNotes },
+});
+
+const UpdateWinsNotes = Collection.create(DeletionNote, {
+  access: {
+    read: Read.OwnIdentity,
+    create: true,
+    update: true,
+    delete: true,
+    restore: true,
+  },
+  conflicts: {
+    update: UpdateConflict.LastWriteWins,
+    delete: DeleteConflict.UpdateWins,
+  },
+});
+
+const UpdateWinsNotebook = App.create({
+  id: "update-wins-notebook.example",
+  name: "Update Wins Notebook",
+  namespace: "update-wins-notebook",
+  data: { notes: UpdateWinsNotes },
+});
+
+const ManualDeleteNotes = Collection.create(DeletionNote, {
+  access: {
+    read: Read.OwnIdentity,
+    create: true,
+    update: true,
+    delete: true,
+    restore: true,
+  },
+  conflicts: {
+    update: UpdateConflict.LastWriteWins,
+    delete: DeleteConflict.Manual,
+  },
+});
+
+const ManualDeleteNotebook = App.create({
+  id: "manual-delete-notebook.example",
+  name: "Manual Delete Notebook",
+  namespace: "manual-delete-notebook",
+  data: { notes: ManualDeleteNotes },
+});
+
 describe("Data SDK Manual conflicts", () => {
   it("exposes concurrent alternatives and resolves by choosing one", async () => {
     const world = Notebook.testWorld();
@@ -296,5 +365,94 @@ describe("Data SDK Manual conflicts", () => {
     expect(winner.isPresent()).toBe(true);
     if (!winner.isPresent()) throw new Error("expected an automatic winner");
     expect(winner.value.text).toBe("Phone edit");
+  });
+
+  it("applies DeleteWins to a concurrent deletion and update", async () => {
+    const world = DeleteWinsNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original" });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.delete();
+    await laptopCopy.update({ text: "Laptop edit" });
+    await world.sync();
+
+    const winner = await laptop.notes.get(created.ref);
+
+    expect(winner.isDeleted()).toBe(true);
+    if (!winner.isDeleted()) throw new Error("expected the deletion to win");
+    await winner.restore({ text: "Restored after delete won" });
+    await world.sync();
+    const converged = await phone.notes.get(created.ref);
+    expect(converged.isPresent()).toBe(true);
+    if (!converged.isPresent()) throw new Error("expected the restore to converge");
+    expect(converged.value.text).toBe("Restored after delete won");
+  });
+
+  it("applies UpdateWins to a concurrent deletion and update", async () => {
+    const world = UpdateWinsNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original" });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.delete();
+    await laptopCopy.update({ text: "Laptop edit" });
+    await world.sync();
+
+    const winner = await phone.notes.get(created.ref);
+
+    expect(winner.isPresent()).toBe(true);
+    if (!winner.isPresent()) throw new Error("expected the update to win");
+    expect(winner.value.text).toBe("Laptop edit");
+    await winner.update({ text: "Updated after update won" });
+    await world.sync();
+    const converged = await phone.notes.get(created.ref);
+    expect(converged.isPresent()).toBe(true);
+    if (!converged.isPresent()) throw new Error("expected the later update to converge");
+    expect(converged.value.text).toBe("Updated after update won");
+  });
+
+  it("exposes deletion and update alternatives for DeleteConflict.Manual", async () => {
+    const world = ManualDeleteNotebook.testWorld();
+    const phone = world.device("alice.jolt", "phone");
+    const laptop = world.device("alice.jolt", "laptop");
+    const created = await phone.notes.create({ text: "Original" });
+
+    await world.sync();
+    const phoneCopy = await phone.notes.get(created.ref);
+    const laptopCopy = await laptop.notes.get(created.ref);
+    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+      throw new Error("expected both devices to observe the original note");
+    }
+    await phoneCopy.delete();
+    await laptopCopy.update({ text: "Laptop edit" });
+    await world.sync();
+
+    const conflicted = await laptop.notes.get(created.ref);
+
+    expect(conflicted.isConflicted()).toBe(true);
+    if (!conflicted.isConflicted()) throw new Error("expected a Manual conflict");
+    expect(conflicted.alternatives.map(alternative => alternative.state)).toEqual([
+      State.Present,
+      State.Deleted,
+    ]);
+    const deletion = conflicted.alternatives.find(alternative => alternative.isDeleted());
+    if (deletion === undefined) throw new Error("expected a deleted alternative");
+    await conflicted.choose(deletion);
+    await world.sync();
+    const converged = await phone.notes.get(created.ref);
+    expect(converged.isDeleted()).toBe(true);
   });
 });

@@ -960,6 +960,7 @@ function deletedItem<
   mutationContext?: {
     readonly backend: DataBackend;
     readonly revision: string;
+    readonly observedRevisions?: readonly string[];
   },
 ): DeletedItem<T, TAccess, TConflicts> {
   const item: Record<string, unknown> = {
@@ -974,12 +975,20 @@ function deletedItem<
   if (resource.access.restore === true && mutationContext !== undefined) {
     item.restore = async (input: T) => {
       const current = currentStoredValue(resource.schema, input);
-      const restored = await mutationContext.backend.restore(
-        ref,
-        current.stored,
-        mutationContext.revision,
-        mutationContext.backend.nextMutationId(),
-      );
+      const restored = mutationContext.observedRevisions === undefined
+        ? await mutationContext.backend.restore(
+          ref,
+          current.stored,
+          mutationContext.revision,
+          mutationContext.backend.nextMutationId(),
+        )
+        : await mutationContext.backend.resolveConflict(
+          ref,
+          current.stored,
+          mutationContext.observedRevisions,
+          mutationContext.backend.nextMutationId(),
+        );
+      if (isBackendDeletedRecord(restored)) throw new ConflictError(ref);
       return presentItem(resource, mutationContext.backend, ref, restored, true);
     };
   }
@@ -1164,6 +1173,7 @@ type BackendPresentRecord = {
 type BackendDeletedRecord = {
   readonly state: typeof State.Deleted;
   readonly revision: string | null;
+  readonly observedRevisions?: readonly string[];
 };
 
 type BackendAlternativeRecord =
@@ -1669,15 +1679,17 @@ function mergeConcurrentPresentUpdates<T extends object>(
   conflict: BackendConflictRecord,
 ): BackendPresentRecord | null {
   if (conflict.base === undefined || isBackendDeletedRecord(conflict.base)) return null;
-  if (conflict.alternatives.some(isBackendDeletedRecord)) return null;
+  const alternatives = conflict.alternatives.filter(alternative => (
+    !isBackendDeletedRecord(alternative)
+  )) as readonly (BackendPresentRecord & { readonly revision: string })[];
+  if (alternatives.length === 0) return null;
 
   const base = migratedStoredValue(schemaClass, conflict.base.stored).stored;
   const baseValue = base.value as Record<string, unknown>;
   const merged = { ...baseValue };
   const changes = new Map<string, { readonly present: boolean; readonly value?: unknown }>();
 
-  for (const alternative of conflict.alternatives) {
-    if (isBackendDeletedRecord(alternative)) return null;
+  for (const alternative of alternatives) {
     const stored = migratedStoredValue(schemaClass, alternative.stored).stored;
     const value = stored.value as Record<string, unknown>;
     const keys = new Set([...Object.keys(baseValue), ...Object.keys(value)]);
@@ -1726,6 +1738,26 @@ async function readItem<
         TAccess,
         TConflicts
       >;
+    }
+    const deleted = [...stored.alternatives].reverse().find(isBackendDeletedRecord);
+    const hasPresent = stored.alternatives.some(alternative => (
+      !isBackendDeletedRecord(alternative)
+    ));
+    if (
+      deleted !== undefined
+      && (!hasPresent || resource.conflicts.delete === DeleteConflict.DeleteWins)
+    ) {
+      return deletedItem(
+        resource,
+        ref,
+        mutable
+          ? {
+            backend,
+            revision: deleted.revision,
+            observedRevisions: stored.revisions,
+          }
+          : undefined,
+      );
     }
     const merged = mergeConcurrentPresentUpdates(resource.schema, stored);
     if (merged === null) throw new ConflictError(ref);
