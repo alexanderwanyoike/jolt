@@ -436,7 +436,9 @@ impl NetworkNode {
                             response.authority_records,
                             response.device_logs,
                         )
-                        .map(|_| ())
+                        .and_then(|_| {
+                            self.persist_synced_local_device_writer_state(&pending.identity)
+                        })
                         .map_err(|e| {
                             Self::identity_head_invalid_failure(&pending.identity, e.to_string())
                         })
@@ -932,6 +934,7 @@ impl NetworkNode {
 
                 // Notify fetch manager in case this is a provider we're waiting for
                 self.fetch_manager.on_peer_connected(&peer_id);
+                self.refresh_local_device_writer_state_from_peer(&peer_id);
             }
 
             SwarmEvent::ConnectionClosed { peer_id, .. } => {

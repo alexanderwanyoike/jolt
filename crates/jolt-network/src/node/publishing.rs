@@ -769,6 +769,28 @@ impl NetworkNode {
             })
     }
 
+    pub(super) fn persist_synced_local_device_writer_state(
+        &mut self,
+        identity: &IdentityId,
+    ) -> Result<(), NetworkError> {
+        if identity != &self.identity.identity_id() {
+            return Ok(());
+        }
+        let authority_records = self
+            .device_writer_states
+            .get(identity)
+            .map(|state| state.authority_records.clone())
+            .ok_or_else(|| {
+                NetworkError::Protocol(format!(
+                    "cannot persist missing device-writer state for {identity}"
+                ))
+            })?;
+        self.persist_device_writer_state(identity, &authority_records)?;
+        self.local_device_authority_records
+            .insert(identity.clone(), authority_records);
+        Ok(())
+    }
+
     fn other_device_logs_for_persistence(
         &self,
         identity: &IdentityId,

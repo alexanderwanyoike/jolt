@@ -450,6 +450,21 @@ impl NetworkNode {
         );
     }
 
+    pub(super) fn refresh_local_device_writer_state_from_peer(
+        &mut self,
+        provider: &libp2p::PeerId,
+    ) {
+        let identity = self.identity.identity_id();
+        let already_in_flight = self
+            .pending_device_writer_syncs
+            .values()
+            .any(|pending| pending.identity == identity);
+        if already_in_flight {
+            return;
+        }
+        self.request_device_writer_sync_from_provider(identity, provider);
+    }
+
     /// Dispatch parked device-writer sync waiters to a freshly discovered
     /// provider for `identity`.
     pub(super) fn request_pending_device_writer_syncs_from_provider(
