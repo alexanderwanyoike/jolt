@@ -3558,6 +3558,10 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
     assert_eq!(stale["state"]["status"], "stale");
     assert_eq!(stale["state"]["reason"], "networkUnavailable");
 
+    // Let the test server's 10 ms refresh cooldown expire so this read proves
+    // that retained records remain immediate while a new refresh is active.
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
     let retained = tokio::time::timeout(
         std::time::Duration::from_millis(250),
         client
@@ -3574,8 +3578,8 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
     assert_eq!(retained.status(), 200);
     let retained: serde_json::Value = retained.json().await.unwrap();
     assert_eq!(retained["records"].as_array().unwrap().len(), 3);
-    assert_eq!(retained["source"]["state"]["status"], "stale");
-    assert_eq!(retained["source"]["state"]["reason"], "networkUnavailable",);
+    assert_eq!(retained["source"]["state"]["status"], "updating");
+    assert!(retained["source"]["state"]["last_verified_at"].is_number());
 
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
