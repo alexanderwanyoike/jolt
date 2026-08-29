@@ -23,6 +23,16 @@ fn legacy_device_writer_sync_version() -> u16 {
     LEGACY_DEVICE_WRITER_SYNC_VERSION
 }
 
+fn cbor_array_header_len(len: usize) -> usize {
+    match len {
+        0..=23 => 1,
+        24..=0xff => 2,
+        0x100..=0xffff => 3,
+        0x1_0000..=0xffff_ffff => 5,
+        _ => 9,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentRequest {
     pub content_id: String,
@@ -138,23 +148,8 @@ pub struct DeviceWriterSyncResponse {
 }
 
 impl DeviceWriterSyncResponse {
-    pub fn unsupported_operation_version(required_operation_version: u16) -> Self {
-        Self {
-            required_operation_version,
-            sync_version: LEGACY_DEVICE_WRITER_SYNC_VERSION,
-            heads: Vec::new(),
-            continuation: None,
-            authority_records: Vec::new(),
-            device_logs: Vec::new(),
-        }
-    }
-
-    pub fn for_request(
-        max_operation_version: u16,
-        authority_records: Vec<DeviceAuthorizationRecord>,
-        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
-    ) -> Self {
-        let required_operation_version = device_logs
+    fn required_operation_version(device_logs: &[Vec<DeviceWriterLogEntry>]) -> u16 {
+        device_logs
             .iter()
             .flatten()
             .map(|entry| {
@@ -172,7 +167,41 @@ impl DeviceWriterSyncResponse {
                 }
             })
             .max()
-            .unwrap_or(LEGACY_DEVICE_WRITER_OPERATION_VERSION);
+            .unwrap_or(LEGACY_DEVICE_WRITER_OPERATION_VERSION)
+    }
+
+    pub fn unsupported_operation_version(required_operation_version: u16) -> Self {
+        Self {
+            required_operation_version,
+            sync_version: LEGACY_DEVICE_WRITER_SYNC_VERSION,
+            heads: Vec::new(),
+            continuation: None,
+            authority_records: Vec::new(),
+            device_logs: Vec::new(),
+        }
+    }
+
+    pub fn for_request(
+        max_operation_version: u16,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    ) -> Self {
+        let required_operation_version = Self::required_operation_version(&device_logs);
+
+        Self::full_response(
+            required_operation_version,
+            max_operation_version,
+            authority_records,
+            device_logs,
+        )
+    }
+
+    fn full_response(
+        required_operation_version: u16,
+        max_operation_version: u16,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    ) -> Self {
 
         if max_operation_version < required_operation_version {
             return Self::unsupported_operation_version(required_operation_version);
@@ -209,16 +238,69 @@ impl DeviceWriterSyncResponse {
         max_entries: usize,
         max_bytes: usize,
     ) -> Self {
-        let full = Self::for_request(
-            request.max_operation_version,
-            authority_records,
-            device_logs.clone(),
-        );
+        let required_operation_version = Self::required_operation_version(&device_logs);
         if request.max_sync_version < DELTA_DEVICE_WRITER_SYNC_VERSION
-            || full.required_operation_version > request.max_operation_version
+            || required_operation_version > request.max_operation_version
         {
-            return full;
+            return Self::full_response(
+                required_operation_version,
+                request.max_operation_version,
+                authority_records,
+                device_logs,
+            );
         }
+
+        let mut cursors = std::collections::HashMap::new();
+        for cursor in &request.cursors {
+            if cursors
+                .insert(cursor.device_id.clone(), cursor.clone())
+                .is_some()
+            {
+                return Self::full_response(
+                    required_operation_version,
+                    request.max_operation_version,
+                    authority_records,
+                    device_logs,
+                );
+            }
+        }
+
+        let logs_by_device: std::collections::HashMap<_, _> = device_logs
+            .iter()
+            .filter_map(|log| {
+                log.first()
+                    .map(|entry| (entry.body.device_id.as_str(), log))
+            })
+            .collect();
+        for cursor in cursors.values() {
+            let Some(log) = logs_by_device.get(cursor.device_id.as_str()) else {
+                return Self::full_response(
+                    required_operation_version,
+                    request.max_operation_version,
+                    authority_records,
+                    device_logs,
+                );
+            };
+            let Some(known) = log.get(cursor.device_sequence as usize) else {
+                return Self::full_response(
+                    required_operation_version,
+                    request.max_operation_version,
+                    authority_records,
+                    device_logs,
+                );
+            };
+            if known.body.device_sequence != cursor.device_sequence
+                || known.entry_hash() != cursor.entry_hash
+            {
+                return Self::full_response(
+                    required_operation_version,
+                    request.max_operation_version,
+                    authority_records,
+                    device_logs,
+                );
+            }
+        }
+        drop(logs_by_device);
 
         device_logs.sort_by(|left, right| {
             let left_id = left
@@ -231,15 +313,6 @@ impl DeviceWriterSyncResponse {
                 .unwrap_or("");
             left_id.cmp(right_id)
         });
-        let mut cursors = std::collections::HashMap::new();
-        for cursor in &request.cursors {
-            if cursors
-                .insert(cursor.device_id.clone(), cursor.clone())
-                .is_some()
-            {
-                return full;
-            }
-        }
 
         let heads: Vec<_> = device_logs
             .iter()
@@ -254,29 +327,35 @@ impl DeviceWriterSyncResponse {
             let start = match cursors.get(&head.body.device_id) {
                 None => 0,
                 Some(cursor) => {
-                    let Some(known) = log.get(cursor.device_sequence as usize) else {
-                        return full;
-                    };
-                    if known.body.device_sequence != cursor.device_sequence
-                        || known.entry_hash() != cursor.entry_hash
-                    {
-                        return full;
-                    }
                     cursor.device_sequence as usize + 1
                 }
             };
             starts.push(start);
         }
-        if cursors
-            .keys()
-            .any(|device_id| !heads.iter().any(|head| &head.device_id == device_id))
-        {
-            return full;
+
+        let mut continuation_cursors = cursors.clone();
+        for head in &heads {
+            continuation_cursors.insert(head.device_id.clone(), head.clone());
         }
+        let mut continuation_cursors: Vec<_> = continuation_cursors.into_values().collect();
+        continuation_cursors.sort_by(|left, right| left.device_id.cmp(&right.device_id));
+        let envelope = Self {
+            required_operation_version,
+            sync_version: DELTA_DEVICE_WRITER_SYNC_VERSION,
+            heads: heads.clone(),
+            continuation: Some(DeviceWriterSyncContinuation {
+                cursors: continuation_cursors,
+            }),
+            authority_records: authority_records.clone(),
+            device_logs: Vec::new(),
+        };
+        let mut encoded_envelope = Vec::new();
+        ciborium::into_writer(&envelope, &mut encoded_envelope)
+            .expect("device-writer sync responses serialize to CBOR");
 
         let mut delta_logs = Vec::new();
         let mut transferred_entries = 0;
-        let mut transferred_bytes: usize = 0;
+        let mut transferred_bytes = encoded_envelope.len();
         let mut truncated = false;
         for (log, start) in device_logs.iter().zip(starts) {
             let mut delta = Vec::new();
@@ -284,14 +363,24 @@ impl DeviceWriterSyncResponse {
                 let mut encoded = Vec::new();
                 ciborium::into_writer(entry, &mut encoded)
                     .expect("device-writer entries serialize to CBOR");
+                let old_outer_header = cbor_array_header_len(delta_logs.len());
+                let new_outer_header = cbor_array_header_len(delta_logs.len() + 1);
+                let old_inner_header = cbor_array_header_len(delta.len());
+                let new_inner_header = cbor_array_header_len(delta.len() + 1);
+                let collection_overhead = if delta.is_empty() {
+                    new_outer_header - old_outer_header + new_inner_header
+                } else {
+                    new_inner_header - old_inner_header
+                };
+                let encoded_entry_bytes = collection_overhead.saturating_add(encoded.len());
                 if transferred_entries >= max_entries
-                    || transferred_bytes.saturating_add(encoded.len()) > max_bytes
+                    || transferred_bytes.saturating_add(encoded_entry_bytes) > max_bytes
                 {
                     truncated = true;
                     break;
                 }
                 transferred_entries += 1;
-                transferred_bytes += encoded.len();
+                transferred_bytes += encoded_entry_bytes;
                 delta.push(entry.clone());
             }
             if !delta.is_empty() {
@@ -303,57 +392,37 @@ impl DeviceWriterSyncResponse {
         }
 
         if truncated && transferred_entries == 0 {
-            return full;
+            return Self::full_response(
+                required_operation_version,
+                request.max_operation_version,
+                authority_records,
+                device_logs,
+            );
         }
-        let build_response = |device_logs: &[Vec<DeviceWriterLogEntry>], truncated: bool| {
-            let continuation = truncated.then(|| {
-                let mut cursors: std::collections::HashMap<_, _> = request
-                    .cursors
-                    .iter()
-                    .cloned()
-                    .map(|cursor| (cursor.device_id.clone(), cursor))
-                    .collect();
-                for entry in device_logs.iter().flatten() {
-                    cursors.insert(
-                        entry.body.device_id.clone(),
-                        DeviceWriterCursor::from_entry(entry),
-                    );
-                }
-                let mut cursors: Vec<_> = cursors.into_values().collect();
-                cursors.sort_by(|left, right| left.device_id.cmp(&right.device_id));
-                DeviceWriterSyncContinuation { cursors }
-            });
-            Self {
-                required_operation_version: full.required_operation_version,
-                sync_version: DELTA_DEVICE_WRITER_SYNC_VERSION,
-                heads: heads.clone(),
-                continuation,
-                authority_records: full.authority_records.clone(),
-                device_logs: device_logs.to_vec(),
+        let continuation = truncated.then(|| {
+            let mut cursors: std::collections::HashMap<_, _> = request
+                .cursors
+                .iter()
+                .cloned()
+                .map(|cursor| (cursor.device_id.clone(), cursor))
+                .collect();
+            for entry in delta_logs.iter().flatten() {
+                cursors.insert(
+                    entry.body.device_id.clone(),
+                    DeviceWriterCursor::from_entry(entry),
+                );
             }
-        };
-
-        loop {
-            let response = build_response(&delta_logs, truncated);
-            let mut encoded = Vec::new();
-            ciborium::into_writer(&response, &mut encoded)
-                .expect("device-writer sync responses serialize to CBOR");
-            if encoded.len() <= max_bytes {
-                return response;
-            }
-            if transferred_entries == 0 {
-                return full;
-            }
-
-            let last_log = delta_logs
-                .last_mut()
-                .expect("a transferred entry has a delta log");
-            last_log.pop();
-            if last_log.is_empty() {
-                delta_logs.pop();
-            }
-            transferred_entries -= 1;
-            truncated = true;
+            let mut cursors: Vec<_> = cursors.into_values().collect();
+            cursors.sort_by(|left, right| left.device_id.cmp(&right.device_id));
+            DeviceWriterSyncContinuation { cursors }
+        });
+        Self {
+            required_operation_version,
+            sync_version: DELTA_DEVICE_WRITER_SYNC_VERSION,
+            heads,
+            continuation,
+            authority_records,
+            device_logs: delta_logs,
         }
     }
 
