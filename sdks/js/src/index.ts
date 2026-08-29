@@ -40,7 +40,7 @@
  */
 
 export {
-  createDataAppClient as createDataClient,
+  createDataClient,
   createJoltClient,
   makeId,
   referenceKey,

@@ -116,6 +116,12 @@ test "$rfc_count" -eq 7 || {
 }
 
 sdk_source_sha="$(sha256sum sdks/js/docs/api.json | cut -d' ' -f1)"
+(cd sdks/js && yarn docs >/dev/null)
+regenerated_sdk_source_sha="$(sha256sum sdks/js/docs/api.json | cut -d' ' -f1)"
+if [[ "$regenerated_sdk_source_sha" != "$sdk_source_sha" ]]; then
+  echo "SDK API snapshot is stale: sdks/js/docs/api.json; run: cd sdks/js && yarn docs" >&2
+  exit 1
+fi
 if grep -Fq '"sources":' sdks/js/docs/api.json; then
   echo "SDK API snapshot contains volatile source metadata; enable TypeDoc disableSources" >&2
   exit 1
