@@ -18,6 +18,7 @@ import type {
   AppSessionStatusResponse,
   CurrentAppSession,
   DecryptedEncryptedObject,
+  DataSubscriptionChangeResponse,
   DataSubscriptionRecordResponse,
   DataSubscriptionViewResponse,
   DecryptedIngress,
@@ -211,6 +212,25 @@ export function getDataSubscriptionView(
     "app",
     `/data-subscriptions/${encodeURIComponent(subscriptionId)}`,
     { method: "GET", token, ...options },
+  );
+}
+
+/** Wait for one bounded local Materialized View event after `cursor`. */
+export function nextDataSubscriptionChange(
+  transport: JoltTransport,
+  token: string,
+  subscriptionId: string,
+  cursor?: string,
+  options?: CallOptions,
+): Promise<DataSubscriptionChangeResponse> {
+  return transport.request(
+    "app",
+    `/data-subscriptions/${encodeURIComponent(subscriptionId)}/changes`,
+    {
+      token,
+      json: cursor === undefined ? {} : { cursor },
+      ...options,
+    },
   );
 }
 

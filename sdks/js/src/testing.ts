@@ -432,6 +432,16 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
       };
     },
 
+    async nextDataSubscriptionChange(subscriptionId) {
+      const view = await client.getDataSubscriptionView(subscriptionId);
+      return {
+        type: "snapshot",
+        cursor: `change_fake_${++fakeCounter}`,
+        records: view.records,
+        state: view.source.state,
+      };
+    },
+
     async removeDataSubscription(subscriptionId) {
       if (!dataSubscriptions.delete(subscriptionId)) {
         throw new JoltApiError("Data Subscription not found", {

@@ -288,6 +288,18 @@ export class SubscriptionFailure {
 export type SubscriptionFailureValue =
   typeof SubscriptionFailure[keyof typeof SubscriptionFailure];
 
+/** Symbol-backed event kinds emitted by a Materialized View Change Stream. */
+export class ChangeType {
+  static readonly Snapshot = Symbol("JoltDataChangeSnapshot");
+  static readonly Changed = Symbol("JoltDataChangeChanged");
+  static readonly State = Symbol("JoltDataChangeState");
+  static readonly ResyncRequired = Symbol("JoltDataChangeResyncRequired");
+  static readonly Cancelled = Symbol("JoltDataChangeCancelled");
+  static readonly Revoked = Symbol("JoltDataChangeRevoked");
+
+  private constructor() {}
+}
+
 /** The node could not admit another durable Data Subscription. */
 export class SubscriptionCapacityError extends Error {
   constructor(options?: ErrorOptions) {
@@ -768,6 +780,54 @@ type SubscriptionTarget<
   readonly backend: DataBackend;
 };
 
+type SubscribedItem<
+  T extends object,
+  TConflicts extends ResourceConflicts,
+> = PresentItem<
+  T,
+  { readonly read: typeof Read.AnyIdentity },
+  TConflicts
+>;
+
+/** One typed event from a local Materialized View Change Stream. */
+export type DataSubscriptionChange<
+  T extends object,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> =
+  | {
+      readonly type: typeof ChangeType.Snapshot;
+      readonly cursor: string;
+      readonly items: readonly SubscribedItem<T, TConflicts>[];
+      readonly state: SubscriptionStateValue;
+      readonly lastVerifiedAt?: number;
+      readonly reason?: SubscriptionFailureValue;
+    }
+  | {
+      readonly type: typeof ChangeType.Changed;
+      readonly cursor: string;
+      readonly items: readonly SubscribedItem<T, TConflicts>[];
+      readonly removed: readonly Ref<T>[];
+    }
+  | {
+      readonly type: typeof ChangeType.State;
+      readonly cursor: string;
+      readonly state: SubscriptionStateValue;
+      readonly lastVerifiedAt?: number;
+      readonly reason?: SubscriptionFailureValue;
+    }
+  | { readonly type: typeof ChangeType.ResyncRequired }
+  | { readonly type: typeof ChangeType.Cancelled }
+  | { readonly type: typeof ChangeType.Revoked };
+
+/** A cancellable async sequence of local Materialized View changes. */
+export type DataChangeStream<
+  T extends object,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = AsyncIterable<DataSubscriptionChange<T, TConflicts>> & {
+  readonly cursor?: string;
+  cancel(): Promise<void>;
+};
+
 /** A typed, refreshable view of one remote Collection. */
 export type DataSubscription<
   T extends object,
@@ -778,6 +838,7 @@ export type DataSubscription<
   readonly state: SubscriptionStateValue;
   readonly lastVerifiedAt?: number;
   readonly reason?: SubscriptionFailureValue;
+  changes(options?: { readonly cursor?: string }): DataChangeStream<T, TConflicts>;
   get(): Promise<readonly PresentItem<
     T,
     { readonly read: typeof Read.AnyIdentity },
@@ -903,6 +964,7 @@ export type DataSdkClient = Pick<
   JoltDataSubscriptionSdk,
   | "createDataSubscription"
   | "getDataSubscriptionView"
+  | "nextDataSubscriptionChange"
   | "removeDataSubscription"
 >;
 
@@ -983,26 +1045,128 @@ function requirePathSegment(value: string, label: string): void {
   }
 }
 
+type TestChangeListener = {
+  readonly identity: Identity;
+  readonly pathPrefix: string;
+  readonly queue: BackendSubscriptionChange[];
+  readonly waiters: ((event: BackendSubscriptionChange) => void)[];
+  cancelled: boolean;
+};
+
 type TestWorldState = {
   readonly store: Map<string, BackendPresentRecord | BackendDeletedRecord>;
+  readonly changeListeners: Set<TestChangeListener>;
   nextId: number;
   nextMutationId: number;
   nextRevision: number;
   nextSubscriptionId: number;
+  nextChangeCursor: number;
 };
 
 function createTestWorldState(): TestWorldState {
   return {
     store: new Map(),
+    changeListeners: new Set(),
     nextId: 0,
     nextMutationId: 0,
     nextRevision: 0,
     nextSubscriptionId: 0,
+    nextChangeCursor: 0,
   };
 }
 
 function testStoreKey(ref: Pick<Ref<object>, "identity" | "path">): string {
   return `${ref.identity}\u0000${ref.path}`;
+}
+
+function testChangeCursor(state: TestWorldState): string {
+  return `change_test_${++state.nextChangeCursor}`;
+}
+
+function testSubscriptionView(
+  state: TestWorldState,
+  identity: Identity,
+  pathPrefix: string,
+): BackendSubscriptionView {
+  const refs = [...state.store.keys()]
+    .map(key => key.split("\u0000") as [string, string])
+    .filter(([recordIdentity, path]) => (
+      recordIdentity === identity && path.startsWith(`${pathPrefix}/`)
+    ))
+    .map(([, path]) => createRef<object>(identity, path))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  return {
+    refs: Object.freeze(refs),
+    state: SubscriptionState.Ready,
+    lastVerifiedAt: 0,
+  };
+}
+
+function enqueueTestChange(
+  listener: TestChangeListener,
+  event: BackendSubscriptionChange,
+): void {
+  const waiter = listener.waiters.shift();
+  if (waiter === undefined) listener.queue.push(event);
+  else waiter(event);
+}
+
+function publishTestChange(
+  state: TestWorldState,
+  ref: Ref<object>,
+  removed: boolean,
+): void {
+  for (const listener of state.changeListeners) {
+    if (
+      listener.cancelled
+      || listener.identity !== ref.identity
+      || !ref.path.startsWith(`${listener.pathPrefix}/`)
+    ) {
+      continue;
+    }
+    enqueueTestChange(listener, Object.freeze({
+      type: "changed",
+      cursor: testChangeCursor(state),
+      refs: Object.freeze(removed ? [] : [ref]),
+      removed: Object.freeze(removed ? [ref] : []),
+    }));
+  }
+}
+
+function createTestChangeStream(
+  state: TestWorldState,
+  identity: Identity,
+  pathPrefix: string,
+): BackendChangeStream {
+  const listener: TestChangeListener = {
+    identity,
+    pathPrefix,
+    queue: [],
+    waiters: [],
+    cancelled: false,
+  };
+  state.changeListeners.add(listener);
+  enqueueTestChange(listener, Object.freeze({
+    type: "snapshot",
+    cursor: testChangeCursor(state),
+    view: testSubscriptionView(state, identity, pathPrefix),
+  }));
+  return {
+    next: async () => {
+      const queued = listener.queue.shift();
+      if (queued !== undefined) return queued;
+      if (listener.cancelled) return { type: "cancelled" };
+      return new Promise(resolve => listener.waiters.push(resolve));
+    },
+    cancel: async () => {
+      if (listener.cancelled) return;
+      listener.cancelled = true;
+      state.changeListeners.delete(listener);
+      for (const resolve of listener.waiters.splice(0)) {
+        resolve({ type: "cancelled" });
+      }
+    },
+  };
 }
 
 function createRef<T extends object>(identity: Identity, path: string): Ref<T> {
@@ -1488,6 +1652,11 @@ type DataBackend = {
     subscriptionId: string,
     pathPrefix: string,
   ): Promise<BackendSubscriptionView>;
+  openSubscriptionChanges(
+    subscriptionId: string,
+    pathPrefix: string,
+    cursor?: string,
+  ): Promise<BackendChangeStream>;
   removeSubscription(subscriptionId: string): Promise<void>;
   for(identity: Identity): DataBackend;
 };
@@ -1497,6 +1666,34 @@ type BackendSubscriptionView = {
   readonly state: SubscriptionStateValue;
   readonly lastVerifiedAt?: number;
   readonly reason?: SubscriptionFailureValue;
+};
+
+type BackendSubscriptionChange =
+  | {
+      readonly type: "snapshot";
+      readonly cursor: string;
+      readonly view: BackendSubscriptionView;
+    }
+  | {
+      readonly type: "changed";
+      readonly cursor: string;
+      readonly refs: readonly Ref<object>[];
+      readonly removed: readonly Ref<object>[];
+    }
+  | {
+      readonly type: "state";
+      readonly cursor: string;
+      readonly state: SubscriptionStateValue;
+      readonly lastVerifiedAt?: number;
+      readonly reason?: SubscriptionFailureValue;
+    }
+  | { readonly type: "resyncRequired" }
+  | { readonly type: "cancelled" }
+  | { readonly type: "revoked" };
+
+type BackendChangeStream = {
+  next(): Promise<BackendSubscriptionChange>;
+  cancel(): Promise<void>;
 };
 
 function createTestBackend(state: TestWorldState, identity: Identity): DataBackend {
@@ -1510,6 +1707,7 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
     async write(ref, stored) {
       const record = { stored, revision: `revision_${++state.nextRevision}` };
       state.store.set(testStoreKey(ref), record);
+      publishTestChange(state, ref as unknown as Ref<object>, false);
       return record;
     },
     async update(ref, stored, revision) {
@@ -1524,6 +1722,7 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
       }
       const record = { stored, revision: `revision_${++state.nextRevision}` };
       state.store.set(key, record);
+      publishTestChange(state, ref as unknown as Ref<object>, false);
       return record;
     },
     async delete(ref, revision) {
@@ -1541,6 +1740,7 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
         revision: `revision_${++state.nextRevision}`,
       } as const;
       state.store.set(key, record);
+      publishTestChange(state, ref as unknown as Ref<object>, true);
       return record;
     },
     async restore(ref, stored, revision) {
@@ -1555,6 +1755,7 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
       }
       const record = { stored, revision: `revision_${++state.nextRevision}` };
       state.store.set(key, record);
+      publishTestChange(state, ref as unknown as Ref<object>, false);
       return record;
     },
     async resolveConflict(ref) {
@@ -1564,18 +1765,10 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
       return `sub_test_${++state.nextSubscriptionId}`;
     },
     async readSubscription(_subscriptionId, pathPrefix) {
-      const refs = [...state.store.keys()]
-        .map(key => key.split("\u0000") as [string, string])
-        .filter(([recordIdentity, path]) => (
-          recordIdentity === identity && path.startsWith(`${pathPrefix}/`)
-        ))
-        .map(([, path]) => createRef<object>(identity, path))
-        .sort((left, right) => left.path.localeCompare(right.path));
-      return {
-        refs: Object.freeze(refs),
-        state: SubscriptionState.Ready,
-        lastVerifiedAt: 0,
-      };
+      return testSubscriptionView(state, identity, pathPrefix);
+    },
+    async openSubscriptionChanges(_subscriptionId, pathPrefix) {
+      return createTestChangeStream(state, identity, pathPrefix);
     },
     async removeSubscription() {},
     for: remoteIdentity => createTestBackend(state, remoteIdentity),
@@ -1595,19 +1788,101 @@ type TestDeviceState = {
 
 type TestDeviceWorldState = {
   readonly devices: Map<string, TestDeviceState>;
+  readonly changeListeners: Set<TestChangeListener>;
   nextId: number;
   nextMutationId: number;
   nextRevision: number;
   nextSubscriptionId: number;
+  nextChangeCursor: number;
 };
 
 function createTestDeviceWorldState(): TestDeviceWorldState {
   return {
     devices: new Map(),
+    changeListeners: new Set(),
     nextId: 0,
     nextMutationId: 0,
     nextRevision: 0,
     nextSubscriptionId: 0,
+    nextChangeCursor: 0,
+  };
+}
+
+function testDeviceSubscriptionView(
+  device: TestDeviceState,
+  identity: Identity,
+  pathPrefix: string,
+): BackendSubscriptionView {
+  const refs = [...device.history.keys()]
+    .map(key => key.split("\u0000") as [string, string])
+    .filter(([recordIdentity, path]) => (
+      recordIdentity === identity && path.startsWith(`${pathPrefix}/`)
+    ))
+    .map(([, path]) => createRef<object>(identity, path))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  return {
+    refs: Object.freeze(refs),
+    state: SubscriptionState.Ready,
+    lastVerifiedAt: 0,
+  };
+}
+
+function publishTestDeviceChange(
+  world: TestDeviceWorldState,
+  ref: Ref<object>,
+  removed: boolean,
+): void {
+  for (const listener of world.changeListeners) {
+    if (
+      listener.cancelled
+      || listener.identity !== ref.identity
+      || !ref.path.startsWith(`${listener.pathPrefix}/`)
+    ) {
+      continue;
+    }
+    enqueueTestChange(listener, Object.freeze({
+      type: "changed",
+      cursor: `change_test_${++world.nextChangeCursor}`,
+      refs: Object.freeze(removed ? [] : [ref]),
+      removed: Object.freeze(removed ? [ref] : []),
+    }));
+  }
+}
+
+function createTestDeviceChangeStream(
+  world: TestDeviceWorldState,
+  device: TestDeviceState,
+  identity: Identity,
+  pathPrefix: string,
+): BackendChangeStream {
+  const listener: TestChangeListener = {
+    identity,
+    pathPrefix,
+    queue: [],
+    waiters: [],
+    cancelled: false,
+  };
+  world.changeListeners.add(listener);
+  enqueueTestChange(listener, Object.freeze({
+    type: "snapshot",
+    cursor: `change_test_${++world.nextChangeCursor}`,
+    view: testDeviceSubscriptionView(device, identity, pathPrefix),
+  }));
+  return {
+    next: async () => {
+      const queued = listener.queue.shift();
+      if (queued !== undefined) return queued;
+      if (listener.cancelled) return { type: "cancelled" };
+      return new Promise(resolve => listener.waiters.push(resolve));
+    },
+    cancel: async () => {
+      if (listener.cancelled) return;
+      listener.cancelled = true;
+      world.changeListeners.delete(listener);
+      for (const resolve of listener.waiters.splice(0)) {
+        resolve({ type: "cancelled" });
+      }
+    },
   };
 }
 
@@ -1711,6 +1986,11 @@ function createTestDeviceBackend(
       record: next,
     }));
     device.history.set(key, history);
+    publishTestDeviceChange(
+      world,
+      createRef<object>(ref.identity, ref.path),
+      "state" in record && record.state === State.Deleted,
+    );
     return next;
   }
 
@@ -1791,18 +2071,10 @@ function createTestDeviceBackend(
       return `sub_test_${++world.nextSubscriptionId}`;
     },
     async readSubscription(_subscriptionId, pathPrefix) {
-      const refs = [...device.history.keys()]
-        .map(key => key.split("\u0000") as [string, string])
-        .filter(([recordIdentity, path]) => (
-          recordIdentity === identity && path.startsWith(`${pathPrefix}/`)
-        ))
-        .map(([, path]) => createRef<object>(identity, path))
-        .sort((left, right) => left.path.localeCompare(right.path));
-      return {
-        refs: Object.freeze(refs),
-        state: SubscriptionState.Ready,
-        lastVerifiedAt: 0,
-      };
+      return testDeviceSubscriptionView(device, identity, pathPrefix);
+    },
+    async openSubscriptionChanges(_subscriptionId, pathPrefix) {
+      return createTestDeviceChangeStream(world, device, identity, pathPrefix);
     },
     async removeSubscription() {},
     for: remoteIdentity => createTestDeviceBackend(world, device, remoteIdentity),
@@ -2029,6 +2301,63 @@ function createConnectedBackend(
           createRef<object>(options.identity, record.path)
         ))),
         ...connectedSubscriptionState(view.source.state),
+      };
+    },
+    async openSubscriptionChanges(subscriptionId, _pathPrefix, initialCursor) {
+      const controller = new AbortController();
+      let cursor = initialCursor;
+      let cancelled = false;
+      return {
+        async next() {
+          if (cancelled) return { type: "cancelled" };
+          try {
+            const change = await withConnectedAccess(() => (
+              options.client.nextDataSubscriptionChange(subscriptionId, cursor, {
+                signal: controller.signal,
+              })
+            ));
+            if (change.type === "resyncRequired") return { type: "resyncRequired" };
+            if (change.type === "cancelled" || change.type === "revoked") return change;
+            cursor = change.cursor;
+            if (change.type === "state") {
+              return {
+                type: "state",
+                cursor: change.cursor,
+                ...connectedSubscriptionState(change.state),
+              };
+            }
+            const refs = Object.freeze(change.records.map(record => (
+              createRef<object>(record.identity, record.path)
+            )));
+            if (change.type === "snapshot") {
+              return {
+                type: "snapshot",
+                cursor: change.cursor,
+                view: {
+                  refs,
+                  ...connectedSubscriptionState(change.state),
+                },
+              };
+            }
+            return {
+              type: "changed",
+              cursor: change.cursor,
+              refs,
+              removed: Object.freeze(change.removed.map(ref => (
+                createRef<object>(ref.identity, ref.path)
+              ))),
+            };
+          } catch (error) {
+            if (cancelled) return { type: "cancelled" };
+            if (error instanceof AccessRevokedError) return { type: "revoked" };
+            throw error;
+          }
+        },
+        async cancel() {
+          if (cancelled) return;
+          cancelled = true;
+          controller.abort();
+        },
       };
     },
     async removeSubscription(subscriptionId) {
@@ -2419,12 +2748,147 @@ export const Subscription = {
     let lastVerifiedAt: number | undefined;
     let reason: SubscriptionFailureValue | undefined;
 
+    const itemsForRefs = async (
+      refs: readonly Ref<object>[],
+    ): Promise<readonly SubscribedItem<T, TConflicts>[]> => {
+      const items: SubscribedItem<T, TConflicts>[] = [];
+      for (const ref of refs) {
+        try {
+          const item = await readItem(
+            target.resource,
+            target.backend,
+            ref as unknown as Ref<T>,
+            false,
+          );
+          if (item.isPresent()) {
+            items.push(item as SubscribedItem<T, TConflicts>);
+          }
+        } catch (error) {
+          if (
+            !(error instanceof SchemaValidationError)
+            && !(error instanceof SchemaMigrationError)
+          ) {
+            throw error;
+          }
+        }
+      }
+      return Object.freeze(items);
+    };
+
     const subscription: DataSubscription<T, TConflicts> = {
       id,
       identity: target.backend.identity,
       get state() { return state; },
       get lastVerifiedAt() { return lastVerifiedAt; },
       get reason() { return reason; },
+      changes(options = {}) {
+        let backendStream: Promise<BackendChangeStream> | undefined;
+        let cursor = options.cursor;
+        let cancelledBeforeOpen = false;
+        let terminalDelivered = false;
+
+        const stream: DataChangeStream<T, TConflicts> & AsyncIterator<
+          DataSubscriptionChange<T, TConflicts>
+        > = {
+          get cursor() { return cursor; },
+          [Symbol.asyncIterator]() { return stream; },
+          async next() {
+            if (terminalDelivered) return { done: true, value: undefined };
+            if (cancelledBeforeOpen) {
+              terminalDelivered = true;
+              return {
+                done: false,
+                value: Object.freeze({ type: ChangeType.Cancelled }),
+              };
+            }
+            backendStream ??= target.backend.openSubscriptionChanges(
+              id,
+              target.resource.path,
+              cursor,
+            );
+            const event = await (await backendStream).next();
+            switch (event.type) {
+              case "snapshot": {
+                cursor = event.cursor;
+                state = event.view.state;
+                lastVerifiedAt = event.view.lastVerifiedAt;
+                reason = event.view.reason;
+                return {
+                  done: false,
+                  value: Object.freeze({
+                    type: ChangeType.Snapshot,
+                    cursor: event.cursor,
+                    items: await itemsForRefs(event.view.refs),
+                    state: event.view.state,
+                    ...(event.view.lastVerifiedAt === undefined
+                      ? {}
+                      : { lastVerifiedAt: event.view.lastVerifiedAt }),
+                    ...(event.view.reason === undefined
+                      ? {}
+                      : { reason: event.view.reason }),
+                  }),
+                };
+              }
+              case "changed":
+                cursor = event.cursor;
+                return {
+                  done: false,
+                  value: Object.freeze({
+                    type: ChangeType.Changed,
+                    cursor: event.cursor,
+                    items: await itemsForRefs(event.refs),
+                    removed: Object.freeze(
+                      event.removed as unknown as readonly Ref<T>[],
+                    ),
+                  }),
+                };
+              case "state":
+                cursor = event.cursor;
+                state = event.state;
+                lastVerifiedAt = event.lastVerifiedAt;
+                reason = event.reason;
+                return {
+                  done: false,
+                  value: Object.freeze({
+                    type: ChangeType.State,
+                    cursor: event.cursor,
+                    state: event.state,
+                    ...(event.lastVerifiedAt === undefined
+                      ? {}
+                      : { lastVerifiedAt: event.lastVerifiedAt }),
+                    ...(event.reason === undefined ? {} : { reason: event.reason }),
+                  }),
+                };
+              case "resyncRequired":
+                return {
+                  done: false,
+                  value: Object.freeze({ type: ChangeType.ResyncRequired }),
+                };
+              case "cancelled":
+                terminalDelivered = true;
+                return {
+                  done: false,
+                  value: Object.freeze({ type: ChangeType.Cancelled }),
+                };
+              case "revoked":
+                state = SubscriptionState.Revoked;
+                terminalDelivered = true;
+                return {
+                  done: false,
+                  value: Object.freeze({ type: ChangeType.Revoked }),
+                };
+            }
+          },
+          async cancel() {
+            if (backendStream === undefined) {
+              cancelledBeforeOpen = true;
+              return;
+            }
+            await (await backendStream).cancel();
+          },
+        };
+        return stream;
+      },
       async get() {
         if (state === SubscriptionState.Cancelled) {
           throw new Error("Data Subscription is cancelled");
@@ -2446,36 +2910,7 @@ export const Subscription = {
         lastVerifiedAt = view.lastVerifiedAt;
         reason = view.reason;
 
-        const items: PresentItem<
-          T,
-          { readonly read: typeof Read.AnyIdentity },
-          TConflicts
-        >[] = [];
-        for (const ref of view.refs) {
-          try {
-            const item = await readItem(
-              target.resource,
-              target.backend,
-              ref as unknown as Ref<T>,
-              false,
-            );
-            if (item.isPresent()) {
-              items.push(item as PresentItem<
-                T,
-                { readonly read: typeof Read.AnyIdentity },
-                TConflicts
-              >);
-            }
-          } catch (error) {
-            if (
-              !(error instanceof SchemaValidationError)
-              && !(error instanceof SchemaMigrationError)
-            ) {
-              throw error;
-            }
-          }
-        }
-        return Object.freeze(items);
+        return itemsForRefs(view.refs);
       },
       async remove() {
         if (state === SubscriptionState.Cancelled) return;

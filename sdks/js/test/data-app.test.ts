@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   App,
+  ChangeType,
   Collection,
   DeleteConflict,
   type DeletedItem,
@@ -18,6 +19,89 @@ import {
 } from "jolt-sdk/data";
 
 describe("Data SDK applications", () => {
+  it("streams one typed Collection change after its initial snapshot", async () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: { read: Read.AnyIdentity, create: true },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts },
+    });
+    const world = Chirp.testWorld();
+    const alice = world.as("alice.jolt");
+    const bob = world.as("bob.jolt");
+    const alicePosts = await Subscription.create(bob.posts.for("alice.jolt"));
+    const changes = alicePosts.changes();
+    const events = changes[Symbol.asyncIterator]();
+
+    const initial = await events.next();
+    expect(initial.done).toBe(false);
+    expect(initial.value!.type).toBe(ChangeType.Snapshot);
+    if (initial.value!.type === ChangeType.Snapshot) {
+      expect(initial.value!.items).toEqual([]);
+    }
+
+    await alice.posts.create({ text: "Hello from Alice" });
+
+    const changed = await events.next();
+    expect(changed.done).toBe(false);
+    expect(changed.value!.type).toBe(ChangeType.Changed);
+    if (changed.value!.type === ChangeType.Changed) {
+      expect(changed.value!.items.map(item => item.value.text)).toEqual([
+        "Hello from Alice",
+      ]);
+      expectTypeOf(changed.value!.items[0]!.value).toEqualTypeOf<Post>();
+      expect(changed.value!.removed).toEqual([]);
+    }
+
+    await changes.cancel();
+  });
+
+  it("wakes a pending change iterator when its local stream is cancelled", async () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: { read: Read.AnyIdentity, create: true },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts },
+    });
+    const world = Chirp.testWorld();
+    const alicePosts = await Subscription.create(
+      world.as("bob.jolt").posts.for("alice.jolt"),
+    );
+    const changes = alicePosts.changes();
+    const events = changes[Symbol.asyncIterator]();
+
+    await events.next();
+    const pending = events.next();
+    await changes.cancel();
+
+    await expect(pending).resolves.toMatchObject({
+      done: false,
+      value: { type: ChangeType.Cancelled },
+    });
+    await expect(events.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+  });
+
   it("creates a typed Data Subscription from a remote Collection view", async () => {
     @Schema({ version: 1 })
     class Post {
