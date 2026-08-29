@@ -298,4 +298,22 @@ mod tests {
             "one identity should have only one active DHT and relay discovery"
         );
     }
+
+    #[tokio::test]
+    async fn configured_provider_record_capacity_is_enforced() {
+        let dir = tempdir().unwrap();
+        let mut config = NetworkConfig::test_config();
+        config.provider_record_capacity = Some(1);
+        let mut node =
+            NetworkNode::new_tcp(NodeIdentity::generate(), make_store(dir.path()), config).unwrap();
+        let first = NodeIdentity::generate().identity_id();
+        let second = NodeIdentity::generate().identity_id();
+
+        node.announce_update_log_provider(&first).unwrap();
+        let error = node
+            .announce_update_log_provider(&second)
+            .expect_err("the configured one-key capacity must reject a second key");
+
+        assert!(error.to_string().contains("MaxProvidedKeys"));
+    }
 }

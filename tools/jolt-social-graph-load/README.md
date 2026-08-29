@@ -38,6 +38,12 @@ them after `--churn-duration-ms`. The loss control
 drops encrypted TCP chunks and is intentionally a harsh fault injector, not an
 IP packet-loss simulator.
 
+`--provider-record-capacity` explicitly raises the in-memory DHT store's local
+provided-key limit for high-scale load runs. Zero preserves the production
+libp2p default. The matrix uses 50,000 so all three scales exercise timeline
+work rather than stopping at the default provider-key ceiling; every artifact
+records this override and its limitation.
+
 ## Run the baseline matrix
 
 ```bash
@@ -49,7 +55,8 @@ The script records 100, 1,000, and 10,000-follow JSON artifacts. Environment
 variables tune the shared matrix settings: `JOLT_LOAD_DAEMONS`,
 `JOLT_LOAD_RECORDS`, `JOLT_LOAD_CONCURRENCY`, `JOLT_LOAD_PUBLISH_RATE`,
 `JOLT_LOAD_LATENCY_MS`, `JOLT_LOAD_BANDWIDTH_KBPS`, `JOLT_LOAD_LOSS_PERCENT`,
-`JOLT_LOAD_CHURN_PERCENT`, and `JOLT_LOAD_CHURN_DURATION_MS`.
+`JOLT_LOAD_CHURN_PERCENT`, `JOLT_LOAD_CHURN_DURATION_MS`, and
+`JOLT_LOAD_PROVIDED_KEYS`.
 
 ## Result contract
 

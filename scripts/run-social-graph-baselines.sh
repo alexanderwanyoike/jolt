@@ -19,6 +19,7 @@ bandwidth_kbps="${JOLT_LOAD_BANDWIDTH_KBPS:-0}"
 loss_percent="${JOLT_LOAD_LOSS_PERCENT:-0}"
 churn_percent="${JOLT_LOAD_CHURN_PERCENT:-0}"
 churn_duration_ms="${JOLT_LOAD_CHURN_DURATION_MS:-250}"
+provided_keys="${JOLT_LOAD_PROVIDED_KEYS:-50000}"
 
 for follows in 100 1000 10000; do
   cargo run --release --manifest-path "$repo_root/Cargo.toml" \
@@ -35,6 +36,7 @@ for follows in 100 1000 10000; do
     --loss-percent "$loss_percent" \
     --churn-percent "$churn_percent" \
     --churn-duration-ms "$churn_duration_ms" \
+    --provider-record-capacity "$provided_keys" \
     --json-output "$output_directory/follows-${follows}.json" \
     >/dev/null
 done

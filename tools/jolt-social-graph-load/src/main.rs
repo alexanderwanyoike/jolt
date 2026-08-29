@@ -34,6 +34,8 @@ struct Args {
     churn_percent: u8,
     #[arg(long, default_value_t = 250)]
     churn_duration_ms: u64,
+    #[arg(long, default_value_t = 0)]
+    provider_record_capacity: usize,
     #[arg(long)]
     workdir: Option<PathBuf>,
     #[arg(long)]
@@ -66,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
         publish_rate_per_second: args.publish_rate_per_second,
         concurrency: args.concurrency,
         churn_duration_ms: args.churn_duration_ms,
+        provider_record_capacity: args.provider_record_capacity,
         network: runtime::NetworkProfile {
             one_way_latency_ms: args.one_way_latency_ms,
             bandwidth_kbps: args.bandwidth_kbps,

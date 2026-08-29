@@ -49,6 +49,8 @@ pub struct RunConfig {
     pub publish_rate_per_second: u64,
     pub concurrency: usize,
     pub churn_duration_ms: u64,
+    /// Zero preserves libp2p's production default.
+    pub provider_record_capacity: usize,
     pub network: NetworkProfile,
 }
 
@@ -349,7 +351,16 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
 
     let mut providers = Vec::with_capacity(plan.provider_count);
     for index in 0..plan.provider_count {
-        providers.push(start_daemon(workdir, config.workload.seed, "provider", index).await?);
+        providers.push(
+            start_daemon(
+                workdir,
+                config.workload.seed,
+                "provider",
+                index,
+                config.provider_record_capacity,
+            )
+            .await?,
+        );
     }
     let mut links = Vec::with_capacity(plan.provider_count);
     for provider in &providers {
@@ -361,7 +372,14 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
             .await?,
         );
     }
-    let reader = start_daemon(workdir, config.workload.seed, "reader", plan.provider_count).await?;
+    let reader = start_daemon(
+        workdir,
+        config.workload.seed,
+        "reader",
+        plan.provider_count,
+        config.provider_record_capacity,
+    )
+    .await?;
     for (provider, link) in providers.iter().zip(&links) {
         reader
             .handle
@@ -458,6 +476,20 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
         provider.shutdown().await;
     }
 
+    let mut limitations = vec![
+        "Daemons are real NetworkNode daemon loops in one OS process, so CPU and RSS are aggregate rather than per daemon.".to_string(),
+        "The workload uses localhost TCP; the optional shaper adds delay and bandwidth per TCP chunk, and loss deliberately drops encrypted stream chunks rather than modelling kernel-level packet retransmission.".to_string(),
+        "Provider activity counts harness requests and announcements; Jolt does not yet expose internal Kademlia packet counters.".to_string(),
+        "This local benchmark does not exercise iroh hole punching, NATS coordination, relays, or Internet path diversity.".to_string(),
+        "Results are comparative engineering evidence, not an Internet-wide capacity or marketing claim.".to_string(),
+    ];
+    if config.provider_record_capacity > 0 {
+        limitations.push(format!(
+            "The load harness raised each daemon's local DHT provided-key capacity to {}; normal nodes retain libp2p's default. A separate default-capacity run must record the unmodified ceiling.",
+            config.provider_record_capacity
+        ));
+    }
+
     Ok(BenchmarkReport {
         result_version: RESULT_VERSION,
         generated_at_unix_secs: SystemTime::now()
@@ -471,13 +503,7 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
         phases,
         propagation,
         final_network_bytes,
-        limitations: vec![
-            "Daemons are real NetworkNode daemon loops in one OS process, so CPU and RSS are aggregate rather than per daemon.".to_string(),
-            "The workload uses localhost TCP; the optional shaper adds delay and bandwidth per TCP chunk, and loss deliberately drops encrypted stream chunks rather than modelling kernel-level packet retransmission.".to_string(),
-            "Provider activity counts harness requests and announcements; Jolt does not yet expose internal Kademlia packet counters.".to_string(),
-            "This local benchmark does not exercise iroh hole punching, NATS coordination, relays, or Internet path diversity.".to_string(),
-            "Results are comparative engineering evidence, not an Internet-wide capacity or marketing claim.".to_string(),
-        ],
+        limitations,
     })
 }
 
@@ -486,6 +512,7 @@ async fn start_daemon(
     seed: u64,
     domain: &str,
     index: usize,
+    provider_record_capacity: usize,
 ) -> anyhow::Result<RunningDaemon> {
     let root = workdir.join(format!("{domain}-{index}"));
     std::fs::create_dir_all(&root)?;
@@ -498,6 +525,8 @@ async fn start_daemon(
         store,
         NetworkConfig {
             enable_mdns: false,
+            provider_record_capacity: (provider_record_capacity > 0)
+                .then_some(provider_record_capacity),
             ..NetworkConfig::test_config()
         },
     )?;
