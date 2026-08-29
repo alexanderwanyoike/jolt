@@ -12,7 +12,8 @@ pub use command::{
     AppendRecordInfo, CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
     EncryptedObjectResponse, FetchResult, IngressRecord, IngressStatus, LocalRecordDelete,
     LocalRecordHead, LocalRecordInfo, LocalRecordRestore, LocalRecordState, LocalRecordUpdate,
-    NodeStatus, PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
+    MaterializedRecordInfo, MaterializedRecordRefreshOutcome, MaterializedRecordView, NodeStatus,
+    PeerConnectResponse, PeerInfo, PublishReachabilityResponse, PublishResponse,
     PublishedContentInfo, PublishedRelayInfo, RelayDiagnoseIdentityResponse, ResolveResponse,
 };
 pub use config::{HomeRelayCapability, HomeRelayConfig, NetworkConfig, RelayPinPolicy};

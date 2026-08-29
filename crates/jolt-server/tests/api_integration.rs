@@ -2820,13 +2820,7 @@ async fn test_app_data_subscription_registration_is_identity_and_prefix_scoped()
     let remote_identity = format!("{}.jolt", NodeIdentity::generate().identity_id());
     let other_identity = format!("{}.jolt", NodeIdentity::generate().identity_id());
     let capability = format!("subscribe:{remote_identity}:/spoke/posts/*");
-    let token = approve_app_session(
-        &client,
-        port,
-        &local_identity,
-        &[capability.as_str()],
-    )
-    .await;
+    let token = approve_app_session(&client, port, &local_identity, &[capability.as_str()]).await;
 
     let create = || {
         client
@@ -2841,10 +2835,28 @@ async fn test_app_data_subscription_registration_is_identity_and_prefix_scoped()
     let first = create().await.unwrap();
     assert_eq!(first.status(), 200);
     let first: serde_json::Value = first.json().await.unwrap();
+    assert!(first.get("session_id").is_none());
     assert_eq!(first["identity"], remote_identity);
     assert_eq!(first["prefix"], "/spoke/posts/");
     assert_eq!(first["lifecycle"], "dormant");
     assert_eq!(first["refresh"]["status"], "loading");
+    let subscription_id = first["id"].as_str().unwrap();
+
+    let view = client
+        .get(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}",
+            base_url(port)
+        ))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(view.status(), 200);
+    let view: serde_json::Value = view.json().await.unwrap();
+    assert_eq!(view["records"], serde_json::json!([]));
+    assert_eq!(view["source"]["subscription"], subscription_id);
+    assert_eq!(view["source"]["state"]["status"], "unavailable");
+    assert_eq!(view["source"]["state"]["reason"], "networkUnavailable");
 
     let duplicate = create().await.unwrap();
     assert_eq!(duplicate.status(), 200);
@@ -2865,6 +2877,36 @@ async fn test_app_data_subscription_registration_is_identity_and_prefix_scoped()
         assert_eq!(denied.status(), 403);
     }
 
+    let any_identity_token = approve_app_session(
+        &client,
+        port,
+        &local_identity,
+        &["subscribe:any:/spoke/posts/*"],
+    )
+    .await;
+    let allowed_other_identity = client
+        .post(format!("{}/app/v1/data-subscriptions", base_url(port)))
+        .bearer_auth(&any_identity_token)
+        .json(&serde_json::json!({
+            "identity": other_identity,
+            "prefix": "/spoke/posts/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(allowed_other_identity.status(), 200);
+    let denied_other_prefix = client
+        .post(format!("{}/app/v1/data-subscriptions", base_url(port)))
+        .bearer_auth(&any_identity_token)
+        .json(&serde_json::json!({
+            "identity": remote_identity,
+            "prefix": "/spoke/private/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied_other_prefix.status(), 403);
+
     handle.shutdown().await.ok();
 }
 
@@ -2878,20 +2920,10 @@ async fn test_app_data_subscription_is_session_private_durable_and_removable() {
     let local_identity = first_handle.status().await.unwrap().identity_address;
     let remote_identity = format!("{}.jolt", NodeIdentity::generate().identity_id());
     let capability = format!("subscribe:{remote_identity}:/spoke/posts/*");
-    let owner_token = approve_app_session(
-        &client,
-        first_port,
-        &local_identity,
-        &[capability.as_str()],
-    )
-    .await;
-    let other_token = approve_app_session(
-        &client,
-        first_port,
-        &local_identity,
-        &[capability.as_str()],
-    )
-    .await;
+    let owner_token =
+        approve_app_session(&client, first_port, &local_identity, &[capability.as_str()]).await;
+    let other_token =
+        approve_app_session(&client, first_port, &local_identity, &[capability.as_str()]).await;
 
     let created = client
         .post(format!(
@@ -2920,7 +2952,10 @@ async fn test_app_data_subscription_is_session_private_durable_and_removable() {
         .await
         .unwrap();
     assert_eq!(other_list.status(), 200);
-    assert_eq!(other_list.json::<serde_json::Value>().await.unwrap(), serde_json::json!([]));
+    assert_eq!(
+        other_list.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!([])
+    );
 
     first_handle.shutdown().await.ok();
     let (second_port, second_handle, _second_dir) =
@@ -2969,6 +3004,152 @@ async fn test_app_data_subscription_is_session_private_durable_and_removable() {
     assert_eq!(other_remove.status(), 404);
 
     second_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_data_subscription_materializes_remote_stable_records_between_two_nodes() {
+    let alice_p2p = free_tcp_port();
+    let (alice_port, alice_handle, _alice_dir) = start_test_server_with_tcp_port(alice_p2p).await;
+    let (bob_port, bob_handle, _bob_dir) = start_test_server_with_tcp_port(free_tcp_port()).await;
+    let client = reqwest::Client::new();
+
+    let alice_status = alice_handle.status().await.unwrap();
+    let alice_identity = alice_status.identity_address;
+    let alice_peer = alice_status.peer_id;
+    let connected = client
+        .post(format!("{}/api/v1/peers/connect", base_url(bob_port)))
+        .json(&serde_json::json!({
+            "multiaddr": format!("/ip4/127.0.0.1/tcp/{alice_p2p}/p2p/{alice_peer}")
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(connected.status(), 200);
+    wait_for_connected_peers(&bob_handle, 1).await;
+
+    let alice_token =
+        approve_app_session(&client, alice_port, &alice_identity, &["publish:/chirp/*"]).await;
+    let stored = br#"{"version":1,"value":{"text":"Hello from Alice"}}"#;
+    for path in [
+        "/chirp/posts/jlt_first",
+        "/chirp/posts/jlt_second",
+        "/chirp/profiles/alice",
+    ] {
+        let form = reqwest::multipart::Form::new()
+            .part(
+                "file",
+                reqwest::multipart::Part::bytes(stored.to_vec()).file_name("record.json"),
+            )
+            .text("path", path.to_string());
+        let published = client
+            .post(format!("{}/app/v1/publish", base_url(alice_port)))
+            .bearer_auth(&alice_token)
+            .multipart(form)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(published.status(), 200);
+    }
+
+    let bob_identity = bob_handle.status().await.unwrap().identity_address;
+    let subscribe_capability = format!("subscribe:{alice_identity}:/chirp/posts/*");
+    let bob_token = approve_app_session(
+        &client,
+        bob_port,
+        &bob_identity,
+        &[
+            "resolve:public",
+            "fetch:public",
+            subscribe_capability.as_str(),
+        ],
+    )
+    .await;
+    let created = client
+        .post(format!("{}/app/v1/data-subscriptions", base_url(bob_port)))
+        .bearer_auth(&bob_token)
+        .json(&serde_json::json!({
+            "identity": alice_identity,
+            "prefix": "/chirp/posts/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), 200);
+    let created: serde_json::Value = created.json().await.unwrap();
+    let subscription_id = created["id"].as_str().unwrap();
+
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let listed = client
+                .get(format!("{}/app/v1/data-subscriptions", base_url(bob_port)))
+                .bearer_auth(&bob_token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(listed.status(), 200);
+            let listed: serde_json::Value = listed.json().await.unwrap();
+            if listed[0]["refresh"]["status"] == "ready" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("initial Data Subscription refresh did not complete");
+
+    let refreshed = client
+        .get(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}",
+            base_url(bob_port)
+        ))
+        .bearer_auth(&bob_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refreshed.status(), 200);
+    let refreshed: serde_json::Value = refreshed.json().await.unwrap();
+    assert_eq!(refreshed["source"]["state"]["status"], "ready");
+    let records = refreshed["records"].as_array().unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["path"], "/chirp/posts/jlt_first");
+    assert_eq!(records[1]["path"], "/chirp/posts/jlt_second");
+
+    let fetched = client
+        .post(format!("{}/app/v1/fetch", base_url(bob_port)))
+        .bearer_auth(&bob_token)
+        .json(&serde_json::json!({
+            "content_id": records[0]["content_id"],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(fetched.status(), 200);
+    let fetched: serde_json::Value = fetched.json().await.unwrap();
+    let bytes = fetched["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_u64().unwrap() as u8)
+        .collect::<Vec<_>>();
+    assert_eq!(bytes, stored);
+
+    alice_handle.shutdown().await.ok();
+    let retained = client
+        .get(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}",
+            base_url(bob_port)
+        ))
+        .bearer_auth(&bob_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retained.status(), 200);
+    let retained: serde_json::Value = retained.json().await.unwrap();
+    assert_eq!(retained["records"].as_array().unwrap().len(), 2);
+    assert_eq!(retained["source"]["state"]["status"], "stale");
+    assert_eq!(retained["source"]["state"]["reason"], "networkUnavailable");
+
+    bob_handle.shutdown().await.ok();
 }
 
 #[tokio::test]
@@ -5307,7 +5488,10 @@ async fn test_app_api_feature_manifest_is_public_and_generic() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["app_api"], 1);
-    assert_eq!(body["features"], serde_json::json!({ "data.records": 5 }));
+    assert_eq!(
+        body["features"],
+        serde_json::json!({ "data.records": 5, "data.subscriptions": 1 })
+    );
     assert!(body.get("daemon_version").is_none());
     assert!(body.get("applications").is_none());
 

@@ -142,9 +142,66 @@ export type EnumeratedRecord = {
   contentId: string;
   deviceId: string;
   deviceSequence: number;
-  createdAt: string;
+  createdAt: number;
   entryHash: string;
 };
+
+export type DataSubscriptionRefresh =
+  | { status: "loading" }
+  | { status: "updating"; lastVerifiedAt?: number }
+  | { status: "ready"; lastVerifiedAt: number }
+  | {
+      status: "stale";
+      lastVerifiedAt: number;
+      reason: "networkUnavailable" | "verificationFailed" | "overloaded";
+    }
+  | {
+      status: "unavailable";
+      reason: "networkUnavailable" | "verificationFailed" | "overloaded";
+    };
+
+export type DataSubscription = {
+  id: string;
+  identity: string;
+  prefix: string;
+  lifecycle: "active" | "dormant";
+  refresh: DataSubscriptionRefresh;
+  createdAt: number;
+};
+
+export type DataSubscriptionView = {
+  records: MaterializedRecord[];
+  source: {
+    subscription: string;
+    state: DataSubscriptionRefresh;
+  };
+};
+
+export type MaterializedRecord = {
+  identity: string;
+  path: string;
+  contentId: string;
+  revision: string;
+  createdAt: number;
+};
+
+/** @internal Raw Data Subscription transport used by the high-level Data SDK. */
+export interface JoltDataSubscriptionSdk {
+  createDataSubscription(
+    identity: string,
+    prefix: string,
+    options?: CallOptions,
+  ): Promise<DataSubscription>;
+  listDataSubscriptions(options?: CallOptions): Promise<DataSubscription[]>;
+  getDataSubscriptionView(
+    subscriptionId: string,
+    options?: CallOptions,
+  ): Promise<DataSubscriptionView>;
+  removeDataSubscription(
+    subscriptionId: string,
+    options?: CallOptions,
+  ): Promise<void>;
+}
 
 /** Encrypted content plus the daemon's honest decrypt/access state. */
 export type OpenEncryptedResult = {
@@ -368,8 +425,57 @@ function parseJsonBytes(bytes: number[]): unknown | undefined {
   }
 }
 
+function toDataSubscriptionRefresh(
+  refresh: import("./wire.js").DataSubscriptionRefreshResponse,
+): DataSubscriptionRefresh {
+  if (refresh.status === "loading") return refresh;
+  if (refresh.status === "updating") {
+    return refresh.last_verified_at === undefined
+      ? { status: "updating" }
+      : { status: "updating", lastVerifiedAt: refresh.last_verified_at };
+  }
+  if (refresh.status === "ready") {
+    return { status: "ready", lastVerifiedAt: refresh.last_verified_at };
+  }
+  if (refresh.status === "stale") {
+    return {
+      status: "stale",
+      lastVerifiedAt: refresh.last_verified_at,
+      reason: refresh.reason,
+    };
+  }
+  return { status: "unavailable", reason: refresh.reason };
+}
+
+function toDataSubscription(
+  subscription: import("./wire.js").DataSubscriptionRecordResponse,
+): DataSubscription {
+  return {
+    id: subscription.id,
+    identity: subscription.identity,
+    prefix: subscription.prefix,
+    lifecycle: subscription.lifecycle,
+    refresh: toDataSubscriptionRefresh(subscription.refresh),
+    createdAt: subscription.created_at,
+  };
+}
+
 /** Build a {@link JoltClient} over a transport and a session-token source. */
 export function createJoltClient(options: JoltClientOptions): JoltClient {
+  const {
+    createDataSubscription: _createDataSubscription,
+    listDataSubscriptions: _listDataSubscriptions,
+    getDataSubscriptionView: _getDataSubscriptionView,
+    removeDataSubscription: _removeDataSubscription,
+    ...client
+  } = createDataAppClient(options);
+  return client;
+}
+
+/** @internal Build the additional raw transport required by the high-level Data SDK. */
+export function createDataAppClient(
+  options: JoltClientOptions,
+): JoltClient & JoltDataSubscriptionSdk {
   const { transport, getSessionToken } = options;
   const checkCompatibility = createCompatibilityChecker(transport);
 
@@ -558,6 +664,56 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
         createdAt: record.created_at,
         entryHash: record.entry_hash,
       }));
+    },
+
+    async createDataSubscription(identity, prefix, call) {
+      return toDataSubscription(await ops.createDataSubscription(
+        transport,
+        getSessionToken(),
+        identity,
+        prefix,
+        call,
+      ));
+    },
+
+    async listDataSubscriptions(call) {
+      const subscriptions = await ops.listDataSubscriptions(
+        transport,
+        getSessionToken(),
+        call,
+      );
+      return subscriptions.map(toDataSubscription);
+    },
+
+    async getDataSubscriptionView(subscriptionId, call) {
+      const view = await ops.getDataSubscriptionView(
+        transport,
+        getSessionToken(),
+        subscriptionId,
+        call,
+      );
+      return {
+        records: view.records.map((record) => ({
+          identity: view.identity,
+          path: record.path,
+          contentId: record.content_id,
+          revision: record.revision,
+          createdAt: record.created_at,
+        })),
+        source: {
+          subscription: view.source.subscription,
+          state: toDataSubscriptionRefresh(view.source.state),
+        },
+      };
+    },
+
+    async removeDataSubscription(subscriptionId, call) {
+      await ops.removeDataSubscription(
+        transport,
+        getSessionToken(),
+        subscriptionId,
+        call,
+      );
     },
 
     async publishEncryptedJson(path, body, recipients, call) {

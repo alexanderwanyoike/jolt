@@ -13,8 +13,10 @@
 
 import type {
   Decoder,
+  DataSubscription,
   EnumeratedRecord,
   JoltClient,
+  JoltDataSubscriptionSdk,
   PublishResult,
   RecordDeletedResult,
   RecordPresentResult,
@@ -60,7 +62,7 @@ export type FakeJoltOptions =
 /** Handle returned by {@link createFakeJolt}. */
 export type FakeJolt = {
   /** The fake client; pass it anywhere a {@link JoltClient} (or any of its sub-interfaces) is expected. */
-  client: JoltClient;
+  client: JoltClient & JoltDataSubscriptionSdk;
   /** The local identity the fake publishes under. */
   identity: string;
   /** Every object sent with `sendObject`, in order. */
@@ -101,6 +103,7 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
   const sent: RecordedSend[] = [];
   const encryptedRecipients = new Map<string, string[]>();
   const homeRelayPins = new Set<string>();
+  const dataSubscriptions = new Map<string, DataSubscription>();
   const recordMutations = new Map<string, {
     operation: "update" | "delete" | "restore";
     result: RecordPresentResult | RecordDeletedResult;
@@ -171,7 +174,7 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
     },
   };
 
-  const client: JoltClient = {
+  const client: JoltClient & JoltDataSubscriptionSdk = {
     transport: unusedTransport,
 
     async checkCompatibility(declaration: AppCompatibilityDeclaration) {
@@ -367,12 +370,75 @@ export function createFakeJolt(identity: string, options: FakeJoltOptions = {}):
             contentId: record.contentId,
             deviceId: "dev_fake",
             deviceSequence: index,
-            createdAt: new Date(0).toISOString(),
+            createdAt: 0,
             entryHash: `hash_${record.contentId}`,
           });
         });
       }
       return records;
+    },
+
+    async createDataSubscription(subscriptionIdentity, prefix) {
+      const duplicate = [...dataSubscriptions.values()].find(
+        subscription =>
+          subscription.identity === subscriptionIdentity &&
+          subscription.prefix === prefix,
+      );
+      if (duplicate) return duplicate;
+      const subscription: DataSubscription = {
+        id: `sub_fake_${++fakeCounter}`,
+        identity: subscriptionIdentity,
+        prefix,
+        lifecycle: "dormant",
+        refresh: { status: "loading" },
+        createdAt: 0,
+      };
+      dataSubscriptions.set(subscription.id, subscription);
+      return subscription;
+    },
+
+    async listDataSubscriptions() {
+      return [...dataSubscriptions.values()];
+    },
+
+    async getDataSubscriptionView(subscriptionId) {
+      const subscription = dataSubscriptions.get(subscriptionId);
+      if (!subscription) {
+        throw new JoltApiError("Data Subscription not found", {
+          status: 404,
+          code: "data_subscription_not_found",
+        });
+      }
+      const records = subscription.identity === identity
+        ? [...published.entries()]
+          .filter(([path]) => path.startsWith(subscription.prefix))
+          .map(([path, record]) => ({
+            identity,
+            path,
+            contentId: record.contentId,
+            revision: `revision_${record.seq}`,
+            createdAt: 0,
+          }))
+        : [];
+      const state = { status: "ready" as const, lastVerifiedAt: 0 };
+      dataSubscriptions.set(subscriptionId, {
+        ...subscription,
+        lifecycle: "dormant",
+        refresh: state,
+      });
+      return {
+        records,
+        source: { subscription: subscriptionId, state },
+      };
+    },
+
+    async removeDataSubscription(subscriptionId) {
+      if (!dataSubscriptions.delete(subscriptionId)) {
+        throw new JoltApiError("Data Subscription not found", {
+          status: 404,
+          code: "data_subscription_not_found",
+        });
+      }
     },
 
     async publishEncryptedJson(path, body, recipients) {

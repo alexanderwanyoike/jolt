@@ -1,5 +1,5 @@
 import { makeId } from "./client.js";
-import type { JoltSdk, RecordHeadResult } from "./client.js";
+import type { JoltDataSubscriptionSdk, JoltSdk, RecordHeadResult } from "./client.js";
 import {
   isContentUnavailableError,
   isJoltUnavailableError,
@@ -170,6 +170,7 @@ export const Migrations = {
 } as const;
 
 const resourceDefinition = Symbol("JoltDataResourceDefinition");
+const subscriptionTarget = Symbol("JoltDataSubscriptionTarget");
 const policyKind = Symbol("JoltDataPolicyKind");
 
 function policy<const TKind extends string>(kind: TKind) {
@@ -258,6 +259,41 @@ export class State {
   static readonly Unavailable = Symbol("JoltDataStateUnavailable");
 
   private constructor() {}
+}
+
+/** Symbol-backed freshness and terminal states for a Data Subscription. */
+export class SubscriptionState {
+  static readonly Loading = Symbol("JoltDataSubscriptionLoading");
+  static readonly Updating = Symbol("JoltDataSubscriptionUpdating");
+  static readonly Ready = Symbol("JoltDataSubscriptionReady");
+  static readonly Stale = Symbol("JoltDataSubscriptionStale");
+  static readonly Unavailable = Symbol("JoltDataSubscriptionUnavailable");
+  static readonly Cancelled = Symbol("JoltDataSubscriptionCancelled");
+  static readonly Revoked = Symbol("JoltDataSubscriptionRevoked");
+
+  private constructor() {}
+}
+
+export type SubscriptionStateValue = typeof SubscriptionState[keyof typeof SubscriptionState];
+
+/** Symbol-backed explanation for a failed bounded subscription refresh. */
+export class SubscriptionFailure {
+  static readonly NetworkUnavailable = Symbol("JoltDataSubscriptionNetworkUnavailable");
+  static readonly VerificationFailed = Symbol("JoltDataSubscriptionVerificationFailed");
+  static readonly Overloaded = Symbol("JoltDataSubscriptionOverloaded");
+
+  private constructor() {}
+}
+
+export type SubscriptionFailureValue =
+  typeof SubscriptionFailure[keyof typeof SubscriptionFailure];
+
+/** The node could not admit another durable Data Subscription. */
+export class SubscriptionCapacityError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Jolt cannot admit another Data Subscription", options);
+    this.name = "SubscriptionCapacityError";
+  }
 }
 
 const referenceType = Symbol("JoltDataReferenceType");
@@ -716,7 +752,39 @@ export type CollectionBulkRestorer<
 export type RemoteCollection<
   T extends object,
   TConflicts extends ResourceConflicts = ResourceConflicts,
-> = CollectionReader<T, { readonly read: typeof Read.AnyIdentity }, TConflicts>;
+> = CollectionReader<T, { readonly read: typeof Read.AnyIdentity }, TConflicts> & {
+  readonly [subscriptionTarget]: SubscriptionTarget<T, TConflicts>;
+};
+
+type SubscriptionTarget<
+  T extends object,
+  TConflicts extends ResourceConflicts,
+> = {
+  readonly resource: BoundCollectionDefinition<
+    T,
+    ResourceAccess,
+    TConflicts
+  >;
+  readonly backend: DataBackend;
+};
+
+/** A typed, refreshable view of one remote Collection. */
+export type DataSubscription<
+  T extends object,
+  TConflicts extends ResourceConflicts = ResourceConflicts,
+> = {
+  readonly id: string;
+  readonly identity: Identity;
+  readonly state: SubscriptionStateValue;
+  readonly lastVerifiedAt?: number;
+  readonly reason?: SubscriptionFailureValue;
+  get(): Promise<readonly PresentItem<
+    T,
+    { readonly read: typeof Read.AnyIdentity },
+    TConflicts
+  >[]>;
+  remove(): Promise<void>;
+};
 
 /** Remote Collection reads exposed only for AnyIdentity access. */
 export type CollectionRemoteReader<
@@ -831,6 +899,11 @@ export type DataSdkClient = Pick<
   | "updateRecord"
   | "deleteRecord"
   | "restoreRecord"
+> & Pick<
+  JoltDataSubscriptionSdk,
+  | "createDataSubscription"
+  | "getDataSubscriptionView"
+  | "removeDataSubscription"
 >;
 
 /**
@@ -870,6 +943,12 @@ export type ResourceGrantPlan = {
   readonly access: Readonly<ResourceAccess>;
 };
 
+/** One Collection prefix eligible for remote Data Subscriptions. */
+export type ResourceSubscriptionPlan = {
+  readonly resource: string;
+  readonly path: string;
+};
+
 /**
  * Inspectable connection input derived from an App's Resource declarations.
  * Requirements and Grants are index-aligned in declared Resource order.
@@ -877,6 +956,7 @@ export type ResourceGrantPlan = {
 export type AppAccessPlan = {
   readonly requirements: readonly ResourceRequirement[];
   readonly grants: readonly ResourceGrantPlan[];
+  readonly subscriptions: readonly ResourceSubscriptionPlan[];
 };
 
 /** A complete application definition with canonically bound Resources. */
@@ -908,6 +988,7 @@ type TestWorldState = {
   nextId: number;
   nextMutationId: number;
   nextRevision: number;
+  nextSubscriptionId: number;
 };
 
 function createTestWorldState(): TestWorldState {
@@ -916,6 +997,7 @@ function createTestWorldState(): TestWorldState {
     nextId: 0,
     nextMutationId: 0,
     nextRevision: 0,
+    nextSubscriptionId: 0,
   };
 }
 
@@ -1401,7 +1483,20 @@ type DataBackend = {
     revisions: readonly string[],
     mutationId: string,
   ): Promise<BackendAlternativeRecord>;
+  createSubscription(pathPrefix: string): Promise<string>;
+  readSubscription(
+    subscriptionId: string,
+    pathPrefix: string,
+  ): Promise<BackendSubscriptionView>;
+  removeSubscription(subscriptionId: string): Promise<void>;
   for(identity: Identity): DataBackend;
+};
+
+type BackendSubscriptionView = {
+  readonly refs: readonly Ref<object>[];
+  readonly state: SubscriptionStateValue;
+  readonly lastVerifiedAt?: number;
+  readonly reason?: SubscriptionFailureValue;
 };
 
 function createTestBackend(state: TestWorldState, identity: Identity): DataBackend {
@@ -1465,6 +1560,24 @@ function createTestBackend(state: TestWorldState, identity: Identity): DataBacke
     async resolveConflict(ref) {
       throw new ConflictError(ref);
     },
+    async createSubscription() {
+      return `sub_test_${++state.nextSubscriptionId}`;
+    },
+    async readSubscription(_subscriptionId, pathPrefix) {
+      const refs = [...state.store.keys()]
+        .map(key => key.split("\u0000") as [string, string])
+        .filter(([recordIdentity, path]) => (
+          recordIdentity === identity && path.startsWith(`${pathPrefix}/`)
+        ))
+        .map(([, path]) => createRef<object>(identity, path))
+        .sort((left, right) => left.path.localeCompare(right.path));
+      return {
+        refs: Object.freeze(refs),
+        state: SubscriptionState.Ready,
+        lastVerifiedAt: 0,
+      };
+    },
+    async removeSubscription() {},
     for: remoteIdentity => createTestBackend(state, remoteIdentity),
   };
 }
@@ -1485,6 +1598,7 @@ type TestDeviceWorldState = {
   nextId: number;
   nextMutationId: number;
   nextRevision: number;
+  nextSubscriptionId: number;
 };
 
 function createTestDeviceWorldState(): TestDeviceWorldState {
@@ -1493,6 +1607,7 @@ function createTestDeviceWorldState(): TestDeviceWorldState {
     nextId: 0,
     nextMutationId: 0,
     nextRevision: 0,
+    nextSubscriptionId: 0,
   };
 }
 
@@ -1672,6 +1787,24 @@ function createTestDeviceBackend(
         ? commit(ref, { state: State.Deleted }, revisions)
         : commit(ref, { stored: next }, revisions);
     },
+    async createSubscription() {
+      return `sub_test_${++world.nextSubscriptionId}`;
+    },
+    async readSubscription(_subscriptionId, pathPrefix) {
+      const refs = [...device.history.keys()]
+        .map(key => key.split("\u0000") as [string, string])
+        .filter(([recordIdentity, path]) => (
+          recordIdentity === identity && path.startsWith(`${pathPrefix}/`)
+        ))
+        .map(([, path]) => createRef<object>(identity, path))
+        .sort((left, right) => left.path.localeCompare(right.path));
+      return {
+        refs: Object.freeze(refs),
+        state: SubscriptionState.Ready,
+        lastVerifiedAt: 0,
+      };
+    },
+    async removeSubscription() {},
     for: remoteIdentity => createTestDeviceBackend(world, device, remoteIdentity),
   };
 }
@@ -1690,6 +1823,48 @@ async function withConnectedAccess<T>(call: () => Promise<T>): Promise<T> {
       throw new DeviceSigningKeyMismatchError({ cause: error });
     }
     throw error;
+  }
+}
+
+function connectedSubscriptionState(
+  state: import("./client.js").DataSubscriptionRefresh,
+): Pick<BackendSubscriptionView, "state" | "lastVerifiedAt" | "reason"> {
+  switch (state.status) {
+    case "loading":
+      return { state: SubscriptionState.Loading };
+    case "updating":
+      return {
+        state: SubscriptionState.Updating,
+        ...(state.lastVerifiedAt === undefined
+          ? {}
+          : { lastVerifiedAt: state.lastVerifiedAt }),
+      };
+    case "ready":
+      return {
+        state: SubscriptionState.Ready,
+        lastVerifiedAt: state.lastVerifiedAt,
+      };
+    case "stale":
+      return {
+        state: SubscriptionState.Stale,
+        lastVerifiedAt: state.lastVerifiedAt,
+        reason: connectedSubscriptionFailure(state.reason),
+      };
+    case "unavailable":
+      return {
+        state: SubscriptionState.Unavailable,
+        reason: connectedSubscriptionFailure(state.reason),
+      };
+  }
+}
+
+function connectedSubscriptionFailure(
+  reason: "networkUnavailable" | "verificationFailed" | "overloaded",
+): SubscriptionFailureValue {
+  switch (reason) {
+    case "networkUnavailable": return SubscriptionFailure.NetworkUnavailable;
+    case "verificationFailed": return SubscriptionFailure.VerificationFailed;
+    case "overloaded": return SubscriptionFailure.Overloaded;
   }
 }
 
@@ -1838,6 +2013,26 @@ function createConnectedBackend(
         }
         throw error;
       }
+    },
+    async createSubscription(pathPrefix) {
+      const subscription = await withConnectedAccess(() => (
+        options.client.createDataSubscription(options.identity, `${pathPrefix}/`)
+      ));
+      return subscription.id;
+    },
+    async readSubscription(subscriptionId) {
+      const view = await withConnectedAccess(() => (
+        options.client.getDataSubscriptionView(subscriptionId)
+      ));
+      return {
+        refs: Object.freeze(view.records.map(record => (
+          createRef<object>(options.identity, record.path)
+        ))),
+        ...connectedSubscriptionState(view.source.state),
+      };
+    },
+    async removeSubscription(subscriptionId) {
+      await withConnectedAccess(() => options.client.removeDataSubscription(subscriptionId));
     },
     for: identity => createConnectedBackend({ ...options, identity }, localIdentity),
   };
@@ -2185,10 +2380,113 @@ function createCollection<
       resource,
       backend.for(identity),
       { remote: true },
-    ) as RemoteCollection<T, TConflicts>;
+    ) as unknown as RemoteCollection<T, TConflicts>;
+  }
+  if (remote) {
+    Object.defineProperty(collection, subscriptionTarget, {
+      enumerable: false,
+      value: Object.freeze({ resource, backend }),
+    });
   }
   return Object.freeze(collection) as CollectionResource<T, TAccess, TConflicts>;
 }
+
+/** Creates a typed Data Subscription from a remote Collection view. */
+export const Subscription = {
+  create: async <
+    T extends object,
+    TConflicts extends ResourceConflicts,
+  >(
+    collection: RemoteCollection<T, TConflicts>,
+  ): Promise<DataSubscription<T, TConflicts>> => {
+    const target = collection?.[subscriptionTarget];
+    if (target === undefined) {
+      throw new TypeError("Subscription.create requires collection.for(identity)");
+    }
+    let id: string;
+    try {
+      id = await target.backend.createSubscription(target.resource.path);
+    } catch (error) {
+      if (
+        error instanceof JoltApiError
+        && error.code === "data_subscription_capacity_exceeded"
+      ) {
+        throw new SubscriptionCapacityError({ cause: error });
+      }
+      throw error;
+    }
+    let state: SubscriptionStateValue = SubscriptionState.Loading;
+    let lastVerifiedAt: number | undefined;
+    let reason: SubscriptionFailureValue | undefined;
+
+    const subscription: DataSubscription<T, TConflicts> = {
+      id,
+      identity: target.backend.identity,
+      get state() { return state; },
+      get lastVerifiedAt() { return lastVerifiedAt; },
+      get reason() { return reason; },
+      async get() {
+        if (state === SubscriptionState.Cancelled) {
+          throw new Error("Data Subscription is cancelled");
+        }
+        if (state === SubscriptionState.Revoked) {
+          throw new AccessRevokedError();
+        }
+        state = lastVerifiedAt === undefined
+          ? SubscriptionState.Loading
+          : SubscriptionState.Updating;
+        let view: BackendSubscriptionView;
+        try {
+          view = await target.backend.readSubscription(id, target.resource.path);
+        } catch (error) {
+          if (error instanceof AccessRevokedError) state = SubscriptionState.Revoked;
+          throw error;
+        }
+        state = view.state;
+        lastVerifiedAt = view.lastVerifiedAt;
+        reason = view.reason;
+
+        const items: PresentItem<
+          T,
+          { readonly read: typeof Read.AnyIdentity },
+          TConflicts
+        >[] = [];
+        for (const ref of view.refs) {
+          try {
+            const item = await readItem(
+              target.resource,
+              target.backend,
+              ref as unknown as Ref<T>,
+              false,
+            );
+            if (item.isPresent()) {
+              items.push(item as PresentItem<
+                T,
+                { readonly read: typeof Read.AnyIdentity },
+                TConflicts
+              >);
+            }
+          } catch (error) {
+            if (
+              !(error instanceof SchemaValidationError)
+              && !(error instanceof SchemaMigrationError)
+            ) {
+              throw error;
+            }
+          }
+        }
+        return Object.freeze(items);
+      },
+      async remove() {
+        if (state === SubscriptionState.Cancelled) return;
+        await target.backend.removeSubscription(id);
+        state = SubscriptionState.Cancelled;
+        reason = undefined;
+      },
+    };
+    return Object.freeze(subscription);
+  },
+} as const;
 
 function createDocument<
   T extends object,
@@ -2291,7 +2589,16 @@ export const App = {
         access: resource.access,
       })
     )));
-    const accessPlan = Object.freeze({ requirements, grants });
+    const subscriptions = Object.freeze(Object.entries(data)
+      .filter(([, resource]) => (
+        resource[resourceDefinition] === ResourceKind.Collection
+        && resource.access.read === Read.AnyIdentity
+      ))
+      .map(([resourceName, resource]) => Object.freeze({
+        resource: resourceName,
+        path: `${resource.path}/*`,
+      })));
+    const accessPlan = Object.freeze({ requirements, grants, subscriptions });
     return {
       id: options.id,
       name: options.name,

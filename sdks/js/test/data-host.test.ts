@@ -47,6 +47,7 @@ const app = {
         restore: true as const,
       },
     }],
+    subscriptions: [{ resource: "posts", path: "/chirp/posts/*" }],
   },
 };
 
@@ -56,10 +57,15 @@ describe("Data SDK host bootstrap", () => {
     let getToken = () => "";
     const checkCompatibility = vi.fn(async () => ({
       status: "compatible" as const,
-      manifest: { appApi: 1, features: { "data.records": 5 }, discovery: "advertised" as const },
+      manifest: {
+        appApi: 1,
+        features: { "data.records": 5, "data.subscriptions": 1 },
+        discovery: "advertised" as const,
+      },
       appApi: { requiredLevel: 1, availableLevel: 1, supported: true },
       requiredFeatures: {
         "data.records": { requiredLevel: 5, availableLevel: 5, supported: true },
+        "data.subscriptions": { requiredLevel: 1, availableLevel: 1, supported: true },
       },
       optionalFeatures: {},
     }));
@@ -76,6 +82,7 @@ describe("Data SDK host bootstrap", () => {
           "fetch:public",
           "publish:/chirp/posts/*",
           "delete:/chirp/posts/*",
+          "subscribe:any:/chirp/posts/*",
         ],
       });
     const client = {
@@ -98,7 +105,7 @@ describe("Data SDK host bootstrap", () => {
 
     expect(checkCompatibility).toHaveBeenCalledWith({
       appApi: 1,
-      requiredFeatures: { "data.records": 5 },
+      requiredFeatures: { "data.records": 5, "data.subscriptions": 1 },
     });
     expect(requestSession).toHaveBeenCalledWith({
       appId: "chirp.example",
@@ -110,6 +117,7 @@ describe("Data SDK host bootstrap", () => {
         "fetch:public",
         "publish:/chirp/posts/*",
         "delete:/chirp/posts/*",
+        "subscribe:any:/chirp/posts/*",
       ],
     });
     expect(connected).toEqual({ identity: "alice.jolt", client });
@@ -141,6 +149,7 @@ describe("Data SDK host bootstrap", () => {
           "fetch:public",
           "publish:/chirp/posts/*",
           "delete:/chirp/posts/*",
+          "subscribe:any:/chirp/posts/*",
         ],
       })),
       requestSession: vi.fn(),

@@ -12,10 +12,51 @@ import {
   ResourceKind,
   Schema,
   State,
+  Subscription,
+  SubscriptionState,
   UpdateConflict,
 } from "jolt-sdk/data";
 
 describe("Data SDK applications", () => {
+  it("creates a typed Data Subscription from a remote Collection view", async () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: { read: Read.AnyIdentity, create: true },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts },
+    });
+    const world = Chirp.testWorld();
+    const alice = world.as("alice.jolt");
+    const bob = world.as("bob.jolt");
+    await alice.posts.create({ text: "Hello" });
+    await alice.posts.create({ text: "Still here" });
+
+    const alicePosts = await Subscription.create(
+      bob.posts.for("alice.jolt"),
+    );
+    expect(alicePosts.state).toBe(SubscriptionState.Loading);
+
+    const posts = await alicePosts.get();
+
+    expect(alicePosts.state).toBe(SubscriptionState.Ready);
+    expect(posts.map(post => post.value.text)).toEqual(["Hello", "Still here"]);
+    expectTypeOf(posts[0]!.value).toEqualTypeOf<Post>();
+    expect(Object.isFrozen(posts)).toBe(true);
+
+    await alicePosts.remove();
+    expect(alicePosts.state).toBe(SubscriptionState.Cancelled);
+    await expect(alicePosts.get()).rejects.toThrow(/cancelled/i);
+  });
+
   it("uses automatic conflict policies unless a Resource overrides them", () => {
     @Schema({ version: 1 })
     class Post {
@@ -196,9 +237,13 @@ describe("Data SDK applications", () => {
         access: Follows.access,
       },
     ]);
+    expect(Chirp.accessPlan.subscriptions).toEqual([
+      { resource: "posts", path: "/chirp/posts/*" },
+    ]);
     expect(Object.isFrozen(Chirp.accessPlan)).toBe(true);
     expect(Object.isFrozen(Chirp.accessPlan.requirements)).toBe(true);
     expect(Object.isFrozen(Chirp.accessPlan.grants)).toBe(true);
+    expect(Object.isFrozen(Chirp.accessPlan.subscriptions)).toBe(true);
   });
 
   it("rejects invalid derived path segments at App definition time", () => {

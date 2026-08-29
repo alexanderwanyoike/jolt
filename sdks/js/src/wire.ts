@@ -235,6 +235,56 @@ export type AppendRecordInfo = {
   content_id: string;
   device_id: string;
   device_sequence: number;
-  created_at: string;
+  created_at: number;
   entry_hash: string;
+};
+
+/** One current non-deleted logical record in a Materialized View. */
+export type MaterializedRecordInfo = {
+  path: string;
+  content_id: string;
+  revision: string;
+  created_at: number;
+};
+
+/** One Data Subscription's last bounded refresh state. */
+export type DataSubscriptionRefreshResponse =
+  | { status: "loading" }
+  | { status: "updating"; last_verified_at?: number }
+  | { status: "ready"; last_verified_at: number }
+  | {
+      status: "stale";
+      last_verified_at: number;
+      reason: "networkUnavailable" | "verificationFailed" | "overloaded";
+    }
+  | {
+      status: "unavailable";
+      reason: "networkUnavailable" | "verificationFailed" | "overloaded";
+    };
+
+/** Persisted Data Subscription metadata owned by the current app session. */
+export type DataSubscriptionRecordResponse = {
+  id: string;
+  session_id: string;
+  identity: string;
+  prefix: string;
+  lifecycle: "active" | "dormant";
+  refresh: DataSubscriptionRefreshResponse;
+  created_at: number;
+};
+
+/** Last verified records plus the outcome of this subscription refresh. */
+export type DataSubscriptionViewResponse = {
+  identity: string;
+  records: MaterializedRecordInfo[];
+  source: {
+    subscription: string;
+    state: DataSubscriptionRefreshResponse;
+  };
+};
+
+/** Terminal result of explicitly removing a Data Subscription. */
+export type RemoveDataSubscriptionResponse = {
+  status: "cancelled";
+  subscription_id: string;
 };

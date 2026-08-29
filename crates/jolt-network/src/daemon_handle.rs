@@ -168,6 +168,25 @@ impl DaemonHandle {
         receive_result(rx).await
     }
 
+    /// Refresh and return the last verified logical records for one identity and
+    /// path prefix, including the bounded refresh outcome.
+    pub async fn refresh_materialized_record_view(
+        &self,
+        identity: IdentityId,
+        path_prefix: String,
+    ) -> Result<crate::command::MaterializedRecordView, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::RefreshMaterializedRecordView {
+                identity,
+                path_prefix,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
     /// Resolve a `.jolt` address to its current content target. Resolution may
     /// require DHT provider discovery, dialing candidates, and update-log or
     /// device-writer sync, so this waits with the network command timeout.

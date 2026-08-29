@@ -101,7 +101,8 @@ pub fn build_router_with_stores(
         )
         .route(
             "/app/v1/data-subscriptions/{subscription_id}",
-            delete(routes::app_api::remove_data_subscription),
+            get(routes::app_api::get_data_subscription_view)
+                .delete(routes::app_api::remove_data_subscription),
         )
         .route(
             "/app/v1/encrypted/publish",

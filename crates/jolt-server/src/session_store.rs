@@ -4,8 +4,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rand::RngCore;
 use jolt_core::IdentityId;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::Mutex;
@@ -206,6 +206,7 @@ pub struct AppSessionStore {
     path: PathBuf,
     state: Arc<Mutex<AppSessionState>>,
     issued_tokens: Arc<Mutex<HashMap<String, String>>>,
+    max_data_subscriptions: usize,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -215,7 +216,7 @@ struct AppSessionState {
     data_subscriptions: Vec<DataSubscriptionRecord>,
 }
 
-const MAX_DATA_SUBSCRIPTIONS: usize = 4_096;
+const DEFAULT_MAX_DATA_SUBSCRIPTIONS: usize = 4_096;
 
 impl AppSessionStore {
     pub fn open_default() -> std::io::Result<Self> {
@@ -223,12 +224,20 @@ impl AppSessionStore {
     }
 
     pub fn open(path: impl Into<PathBuf>) -> std::io::Result<Self> {
+        Self::open_with_data_subscription_limit(path, DEFAULT_MAX_DATA_SUBSCRIPTIONS)
+    }
+
+    pub fn open_with_data_subscription_limit(
+        path: impl Into<PathBuf>,
+        max_data_subscriptions: usize,
+    ) -> std::io::Result<Self> {
         let path = path.into();
         let state = load_state(&path)?;
         Ok(Self {
             path,
             state: Arc::new(Mutex::new(state)),
             issued_tokens: Arc::new(Mutex::new(HashMap::new())),
+            max_data_subscriptions,
         })
     }
 
@@ -581,7 +590,7 @@ impl AppSessionStore {
         }) {
             return Ok(existing.clone());
         }
-        if state.data_subscriptions.len() >= MAX_DATA_SUBSCRIPTIONS {
+        if state.data_subscriptions.len() >= self.max_data_subscriptions {
             return Err(AppSessionStoreError::DataSubscriptionCapacityExceeded);
         }
         let subscription = DataSubscriptionRecord {
@@ -598,10 +607,7 @@ impl AppSessionStore {
         Ok(subscription)
     }
 
-    pub async fn list_data_subscriptions(
-        &self,
-        session_id: &str,
-    ) -> Vec<DataSubscriptionRecord> {
+    pub async fn list_data_subscriptions(&self, session_id: &str) -> Vec<DataSubscriptionRecord> {
         let state = self.state.lock().await;
         state
             .data_subscriptions
@@ -609,6 +615,48 @@ impl AppSessionStore {
             .filter(|subscription| subscription.session_id == session_id)
             .cloned()
             .collect()
+    }
+
+    pub async fn data_subscription(
+        &self,
+        session_id: &str,
+        subscription_id: &str,
+    ) -> Result<DataSubscriptionRecord, AppSessionStoreError> {
+        let state = self.state.lock().await;
+        state
+            .data_subscriptions
+            .iter()
+            .find(|subscription| {
+                subscription.session_id == session_id && subscription.id == subscription_id
+            })
+            .cloned()
+            .ok_or_else(|| {
+                AppSessionStoreError::DataSubscriptionNotFound(subscription_id.to_string())
+            })
+    }
+
+    pub async fn update_data_subscription_state(
+        &self,
+        session_id: &str,
+        subscription_id: &str,
+        lifecycle: DataSubscriptionLifecycle,
+        refresh: DataSubscriptionRefresh,
+    ) -> Result<DataSubscriptionRecord, AppSessionStoreError> {
+        let mut state = self.state.lock().await;
+        let subscription = state
+            .data_subscriptions
+            .iter_mut()
+            .find(|subscription| {
+                subscription.session_id == session_id && subscription.id == subscription_id
+            })
+            .ok_or_else(|| {
+                AppSessionStoreError::DataSubscriptionNotFound(subscription_id.to_string())
+            })?;
+        subscription.lifecycle = lifecycle;
+        subscription.refresh = refresh;
+        let updated = subscription.clone();
+        save_state(&self.path, &state)?;
+        Ok(updated)
     }
 
     pub async fn remove_data_subscription(
@@ -652,7 +700,7 @@ enum AppCapability {
         scope: PathScope,
     },
     Subscribe {
-        identity: IdentityId,
+        identity_scope: SubscriptionIdentityScope,
         scope: PathScope,
     },
     Path {
@@ -665,6 +713,12 @@ enum AppCapability {
 enum EnumerateIdentityScope {
     SelfIdentity,
     AnyIdentity,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum SubscriptionIdentityScope {
+    AnyIdentity,
+    Exact(IdentityId),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -702,9 +756,15 @@ impl AppCapability {
             }),
             _ if raw.starts_with("subscribe:") => {
                 let (identity, scope) = raw.strip_prefix("subscribe:")?.split_once(':')?;
-                let identity = IdentityId::from_str(identity.trim_end_matches(".jolt")).ok()?;
+                let identity_scope = if identity == "any" {
+                    SubscriptionIdentityScope::AnyIdentity
+                } else {
+                    SubscriptionIdentityScope::Exact(
+                        IdentityId::from_str(identity.trim_end_matches(".jolt")).ok()?,
+                    )
+                };
                 Some(Self::Subscribe {
-                    identity,
+                    identity_scope,
                     scope: PathScope::parse(scope)?,
                 })
             }
@@ -735,14 +795,18 @@ impl AppCapability {
             }
             (
                 Self::Subscribe {
-                    identity: requested_identity,
+                    identity_scope: requested_identity_scope,
                     scope: requested_scope,
                 },
                 Self::Subscribe {
-                    identity: granted_identity,
+                    identity_scope: granted_identity_scope,
                     scope: granted_scope,
                 },
-            ) if requested_identity == granted_identity => requested_scope.contains(granted_scope),
+            ) if requested_identity_scope == granted_identity_scope
+                || *requested_identity_scope == SubscriptionIdentityScope::AnyIdentity =>
+            {
+                requested_scope.contains(granted_scope)
+            }
             (
                 Self::Path {
                     action: requested_action,
@@ -878,4 +942,106 @@ fn now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn approved_session(
+        store: &AppSessionStore,
+        expires_at: Option<u64>,
+    ) -> ApproveAppSessionResponse {
+        let remote_identity = format!("{}.jolt", IdentityId::from_public_key([7; 32]),);
+        let request = store
+            .create_request(AppSessionRequest {
+                app_id: "chirp.local".to_string(),
+                app_name: "Chirp".to_string(),
+                app_origin: None,
+                requested_identity: Some("local.jolt".to_string()),
+                requested_capabilities: vec![format!("subscribe:{remote_identity}:/chirp/posts/*")],
+            })
+            .await
+            .unwrap();
+        store
+            .approve_request(
+                &request.request_id,
+                ApproveAppSessionRequest {
+                    identity: None,
+                    capabilities: Vec::new(),
+                    expires_at,
+                },
+                "dev_local",
+            )
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn configured_data_subscription_limit_rejects_without_evicting() {
+        let dir = tempfile::tempdir().unwrap();
+        let store =
+            AppSessionStore::open_with_data_subscription_limit(dir.path().join("sessions.json"), 1)
+                .unwrap();
+
+        let first = store
+            .register_data_subscription(
+                "session_a",
+                "alice.jolt".to_string(),
+                "/chirp/posts/".to_string(),
+            )
+            .await
+            .unwrap();
+        let error = store
+            .register_data_subscription(
+                "session_b",
+                "bob.jolt".to_string(),
+                "/chirp/posts/".to_string(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            AppSessionStoreError::DataSubscriptionCapacityExceeded
+        ));
+        assert_eq!(
+            store.list_data_subscriptions("session_a").await,
+            vec![first]
+        );
+        assert!(store.list_data_subscriptions("session_b").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn expiry_and_revocation_remove_durable_data_subscription_intent() {
+        for revoke in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("sessions.json");
+            let store = AppSessionStore::open(&path).unwrap();
+            let session = approved_session(&store, (!revoke).then_some(0)).await;
+            store
+                .register_data_subscription(
+                    &session.session_id,
+                    "alice.jolt".to_string(),
+                    "/chirp/posts/".to_string(),
+                )
+                .await
+                .unwrap();
+
+            if revoke {
+                store.revoke_session(&session.session_id).await.unwrap();
+            } else {
+                assert!(matches!(
+                    store.session_for_token(&session.session_token).await,
+                    Err(AppSessionStoreError::InvalidToken)
+                ));
+            }
+
+            let reopened = AppSessionStore::open(&path).unwrap();
+            assert!(reopened
+                .list_data_subscriptions(&session.session_id)
+                .await
+                .is_empty());
+        }
+    }
 }

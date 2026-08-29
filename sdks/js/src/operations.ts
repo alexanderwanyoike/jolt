@@ -18,6 +18,8 @@ import type {
   AppSessionStatusResponse,
   CurrentAppSession,
   DecryptedEncryptedObject,
+  DataSubscriptionRecordResponse,
+  DataSubscriptionViewResponse,
   DecryptedIngress,
   EncryptedPublishResponse,
   FetchResult,
@@ -32,6 +34,7 @@ import type {
   PublishedContent,
   PublishResponse,
   ResolveResponse,
+  RemoveDataSubscriptionResponse,
 } from "./wire.js";
 
 /** What an app declares when opening a Jolt session. */
@@ -167,6 +170,62 @@ export function enumerate(
     json: { identity, path_prefix: pathPrefix },
     ...options,
   });
+}
+
+/** Register one session-owned identity/path-prefix Data Subscription. */
+export function createDataSubscription(
+  transport: JoltTransport,
+  token: string,
+  identity: string,
+  prefix: string,
+  options?: CallOptions
+): Promise<DataSubscriptionRecordResponse> {
+  return transport.request("app", "/data-subscriptions", {
+    token,
+    json: { identity, prefix },
+    ...options,
+  });
+}
+
+/** List Data Subscriptions owned by the current app session. */
+export function listDataSubscriptions(
+  transport: JoltTransport,
+  token: string,
+  options?: CallOptions
+): Promise<DataSubscriptionRecordResponse[]> {
+  return transport.request("app", "/data-subscriptions", {
+    method: "GET",
+    token,
+    ...options,
+  });
+}
+
+/** Perform a bounded refresh and read one subscription's Last Verified View. */
+export function getDataSubscriptionView(
+  transport: JoltTransport,
+  token: string,
+  subscriptionId: string,
+  options?: CallOptions
+): Promise<DataSubscriptionViewResponse> {
+  return transport.request(
+    "app",
+    `/data-subscriptions/${encodeURIComponent(subscriptionId)}`,
+    { method: "GET", token, ...options },
+  );
+}
+
+/** Remove one Data Subscription owned by the current app session. */
+export function removeDataSubscription(
+  transport: JoltTransport,
+  token: string,
+  subscriptionId: string,
+  options?: CallOptions
+): Promise<RemoveDataSubscriptionResponse> {
+  return transport.request(
+    "app",
+    `/data-subscriptions/${encodeURIComponent(subscriptionId)}`,
+    { method: "DELETE", token, ...options },
+  );
 }
 
 /** Publish a JSON object encrypted to `recipients` (identity addresses). */
