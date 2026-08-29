@@ -234,6 +234,12 @@ impl RemoteIdentityPersistenceWorker {
     }
 }
 
+impl Drop for RemoteIdentityPersistenceWorker {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
 impl DeviceWriterSyncWorkQueue {
     pub(super) fn new(max_concurrency: usize, queue_capacity: usize) -> Self {
         let max_concurrency = max_concurrency.max(1);
