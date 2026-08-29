@@ -77,6 +77,10 @@ impl NetworkNode {
             pending_resolves: HashMap::new(),
             pending_device_writer_syncs: HashMap::new(),
             pending_device_writer_waiters: HashMap::new(),
+            device_writer_sync_work: super::resolution::DeviceWriterSyncWorkQueue::new(
+                config.device_writer_sync_max_concurrency,
+                config.device_writer_sync_queue_capacity,
+            ),
             active_update_log_provider_queries: HashMap::new(),
             cached_update_log_refreshes: HashMap::new(),
             device_writer_refreshes: HashMap::new(),

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod commands;
@@ -173,6 +174,7 @@ pub struct NetworkNode {
     /// Device-writer sync waiters parked until a provider is discovered for an
     /// identity, keyed by identity.
     pending_device_writer_waiters: HashMap<IdentityId, Vec<resolution::DeviceWriterSyncWaiter>>,
+    device_writer_sync_work: resolution::DeviceWriterSyncWorkQueue,
     /// Active provider discovery queries, coalesced by identity so concurrent
     /// resolve paths share one DHT and relay lookup.
     active_update_log_provider_queries: HashMap<IdentityId, libp2p::kad::QueryId>,
@@ -187,7 +189,7 @@ pub struct NetworkNode {
     /// Verified update logs by owner identity.
     update_logs: HashMap<IdentityId, Vec<UpdateLogEntry>>,
     /// Verified merged device-writer state by owner identity.
-    device_writer_states: HashMap<IdentityId, CachedDeviceWriterState>,
+    device_writer_states: HashMap<IdentityId, Arc<CachedDeviceWriterState>>,
     /// Local per-device writer logs by owner identity.
     local_device_writer_logs: HashMap<IdentityId, Vec<DeviceWriterLogEntry>>,
     /// Local device authority records by owner identity.
@@ -598,6 +600,11 @@ impl NetworkNode {
                         }
                     }
                 }
+                completion = self.device_writer_sync_work.completion_rx.recv(), if !self.device_writer_sync_work.active.is_empty() => {
+                    if let Some(completion) = completion {
+                        self.handle_device_writer_sync_completion(completion);
+                    }
+                }
                 event = self.swarm.select_next_some() => {
                     let summary = format!("{event:?}");
                     let started = Instant::now();
@@ -668,6 +675,7 @@ impl NetworkNode {
         let should_shutdown = matches!(command, DaemonCommand::Shutdown { .. });
         self.handle_command(command);
         if should_shutdown {
+            self.shutdown_device_writer_sync_work();
             info!("Daemon shutting down");
         }
         should_shutdown
@@ -678,6 +686,11 @@ impl NetworkNode {
         let mut relay_mesh_interval = tokio::time::interval(RELAY_MESH_EXPLORATION_INTERVAL);
         loop {
             tokio::select! {
+                completion = self.device_writer_sync_work.completion_rx.recv(), if !self.device_writer_sync_work.active.is_empty() => {
+                    if let Some(completion) = completion {
+                        self.handle_device_writer_sync_completion(completion);
+                    }
+                }
                 event = self.swarm.select_next_some() => {
                     self.handle_swarm_event(event);
                 }

@@ -64,6 +64,9 @@ pub enum NetworkError {
     #[error("Timeout waiting for response")]
     Timeout,
 
+    #[error("Daemon is shutting down")]
+    ShuttingDown,
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 

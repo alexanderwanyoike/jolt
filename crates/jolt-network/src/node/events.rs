@@ -465,7 +465,7 @@ impl NetworkNode {
                             &response.authority_records,
                             &pending.provider,
                         );
-                    let result = if let Err(error) = response.ensure_supported(
+                    let protocol_result = if let Err(error) = response.ensure_supported(
                         crate::protocol::CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION,
                     ) {
                         Err(error)
@@ -475,6 +475,17 @@ impl NetworkNode {
                             "provider returned no device-authority records",
                         ))
                     } else {
+                        Ok(())
+                    };
+                    if protocol_result.is_ok() && pending.identity != self.identity.identity_id() {
+                        self.schedule_device_writer_sync_verification(
+                            pending,
+                            response.authority_records,
+                            response.device_logs,
+                        );
+                        return;
+                    }
+                    let result = protocol_result.and_then(|_| {
                         self.store_verified_device_writer_logs(
                             pending.identity.clone(),
                             response.authority_records,
@@ -486,7 +497,7 @@ impl NetworkNode {
                         .map_err(|e| {
                             Self::identity_head_invalid_failure(&pending.identity, e.to_string())
                         })
-                    };
+                    });
                     if result.is_ok() && provider_is_authorized_local_device {
                         self.verified_local_device_sync_peers
                             .insert(pending.provider);
