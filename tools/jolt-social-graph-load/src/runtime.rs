@@ -408,18 +408,18 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
         system: &mut system,
     };
     let mut phases = Vec::new();
-    phases.push(
-        measurement
-            .measure("cold", config.workload.records_per_identity)
-            .await?
-            .report,
-    );
-    phases.push(
-        measurement
-            .measure("warm_no_change", config.workload.records_per_identity)
-            .await?
-            .report,
-    );
+    let cold = measurement
+        .measure("cold", config.workload.records_per_identity)
+        .await?
+        .report;
+    print_phase_progress(&cold);
+    phases.push(cold);
+    let warm = measurement
+        .measure("warm_no_change", config.workload.records_per_identity)
+        .await?
+        .report;
+    print_phase_progress(&warm);
+    phases.push(warm);
 
     for index in &plan.churned_providers {
         links[*index].set_offline(true);
@@ -450,6 +450,7 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
     let mut new_phase = measured_new_phase.report;
     new_phase.activity.content_announcements = plan.followed_authors.len() as u64;
     new_phase.activity.churn_events = plan.churned_providers.len() as u64;
+    print_phase_progress(&new_phase);
     let visible = measured_new_phase.visibility.successes;
     let published_records = plan.followed_authors.len() as u64;
     let propagation = PropagationReport {
@@ -497,6 +498,17 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
         final_network_bytes,
         limitations,
     })
+}
+
+fn print_phase_progress(phase: &PhaseReport) {
+    let failures: u64 = phase.timeline_latency.failures.values().sum();
+    eprintln!(
+        "phase {} complete in {:.3}s: {} succeeded, {} failed",
+        phase.name,
+        phase.wall_time_micros as f64 / 1_000_000.0,
+        phase.timeline_latency.successes,
+        failures
+    );
 }
 
 async fn start_daemon(
