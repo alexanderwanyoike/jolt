@@ -36,5 +36,5 @@ for follows in 100 1000 10000; do
     --churn-percent "$churn_percent" \
     --churn-duration-ms "$churn_duration_ms" \
     --json-output "$output_directory/follows-${follows}.json" \
-    >"$output_directory/follows-${follows}.stdout.json"
+    >/dev/null
 done
