@@ -12,7 +12,11 @@ use tokio::sync::oneshot;
 
 use crate::command::{AppendRecordInfo, ResolveResponse};
 use crate::error::NetworkError;
-use crate::protocol::{DeviceWriterSyncRequest, UpdateLogRequest};
+use crate::protocol::{
+    DeviceWriterCursor, DeviceWriterSyncContinuation, DeviceWriterSyncRequest,
+    DeviceWriterSyncResponse, UpdateLogRequest, DELTA_DEVICE_WRITER_SYNC_VERSION,
+    LEGACY_DEVICE_WRITER_SYNC_VERSION,
+};
 
 use super::NetworkNode;
 
@@ -63,6 +67,8 @@ pub(super) struct PendingDeviceWriterSync {
     pub(super) identity: IdentityId,
     pub(super) provider: libp2p::PeerId,
     pub(super) deadline: Instant,
+    pub(super) requested_sync_version: u16,
+    pub(super) requested_cursor_count: usize,
 }
 
 pub(super) struct DeviceWriterSyncWork {
@@ -74,6 +80,9 @@ pub(super) struct DeviceWriterSyncWork {
     existing: Option<Arc<super::CachedDeviceWriterState>>,
     authority_records: Vec<DeviceAuthorizationRecord>,
     device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    sync_version: u16,
+    heads: Vec<DeviceWriterCursor>,
+    continuation: Option<DeviceWriterSyncContinuation>,
 }
 
 pub(super) struct ActiveDeviceWriterSyncWork {
@@ -82,6 +91,7 @@ pub(super) struct ActiveDeviceWriterSyncWork {
     pub(super) deadline: Instant,
     pub(super) settled: bool,
     base_state: Option<Arc<super::CachedDeviceWriterState>>,
+    continuation: Option<DeviceWriterSyncContinuation>,
 }
 
 pub(super) struct CompletedDeviceWriterSyncWork {
@@ -103,6 +113,12 @@ pub(super) struct DeviceWriterSyncWorkQueue {
     pub(super) timed_out: u64,
     pub(super) verified: u64,
     pub(super) verification_failed: u64,
+    pub(super) full_responses: u64,
+    pub(super) delta_responses: u64,
+    pub(super) delta_continuations: u64,
+    pub(super) received_entries: u64,
+    pub(super) received_bytes: u64,
+    pub(super) full_recoveries: u64,
 }
 
 impl DeviceWriterSyncWorkQueue {
@@ -123,6 +139,12 @@ impl DeviceWriterSyncWorkQueue {
             timed_out: 0,
             verified: 0,
             verification_failed: 0,
+            full_responses: 0,
+            delta_responses: 0,
+            delta_continuations: 0,
+            received_entries: 0,
+            received_bytes: 0,
+            full_recoveries: 0,
         }
     }
 }
@@ -270,6 +292,9 @@ impl NetworkNode {
             existing.cloned(),
             authority_records,
             device_logs,
+            LEGACY_DEVICE_WRITER_SYNC_VERSION,
+            Vec::new(),
+            true,
         )?;
         if identity == self.identity.identity_id() {
             let local_device_id = self.local_device_id();
@@ -320,6 +345,19 @@ impl NetworkNode {
             left_id.cmp(right_id)
         });
         Some((state.authority_records.clone(), device_logs))
+    }
+
+    fn device_writer_sync_cursors(&self, identity: &IdentityId) -> Vec<DeviceWriterCursor> {
+        let Some(state) = self.device_writer_states.get(identity) else {
+            return Vec::new();
+        };
+        let mut cursors: Vec<_> = state
+            .device_logs
+            .values()
+            .filter_map(|log| log.last().map(DeviceWriterCursor::from_entry))
+            .collect();
+        cursors.sort_by(|left, right| left.device_id.cmp(&right.device_id));
+        cursors
     }
 
     pub(super) fn request_daemon_resolve_from_provider(
@@ -510,7 +548,37 @@ impl NetworkNode {
                 .unwrap_or_else(|| DeviceWriterSyncRequest::new(identity.clone()))
         } else {
             DeviceWriterSyncRequest::new(identity.clone())
+                .with_cursors(self.device_writer_sync_cursors(&identity))
         };
+        self.send_device_writer_sync_request(
+            identity,
+            provider,
+            request,
+            Instant::now() + self.resolve_timeout,
+        );
+    }
+
+    fn request_device_writer_sync_continuation(
+        &mut self,
+        identity: IdentityId,
+        provider: &libp2p::PeerId,
+        continuation: DeviceWriterSyncContinuation,
+        deadline: Instant,
+    ) {
+        let request =
+            DeviceWriterSyncRequest::new(identity.clone()).with_cursors(continuation.cursors);
+        self.send_device_writer_sync_request(identity, provider, request, deadline);
+    }
+
+    fn send_device_writer_sync_request(
+        &mut self,
+        identity: IdentityId,
+        provider: &libp2p::PeerId,
+        request: DeviceWriterSyncRequest,
+        deadline: Instant,
+    ) {
+        let requested_sync_version = request.max_sync_version;
+        let requested_cursor_count = request.cursors.len();
         let request_id = self
             .swarm
             .behaviour_mut()
@@ -521,7 +589,9 @@ impl NetworkNode {
             PendingDeviceWriterSync {
                 identity,
                 provider: *provider,
-                deadline: Instant::now() + self.resolve_timeout,
+                deadline,
+                requested_sync_version,
+                requested_cursor_count,
             },
         );
     }
@@ -946,6 +1016,9 @@ fn merge_verified_device_writer_state(
     existing: Option<Arc<super::CachedDeviceWriterState>>,
     authority_records: Vec<DeviceAuthorizationRecord>,
     device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    sync_version: u16,
+    heads: Vec<DeviceWriterCursor>,
+    complete: bool,
 ) -> Result<super::CachedDeviceWriterState, NetworkError> {
     let candidate_authority = verify_identity_authority_chain(identity, &authority_records)
         .map_err(|error| NetworkError::Protocol(error.to_string()))?;
@@ -972,12 +1045,65 @@ fn merge_verified_device_writer_state(
             continue;
         };
         let device_id = first.body.device_id.clone();
+        let log = if first.body.device_sequence == 0 {
+            log
+        } else {
+            let Some(known) = accumulated.get(&device_id) else {
+                return Err(NetworkError::Protocol(format!(
+                    "device-writer delta for {device_id} has no verified predecessor"
+                )));
+            };
+            let known_head = known
+                .last()
+                .expect("stored device-writer logs are never empty");
+            if first.body.device_sequence != known_head.body.device_sequence + 1
+                || first.body.previous_entry_hash.as_ref() != Some(&known_head.entry_hash())
+            {
+                return Err(NetworkError::Protocol(format!(
+                    "device-writer delta for {device_id} is not contiguous with verified state"
+                )));
+            }
+            let mut extended = known.clone();
+            extended.extend(log);
+            extended
+        };
         let keep = accumulated
             .get(&device_id)
             .map(|known| device_log_is_newer(&log, known))
             .unwrap_or(true);
         if keep {
             accumulated.insert(device_id, log);
+        }
+    }
+
+    if sync_version >= DELTA_DEVICE_WRITER_SYNC_VERSION && complete {
+        let heads_by_device: HashMap<_, _> = heads
+            .iter()
+            .map(|head| (head.device_id.as_str(), head))
+            .collect();
+        if heads_by_device.len() != heads.len() || heads_by_device.len() != accumulated.len() {
+            return Err(NetworkError::Protocol(
+                "device-writer delta heads do not describe complete provider state".to_string(),
+            ));
+        }
+        for (device_id, log) in &accumulated {
+            let Some(expected) = heads_by_device.get(device_id.as_str()) else {
+                return Err(NetworkError::Protocol(format!(
+                    "device-writer delta omitted head for {device_id}"
+                )));
+            };
+            let Some(actual) = log.last() else {
+                return Err(NetworkError::Protocol(format!(
+                    "device-writer state for {device_id} is empty"
+                )));
+            };
+            if actual.body.device_sequence != expected.device_sequence
+                || actual.entry_hash() != expected.entry_hash
+            {
+                return Err(NetworkError::Protocol(format!(
+                    "device-writer delta did not reach advertised head for {device_id}"
+                )));
+            }
         }
     }
 
@@ -995,9 +1121,27 @@ impl NetworkNode {
     pub(super) fn schedule_device_writer_sync_verification(
         &mut self,
         pending: PendingDeviceWriterSync,
-        authority_records: Vec<DeviceAuthorizationRecord>,
-        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+        response: DeviceWriterSyncResponse,
     ) {
+        let mut encoded_response = Vec::new();
+        ciborium::into_writer(&response, &mut encoded_response)
+            .expect("device-writer sync responses serialize to CBOR");
+        self.device_writer_sync_work.received_entries +=
+            response.device_logs.iter().map(Vec::len).sum::<usize>() as u64;
+        self.device_writer_sync_work.received_bytes += encoded_response.len() as u64;
+        if response.sync_version >= DELTA_DEVICE_WRITER_SYNC_VERSION {
+            self.device_writer_sync_work.delta_responses += 1;
+            if response.continuation.is_some() {
+                self.device_writer_sync_work.delta_continuations += 1;
+            }
+        } else {
+            self.device_writer_sync_work.full_responses += 1;
+            if pending.requested_sync_version >= DELTA_DEVICE_WRITER_SYNC_VERSION
+                && pending.requested_cursor_count > 0
+            {
+                self.device_writer_sync_work.full_recoveries += 1;
+            }
+        }
         let id = self.device_writer_sync_work.next_id;
         self.device_writer_sync_work.next_id = self.device_writer_sync_work.next_id.wrapping_add(1);
         let work = DeviceWriterSyncWork {
@@ -1007,8 +1151,11 @@ impl NetworkNode {
             provider: pending.provider,
             deadline: pending.deadline,
             settled: false,
-            authority_records,
-            device_logs,
+            authority_records: response.authority_records,
+            device_logs: response.device_logs,
+            sync_version: response.sync_version,
+            heads: response.heads,
+            continuation: response.continuation,
         };
 
         if self.device_writer_sync_work.active.len() < self.device_writer_sync_work.max_concurrency
@@ -1035,6 +1182,7 @@ impl NetworkNode {
         let id = work.id;
         let identity = work.identity.clone();
         let base_state = work.existing.clone();
+        let continuation = work.continuation.clone();
         self.device_writer_sync_work.active.insert(
             id,
             ActiveDeviceWriterSyncWork {
@@ -1043,6 +1191,7 @@ impl NetworkNode {
                 deadline: work.deadline,
                 settled: work.settled,
                 base_state,
+                continuation,
             },
         );
         let completion_tx = self.device_writer_sync_work.completion_tx.clone();
@@ -1052,6 +1201,9 @@ impl NetworkNode {
                 work.existing,
                 work.authority_records,
                 work.device_logs,
+                work.sync_version,
+                work.heads,
+                work.continuation.is_none(),
             );
             let _ = completion_tx.blocking_send(CompletedDeviceWriterSyncWork { id, result });
         });
@@ -1099,10 +1251,24 @@ impl NetworkNode {
                 }
                 self.device_writer_sync_work.verified += 1;
 
+                let continuation = active.continuation.take();
+                let continue_sync = snapshot_is_current
+                    && owns_identity
+                    && !active.settled
+                    && active.deadline > Instant::now()
+                    && continuation.is_some();
+                if continue_sync {
+                    self.request_device_writer_sync_continuation(
+                        active.identity.clone(),
+                        &active.provider,
+                        continuation.expect("continuation was checked"),
+                        active.deadline,
+                    );
+                }
                 let has_waiters = self
                     .pending_device_writer_waiters
                     .contains_key(&active.identity);
-                if owns_identity && (!active.settled || has_waiters) {
+                if !continue_sync && owns_identity && (!active.settled || has_waiters) {
                     self.answer_device_writer_waiters(&active.identity);
                 }
             }
@@ -1112,10 +1278,8 @@ impl NetworkNode {
                     .pending_device_writer_waiters
                     .contains_key(&active.identity);
                 if owns_identity && (!active.settled || has_waiters) {
-                    let error = Self::identity_head_invalid_failure(
-                        &active.identity,
-                        error.to_string(),
-                    );
+                    let error =
+                        Self::identity_head_invalid_failure(&active.identity, error.to_string());
                     self.on_device_writer_sync_settled(
                         &active.identity,
                         &active.provider,
@@ -1172,7 +1336,10 @@ mod tests {
     use crate::config::NetworkConfig;
     use crate::error::NetworkError;
     use crate::node::NetworkNode;
-    use crate::protocol::{DeviceWriterSyncResponse, UpdateLogResponse};
+    use crate::protocol::{
+        DeviceWriterCursor, DeviceWriterSyncContinuation, DeviceWriterSyncResponse,
+        UpdateLogResponse, DELTA_DEVICE_WRITER_SYNC_VERSION,
+    };
 
     /// Build a single-device writer log of append records for `identity`, signed
     /// by `device`, one entry per `(path, content_id)` pair.
@@ -1295,6 +1462,25 @@ mod tests {
         authority_records: Vec<DeviceAuthorizationRecord>,
         device_logs: Vec<Vec<DeviceWriterLogEntry>>,
     ) {
+        receive_device_writer_sync_page(
+            node,
+            provider,
+            DeviceWriterSyncResponse {
+                required_operation_version: crate::protocol::LEGACY_DEVICE_WRITER_OPERATION_VERSION,
+                sync_version: crate::protocol::LEGACY_DEVICE_WRITER_SYNC_VERSION,
+                heads: Vec::new(),
+                continuation: None,
+                authority_records,
+                device_logs,
+            },
+        );
+    }
+
+    fn receive_device_writer_sync_page(
+        node: &mut NetworkNode,
+        provider: libp2p::PeerId,
+        response: DeviceWriterSyncResponse,
+    ) {
         let request_id = *node
             .pending_device_writer_syncs
             .keys()
@@ -1306,12 +1492,7 @@ mod tests {
                 connection_id: libp2p::swarm::ConnectionId::new_unchecked(1),
                 message: request_response::Message::Response {
                     request_id,
-                    response: DeviceWriterSyncResponse {
-                        required_operation_version:
-                            crate::protocol::LEGACY_DEVICE_WRITER_OPERATION_VERSION,
-                        authority_records,
-                        device_logs,
-                    },
+                    response,
                 },
             },
         )));
@@ -2320,12 +2501,265 @@ mod tests {
             1,
             "a cached-but-stale remote enumerate must trigger a refresh sync"
         );
-        deliver_device_writer_sync_response(&mut node, provider, authority, vec![second_log]).await;
+        let delta = vec![second_log.last().cloned().unwrap()];
+        assert_eq!(
+            delta.len(),
+            1,
+            "the warm response transfers only the append"
+        );
+        deliver_device_writer_sync_response(&mut node, provider, authority, vec![delta]).await;
 
         let records = rx.await.unwrap().unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].path, "/spoke/accepted/post_1/reply_1");
         assert_eq!(records[0].content_id, accepted.to_string());
+        let status = node.build_status().device_writer_sync_work;
+        assert_eq!(status.full_responses, 2);
+        assert_eq!(
+            status.full_recoveries, 1,
+            "a legacy full-state response to a warm cursor request is observable recovery"
+        );
+    }
+
+    #[tokio::test]
+    async fn bounded_delta_pages_verify_before_answering_waiters() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_paged_delta";
+        let authority = vec![authorize_device(&root, &device, device_id)];
+        let full_log = append_log(
+            &identity,
+            &device,
+            device_id,
+            &[
+                ("/load/items/first", ContentId::from_bytes(b"first")),
+                ("/load/items/second", ContentId::from_bytes(b"second")),
+            ],
+        );
+        let first = full_log[0].clone();
+        let second = full_log[1].clone();
+        let provider = libp2p::PeerId::random();
+        node.discovered_providers.insert(
+            NetworkNode::update_log_provider_key(&identity),
+            vec![provider],
+        );
+        let (response_tx, mut response_rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: identity.clone(),
+            path_prefix: "/load/items/".to_string(),
+            response_tx,
+        });
+
+        receive_device_writer_sync_page(
+            &mut node,
+            provider,
+            DeviceWriterSyncResponse {
+                required_operation_version: crate::protocol::LEGACY_DEVICE_WRITER_OPERATION_VERSION,
+                sync_version: DELTA_DEVICE_WRITER_SYNC_VERSION,
+                heads: vec![DeviceWriterCursor::from_entry(&second)],
+                continuation: Some(DeviceWriterSyncContinuation {
+                    cursors: vec![DeviceWriterCursor::from_entry(&first)],
+                }),
+                authority_records: authority.clone(),
+                device_logs: vec![vec![first]],
+            },
+        );
+        node.complete_next_device_writer_sync_work().await;
+        assert_eq!(node.pending_device_writer_syncs.len(), 1);
+        assert!(matches!(
+            response_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+
+        receive_device_writer_sync_page(
+            &mut node,
+            provider,
+            DeviceWriterSyncResponse {
+                required_operation_version: crate::protocol::LEGACY_DEVICE_WRITER_OPERATION_VERSION,
+                sync_version: DELTA_DEVICE_WRITER_SYNC_VERSION,
+                heads: vec![DeviceWriterCursor::from_entry(&second)],
+                continuation: None,
+                authority_records: authority,
+                device_logs: vec![vec![second]],
+            },
+        );
+        node.complete_next_device_writer_sync_work().await;
+
+        assert_eq!(response_rx.await.unwrap().unwrap().len(), 2);
+        let status = node.build_status().device_writer_sync_work;
+        assert_eq!(status.delta_responses, 2);
+        assert_eq!(status.delta_continuations, 1);
+        assert_eq!(status.received_entries, 2);
+        assert!(status.received_bytes > 0);
+        assert_eq!(status.full_recoveries, 0);
+    }
+
+    #[tokio::test]
+    async fn discontinuous_or_incomplete_delta_keeps_last_verified_view() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_invalid_delta";
+        let authority = vec![authorize_device(&root, &device, device_id)];
+        let log = large_append_log(&identity, &device, device_id, 3);
+        node.store_verified_device_writer_logs(
+            identity.clone(),
+            authority.clone(),
+            vec![vec![log[0].clone()]],
+        )
+        .unwrap();
+        let provider = libp2p::PeerId::random();
+        node.discovered_providers.insert(
+            NetworkNode::update_log_provider_key(&identity),
+            vec![provider],
+        );
+
+        for (delta, advertised_head) in [
+            (log[2].clone(), log[2].clone()),
+            (log[1].clone(), log[0].clone()),
+        ] {
+            node.request_device_writer_sync_from_provider(identity.clone(), &provider);
+            receive_device_writer_sync_page(
+                &mut node,
+                provider,
+                DeviceWriterSyncResponse {
+                    required_operation_version:
+                        crate::protocol::LEGACY_DEVICE_WRITER_OPERATION_VERSION,
+                    sync_version: DELTA_DEVICE_WRITER_SYNC_VERSION,
+                    heads: vec![DeviceWriterCursor::from_entry(&advertised_head)],
+                    continuation: None,
+                    authority_records: authority.clone(),
+                    device_logs: vec![vec![delta]],
+                },
+            );
+            node.complete_next_device_writer_sync_work().await;
+            assert_eq!(
+                node.enumerate_append_records(&identity, "/load/items/")
+                    .unwrap()
+                    .len(),
+                1
+            );
+        }
+        assert_eq!(
+            node.build_status()
+                .device_writer_sync_work
+                .verification_failed,
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn two_peers_transfer_zero_then_one_entry_after_cold_sync() {
+        async fn wait_for_listener(node: &mut NetworkNode) {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while node.listeners().is_empty() {
+                    let event = node.next_event().await;
+                    node.handle_swarm_event(event);
+                }
+            })
+            .await
+            .expect("node did not start listening");
+        }
+
+        async fn complete_remote_sync(author: &mut NetworkNode, reader: &mut NetworkNode) {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while reader.device_writer_sync_work.active.is_empty() {
+                    tokio::select! {
+                        event = author.next_event() => author.handle_swarm_event(event),
+                        event = reader.next_event() => reader.handle_swarm_event(event),
+                    }
+                }
+                reader.complete_next_device_writer_sync_work().await;
+            })
+            .await
+            .expect("device-writer sync did not complete");
+        }
+
+        async fn wait_for_connection(
+            author: &mut NetworkNode,
+            reader: &mut NetworkNode,
+            author_peer: libp2p::PeerId,
+        ) {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while !reader.swarm.is_connected(&author_peer) {
+                    tokio::select! {
+                        event = author.next_event() => author.handle_swarm_event(event),
+                        event = reader.next_event() => reader.handle_swarm_event(event),
+                    }
+                }
+            })
+            .await
+            .expect("reader did not connect to author");
+        }
+
+        let author_dir = tempdir().unwrap();
+        let reader_dir = tempdir().unwrap();
+        let author_identity = NodeIdentity::generate();
+        let identity = author_identity.identity_id();
+        let mut author = NetworkNode::new_tcp(
+            author_identity,
+            make_store(author_dir.path()),
+            NetworkConfig::test_config(),
+        )
+        .unwrap();
+        let mut reader = make_node(reader_dir.path());
+        let first_file = author_dir.path().join("first.json");
+        std::fs::write(&first_file, br#"{"text":"first"}"#).unwrap();
+        author
+            .publish_file_appending_path(&first_file, "/load/items/first")
+            .unwrap();
+
+        author.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+        wait_for_listener(&mut author).await;
+        let author_peer = *author.local_peer_id();
+        let author_addr = author.listeners()[0]
+            .clone()
+            .with(libp2p::multiaddr::Protocol::P2p(author_peer));
+        reader.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
+        wait_for_listener(&mut reader).await;
+        reader.dial(author_addr).unwrap();
+        wait_for_connection(&mut author, &mut reader, author_peer).await;
+
+        reader.request_device_writer_sync_from_provider(identity.clone(), &author_peer);
+        complete_remote_sync(&mut author, &mut reader).await;
+        let cold = reader.build_status().device_writer_sync_work;
+        assert_eq!(cold.delta_responses, 1);
+        assert_eq!(cold.received_entries, 1);
+
+        reader.request_device_writer_sync_from_provider(identity.clone(), &author_peer);
+        complete_remote_sync(&mut author, &mut reader).await;
+        let unchanged = reader.build_status().device_writer_sync_work;
+        assert_eq!(unchanged.delta_responses, 2);
+        assert_eq!(
+            unchanged.received_entries, 1,
+            "an unchanged warm sync must transfer no writer entries"
+        );
+
+        let second_file = author_dir.path().join("second.json");
+        std::fs::write(&second_file, br#"{"text":"second"}"#).unwrap();
+        author
+            .publish_file_appending_path(&second_file, "/load/items/second")
+            .unwrap();
+        reader.request_device_writer_sync_from_provider(identity.clone(), &author_peer);
+        complete_remote_sync(&mut author, &mut reader).await;
+        let appended = reader.build_status().device_writer_sync_work;
+        assert_eq!(appended.delta_responses, 3);
+        assert_eq!(
+            appended.received_entries, 2,
+            "the third sync must add exactly the one new writer entry"
+        );
+        assert_eq!(
+            reader
+                .enumerate_append_records(&identity, "/load/items/")
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[tokio::test]
@@ -2568,6 +3002,67 @@ mod tests {
             .rejected_entries
             .iter()
             .any(|entry| entry.content_id.as_ref() == Some(&revoked_record)));
+    }
+
+    #[tokio::test]
+    async fn delta_authority_refresh_applies_revocation_and_rejects_rollback() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_revoked_delta";
+        let authorize = authorize_device(&root, &device, device_id);
+        let revoke = authorize
+            .append(
+                DeviceAuthorizationOperation::revoke_device(
+                    device_id,
+                    None,
+                    Some("retired".to_string()),
+                    200,
+                ),
+                200,
+                |bytes| root.sign(bytes),
+            )
+            .unwrap();
+        let log = large_append_log(&identity, &device, device_id, 1);
+        node.store_verified_device_writer_logs(
+            identity.clone(),
+            vec![authorize.clone()],
+            vec![log.clone()],
+        )
+        .unwrap();
+        assert_eq!(
+            node.enumerate_append_records(&identity, "/load/items/")
+                .unwrap()
+                .len(),
+            1
+        );
+        let provider = libp2p::PeerId::random();
+
+        for authority_records in [vec![authorize.clone(), revoke], vec![authorize.clone()]] {
+            node.request_device_writer_sync_from_provider(identity.clone(), &provider);
+            receive_device_writer_sync_page(
+                &mut node,
+                provider,
+                DeviceWriterSyncResponse {
+                    required_operation_version:
+                        crate::protocol::LEGACY_DEVICE_WRITER_OPERATION_VERSION,
+                    sync_version: DELTA_DEVICE_WRITER_SYNC_VERSION,
+                    heads: vec![DeviceWriterCursor::from_entry(log.last().unwrap())],
+                    continuation: None,
+                    authority_records,
+                    device_logs: Vec::new(),
+                },
+            );
+            node.complete_next_device_writer_sync_work().await;
+            assert!(
+                node.enumerate_append_records(&identity, "/load/items/")
+                    .unwrap()
+                    .is_empty(),
+                "a stale authority response must not roll back the verified revocation"
+            );
+        }
     }
 
     #[tokio::test]

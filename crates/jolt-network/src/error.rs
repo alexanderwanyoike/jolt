@@ -55,6 +55,11 @@ pub enum NetworkError {
     )]
     UnsupportedDeviceWriterOperationVersion { supported: u16, required: u16 },
 
+    #[error(
+        "Device-writer synchronization requires envelope version {required}, but this node supports {supported}"
+    )]
+    UnsupportedDeviceWriterSyncVersion { supported: u16, required: u16 },
+
     #[error("Content not found: {0}")]
     ContentNotFound(String),
 

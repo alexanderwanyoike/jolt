@@ -9,7 +9,8 @@ use crate::behaviour::JoltBehaviour;
 use crate::config::NetworkConfig;
 use crate::error::NetworkError;
 
-const DEVICE_WRITER_SYNC_PROTOCOLS: [&str; 3] = [
+const DEVICE_WRITER_SYNC_PROTOCOLS: [&str; 4] = [
+    "/jolt/device-writer/4.0.0",
     "/jolt/device-writer/3.0.0",
     "/jolt/device-writer/2.0.0",
     "/jolt/device-writer/1.0.0",
@@ -186,6 +187,7 @@ mod tests {
         assert_eq!(
             DEVICE_WRITER_SYNC_PROTOCOLS,
             [
+                "/jolt/device-writer/4.0.0",
                 "/jolt/device-writer/3.0.0",
                 "/jolt/device-writer/2.0.0",
                 "/jolt/device-writer/1.0.0",
