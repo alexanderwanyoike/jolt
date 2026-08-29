@@ -2,7 +2,10 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::Parser;
-use jolt_social_graph_load::{runtime, WorkloadConfig};
+use jolt_social_graph_load::{
+    runtime::{self, TimelinePath},
+    WorkloadConfig,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -12,6 +15,8 @@ use jolt_social_graph_load::{runtime, WorkloadConfig};
 struct Args {
     #[arg(long, default_value_t = 1)]
     seed: u64,
+    #[arg(long, value_enum, default_value_t = TimelinePath::CacheFirst)]
+    timeline_path: TimelinePath,
     #[arg(long, default_value_t = 3)]
     daemons: usize,
     #[arg(long, default_value_t = 100)]
@@ -36,6 +41,8 @@ struct Args {
     churn_duration_ms: u64,
     #[arg(long, default_value_t = 0)]
     provider_record_capacity: usize,
+    #[arg(long, default_value_t = 2_147_483_648)]
+    reader_cache_max_bytes: u64,
     #[arg(long)]
     workdir: Option<PathBuf>,
     #[arg(long)]
@@ -65,10 +72,12 @@ async fn main() -> anyhow::Result<()> {
     };
     let config = runtime::RunConfig {
         workload,
+        timeline_path: args.timeline_path,
         publish_rate_per_second: args.publish_rate_per_second,
         concurrency: args.concurrency,
         churn_duration_ms: args.churn_duration_ms,
         provider_record_capacity: args.provider_record_capacity,
+        reader_cache_max_bytes: args.reader_cache_max_bytes,
         network: runtime::NetworkProfile {
             one_way_latency_ms: args.one_way_latency_ms,
             bandwidth_kbps: args.bandwidth_kbps,
