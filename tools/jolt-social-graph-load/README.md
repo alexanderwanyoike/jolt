@@ -61,9 +61,10 @@ libp2p default. The matrix uses 50,000 so all three scales exercise timeline
 work rather than stopping at the default provider-key ceiling; every artifact
 records this override and its limitation.
 
-`--reader-cache-max-bytes` sets only the reader's content-cache budget. A tiny
-value makes cache-pressure behavior reproducible without constraining provider
-storage. The default is the production 2 GiB budget.
+`--reader-cache-max-bytes` sets the reader store's shared cache budget without
+constraining provider storage. A tiny value can evict both fetched content and
+disposable persisted remote-identity state, making cache-pressure behavior
+reproducible. The default is the production 2 GiB budget.
 
 ## Run the baseline matrix
 
