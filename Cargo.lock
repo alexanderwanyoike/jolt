@@ -3572,6 +3572,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "jolt-social-graph-load"
+version = "0.3.22"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "clap",
+ "hex",
+ "jolt-core",
+ "jolt-identity",
+ "jolt-network",
+ "jolt-store",
+ "libp2p",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "jolt-store"
 version = "0.3.22"
 dependencies = [
