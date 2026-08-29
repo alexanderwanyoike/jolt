@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
     str::FromStr,
@@ -329,7 +328,7 @@ struct TimelineOutcome {
 }
 
 struct AuthorOutcome {
-    author_index: usize,
+    published_at: Option<Instant>,
     completed_at: Instant,
     latency_micros: u64,
     resolves: u64,
@@ -411,13 +410,13 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
     let mut phases = Vec::new();
     phases.push(
         measurement
-            .measure("cold", config.workload.records_per_identity, None)
+            .measure("cold", config.workload.records_per_identity)
             .await?
             .report,
     );
     phases.push(
         measurement
-            .measure("warm_no_change", config.workload.records_per_identity, None)
+            .measure("warm_no_change", config.workload.records_per_identity)
             .await?
             .report,
     );
@@ -425,14 +424,6 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
     for index in &plan.churned_providers {
         links[*index].set_offline(true);
     }
-    let published_at = publish_new_records(
-        &mut author_states,
-        &plan,
-        &providers,
-        workdir,
-        config.publish_rate_per_second,
-    )
-    .await?;
     if !plan.churned_providers.is_empty() {
         tokio::time::sleep(Duration::from_millis(config.churn_duration_ms)).await;
         for index in &plan.churned_providers {
@@ -449,10 +440,11 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
         wait_for_peer_count(&reader.handle, providers.len()).await?;
     }
     let measured_new_phase = measurement
-        .measure(
-            "new_record_refresh",
-            config.workload.records_per_identity + 1,
-            Some(&published_at),
+        .measure_new_records(
+            &mut author_states,
+            &providers,
+            workdir,
+            config.publish_rate_per_second,
         )
         .await?;
     let mut new_phase = measured_new_phase.report;
@@ -696,14 +688,17 @@ async fn publish_record(
         .map_err(|error| anyhow::anyhow!("daemon returned invalid content id: {error}"))
 }
 
-async fn publish_new_records(
+async fn publish_and_refresh_new_records(
     states: &mut [AuthorState],
     plan: &WorkloadPlan,
     providers: &[RunningDaemon],
     workdir: &Path,
     rate: u64,
-) -> anyhow::Result<BTreeMap<usize, Instant>> {
-    let mut published_at = BTreeMap::new();
+    reader: &DaemonHandle,
+    concurrency: usize,
+) -> anyhow::Result<TimelineOutcome> {
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+    let mut tasks = JoinSet::new();
     let delay = (rate > 0).then(|| Duration::from_secs_f64(1.0 / rate as f64));
     for author_index in &plan.followed_authors {
         let state = &mut states[*author_index];
@@ -746,12 +741,19 @@ async fn publish_new_records(
             )
             .await?;
         state.plan.records.push(record);
-        published_at.insert(*author_index, Instant::now());
+        spawn_author_refresh(
+            &mut tasks,
+            semaphore.clone(),
+            reader.clone(),
+            state.plan.clone(),
+            state.plan.records.len(),
+            Some(Instant::now()),
+        );
         if let Some(delay) = delay {
             tokio::time::sleep(delay).await;
         }
     }
-    Ok(published_at)
+    Ok(collect_author_outcomes(tasks).await)
 }
 
 struct MeasuredPhase {
@@ -772,20 +774,13 @@ impl MeasurementContext<'_> {
         &mut self,
         name: &str,
         expected_records: usize,
-        published_at: Option<&BTreeMap<usize, Instant>>,
     ) -> anyhow::Result<MeasuredPhase> {
         let network_before = snapshot_links(self.links);
         let cache_before = cache_report(self.reader).await?;
         let process_before = process_report(self.system)?;
         let started = Instant::now();
-        let outcome = run_timeline(
-            self.reader,
-            self.plan,
-            expected_records,
-            self.concurrency,
-            published_at,
-        )
-        .await;
+        let outcome =
+            run_timeline(self.reader, self.plan, expected_records, self.concurrency).await;
         let wall_time_micros = started.elapsed().as_micros() as u64;
         let process_after = process_report(self.system)?;
         let cache_after = cache_report(self.reader).await?;
@@ -811,6 +806,53 @@ impl MeasurementContext<'_> {
             visibility: outcome.visibility.summarize(),
         })
     }
+
+    async fn measure_new_records(
+        &mut self,
+        states: &mut [AuthorState],
+        providers: &[RunningDaemon],
+        workdir: &Path,
+        publish_rate_per_second: u64,
+    ) -> anyhow::Result<MeasuredPhase> {
+        let network_before = snapshot_links(self.links);
+        let cache_before = cache_report(self.reader).await?;
+        let process_before = process_report(self.system)?;
+        let started = Instant::now();
+        let outcome = publish_and_refresh_new_records(
+            states,
+            self.plan,
+            providers,
+            workdir,
+            publish_rate_per_second,
+            self.reader,
+            self.concurrency,
+        )
+        .await?;
+        let wall_time_micros = started.elapsed().as_micros() as u64;
+        let process_after = process_report(self.system)?;
+        let cache_after = cache_report(self.reader).await?;
+        let network_after = snapshot_links(self.links);
+        let cpu_millis = process_after
+            .accumulated_cpu_millis
+            .saturating_sub(process_before.accumulated_cpu_millis);
+        let rss_growth_bytes = process_after.rss_bytes as i128 - process_before.rss_bytes as i128;
+        Ok(MeasuredPhase {
+            report: PhaseReport {
+                name: "new_record_refresh".to_string(),
+                wall_time_micros,
+                timeline_latency: outcome.accounting.summarize(),
+                network_bytes: network_after.difference(&network_before),
+                activity: outcome.activity,
+                cache_before,
+                cache_after,
+                process_before,
+                process_after,
+                cpu_millis,
+                rss_growth_bytes: rss_growth_bytes.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
+            },
+            visibility: outcome.visibility.summarize(),
+        })
+    }
 }
 
 async fn run_timeline(
@@ -818,53 +860,70 @@ async fn run_timeline(
     plan: &WorkloadPlan,
     expected_records: usize,
     concurrency: usize,
-    published_at: Option<&BTreeMap<usize, Instant>>,
 ) -> TimelineOutcome {
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let mut tasks = JoinSet::new();
     for author_index in &plan.followed_authors {
         let author = plan.authors[*author_index].clone();
-        let reader = reader.clone();
-        let semaphore = semaphore.clone();
-        tasks.spawn(async move {
-            let permit = semaphore.acquire_owned().await;
-            let started = Instant::now();
-            let result = match permit {
-                Ok(_permit) => refresh_author(&reader, &author, expected_records).await,
-                Err(error) => Err((0, 0, error.to_string())),
-            };
-            match result {
-                Ok((resolves, fetches)) => AuthorOutcome {
-                    author_index: author.index,
-                    completed_at: Instant::now(),
-                    latency_micros: started.elapsed().as_micros() as u64,
-                    resolves,
-                    fetches,
-                    error: None,
-                },
-                Err((resolves, fetches, error)) => AuthorOutcome {
-                    author_index: author.index,
-                    completed_at: Instant::now(),
-                    latency_micros: started.elapsed().as_micros() as u64,
-                    resolves,
-                    fetches,
-                    error: Some(error),
-                },
-            }
-        });
+        spawn_author_refresh(
+            &mut tasks,
+            semaphore.clone(),
+            reader.clone(),
+            author,
+            expected_records,
+            None,
+        );
     }
 
+    collect_author_outcomes(tasks).await
+}
+
+fn spawn_author_refresh(
+    tasks: &mut JoinSet<AuthorOutcome>,
+    semaphore: Arc<Semaphore>,
+    reader: DaemonHandle,
+    author: AuthorPlan,
+    expected_records: usize,
+    published_at: Option<Instant>,
+) {
+    tasks.spawn(async move {
+        let permit = semaphore.acquire_owned().await;
+        let started = Instant::now();
+        let result = match permit {
+            Ok(_permit) => refresh_author(&reader, &author, expected_records).await,
+            Err(error) => Err((0, 0, error.to_string())),
+        };
+        match result {
+            Ok((resolves, fetches)) => AuthorOutcome {
+                published_at,
+                completed_at: Instant::now(),
+                latency_micros: started.elapsed().as_micros() as u64,
+                resolves,
+                fetches,
+                error: None,
+            },
+            Err((resolves, fetches, error)) => AuthorOutcome {
+                published_at,
+                completed_at: Instant::now(),
+                latency_micros: started.elapsed().as_micros() as u64,
+                resolves,
+                fetches,
+                error: Some(error),
+            },
+        }
+    });
+}
+
+async fn collect_author_outcomes(mut tasks: JoinSet<AuthorOutcome>) -> TimelineOutcome {
     let mut outcome = TimelineOutcome::default();
     while let Some(result) = tasks.join_next().await {
         outcome.activity.identity_sync_requests += 1;
         match result {
             Ok(author) => {
-                if let Some(published) =
-                    published_at.and_then(|times| times.get(&author.author_index))
-                {
+                if let Some(published) = author.published_at {
                     let latency = author
                         .completed_at
-                        .saturating_duration_since(*published)
+                        .saturating_duration_since(published)
                         .as_micros() as u64;
                     if author.error.is_some() {
                         outcome.visibility.record_failure(latency, "not_visible");
