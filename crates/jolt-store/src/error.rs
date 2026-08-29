@@ -11,6 +11,9 @@ pub enum StoreError {
     #[error("Cache full: not enough space after evicting non-pinned content")]
     CacheFull,
 
+    #[error("Remote identity state is larger than the configured cache capacity")]
+    RemoteIdentityStateTooLarge,
+
     #[error("Content not found: {0}")]
     ContentNotFound(String),
 

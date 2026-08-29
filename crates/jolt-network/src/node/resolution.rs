@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use jolt_core::{
@@ -8,6 +8,7 @@ use jolt_core::{
     DeviceAuthorizationRecord, DeviceWriterLogEntry, DeviceWriterLogError, IdentityId, JoltAddress,
     ResolvedJoltTarget,
 };
+use jolt_store::{PersistedRemoteIdentityState, RemoteIdentityStateStore};
 use tokio::sync::oneshot;
 
 use crate::command::{AppendRecordInfo, ResolveResponse};
@@ -119,6 +120,124 @@ pub(super) struct DeviceWriterSyncWorkQueue {
     pub(super) received_entries: u64,
     pub(super) received_bytes: u64,
     pub(super) full_recoveries: u64,
+}
+
+pub(super) struct RemoteIdentityPersistenceWorker {
+    shared: Arc<(Mutex<RemoteIdentityPersistenceState>, Condvar)>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+struct RemoteIdentityPersistenceState {
+    pending: HashMap<IdentityId, Arc<super::CachedDeviceWriterState>>,
+    order: VecDeque<IdentityId>,
+    active: bool,
+    accepting: bool,
+}
+
+impl RemoteIdentityPersistenceWorker {
+    pub(super) fn new(store: RemoteIdentityStateStore) -> Self {
+        let shared = Arc::new((
+            Mutex::new(RemoteIdentityPersistenceState {
+                pending: HashMap::new(),
+                order: VecDeque::new(),
+                active: false,
+                accepting: true,
+            }),
+            Condvar::new(),
+        ));
+        let worker_shared = Arc::clone(&shared);
+        let thread = std::thread::Builder::new()
+            .name("jolt-remote-identity-persistence".to_string())
+            .spawn(move || loop {
+                let (identity, state) = {
+                    let (lock, ready) = &*worker_shared;
+                    let mut state = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                    while state.order.is_empty() && state.accepting {
+                        state = ready
+                            .wait(state)
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    }
+                    let Some(identity) = state.order.pop_front() else {
+                        break;
+                    };
+                    let snapshot = state
+                        .pending
+                        .remove(&identity)
+                        .expect("queued persistence identity has a snapshot");
+                    state.active = true;
+                    (identity, snapshot)
+                };
+
+                let record = persisted_remote_identity_state(&identity, &state);
+                if let Err(error) = store.save(&record) {
+                    tracing::warn!(
+                        %identity,
+                        %error,
+                        "verified remote identity state could not be persisted"
+                    );
+                }
+
+                let (lock, ready) = &*worker_shared;
+                let mut shared = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                shared.active = false;
+                if shared.order.is_empty() {
+                    ready.notify_all();
+                }
+            })
+            .expect("remote identity persistence worker thread must start");
+        Self {
+            shared,
+            thread: Some(thread),
+        }
+    }
+
+    fn enqueue(
+        &self,
+        identity: IdentityId,
+        state: Arc<super::CachedDeviceWriterState>,
+    ) -> Result<(), NetworkError> {
+        let (lock, ready) = &*self.shared;
+        let mut shared = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !shared.accepting {
+            return Err(NetworkError::Protocol(
+                "remote identity persistence worker is shutting down".to_string(),
+            ));
+        }
+        if shared.pending.insert(identity.clone(), state).is_none() {
+            shared.order.push_back(identity);
+        }
+        ready.notify_one();
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(super) fn flush(&self) {
+        let (lock, ready) = &*self.shared;
+        let mut shared = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        while shared.active || !shared.order.is_empty() {
+            shared = ready
+                .wait(shared)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+    }
+
+    pub(super) fn shutdown(&mut self) {
+        let (lock, ready) = &*self.shared;
+        {
+            let mut shared = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            shared.accepting = false;
+            ready.notify_all();
+        }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+impl Drop for RemoteIdentityPersistenceWorker {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
 }
 
 impl DeviceWriterSyncWorkQueue {
@@ -287,7 +406,7 @@ impl NetworkNode {
         device_logs: Vec<Vec<DeviceWriterLogEntry>>,
     ) -> Result<u64, NetworkError> {
         let existing = self.device_writer_states.get(&identity);
-        let state = merge_verified_device_writer_state(
+        let mut state = merge_verified_device_writer_state(
             &identity,
             existing.cloned(),
             authority_records,
@@ -296,6 +415,8 @@ impl NetworkNode {
             Vec::new(),
             true,
         )?;
+        state.last_verified_at = super::unix_now();
+        state.source_peer = None;
         if identity == self.identity.identity_id() {
             let local_device_id = self.local_device_id();
             if let Some(synced_local_log) = state.device_logs.get(&local_device_id) {
@@ -316,8 +437,53 @@ impl NetworkNode {
             }
         }
         let authority_sequence = state.authority_sequence;
+        if identity != self.identity.identity_id() {
+            self.persist_remote_identity_state(&identity, &state, None)?;
+        }
         self.device_writer_states.insert(identity, Arc::new(state));
         Ok(authority_sequence)
+    }
+
+    fn persist_remote_identity_state(
+        &self,
+        identity: &IdentityId,
+        state: &super::CachedDeviceWriterState,
+        source_peer: Option<String>,
+    ) -> Result<(), NetworkError> {
+        let mut record = persisted_remote_identity_state(identity, state);
+        record.source_peer = source_peer.or(record.source_peer);
+        self.store
+            .save_remote_identity_state(&record)
+            .map_err(|error| {
+                NetworkError::Protocol(format!(
+                    "failed to persist verified remote identity state for {identity}: {error}"
+                ))
+            })
+    }
+
+    pub(super) fn restore_persisted_remote_identity_state(
+        &mut self,
+        record: PersistedRemoteIdentityState,
+    ) -> Result<(), NetworkError> {
+        let identity = record.identity;
+        if identity == self.identity.identity_id() {
+            return Err(NetworkError::Protocol(
+                "remote identity state cannot replace local-authority state".to_string(),
+            ));
+        }
+        let mut state = merge_verified_device_writer_state(
+            &identity,
+            None,
+            record.authority_records,
+            record.device_logs,
+            LEGACY_DEVICE_WRITER_SYNC_VERSION,
+            Vec::new(),
+            true,
+        )?;
+        state.last_verified_at = record.last_verified_at;
+        state.source_peer = record.source_peer;
+        self.device_writer_states.insert(identity, Arc::new(state));
+        Ok(())
     }
 
     /// A provider-facing snapshot of the device-writer state cached for an
@@ -347,7 +513,10 @@ impl NetworkNode {
         Some((state.authority_records.clone(), device_logs))
     }
 
-    fn device_writer_sync_cursors(&self, identity: &IdentityId) -> Vec<DeviceWriterCursor> {
+    pub(super) fn device_writer_sync_cursors(
+        &self,
+        identity: &IdentityId,
+    ) -> Vec<DeviceWriterCursor> {
         let Some(state) = self.device_writer_states.get(identity) else {
             return Vec::new();
         };
@@ -958,6 +1127,32 @@ impl NetworkNode {
     }
 }
 
+fn persisted_remote_identity_state(
+    identity: &IdentityId,
+    state: &super::CachedDeviceWriterState,
+) -> PersistedRemoteIdentityState {
+    let mut device_logs: Vec<_> = state.device_logs.values().cloned().collect();
+    device_logs.sort_by(|left, right| {
+        left.first()
+            .map(|entry| entry.body.device_id.as_str())
+            .unwrap_or("")
+            .cmp(
+                right
+                    .first()
+                    .map(|entry| entry.body.device_id.as_str())
+                    .unwrap_or(""),
+            )
+    });
+    PersistedRemoteIdentityState {
+        version: PersistedRemoteIdentityState::VERSION,
+        identity: identity.clone(),
+        authority_records: state.authority_records.clone(),
+        device_logs,
+        last_verified_at: state.last_verified_at,
+        source_peer: state.source_peer.clone(),
+    }
+}
+
 pub(super) fn device_log_is_prefix(
     prefix: &[DeviceWriterLogEntry],
     candidate: &[DeviceWriterLogEntry],
@@ -1020,6 +1215,13 @@ fn merge_verified_device_writer_state(
     heads: Vec<DeviceWriterCursor>,
     complete: bool,
 ) -> Result<super::CachedDeviceWriterState, NetworkError> {
+    let last_verified_at = existing
+        .as_ref()
+        .map(|state| state.last_verified_at)
+        .unwrap_or_default();
+    let source_peer = existing
+        .as_ref()
+        .and_then(|state| state.source_peer.clone());
     let candidate_authority = verify_identity_authority_chain(identity, &authority_records)
         .map_err(|error| NetworkError::Protocol(error.to_string()))?;
     let use_candidate_authority = existing
@@ -1112,6 +1314,8 @@ fn merge_verified_device_writer_state(
     Ok(super::CachedDeviceWriterState {
         authority_sequence: authority.latest_sequence,
         merged,
+        last_verified_at,
+        source_peer,
         authority_records,
         device_logs: accumulated,
     })
@@ -1204,7 +1408,12 @@ impl NetworkNode {
                 work.sync_version,
                 work.heads,
                 work.continuation.is_none(),
-            );
+            )
+            .map(|mut state| {
+                state.last_verified_at = super::unix_now();
+                state.source_peer = Some(work.provider.to_string());
+                state
+            });
             let _ = completion_tx.blocking_send(CompletedDeviceWriterSyncWork { id, result });
         });
     }
@@ -1246,8 +1455,21 @@ impl NetworkNode {
                     _ => false,
                 };
                 if snapshot_is_current {
+                    let state = Arc::new(state);
+                    if active.identity != self.identity.identity_id() {
+                        if let Err(error) = self
+                            .remote_identity_persistence
+                            .enqueue(active.identity.clone(), state.clone())
+                        {
+                            tracing::warn!(
+                                identity = %active.identity,
+                                %error,
+                                "verified remote identity state could not be queued for persistence"
+                            );
+                        }
+                    }
                     self.device_writer_states
-                        .insert(active.identity.clone(), Arc::new(state));
+                        .insert(active.identity.clone(), state);
                 }
                 self.device_writer_sync_work.verified += 1;
 
@@ -1318,6 +1540,7 @@ impl NetworkNode {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     use jolt_core::{
@@ -2098,6 +2321,47 @@ mod tests {
         assert_eq!(records[1].path, "/spoke/posts/2");
         assert_eq!(records[1].content_id, post_b.to_string());
         assert_eq!(records[0].device_id, device_id);
+
+        node.remote_identity_persistence.flush();
+        let persisted = node.store.load_remote_identity_states().unwrap();
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].identity, identity);
+        assert_eq!(persisted[0].source_peer, Some(provider.to_string()));
+        assert!(persisted[0].last_verified_at > 0);
+    }
+
+    #[test]
+    fn persistence_worker_coalesces_a_burst_to_the_latest_identity_snapshot() {
+        let dir = tempdir().unwrap();
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        let mut worker =
+            super::RemoteIdentityPersistenceWorker::new(store.remote_identity_state_store());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let authority = vec![authorize_device(&root, &laptop, "dev_burst")];
+
+        for last_verified_at in 1..=128 {
+            let mut state = super::merge_verified_device_writer_state(
+                &identity,
+                None,
+                authority.clone(),
+                Vec::new(),
+                crate::protocol::LEGACY_DEVICE_WRITER_SYNC_VERSION,
+                Vec::new(),
+                true,
+            )
+            .unwrap();
+            state.last_verified_at = last_verified_at;
+            worker.enqueue(identity.clone(), Arc::new(state)).unwrap();
+        }
+
+        worker.flush();
+        let persisted = store.load_remote_identity_states().unwrap();
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].identity, identity);
+        assert_eq!(persisted[0].last_verified_at, 128);
+        worker.shutdown();
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -2998,6 +3262,18 @@ mod tests {
         // The rejected entry is preserved as a diagnostic, not silently dropped.
         let state = node.device_writer_states.get(&identity).unwrap();
         assert!(state
+            .merged
+            .rejected_entries
+            .iter()
+            .any(|entry| entry.content_id.as_ref() == Some(&revoked_record)));
+
+        drop(node);
+        let reloaded = make_node(dir.path());
+        assert!(reloaded
+            .enumerate_append_records(&identity, "/spoke/posts/")
+            .unwrap()
+            .is_empty());
+        assert!(reloaded.device_writer_states[&identity]
             .merged
             .rejected_entries
             .iter()

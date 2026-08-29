@@ -62,6 +62,12 @@ struct PendingUpdateLogPin {
 struct CachedDeviceWriterState {
     authority_sequence: u64,
     merged: MergedDeviceIdentityState,
+    /// Wall-clock time when these signed inputs last passed verification. This
+    /// is observation metadata, not a claim about the remote author's clock.
+    last_verified_at: u64,
+    /// Peer that supplied the latest accepted snapshot, when it came from the
+    /// network. Direct/admin ingestion has no peer provenance.
+    source_peer: Option<String>,
     /// The raw verified authority chain, retained so this node can re-serve the
     /// device-writer state to other nodes over the network and re-merge it when
     /// additional device logs arrive.
@@ -175,6 +181,7 @@ pub struct NetworkNode {
     /// identity, keyed by identity.
     pending_device_writer_waiters: HashMap<IdentityId, Vec<resolution::DeviceWriterSyncWaiter>>,
     device_writer_sync_work: resolution::DeviceWriterSyncWorkQueue,
+    remote_identity_persistence: resolution::RemoteIdentityPersistenceWorker,
     /// Active provider discovery queries, coalesced by identity so concurrent
     /// resolve paths share one DHT and relay lookup.
     active_update_log_provider_queries: HashMap<IdentityId, libp2p::kad::QueryId>,
@@ -676,6 +683,7 @@ impl NetworkNode {
         self.handle_command(command);
         if should_shutdown {
             self.shutdown_device_writer_sync_work();
+            self.remote_identity_persistence.shutdown();
             info!("Daemon shutting down");
         }
         should_shutdown

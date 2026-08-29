@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,8 @@ pub struct ContentStore {
     cache_dir: PathBuf,
     update_logs_dir: PathBuf,
     device_writer_logs_dir: PathBuf,
+    remote_identity_states_dir: PathBuf,
+    remote_identity_state_index: Arc<Mutex<RemoteIdentityStateIndex>>,
     home_relay_pins_path: PathBuf,
     ingress_queue_path: PathBuf,
     local_device_signing_key_path: PathBuf,
@@ -31,10 +34,34 @@ pub struct ContentStore {
     published_content: HashMap<String, PathBuf>,
 }
 
+/// Cloneable, path-scoped handle for background persistence. It can only
+/// access disposable remote identity snapshots, never local-authority state.
+#[derive(Clone)]
+pub struct RemoteIdentityStateStore {
+    dir: PathBuf,
+    max_size_bytes: u64,
+    index: Arc<Mutex<RemoteIdentityStateIndex>>,
+}
+
+#[derive(Debug, Default)]
+struct RemoteIdentityStateIndex {
+    entries: HashMap<String, RemoteIdentityStateIndexEntry>,
+    total_size: u64,
+    next_write_order: u128,
+}
+
+#[derive(Debug)]
+struct RemoteIdentityStateIndexEntry {
+    path: PathBuf,
+    size: u64,
+    write_order: u128,
+}
+
 const MAX_DISCOVERED_PEER_HINTS: usize = 64;
 const DISCOVERED_PEER_HINT_TTL_SECS: u64 = 30 * 24 * 60 * 60;
 const MAX_DISCOVERED_PEER_FAILURES: u32 = 3;
 const MAX_STORED_RELAY_RECORDS: usize = 64;
+const MAX_REMOTE_IDENTITY_STATES: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishedContentEntry {
@@ -58,6 +85,24 @@ pub struct PersistedDeviceWriterLog {
     pub other_device_logs: Vec<Vec<DeviceWriterLogEntry>>,
     #[serde(default)]
     pub record_mutations: BTreeMap<String, PersistedRecordMutation>,
+}
+
+/// Untrusted-on-load snapshot of one remote identity's last verified signed
+/// inputs. The network layer re-verifies these records and rebuilds all derived
+/// merge state before they become readable after restart.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PersistedRemoteIdentityState {
+    pub version: u16,
+    pub identity: IdentityId,
+    pub authority_records: Vec<DeviceAuthorizationRecord>,
+    pub device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    pub last_verified_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_peer: Option<String>,
+}
+
+impl PersistedRemoteIdentityState {
+    pub const VERSION: u16 = 1;
 }
 
 impl PersistedDeviceWriterLog {
@@ -183,6 +228,7 @@ impl ContentStore {
         let cache_dir = base_dir.join("cache");
         let update_logs_dir = base_dir.join("update_logs");
         let device_writer_logs_dir = base_dir.join("device_writer_logs");
+        let remote_identity_states_dir = base_dir.join("remote_identity_states");
         let home_relay_pins_path = base_dir.join("home_relay_pins.json");
         let ingress_queue_path = base_dir.join("ingress_queue.json");
         let local_device_signing_key_path = base_dir.join("local_device_signing_key.bin");
@@ -195,9 +241,13 @@ impl ContentStore {
         std::fs::create_dir_all(&cache_dir)?;
         std::fs::create_dir_all(&update_logs_dir)?;
         std::fs::create_dir_all(&device_writer_logs_dir)?;
+        std::fs::create_dir_all(&remote_identity_states_dir)?;
 
         let cache_index = Self::load_index(&cache_dir)?;
         let published_content = Self::scan_published(&published_dir)?;
+        let remote_identity_state_index = Arc::new(Mutex::new(RemoteIdentityStateIndex::scan(
+            &remote_identity_states_dir,
+        )?));
 
         info!(
             "Content store opened: {} published, {} cached",
@@ -210,6 +260,8 @@ impl ContentStore {
             cache_dir,
             update_logs_dir,
             device_writer_logs_dir,
+            remote_identity_states_dir,
+            remote_identity_state_index,
             home_relay_pins_path,
             ingress_queue_path,
             local_device_signing_key_path,
@@ -446,6 +498,103 @@ impl ContentStore {
         let record =
             serde_json::from_str(&json).map_err(|e| StoreError::Serialization(e.to_string()))?;
         Ok(Some(record))
+    }
+
+    /// Atomically persist the signed inputs behind a remote identity's Last
+    /// Verified View. Local-authority state uses `save_device_writer_log` and
+    /// is deliberately kept outside this disposable cache namespace.
+    pub fn save_remote_identity_state(
+        &self,
+        record: &PersistedRemoteIdentityState,
+    ) -> Result<(), StoreError> {
+        self.remote_identity_state_store().save(record)
+    }
+
+    pub fn remote_identity_state_store(&self) -> RemoteIdentityStateStore {
+        RemoteIdentityStateStore {
+            dir: self.remote_identity_states_dir.clone(),
+            max_size_bytes: self.cache_config.max_size_bytes,
+            index: Arc::clone(&self.remote_identity_state_index),
+        }
+    }
+
+    /// Load independently persisted remote snapshots. A corrupt, partial, or
+    /// incompatible file is skipped rather than preventing daemon startup;
+    /// callers must still verify every signed record before trusting it.
+    pub fn load_remote_identity_states(
+        &self,
+    ) -> Result<Vec<PersistedRemoteIdentityState>, StoreError> {
+        let mut candidates = Vec::new();
+        for entry in std::fs::read_dir(&self.remote_identity_states_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    warn!(path = %path.display(), %error, "skipping unreadable remote identity state");
+                    continue;
+                }
+            };
+            if metadata.len() > self.cache_config.max_size_bytes {
+                warn!(path = %path.display(), size = metadata.len(), "skipping oversized remote identity state");
+                continue;
+            }
+            let last_modified = metadata
+                .modified()
+                .ok()
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_nanos())
+                .unwrap_or_default();
+            candidates.push((last_modified, path, metadata.len()));
+        }
+        candidates.sort_by(|left, right| (right.0, &right.1).cmp(&(left.0, &left.1)));
+
+        let mut records = Vec::new();
+        let mut inspected_bytes = 0_u64;
+        let mut inspected_count = 0_usize;
+        for (_, path, size) in candidates {
+            if inspected_count >= MAX_REMOTE_IDENTITY_STATES {
+                break;
+            }
+            if inspected_bytes.saturating_add(size) > self.cache_config.max_size_bytes {
+                continue;
+            }
+            inspected_count += 1;
+            inspected_bytes = inspected_bytes.saturating_add(size);
+            let json = match std::fs::read_to_string(&path) {
+                Ok(json) => json,
+                Err(error) => {
+                    warn!(path = %path.display(), %error, "skipping unreadable remote identity state");
+                    continue;
+                }
+            };
+            let record: PersistedRemoteIdentityState = match serde_json::from_str(&json) {
+                Ok(record) => record,
+                Err(error) => {
+                    warn!(path = %path.display(), %error, "skipping corrupt remote identity state");
+                    continue;
+                }
+            };
+            if record.version != PersistedRemoteIdentityState::VERSION {
+                warn!(
+                    path = %path.display(),
+                    version = record.version,
+                    "skipping incompatible remote identity state"
+                );
+                continue;
+            }
+            if path.file_stem().and_then(|stem| stem.to_str())
+                != Some(record.identity.to_string().as_str())
+            {
+                warn!(path = %path.display(), identity = %record.identity, "skipping mismatched remote identity state");
+                continue;
+            }
+            records.push(record);
+        }
+        Ok(records)
     }
 
     /// Persist the recipient-controlled ingress queue. Ingress envelopes are
@@ -932,6 +1081,100 @@ impl ContentStore {
     }
 }
 
+impl RemoteIdentityStateStore {
+    pub fn save(&self, record: &PersistedRemoteIdentityState) -> Result<(), StoreError> {
+        let path = self.dir.join(format!("{}.json", record.identity));
+        let tmp_path = path.with_extension("json.tmp");
+        let json =
+            serde_json::to_string(record).map_err(|e| StoreError::Serialization(e.to_string()))?;
+        if json.len() as u64 > self.max_size_bytes {
+            return Err(StoreError::RemoteIdentityStateTooLarge);
+        }
+        let mut index = self
+            .index
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::fs::write(&tmp_path, json)?;
+        let new_size = std::fs::metadata(&tmp_path)?.len();
+        let identity = record.identity.to_string();
+        if let Some(previous) = index.entries.remove(&identity) {
+            index.total_size = index.total_size.saturating_sub(previous.size);
+        }
+        while index.entries.len() >= MAX_REMOTE_IDENTITY_STATES
+            || index.total_size.saturating_add(new_size) > self.max_size_bytes
+        {
+            let Some(oldest) = index
+                .entries
+                .iter()
+                .min_by(|left, right| {
+                    (left.1.write_order, &left.1.path).cmp(&(right.1.write_order, &right.1.path))
+                })
+                .map(|(identity, _)| identity.clone())
+            else {
+                let _ = std::fs::remove_file(&tmp_path);
+                return Err(StoreError::RemoteIdentityStateTooLarge);
+            };
+            let evicted = index.entries.remove(&oldest).expect("indexed entry exists");
+            std::fs::remove_file(&evicted.path)?;
+            index.total_size = index.total_size.saturating_sub(evicted.size);
+        }
+        std::fs::rename(tmp_path, &path)?;
+        let write_order = index.next_write_order;
+        index.next_write_order = index.next_write_order.saturating_add(1);
+        index.total_size = index.total_size.saturating_add(new_size);
+        index.entries.insert(
+            identity,
+            RemoteIdentityStateIndexEntry {
+                path,
+                size: new_size,
+                write_order,
+            },
+        );
+        Ok(())
+    }
+}
+
+impl RemoteIdentityStateIndex {
+    fn scan(dir: &Path) -> Result<Self, StoreError> {
+        let mut candidates = Vec::new();
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let metadata = entry.metadata()?;
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_nanos())
+                .unwrap_or_default();
+            candidates.push((modified, path, metadata.len()));
+        }
+        candidates.sort_by(|left, right| (left.0, &left.1).cmp(&(right.0, &right.1)));
+
+        let mut index = Self::default();
+        for (_, path, size) in candidates {
+            let Some(identity) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                continue;
+            };
+            let write_order = index.next_write_order;
+            index.next_write_order = index.next_write_order.saturating_add(1);
+            index.total_size = index.total_size.saturating_add(size);
+            index.entries.insert(
+                identity.to_string(),
+                RemoteIdentityStateIndexEntry {
+                    path,
+                    size,
+                    write_order,
+                },
+            );
+        }
+        Ok(index)
+    }
+}
+
 fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1058,6 +1301,105 @@ mod tests {
         assert!(dir.path().join("published").exists());
         assert!(dir.path().join("cache").exists());
         assert!(dir.path().join("update_logs").exists());
+        assert!(dir.path().join("remote_identity_states").exists());
+    }
+
+    #[test]
+    fn remote_identity_state_loading_skips_partial_corrupt_incompatible_and_swapped_files() {
+        let dir = tempdir().unwrap();
+        let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+        let valid_identity = NodeIdentity::generate().identity_id();
+        let valid = PersistedRemoteIdentityState {
+            version: PersistedRemoteIdentityState::VERSION,
+            identity: valid_identity.clone(),
+            authority_records: Vec::new(),
+            device_logs: Vec::new(),
+            last_verified_at: 123,
+            source_peer: Some("peer-valid".to_string()),
+        };
+        store.save_remote_identity_state(&valid).unwrap();
+
+        let states_dir = dir.path().join("remote_identity_states");
+        std::fs::write(states_dir.join("corrupt.json"), b"not json").unwrap();
+        std::fs::write(states_dir.join("partial.json.tmp"), b"{").unwrap();
+
+        let incompatible_identity = NodeIdentity::generate().identity_id();
+        let incompatible = PersistedRemoteIdentityState {
+            version: PersistedRemoteIdentityState::VERSION + 1,
+            identity: incompatible_identity,
+            authority_records: Vec::new(),
+            device_logs: Vec::new(),
+            last_verified_at: 456,
+            source_peer: None,
+        };
+        store.save_remote_identity_state(&incompatible).unwrap();
+
+        let swapped_identity = NodeIdentity::generate().identity_id();
+        let swapped = PersistedRemoteIdentityState {
+            version: PersistedRemoteIdentityState::VERSION,
+            identity: swapped_identity,
+            authority_records: Vec::new(),
+            device_logs: Vec::new(),
+            last_verified_at: 789,
+            source_peer: None,
+        };
+        std::fs::write(
+            states_dir.join("wrong-identity.json"),
+            serde_json::to_vec(&swapped).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(store.load_remote_identity_states().unwrap(), vec![valid]);
+        assert!(!states_dir
+            .join(format!("{valid_identity}.json.tmp"))
+            .exists());
+    }
+
+    #[test]
+    fn remote_identity_state_quota_evicts_the_oldest_whole_identity_only() {
+        let record = |last_verified_at| PersistedRemoteIdentityState {
+            version: PersistedRemoteIdentityState::VERSION,
+            identity: NodeIdentity::generate().identity_id(),
+            authority_records: Vec::new(),
+            device_logs: Vec::new(),
+            last_verified_at,
+            source_peer: None,
+        };
+        let oldest = record(100);
+        let middle = record(200);
+        let newest = record(300);
+        let quota =
+            serde_json::to_vec(&middle).unwrap().len() + serde_json::to_vec(&newest).unwrap().len();
+        let dir = tempdir().unwrap();
+        let store = ContentStore::open(
+            dir.path(),
+            CacheConfig {
+                max_size_bytes: quota as u64,
+            },
+        )
+        .unwrap();
+        let local_state = dir.path().join("device_writer_logs/local.json");
+        std::fs::write(&local_state, b"local authority state").unwrap();
+
+        store.save_remote_identity_state(&oldest).unwrap();
+        store.save_remote_identity_state(&middle).unwrap();
+        store.save_remote_identity_state(&newest).unwrap();
+
+        let loaded = store.load_remote_identity_states().unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert!(loaded
+            .iter()
+            .any(|record| record.identity == middle.identity));
+        assert!(loaded
+            .iter()
+            .any(|record| record.identity == newest.identity));
+        assert!(!loaded
+            .iter()
+            .any(|record| record.identity == oldest.identity));
+        assert_eq!(
+            std::fs::read(local_state).unwrap(),
+            b"local authority state"
+        );
     }
 
     #[test]

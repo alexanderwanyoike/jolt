@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use jolt_identity::NodeIdentity;
 use jolt_store::ContentStore;
+use tracing::warn;
 
 use crate::config::NetworkConfig;
 use crate::error::NetworkError;
@@ -47,6 +48,9 @@ impl NetworkNode {
         built: BuiltTransport,
     ) -> Result<Self, NetworkError> {
         let update_logs = Self::load_persisted_local_update_log(&store, &identity)?;
+        let remote_identity_persistence = super::resolution::RemoteIdentityPersistenceWorker::new(
+            store.remote_identity_state_store(),
+        );
         let bootstrap_peer_ids = Self::parse_bootstrap_peer_ids(&config.effective_bootstrap_relays);
         let local_encryption_key = Self::load_persisted_local_encryption_key(&store, &identity)?;
         // Friend requests and other recipient-controlled envelopes must survive
@@ -81,6 +85,7 @@ impl NetworkNode {
                 config.device_writer_sync_max_concurrency,
                 config.device_writer_sync_queue_capacity,
             ),
+            remote_identity_persistence,
             active_update_log_provider_queries: HashMap::new(),
             cached_update_log_refreshes: HashMap::new(),
             device_writer_refreshes: HashMap::new(),
@@ -121,6 +126,16 @@ impl NetworkNode {
         // so posts/accepted-reply refs published before a restart still
         // enumerate and are served to peers.
         node.load_persisted_local_device_writer_log()?;
+        for record in node.store.load_remote_identity_states().map_err(|error| {
+            NetworkError::Protocol(format!(
+                "failed to scan persisted remote identity state: {error}"
+            ))
+        })? {
+            let identity = record.identity.clone();
+            if let Err(error) = node.restore_persisted_remote_identity_state(record) {
+                warn!(%identity, %error, "skipping invalid persisted remote identity state");
+            }
+        }
         node.ensure_local_device_authority()?;
 
         Ok(node)
@@ -174,6 +189,7 @@ mod tests {
     use crate::config::NetworkConfig;
     use crate::error::NetworkError;
     use crate::node::NetworkNode;
+    use crate::protocol::DeviceWriterCursor;
 
     fn make_store(dir: &std::path::Path) -> ContentStore {
         ContentStore::open(dir, CacheConfig::default()).unwrap()
@@ -340,6 +356,205 @@ mod tests {
             paths.contains(&"/spoke/posts/p1") && paths.contains(&"/spoke/accepted/p1/r1"),
             "local append records must survive a daemon restart, got {paths:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn remotely_verified_append_records_survive_node_restart() {
+        let dir = tempdir().unwrap();
+        let key_dir = tempdir().unwrap();
+        let local_identity = NodeIdentity::generate();
+        local_identity.save(key_dir.path()).unwrap();
+        let remote_root = NodeIdentity::generate();
+        let remote_device = NodeIdentity::generate();
+        let remote_identity = remote_root.identity_id();
+        let device_id = "dev_remote_persisted";
+        let authority = vec![DeviceAuthorizationRecord::genesis(
+            remote_root.public_key_bytes(),
+            remote_identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                device_id,
+                remote_device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Remote device".to_string()),
+                100,
+            ),
+            100,
+            |bytes| remote_root.sign(bytes),
+        )
+        .unwrap()];
+        let log = vec![DeviceWriterLogEntry::genesis(
+            remote_identity.clone(),
+            device_id,
+            DeviceWriterOperation::set_path(
+                "/spoke/posts/remote-1",
+                ContentId::from_bytes(b"remote post"),
+                DeviceWriterPathMode::Append,
+            ),
+            101,
+            |bytes| remote_device.sign(bytes),
+        )
+        .unwrap()];
+        let appended = log[0]
+            .append(
+                DeviceWriterOperation::set_path(
+                    "/spoke/posts/remote-2",
+                    ContentId::from_bytes(b"remote post 2"),
+                    DeviceWriterPathMode::Append,
+                ),
+                102,
+                |bytes| remote_device.sign(bytes),
+            )
+            .unwrap();
+        let first_cursor = DeviceWriterCursor::from_entry(&log[0]);
+        let appended_cursor = DeviceWriterCursor::from_entry(&appended);
+
+        let verified_at;
+        {
+            let store = make_store(dir.path());
+            let mut node =
+                NetworkNode::new_tcp(local_identity, store, NetworkConfig::test_config()).unwrap();
+            node.store_verified_device_writer_logs(
+                remote_identity.clone(),
+                authority.clone(),
+                vec![log.clone()],
+            )
+            .unwrap();
+            assert_eq!(
+                node.enumerate_append_records(&remote_identity, "/spoke/posts/")
+                    .unwrap()
+                    .len(),
+                1
+            );
+            verified_at = node
+                .device_writer_states
+                .get(&remote_identity)
+                .unwrap()
+                .last_verified_at;
+            assert!(verified_at > 0);
+        }
+
+        let reloaded = NodeIdentity::load(key_dir.path()).unwrap();
+        let store = make_store(dir.path());
+        let mut node = NetworkNode::new_tcp(reloaded, store, NetworkConfig::test_config()).unwrap();
+        assert_eq!(
+            node.enumerate_append_records(&remote_identity, "/spoke/posts/")
+                .unwrap()
+                .len(),
+            1,
+            "the remote Last Verified View must remain readable while its author is offline"
+        );
+        let observation = node.device_writer_states.get(&remote_identity).unwrap();
+        assert_eq!(observation.last_verified_at, verified_at);
+        assert!(observation.source_peer.is_none());
+        assert_eq!(
+            node.device_writer_sync_cursors(&remote_identity),
+            vec![first_cursor]
+        );
+
+        node.store_verified_device_writer_logs(
+            remote_identity.clone(),
+            authority,
+            vec![vec![appended]],
+        )
+        .unwrap();
+        assert_eq!(
+            node.enumerate_append_records(&remote_identity, "/spoke/posts/")
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            node.device_writer_sync_cursors(&remote_identity),
+            vec![appended_cursor]
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_persisted_remote_identity_does_not_block_other_last_verified_views() {
+        let dir = tempdir().unwrap();
+        let key_dir = tempdir().unwrap();
+        let local_identity = NodeIdentity::generate();
+        local_identity.save(key_dir.path()).unwrap();
+        let valid_root = NodeIdentity::generate();
+        let valid_device = NodeIdentity::generate();
+        let valid_identity = valid_root.identity_id();
+        let valid_authority = vec![DeviceAuthorizationRecord::genesis(
+            valid_root.public_key_bytes(),
+            valid_identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_valid",
+                valid_device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                None,
+                100,
+            ),
+            100,
+            |bytes| valid_root.sign(bytes),
+        )
+        .unwrap()];
+        let valid_log = vec![DeviceWriterLogEntry::genesis(
+            valid_identity.clone(),
+            "dev_valid",
+            DeviceWriterOperation::set_path(
+                "/posts/valid",
+                ContentId::from_bytes(b"valid"),
+                DeviceWriterPathMode::Append,
+            ),
+            101,
+            |bytes| valid_device.sign(bytes),
+        )
+        .unwrap()];
+
+        {
+            let store = make_store(dir.path());
+            let mut node =
+                NetworkNode::new_tcp(local_identity, store, NetworkConfig::test_config()).unwrap();
+            node.store_verified_device_writer_logs(
+                valid_identity.clone(),
+                valid_authority,
+                vec![valid_log],
+            )
+            .unwrap();
+        }
+
+        let invalid_root = NodeIdentity::generate();
+        let invalid_device = NodeIdentity::generate();
+        let invalid_identity = invalid_root.identity_id();
+        let mut invalid_authority = vec![DeviceAuthorizationRecord::genesis(
+            invalid_root.public_key_bytes(),
+            invalid_identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                "dev_invalid",
+                invalid_device.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                None,
+                100,
+            ),
+            100,
+            |bytes| invalid_root.sign(bytes),
+        )
+        .unwrap()];
+        invalid_authority[0].signature[0] ^= 0xff;
+        let store = make_store(dir.path());
+        store
+            .save_remote_identity_state(&jolt_store::PersistedRemoteIdentityState {
+                version: jolt_store::PersistedRemoteIdentityState::VERSION,
+                identity: invalid_identity.clone(),
+                authority_records: invalid_authority,
+                device_logs: Vec::new(),
+                last_verified_at: 1,
+                source_peer: None,
+            })
+            .unwrap();
+
+        let node = NetworkNode::new_tcp(
+            NodeIdentity::load(key_dir.path()).unwrap(),
+            make_store(dir.path()),
+            NetworkConfig::test_config(),
+        )
+        .unwrap();
+        assert!(node.device_writer_states.contains_key(&valid_identity));
+        assert!(!node.device_writer_states.contains_key(&invalid_identity));
     }
 
     #[tokio::test]
