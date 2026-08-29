@@ -6,6 +6,7 @@ import {
   JoltTransportError,
   type JoltTransport,
 } from "../src/index.js";
+import { createDataAppClient } from "../src/client.js";
 
 /** A transport that records every call and replays canned responses. */
 function recordingTransport(responses: Record<string, unknown>) {
@@ -738,7 +739,7 @@ describe("createJoltClient", () => {
           content_id: "cid_4",
           device_id: "dev_a",
           device_sequence: 2,
-          created_at: "2026-01-01T00:00:00Z",
+          created_at: 42,
           entry_hash: "h",
         },
       ],
@@ -754,8 +755,80 @@ describe("createJoltClient", () => {
         contentId: "cid_4",
         deviceId: "dev_a",
         deviceSequence: 2,
-        createdAt: "2026-01-01T00:00:00Z",
+        createdAt: 42,
         entryHash: "h",
+      },
+    ]);
+  });
+
+  it("manages capability-scoped data subscriptions in domain shape", async () => {
+    const subscription = {
+      id: "sub_1",
+      session_id: "ses_private",
+      identity: "alice.jolt",
+      prefix: "/spoke/posts/",
+      lifecycle: "dormant",
+      refresh: { status: "loading" },
+      created_at: 42,
+    };
+    const { transport, calls } = recordingTransport({
+      "/data-subscriptions": subscription,
+      "/data-subscriptions/sub_1": {
+        identity: "alice.jolt",
+        records: [{
+          path: "/spoke/posts/p1",
+          content_id: "cid_1",
+          revision: "revision_7",
+          created_at: 43,
+        }],
+        source: {
+          subscription: "sub_1",
+          state: { status: "ready", last_verified_at: 44 },
+        },
+      },
+    });
+    const jolt = createDataAppClient({ transport, getSessionToken: token });
+
+    await expect(
+      jolt.createDataSubscription("alice.jolt", "/spoke/posts/"),
+    ).resolves.toEqual({
+      id: "sub_1",
+      identity: "alice.jolt",
+      prefix: "/spoke/posts/",
+      lifecycle: "dormant",
+      refresh: { status: "loading" },
+      createdAt: 42,
+    });
+    await expect(jolt.getDataSubscriptionView("sub_1")).resolves.toEqual({
+      records: [{
+        identity: "alice.jolt",
+        path: "/spoke/posts/p1",
+        contentId: "cid_1",
+        revision: "revision_7",
+        createdAt: 43,
+      }],
+      source: {
+        subscription: "sub_1",
+        state: { status: "ready", lastVerifiedAt: 44 },
+      },
+    });
+    await jolt.removeDataSubscription("sub_1");
+
+    expect(calls.map(({ path, detail }) => ({ path, detail }))).toEqual([
+      {
+        path: "/data-subscriptions",
+        detail: {
+          token: "tok_test",
+          json: { identity: "alice.jolt", prefix: "/spoke/posts/" },
+        },
+      },
+      {
+        path: "/data-subscriptions/sub_1",
+        detail: { method: "GET", token: "tok_test" },
+      },
+      {
+        path: "/data-subscriptions/sub_1",
+        detail: { method: "DELETE", token: "tok_test" },
       },
     ]);
   });

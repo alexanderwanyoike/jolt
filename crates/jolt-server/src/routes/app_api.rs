@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -12,7 +12,8 @@ use jolt_core::{
     JoltAddress, IDENTITY_ENCRYPTION_KEYS_PATH,
 };
 use jolt_network::{
-    AppendRecordInfo, EncryptedObjectResponse, FetchResult, NetworkError, PublishResponse,
+    AppendRecordInfo, EncryptedObjectResponse, FetchResult, MaterializedRecordInfo,
+    MaterializedRecordRefreshOutcome, MaterializedRecordView, NetworkError, PublishResponse,
     PublishedContentInfo, ResolveResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +23,9 @@ use crate::error::ApiError;
 use crate::routes::fetch::{fetch_error_for_target, FetchRequest};
 use crate::routes::home_relay::HomeRelayPinRequest;
 use crate::routes::resolve::ResolveRequest;
-use crate::session_store::{AppSessionStoreError, AppSessionView};
+use crate::session_store::{
+    AppSessionStoreError, AppSessionView, DataSubscriptionRecord, DataSubscriptionRefresh,
+};
 use crate::state::AppState;
 
 static APP_TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -673,6 +676,255 @@ pub struct EnumerateRequest {
     pub path_prefix: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateDataSubscriptionRequest {
+    pub identity: String,
+    pub prefix: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DataSubscriptionInfo {
+    pub id: String,
+    pub identity: String,
+    pub prefix: String,
+    pub lifecycle: crate::session_store::DataSubscriptionLifecycle,
+    pub refresh: crate::session_store::DataSubscriptionRefresh,
+    pub created_at: u64,
+}
+
+impl From<crate::session_store::DataSubscriptionRecord> for DataSubscriptionInfo {
+    fn from(record: crate::session_store::DataSubscriptionRecord) -> Self {
+        Self {
+            id: record.id,
+            identity: record.identity,
+            prefix: record.prefix,
+            lifecycle: record.lifecycle,
+            refresh: record.refresh,
+            created_at: record.created_at,
+        }
+    }
+}
+
+pub async fn create_data_subscription(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateDataSubscriptionRequest>,
+) -> Result<Json<DataSubscriptionInfo>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let identity = recipient_identity(&req.identity)?;
+    let prefix = normalize_path(&req.prefix)?;
+    require_data_subscription_capability(&session, &identity, &prefix)?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    let subscription = state
+        .sessions
+        .register_data_subscription(session_id, format!("{identity}.jolt"), prefix)
+        .await?;
+    let _ = begin_background_data_subscription_refresh(
+        state,
+        session_id.to_string(),
+        subscription.clone(),
+        identity,
+    )
+    .await?;
+    Ok(Json(subscription.into()))
+}
+
+pub async fn list_data_subscriptions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<DataSubscriptionInfo>>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    Ok(Json(
+        state
+            .sessions
+            .list_data_subscriptions(session_id)
+            .await
+            .into_iter()
+            .map(DataSubscriptionInfo::from)
+            .collect(),
+    ))
+}
+
+#[derive(Debug, Serialize)]
+pub struct DataSubscriptionSource {
+    pub subscription: String,
+    pub state: crate::session_store::DataSubscriptionRefresh,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DataSubscriptionView {
+    pub identity: String,
+    pub records: Vec<MaterializedRecordInfo>,
+    pub source: DataSubscriptionSource,
+}
+
+pub async fn get_data_subscription_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subscription_id): Path<String>,
+) -> Result<Json<DataSubscriptionView>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    let subscription = state
+        .sessions
+        .data_subscription(session_id, &subscription_id)
+        .await?;
+    let identity = recipient_identity(&subscription.identity)?;
+    require_data_subscription_capability(&session, &identity, &subscription.prefix)?;
+
+    let in_progress = refreshing_data_subscription(&subscription.refresh);
+    let view = state
+        .daemon
+        .read_materialized_record_snapshot(identity.clone(), subscription.prefix.clone())
+        .await?;
+    let refresh_started = begin_background_data_subscription_refresh(
+        state,
+        session_id.to_string(),
+        subscription.clone(),
+        identity,
+    )
+    .await?;
+    let response_refresh = if refresh_started
+        || subscription.lifecycle == crate::session_store::DataSubscriptionLifecycle::Active
+    {
+        in_progress
+    } else {
+        subscription.refresh.clone()
+    };
+
+    Ok(Json(DataSubscriptionView {
+        identity: subscription.identity,
+        records: view.records,
+        source: DataSubscriptionSource {
+            subscription: subscription_id,
+            state: response_refresh,
+        },
+    }))
+}
+
+async fn begin_background_data_subscription_refresh(
+    state: AppState,
+    session_id: String,
+    subscription: DataSubscriptionRecord,
+    identity: IdentityId,
+) -> Result<bool, AppApiError> {
+    if !state
+        .sessions
+        .begin_data_subscription_refresh(&session_id, &subscription.id)
+        .await?
+    {
+        return Ok(false);
+    }
+
+    tokio::spawn(async move {
+        let refresh = match state
+            .daemon
+            .refresh_materialized_record_view(identity, subscription.prefix)
+            .await
+        {
+            Ok(view) => completed_data_subscription_refresh(&view),
+            Err(_) => DataSubscriptionRefresh::Unavailable {
+                reason: "networkUnavailable".to_string(),
+            },
+        };
+        let _ = state
+            .sessions
+            .complete_data_subscription_refresh(&session_id, &subscription.id, refresh)
+            .await;
+    });
+    Ok(true)
+}
+
+fn refreshing_data_subscription(
+    refresh: &crate::session_store::DataSubscriptionRefresh,
+) -> crate::session_store::DataSubscriptionRefresh {
+    match refresh {
+        crate::session_store::DataSubscriptionRefresh::Ready { last_verified_at }
+        | crate::session_store::DataSubscriptionRefresh::Stale {
+            last_verified_at, ..
+        } => crate::session_store::DataSubscriptionRefresh::Updating {
+            last_verified_at: Some(*last_verified_at),
+        },
+        crate::session_store::DataSubscriptionRefresh::Updating { last_verified_at } => {
+            crate::session_store::DataSubscriptionRefresh::Updating {
+                last_verified_at: *last_verified_at,
+            }
+        }
+        crate::session_store::DataSubscriptionRefresh::Loading
+        | crate::session_store::DataSubscriptionRefresh::Unavailable { .. } => {
+            crate::session_store::DataSubscriptionRefresh::Loading
+        }
+    }
+}
+
+fn completed_data_subscription_refresh(
+    view: &MaterializedRecordView,
+) -> crate::session_store::DataSubscriptionRefresh {
+    match view.refresh {
+        MaterializedRecordRefreshOutcome::Ready => {
+            crate::session_store::DataSubscriptionRefresh::Ready {
+                last_verified_at: view.last_verified_at.unwrap_or_else(unix_now),
+            }
+        }
+        MaterializedRecordRefreshOutcome::NetworkUnavailable => {
+            failed_subscription_refresh(view.last_verified_at, "networkUnavailable")
+        }
+        MaterializedRecordRefreshOutcome::VerificationFailed => {
+            failed_subscription_refresh(view.last_verified_at, "verificationFailed")
+        }
+        MaterializedRecordRefreshOutcome::Overloaded => {
+            failed_subscription_refresh(view.last_verified_at, "overloaded")
+        }
+    }
+}
+
+fn failed_subscription_refresh(
+    last_verified_at: Option<u64>,
+    reason: &'static str,
+) -> crate::session_store::DataSubscriptionRefresh {
+    match last_verified_at {
+        Some(last_verified_at) => crate::session_store::DataSubscriptionRefresh::Stale {
+            last_verified_at,
+            reason: reason.to_string(),
+        },
+        None => crate::session_store::DataSubscriptionRefresh::Unavailable {
+            reason: reason.to_string(),
+        },
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct RemoveDataSubscriptionResponse {
+    pub status: &'static str,
+    pub subscription_id: String,
+}
+
+pub async fn remove_data_subscription(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subscription_id): Path<String>,
+) -> Result<Json<RemoveDataSubscriptionResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    state
+        .sessions
+        .remove_data_subscription(session_id, &subscription_id)
+        .await?;
+    Ok(Json(RemoveDataSubscriptionResponse {
+        status: "cancelled",
+        subscription_id,
+    }))
+}
+
 /// List an identity's append records whose path starts with `path_prefix`. This
 /// is the read seam a Collection is assembled from. Reads cached merged
 /// device-writer state, never a rewritten blob.
@@ -716,6 +968,20 @@ fn require_enumerate_capability(
     } else {
         Err(AppApiError::Forbidden(format!(
             "enumeration of identity {requested_identity} at {path} is outside the granted identity and path scope"
+        )))
+    }
+}
+
+fn require_data_subscription_capability(
+    session: &AppSessionView,
+    requested_identity: &IdentityId,
+    prefix: &str,
+) -> Result<(), AppApiError> {
+    if session.allows_data_subscription(requested_identity, prefix) {
+        Ok(())
+    } else {
+        Err(AppApiError::Forbidden(format!(
+            "data subscription for identity {requested_identity} at {prefix} is outside the granted identity and path scope"
         )))
     }
 }

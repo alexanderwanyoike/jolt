@@ -11,7 +11,10 @@ use jolt_core::{
 use jolt_store::{PersistedRemoteIdentityState, RemoteIdentityStateStore};
 use tokio::sync::oneshot;
 
-use crate::command::{AppendRecordInfo, ResolveResponse};
+use crate::command::{
+    AppendRecordInfo, MaterializedRecordInfo, MaterializedRecordRefreshOutcome,
+    MaterializedRecordSnapshot, MaterializedRecordView, ResolveResponse,
+};
 use crate::error::NetworkError;
 use crate::protocol::{
     DeviceWriterCursor, DeviceWriterSyncContinuation, DeviceWriterSyncRequest,
@@ -30,6 +33,12 @@ pub(super) enum DeviceWriterSyncWaiter {
         path_prefix: String,
         response_tx: oneshot::Sender<Result<Vec<AppendRecordInfo>, NetworkError>>,
     },
+    /// A bounded refresh returning the retained records plus freshness outcome.
+    MaterializedView {
+        identity: IdentityId,
+        path_prefix: String,
+        response_tx: oneshot::Sender<Result<MaterializedRecordView, NetworkError>>,
+    },
     /// A background refresh that only populates the device-writer cache so that
     /// later enumerations/resolutions see live remote state. No waiter is
     /// answered. This is how a `.jolt` resolve opportunistically warms the
@@ -44,7 +53,7 @@ pub(super) enum DeviceWriterSyncWaiter {
 impl DeviceWriterSyncWaiter {
     fn identity(&self) -> &IdentityId {
         match self {
-            Self::Enumerate { identity, .. } => identity,
+            Self::Enumerate { identity, .. } | Self::MaterializedView { identity, .. } => identity,
             Self::Refresh { identity } | Self::LocalRefresh { identity } => identity,
         }
     }
@@ -52,13 +61,20 @@ impl DeviceWriterSyncWaiter {
     fn is_cancelled(&self) -> bool {
         match self {
             Self::Enumerate { response_tx, .. } => response_tx.is_closed(),
+            Self::MaterializedView { response_tx, .. } => response_tx.is_closed(),
             Self::Refresh { .. } | Self::LocalRefresh { .. } => false,
         }
     }
 
     fn fail(self, error: NetworkError) {
-        if let Self::Enumerate { response_tx, .. } = self {
-            let _ = response_tx.send(Err(error));
+        match self {
+            Self::Enumerate { response_tx, .. } => {
+                let _ = response_tx.send(Err(error));
+            }
+            Self::MaterializedView { response_tx, .. } => {
+                let _ = response_tx.send(Err(error));
+            }
+            Self::Refresh { .. } | Self::LocalRefresh { .. } => {}
         }
     }
 }
@@ -391,6 +407,58 @@ impl NetworkNode {
             .collect())
     }
 
+    pub(super) fn materialized_record_view(
+        &self,
+        identity: &IdentityId,
+        path_prefix: &str,
+        refresh: MaterializedRecordRefreshOutcome,
+    ) -> Result<MaterializedRecordView, NetworkError> {
+        let snapshot = self.materialized_record_snapshot(identity, path_prefix)?;
+        Ok(MaterializedRecordView {
+            records: snapshot.records,
+            last_verified_at: snapshot.last_verified_at,
+            refresh,
+        })
+    }
+
+    pub(super) fn materialized_record_snapshot(
+        &self,
+        identity: &IdentityId,
+        path_prefix: &str,
+    ) -> Result<MaterializedRecordSnapshot, NetworkError> {
+        let records = self
+            .device_writer_states
+            .get(identity)
+            .map(|state| {
+                state
+                    .merged
+                    .singleton_paths
+                    .iter()
+                    .filter_map(|(path, entry)| {
+                        let content_id = entry.content_id()?;
+                        path.starts_with(path_prefix)
+                            .then(|| MaterializedRecordInfo {
+                                path: path.clone(),
+                                content_id: content_id.to_string(),
+                                revision: entry.entry_hash.to_hex(),
+                                created_at: entry.created_at,
+                            })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let last_verified_at = self
+            .device_writer_states
+            .get(identity)
+            .map(|state| state.last_verified_at)
+            .filter(|verified_at| *verified_at > 0)
+            .or_else(|| (*identity == self.identity.identity_id()).then(super::unix_now));
+        Ok(MaterializedRecordSnapshot {
+            records,
+            last_verified_at,
+        })
+    }
+
     /// Store a verified merged device-writer state for an identity.
     ///
     /// Newly supplied authority records and per-device writer logs are merged
@@ -644,7 +712,10 @@ impl NetworkNode {
                 .entry(identity.clone())
                 .or_default()
                 .push(waiter);
-            self.answer_device_writer_waiters(&identity);
+            self.answer_device_writer_waiters_with_outcome(
+                &identity,
+                MaterializedRecordRefreshOutcome::NetworkUnavailable,
+            );
             return;
         }
 
@@ -874,6 +945,17 @@ impl NetworkNode {
     /// (an empty list is a valid answer when no remote state could be synced);
     /// refresh waiters carry no response and simply warm the cache.
     pub(super) fn answer_device_writer_waiters(&mut self, identity: &IdentityId) {
+        self.answer_device_writer_waiters_with_outcome(
+            identity,
+            MaterializedRecordRefreshOutcome::Ready,
+        );
+    }
+
+    pub(super) fn answer_device_writer_waiters_with_outcome(
+        &mut self,
+        identity: &IdentityId,
+        refresh: MaterializedRecordRefreshOutcome,
+    ) {
         let Some(waiters) = self.pending_device_writer_waiters.remove(identity) else {
             return;
         };
@@ -886,6 +968,17 @@ impl NetworkNode {
                 } => {
                     let _ =
                         response_tx.send(self.enumerate_append_records(&identity, &path_prefix));
+                }
+                DeviceWriterSyncWaiter::MaterializedView {
+                    identity,
+                    path_prefix,
+                    response_tx,
+                } => {
+                    let _ = response_tx.send(self.materialized_record_view(
+                        &identity,
+                        &path_prefix,
+                        refresh,
+                    ));
                 }
                 DeviceWriterSyncWaiter::Refresh { .. }
                 | DeviceWriterSyncWaiter::LocalRefresh { .. } => {}
@@ -929,7 +1022,10 @@ impl NetworkNode {
             work.settled = true;
             let identity = work.identity.clone();
             self.device_writer_sync_work.timed_out += 1;
-            self.answer_device_writer_waiters(&identity);
+            self.answer_device_writer_waiters_with_outcome(
+                &identity,
+                MaterializedRecordRefreshOutcome::NetworkUnavailable,
+            );
         }
 
         let mut expired_queued = Vec::new();
@@ -941,7 +1037,10 @@ impl NetworkNode {
         }
         for identity in expired_queued {
             self.device_writer_sync_work.timed_out += 1;
-            self.answer_device_writer_waiters(&identity);
+            self.answer_device_writer_waiters_with_outcome(
+                &identity,
+                MaterializedRecordRefreshOutcome::NetworkUnavailable,
+            );
         }
     }
 
@@ -1008,6 +1107,18 @@ impl NetworkNode {
             self.answer_device_writer_waiters(identity);
             return;
         }
+        let refresh_outcome = match error.as_ref() {
+            Some(NetworkError::VerificationFailed)
+            | Some(NetworkError::DiscoveryFailed {
+                code: crate::error::DiscoveryFailureCode::IdentityHeadInvalid,
+                ..
+            })
+            | Some(NetworkError::UnsupportedDeviceWriterOperationVersion { .. })
+            | Some(NetworkError::UnsupportedDeviceWriterSyncVersion { .. }) => {
+                MaterializedRecordRefreshOutcome::VerificationFailed
+            }
+            _ => MaterializedRecordRefreshOutcome::NetworkUnavailable,
+        };
 
         let local_refresh_only = self
             .pending_device_writer_waiters
@@ -1036,7 +1147,7 @@ impl NetworkNode {
 
         // No more providers: answer waiters from whatever is cached (which may
         // be nothing for a never-seen identity).
-        self.answer_device_writer_waiters(identity);
+        self.answer_device_writer_waiters_with_outcome(identity, refresh_outcome);
     }
 
     pub(super) fn should_refresh_cached_resolution(&self, identity: &IdentityId) -> bool {
@@ -1377,7 +1488,10 @@ impl NetworkNode {
             self.device_writer_sync_work.queued.push_back(work);
         } else {
             self.device_writer_sync_work.rejected += 1;
-            self.answer_device_writer_waiters(&pending.identity);
+            self.answer_device_writer_waiters_with_outcome(
+                &pending.identity,
+                MaterializedRecordRefreshOutcome::Overloaded,
+            );
             self.retry_pending_local_device_writer_refresh();
         }
     }
@@ -1440,7 +1554,10 @@ impl NetworkNode {
             active.settled = true;
             self.device_writer_sync_work.timed_out += 1;
             if owns_identity {
-                self.answer_device_writer_waiters(&active.identity);
+                self.answer_device_writer_waiters_with_outcome(
+                    &active.identity,
+                    MaterializedRecordRefreshOutcome::NetworkUnavailable,
+                );
             }
         }
 
@@ -1996,23 +2113,14 @@ mod tests {
         let identity = NodeIdentity::generate().identity_id();
         let mut refreshes = HashMap::new();
 
-        assert!(NetworkNode::mark_refresh_if_due(
-            &mut refreshes,
-            &identity
-        ));
-        assert!(!NetworkNode::mark_refresh_if_due(
-            &mut refreshes,
-            &identity
-        ));
+        assert!(NetworkNode::mark_refresh_if_due(&mut refreshes, &identity));
+        assert!(!NetworkNode::mark_refresh_if_due(&mut refreshes, &identity));
 
         refreshes.insert(
             identity.clone(),
             Instant::now() - super::super::CACHED_IDENTITY_REFRESH_INTERVAL,
         );
-        assert!(NetworkNode::mark_refresh_if_due(
-            &mut refreshes,
-            &identity
-        ));
+        assert!(NetworkNode::mark_refresh_if_due(&mut refreshes, &identity));
     }
 
     #[tokio::test]
@@ -2276,6 +2384,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn materialized_record_view_reports_unavailable_without_verified_state() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let identity = NodeIdentity::generate().identity_id();
+
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::RefreshMaterializedRecordView {
+            identity,
+            path_prefix: "/spoke/posts/".to_string(),
+            response_tx: tx,
+        });
+
+        let view = rx.await.unwrap().unwrap();
+        assert!(view.records.is_empty());
+        assert_eq!(view.last_verified_at, None);
+        assert_eq!(
+            view.refresh,
+            crate::command::MaterializedRecordRefreshOutcome::NetworkUnavailable
+        );
+    }
+
+    #[tokio::test]
     async fn remote_append_records_become_enumerable_after_device_writer_sync() {
         let dir = tempdir().unwrap();
         let mut node = make_node(dir.path());
@@ -2308,7 +2438,6 @@ mod tests {
             path_prefix: "/spoke/posts/".to_string(),
             response_tx: tx,
         });
-
         // The enumerate is parked behind a device-writer sync, not answered yet.
         assert_eq!(node.pending_device_writer_syncs.len(), 1);
 
@@ -2321,13 +2450,79 @@ mod tests {
         assert_eq!(records[1].path, "/spoke/posts/2");
         assert_eq!(records[1].content_id, post_b.to_string());
         assert_eq!(records[0].device_id, device_id);
-
         node.remote_identity_persistence.flush();
         let persisted = node.store.load_remote_identity_states().unwrap();
         assert_eq!(persisted.len(), 1);
         assert_eq!(persisted[0].identity, identity);
         assert_eq!(persisted[0].source_peer, Some(provider.to_string()));
         assert!(persisted[0].last_verified_at > 0);
+    }
+
+    #[tokio::test]
+    async fn remote_logical_records_become_materialized_after_device_writer_sync() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_laptop";
+        let authority = vec![authorize_device(&root, &laptop, device_id)];
+        let first_content = ContentId::from_bytes(b"first stable post");
+        let second_content = ContentId::from_bytes(b"second stable post");
+        let first = DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            device_id,
+            DeviceWriterOperation::set_path(
+                "/spoke/posts/1",
+                first_content.clone(),
+                DeviceWriterPathMode::Singleton,
+            ),
+            100,
+            |bytes| laptop.sign(bytes),
+        )
+        .unwrap();
+        let second = first
+            .append(
+                DeviceWriterOperation::set_path(
+                    "/spoke/posts/2",
+                    second_content.clone(),
+                    DeviceWriterPathMode::Singleton,
+                ),
+                101,
+                |bytes| laptop.sign(bytes),
+            )
+            .unwrap();
+        let provider = libp2p::PeerId::random();
+        node.discovered_providers.insert(
+            NetworkNode::update_log_provider_key(&identity),
+            vec![provider],
+        );
+
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::RefreshMaterializedRecordView {
+            identity: identity.clone(),
+            path_prefix: "/spoke/posts/".to_string(),
+            response_tx: tx,
+        });
+        deliver_device_writer_sync_response(
+            &mut node,
+            provider,
+            authority,
+            vec![vec![first, second]],
+        )
+        .await;
+
+        let view = rx.await.unwrap().unwrap();
+        assert_eq!(view.records.len(), 2);
+        assert_eq!(view.records[0].path, "/spoke/posts/1");
+        assert_eq!(view.records[0].content_id, first_content.to_string());
+        assert_eq!(view.records[1].path, "/spoke/posts/2");
+        assert_eq!(view.records[1].content_id, second_content.to_string());
+        assert!(view.last_verified_at.is_some());
+        assert_eq!(
+            view.refresh,
+            crate::command::MaterializedRecordRefreshOutcome::Ready
+        );
     }
 
     #[test]
@@ -2509,12 +2704,7 @@ mod tests {
             path_prefix: "/load/items/".to_string(),
             response_tx,
         });
-        receive_device_writer_sync_response(
-            &mut node,
-            provider,
-            authority,
-            vec![invalid_log],
-        );
+        receive_device_writer_sync_response(&mut node, provider, authority, vec![invalid_log]);
         node.complete_next_device_writer_sync_work().await;
 
         assert!(response_rx.await.unwrap().unwrap().is_empty());

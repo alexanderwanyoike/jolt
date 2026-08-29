@@ -162,6 +162,13 @@ impl IntoResponse for AppSessionApiError {
             AppSessionStoreError::RequestNotFound(_) | AppSessionStoreError::SessionNotFound(_) => {
                 (StatusCode::NOT_FOUND, "app_session_store_error")
             }
+            AppSessionStoreError::DataSubscriptionNotFound(_) => {
+                (StatusCode::NOT_FOUND, "data_subscription_not_found")
+            }
+            AppSessionStoreError::DataSubscriptionCapacityExceeded => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "data_subscription_capacity_exceeded",
+            ),
             AppSessionStoreError::RequestNotPending(_)
             | AppSessionStoreError::MissingIdentity
             | AppSessionStoreError::CapabilityNotGrantable(_)
@@ -237,4 +244,25 @@ fn bearer_token(headers: &HeaderMap) -> Result<&str, AppSessionStoreError> {
         return Err(AppSessionStoreError::InvalidToken);
     }
     Ok(token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+
+    #[tokio::test]
+    async fn data_subscription_capacity_is_a_typed_too_many_requests_error() {
+        let response =
+            AppSessionApiError::from(AppSessionStoreError::DataSubscriptionCapacityExceeded)
+                .into_response();
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            body["code"],
+            serde_json::Value::String("data_subscription_capacity_exceeded".to_string())
+        );
+    }
 }

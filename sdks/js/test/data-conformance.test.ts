@@ -18,6 +18,8 @@ import {
   Schema,
   SchemaValidationError,
   State,
+  Subscription,
+  SubscriptionCapacityError,
   UpdateConflict,
 } from "jolt-sdk/data";
 import { JoltApiError, JoltTransportError } from "jolt-sdk";
@@ -661,6 +663,26 @@ describe("Data SDK client-backed content validation", () => {
       text: "Denied",
       postedAt: new Date("2026-08-27T09:00:00.000Z"),
     })).rejects.toBeInstanceOf(AccessRevokedError);
+  });
+
+  it("maps Data Subscription admission exhaustion to SubscriptionCapacityError", async () => {
+    const jolt = createFakeJolt("alice.jolt");
+    const chirp = await Chirp.connect({
+      identity: jolt.identity,
+      client: {
+        ...jolt.client,
+        async createDataSubscription() {
+          throw new JoltApiError("Data Subscription capacity exceeded", {
+            status: 429,
+            code: "data_subscription_capacity_exceeded",
+          });
+        },
+      },
+    });
+
+    await expect(
+      Subscription.create(chirp.posts.for("bob.jolt")),
+    ).rejects.toBeInstanceOf(SubscriptionCapacityError);
   });
 
   it("maps revoked device mutations to DeviceRevokedError", async () => {

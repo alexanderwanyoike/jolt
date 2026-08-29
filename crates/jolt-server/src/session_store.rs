@@ -1,8 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use jolt_core::IdentityId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -86,6 +88,17 @@ impl From<&AppSessionRecord> for AppSessionView {
     }
 }
 
+impl AppSessionView {
+    /// Whether one parsed subscription grant covers this concrete identity and
+    /// canonical path prefix.
+    pub fn allows_data_subscription(&self, identity: &IdentityId, prefix: &str) -> bool {
+        self.granted_capabilities
+            .iter()
+            .filter_map(|raw| AppCapability::parse(raw))
+            .any(|capability| capability.allows_data_subscription(identity, prefix))
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppSessionRequest {
     pub app_id: String,
@@ -135,6 +148,44 @@ pub struct AppSessionStatusResponse {
     pub expires_at: Option<u64>,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataSubscriptionLifecycle {
+    Active,
+    Dormant,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum DataSubscriptionRefresh {
+    Loading,
+    Updating {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        last_verified_at: Option<u64>,
+    },
+    Ready {
+        last_verified_at: u64,
+    },
+    Stale {
+        last_verified_at: u64,
+        reason: String,
+    },
+    Unavailable {
+        reason: String,
+    },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DataSubscriptionRecord {
+    pub id: String,
+    pub session_id: String,
+    pub identity: String,
+    pub prefix: String,
+    pub lifecycle: DataSubscriptionLifecycle,
+    pub refresh: DataSubscriptionRefresh,
+    pub created_at: u64,
+}
+
 #[derive(Debug, Error)]
 pub enum AppSessionStoreError {
     #[error("missing app session bearer token")]
@@ -153,6 +204,10 @@ pub enum AppSessionStoreError {
     CapabilityNotGrantable(String),
     #[error("app session capability was not requested: {0}")]
     CapabilityNotRequested(String),
+    #[error("data subscription capacity exceeded")]
+    DataSubscriptionCapacityExceeded,
+    #[error("data subscription not found: {0}")]
+    DataSubscriptionNotFound(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -162,12 +217,23 @@ pub struct AppSessionStore {
     path: PathBuf,
     state: Arc<Mutex<AppSessionState>>,
     issued_tokens: Arc<Mutex<HashMap<String, String>>>,
+    max_data_subscriptions: usize,
+    data_subscription_refresh_interval: Duration,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct AppSessionState {
     records: Vec<AppSessionRecord>,
+    #[serde(default)]
+    data_subscriptions: Vec<DataSubscriptionRecord>,
+    #[serde(skip)]
+    active_data_subscription_refreshes: HashSet<String>,
+    #[serde(skip)]
+    data_subscription_refresh_after: HashMap<String, Instant>,
 }
+
+const DEFAULT_MAX_DATA_SUBSCRIPTIONS: usize = 4_096;
+const DEFAULT_DATA_SUBSCRIPTION_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
 impl AppSessionStore {
     pub fn open_default() -> std::io::Result<Self> {
@@ -175,12 +241,44 @@ impl AppSessionStore {
     }
 
     pub fn open(path: impl Into<PathBuf>) -> std::io::Result<Self> {
+        Self::open_with_data_subscription_limit(path, DEFAULT_MAX_DATA_SUBSCRIPTIONS)
+    }
+
+    pub fn open_with_data_subscription_limit(
+        path: impl Into<PathBuf>,
+        max_data_subscriptions: usize,
+    ) -> std::io::Result<Self> {
+        Self::open_with_data_subscription_config(
+            path,
+            max_data_subscriptions,
+            DEFAULT_DATA_SUBSCRIPTION_REFRESH_INTERVAL,
+        )
+    }
+
+    pub fn open_with_data_subscription_refresh_interval(
+        path: impl Into<PathBuf>,
+        refresh_interval: Duration,
+    ) -> std::io::Result<Self> {
+        Self::open_with_data_subscription_config(
+            path,
+            DEFAULT_MAX_DATA_SUBSCRIPTIONS,
+            refresh_interval,
+        )
+    }
+
+    pub fn open_with_data_subscription_config(
+        path: impl Into<PathBuf>,
+        max_data_subscriptions: usize,
+        refresh_interval: Duration,
+    ) -> std::io::Result<Self> {
         let path = path.into();
         let state = load_state(&path)?;
         Ok(Self {
             path,
             state: Arc::new(Mutex::new(state)),
             issued_tokens: Arc::new(Mutex::new(HashMap::new())),
+            max_data_subscriptions,
+            data_subscription_refresh_interval: refresh_interval,
         })
     }
 
@@ -420,6 +518,10 @@ impl AppSessionStore {
         record.status = AppSessionStatus::Revoked;
         record.revoked_at = Some(now_secs());
         let response = AppSessionView::from(&*record);
+        state
+            .data_subscriptions
+            .retain(|subscription| subscription.session_id != session_id);
+        retain_active_data_subscription_refreshes(&mut state);
         save_state(&self.path, &state)?;
         Ok(response)
     }
@@ -442,6 +544,9 @@ impl AppSessionStore {
         record.status = AppSessionStatus::Revoked;
         record.revoked_at = Some(now_secs());
         let response = AppSessionView::from(&*record);
+        state
+            .data_subscriptions
+            .retain(|subscription| subscription.session_id != session_id);
         save_state(&self.path, &state)?;
         Ok(response)
     }
@@ -463,6 +568,14 @@ impl AppSessionStore {
             revoked.push(AppSessionView::from(&*record));
         }
         if !revoked.is_empty() {
+            let revoked_session_ids = revoked
+                .iter()
+                .filter_map(|session| session.session_id.as_deref())
+                .collect::<Vec<_>>();
+            state.data_subscriptions.retain(|subscription| {
+                !revoked_session_ids.contains(&subscription.session_id.as_str())
+            });
+            retain_active_data_subscription_refreshes(&mut state);
             save_state(&self.path, &state)?;
         }
         Ok(revoked)
@@ -490,6 +603,13 @@ impl AppSessionStore {
             .is_some_and(|expires_at| expires_at <= now)
         {
             record.status = AppSessionStatus::Expired;
+            let session_id = record.session_id.clone();
+            if let Some(session_id) = session_id {
+                state
+                    .data_subscriptions
+                    .retain(|subscription| subscription.session_id != session_id);
+                retain_active_data_subscription_refreshes(&mut state);
+            }
             save_state(&self.path, &state)?;
             return Err(AppSessionStoreError::InvalidToken);
         }
@@ -499,6 +619,212 @@ impl AppSessionStore {
         save_state(&self.path, &state)?;
         Ok(response)
     }
+
+    pub async fn register_data_subscription(
+        &self,
+        session_id: &str,
+        identity: String,
+        prefix: String,
+    ) -> Result<DataSubscriptionRecord, AppSessionStoreError> {
+        let mut state = self.state.lock().await;
+        if let Some(existing) = state.data_subscriptions.iter().find(|subscription| {
+            subscription.session_id == session_id
+                && subscription.identity == identity
+                && subscription.prefix == prefix
+        }) {
+            return Ok(with_runtime_data_subscription_state(
+                existing.clone(),
+                &state.active_data_subscription_refreshes,
+            ));
+        }
+        if state.data_subscriptions.len() >= self.max_data_subscriptions {
+            return Err(AppSessionStoreError::DataSubscriptionCapacityExceeded);
+        }
+        let subscription = DataSubscriptionRecord {
+            id: new_id("sub"),
+            session_id: session_id.to_string(),
+            identity,
+            prefix,
+            lifecycle: DataSubscriptionLifecycle::Dormant,
+            refresh: DataSubscriptionRefresh::Loading,
+            created_at: now_secs(),
+        };
+        state.data_subscriptions.push(subscription.clone());
+        save_state(&self.path, &state)?;
+        Ok(subscription)
+    }
+
+    pub async fn list_data_subscriptions(&self, session_id: &str) -> Vec<DataSubscriptionRecord> {
+        let state = self.state.lock().await;
+        state
+            .data_subscriptions
+            .iter()
+            .filter(|subscription| subscription.session_id == session_id)
+            .cloned()
+            .map(|subscription| {
+                with_runtime_data_subscription_state(
+                    subscription,
+                    &state.active_data_subscription_refreshes,
+                )
+            })
+            .collect()
+    }
+
+    pub async fn data_subscription(
+        &self,
+        session_id: &str,
+        subscription_id: &str,
+    ) -> Result<DataSubscriptionRecord, AppSessionStoreError> {
+        let state = self.state.lock().await;
+        state
+            .data_subscriptions
+            .iter()
+            .find(|subscription| {
+                subscription.session_id == session_id && subscription.id == subscription_id
+            })
+            .cloned()
+            .map(|subscription| {
+                with_runtime_data_subscription_state(
+                    subscription,
+                    &state.active_data_subscription_refreshes,
+                )
+            })
+            .ok_or_else(|| {
+                AppSessionStoreError::DataSubscriptionNotFound(subscription_id.to_string())
+            })
+    }
+
+    /// Mark a refresh active without rewriting durable session state.
+    ///
+    /// Returns `true` only to the caller that should start the coalesced
+    /// background refresh. Other readers immediately reuse the in-flight work.
+    pub async fn begin_data_subscription_refresh(
+        &self,
+        session_id: &str,
+        subscription_id: &str,
+    ) -> Result<bool, AppSessionStoreError> {
+        let mut state = self.state.lock().await;
+        let exists = state
+            .data_subscriptions
+            .iter()
+            .find(|subscription| {
+                subscription.session_id == session_id && subscription.id == subscription_id
+            })
+            .is_some();
+        if !exists {
+            return Err(AppSessionStoreError::DataSubscriptionNotFound(
+                subscription_id.to_string(),
+            ));
+        }
+        let now = Instant::now();
+        state
+            .data_subscription_refresh_after
+            .retain(|_, refresh_after| *refresh_after > now);
+        if state
+            .active_data_subscription_refreshes
+            .contains(subscription_id)
+            || state
+                .data_subscription_refresh_after
+                .contains_key(subscription_id)
+        {
+            return Ok(false);
+        }
+        state.data_subscription_refresh_after.insert(
+            subscription_id.to_string(),
+            now + self.data_subscription_refresh_interval,
+        );
+        Ok(state
+            .active_data_subscription_refreshes
+            .insert(subscription_id.to_string()))
+    }
+
+    /// Persist only the completed refresh outcome; transient active/updating
+    /// state remains an in-memory overlay.
+    pub async fn complete_data_subscription_refresh(
+        &self,
+        session_id: &str,
+        subscription_id: &str,
+        refresh: DataSubscriptionRefresh,
+    ) -> Result<DataSubscriptionRecord, AppSessionStoreError> {
+        let mut state = self.state.lock().await;
+        state
+            .active_data_subscription_refreshes
+            .remove(subscription_id);
+        let subscription = state
+            .data_subscriptions
+            .iter_mut()
+            .find(|subscription| {
+                subscription.session_id == session_id && subscription.id == subscription_id
+            })
+            .ok_or_else(|| {
+                AppSessionStoreError::DataSubscriptionNotFound(subscription_id.to_string())
+            })?;
+        subscription.lifecycle = DataSubscriptionLifecycle::Dormant;
+        subscription.refresh = refresh;
+        let updated = subscription.clone();
+        save_state(&self.path, &state)?;
+        Ok(updated)
+    }
+
+    pub async fn remove_data_subscription(
+        &self,
+        session_id: &str,
+        subscription_id: &str,
+    ) -> Result<(), AppSessionStoreError> {
+        let mut state = self.state.lock().await;
+        let index = state
+            .data_subscriptions
+            .iter()
+            .position(|subscription| {
+                subscription.session_id == session_id && subscription.id == subscription_id
+            })
+            .ok_or_else(|| {
+                AppSessionStoreError::DataSubscriptionNotFound(subscription_id.to_string())
+            })?;
+        let removed = state.data_subscriptions.remove(index);
+        state.active_data_subscription_refreshes.remove(&removed.id);
+        state.data_subscription_refresh_after.remove(&removed.id);
+        save_state(&self.path, &state)?;
+        Ok(())
+    }
+}
+
+fn with_runtime_data_subscription_state(
+    mut subscription: DataSubscriptionRecord,
+    active_refreshes: &HashSet<String>,
+) -> DataSubscriptionRecord {
+    if active_refreshes.contains(&subscription.id) {
+        subscription.lifecycle = DataSubscriptionLifecycle::Active;
+        subscription.refresh = match subscription.refresh {
+            DataSubscriptionRefresh::Ready { last_verified_at }
+            | DataSubscriptionRefresh::Stale {
+                last_verified_at, ..
+            } => DataSubscriptionRefresh::Updating {
+                last_verified_at: Some(last_verified_at),
+            },
+            DataSubscriptionRefresh::Updating { last_verified_at } => {
+                DataSubscriptionRefresh::Updating { last_verified_at }
+            }
+            DataSubscriptionRefresh::Loading | DataSubscriptionRefresh::Unavailable { .. } => {
+                DataSubscriptionRefresh::Loading
+            }
+        };
+    }
+    subscription
+}
+
+fn retain_active_data_subscription_refreshes(state: &mut AppSessionState) {
+    let retained_ids = state
+        .data_subscriptions
+        .iter()
+        .map(|subscription| subscription.id.clone())
+        .collect::<HashSet<_>>();
+    state
+        .active_data_subscription_refreshes
+        .retain(|subscription_id| retained_ids.contains(subscription_id));
+    state
+        .data_subscription_refresh_after
+        .retain(|subscription_id, _| retained_ids.contains(subscription_id));
 }
 
 fn load_state(path: &Path) -> std::io::Result<AppSessionState> {
@@ -520,6 +846,10 @@ enum AppCapability {
         identity_scope: EnumerateIdentityScope,
         scope: PathScope,
     },
+    Subscribe {
+        identity_scope: SubscriptionIdentityScope,
+        scope: PathScope,
+    },
     Path {
         action: PathCapabilityAction,
         scope: PathScope,
@@ -530,6 +860,12 @@ enum AppCapability {
 enum EnumerateIdentityScope {
     SelfIdentity,
     AnyIdentity,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum SubscriptionIdentityScope {
+    AnyIdentity,
+    Exact(IdentityId),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -565,6 +901,20 @@ impl AppCapability {
                 identity_scope: EnumerateIdentityScope::AnyIdentity,
                 scope: PathScope::parse(raw.strip_prefix("enumerate:any:")?)?,
             }),
+            _ if raw.starts_with("subscribe:") => {
+                let (identity, scope) = raw.strip_prefix("subscribe:")?.split_once(':')?;
+                let identity_scope = if identity == "any" {
+                    SubscriptionIdentityScope::AnyIdentity
+                } else {
+                    SubscriptionIdentityScope::Exact(
+                        IdentityId::from_str(identity.trim_end_matches(".jolt")).ok()?,
+                    )
+                };
+                Some(Self::Subscribe {
+                    identity_scope,
+                    scope: PathScope::parse(scope)?,
+                })
+            }
             _ => parse_path_capability(raw),
         }
     }
@@ -591,6 +941,20 @@ impl AppCapability {
                 requested_scope.contains(granted_scope)
             }
             (
+                Self::Subscribe {
+                    identity_scope: requested_identity_scope,
+                    scope: requested_scope,
+                },
+                Self::Subscribe {
+                    identity_scope: granted_identity_scope,
+                    scope: granted_scope,
+                },
+            ) if requested_identity_scope == granted_identity_scope
+                || *requested_identity_scope == SubscriptionIdentityScope::AnyIdentity =>
+            {
+                requested_scope.contains(granted_scope)
+            }
+            (
                 Self::Path {
                     action: requested_action,
                     scope: requested_scope,
@@ -600,6 +964,24 @@ impl AppCapability {
                     scope: granted_scope,
                 },
             ) if requested_action == granted_action => requested_scope.contains(granted_scope),
+            _ => false,
+        }
+    }
+
+    fn allows_data_subscription(&self, identity: &IdentityId, prefix: &str) -> bool {
+        match self {
+            Self::Subscribe {
+                identity_scope,
+                scope,
+            } => {
+                let identity_allowed =
+                    matches!(identity_scope, SubscriptionIdentityScope::AnyIdentity)
+                        || matches!(
+                            identity_scope,
+                            SubscriptionIdentityScope::Exact(granted) if granted == identity
+                        );
+                identity_allowed && scope.allows_path(prefix)
+            }
             _ => false,
         }
     }
@@ -639,6 +1021,13 @@ impl PathScope {
             (Self::Prefix(prefix), Self::Exact(granted)) => granted.starts_with(prefix),
             (Self::Prefix(requested), Self::Prefix(granted)) => granted.starts_with(requested),
             (Self::Exact(_), Self::Prefix(_)) => false,
+        }
+    }
+
+    fn allows_path(&self, path: &str) -> bool {
+        match self {
+            Self::Exact(exact) => path == exact,
+            Self::Prefix(prefix) => path.starts_with(prefix),
         }
     }
 }
@@ -725,4 +1114,165 @@ fn now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn approved_session(
+        store: &AppSessionStore,
+        expires_at: Option<u64>,
+    ) -> ApproveAppSessionResponse {
+        let remote_identity = format!("{}.jolt", IdentityId::from_public_key([7; 32]),);
+        let request = store
+            .create_request(AppSessionRequest {
+                app_id: "chirp.local".to_string(),
+                app_name: "Chirp".to_string(),
+                app_origin: None,
+                requested_identity: Some("local.jolt".to_string()),
+                requested_capabilities: vec![format!("subscribe:{remote_identity}:/chirp/posts/*")],
+            })
+            .await
+            .unwrap();
+        store
+            .approve_request(
+                &request.request_id,
+                ApproveAppSessionRequest {
+                    identity: None,
+                    capabilities: Vec::new(),
+                    expires_at,
+                },
+                "dev_local",
+            )
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn configured_data_subscription_limit_rejects_without_evicting() {
+        let dir = tempfile::tempdir().unwrap();
+        let store =
+            AppSessionStore::open_with_data_subscription_limit(dir.path().join("sessions.json"), 1)
+                .unwrap();
+
+        let first = store
+            .register_data_subscription(
+                "session_a",
+                "alice.jolt".to_string(),
+                "/chirp/posts/".to_string(),
+            )
+            .await
+            .unwrap();
+        let error = store
+            .register_data_subscription(
+                "session_b",
+                "bob.jolt".to_string(),
+                "/chirp/posts/".to_string(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            AppSessionStoreError::DataSubscriptionCapacityExceeded
+        ));
+        assert_eq!(
+            store.list_data_subscriptions("session_a").await,
+            vec![first]
+        );
+        assert!(store.list_data_subscriptions("session_b").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn expiry_and_revocation_remove_durable_data_subscription_intent() {
+        for revoke in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("sessions.json");
+            let store = AppSessionStore::open(&path).unwrap();
+            let session = approved_session(&store, (!revoke).then_some(0)).await;
+            store
+                .register_data_subscription(
+                    &session.session_id,
+                    "alice.jolt".to_string(),
+                    "/chirp/posts/".to_string(),
+                )
+                .await
+                .unwrap();
+
+            if revoke {
+                store.revoke_session(&session.session_id).await.unwrap();
+            } else {
+                assert!(matches!(
+                    store.session_for_token(&session.session_token).await,
+                    Err(AppSessionStoreError::InvalidToken)
+                ));
+            }
+
+            let reopened = AppSessionStore::open(&path).unwrap();
+            assert!(reopened
+                .list_data_subscriptions(&session.session_id)
+                .await
+                .is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn transient_data_subscription_refresh_state_stays_in_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sessions.json");
+        let store = AppSessionStore::open(&path).unwrap();
+        let subscription = store
+            .register_data_subscription(
+                "session_a",
+                "alice.jolt".to_string(),
+                "/chirp/posts/".to_string(),
+            )
+            .await
+            .unwrap();
+        let durable_intent = std::fs::read(&path).unwrap();
+
+        assert!(store
+            .begin_data_subscription_refresh("session_a", &subscription.id)
+            .await
+            .unwrap());
+        let active = store
+            .data_subscription("session_a", &subscription.id)
+            .await
+            .unwrap();
+        assert_eq!(active.lifecycle, DataSubscriptionLifecycle::Active);
+        assert_eq!(active.refresh, DataSubscriptionRefresh::Loading);
+        assert_eq!(std::fs::read(&path).unwrap(), durable_intent);
+        assert!(!store
+            .begin_data_subscription_refresh("session_a", &subscription.id)
+            .await
+            .unwrap());
+
+        store
+            .complete_data_subscription_refresh(
+                "session_a",
+                &subscription.id,
+                DataSubscriptionRefresh::Ready {
+                    last_verified_at: 42,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(!store
+            .begin_data_subscription_refresh("session_a", &subscription.id)
+            .await
+            .unwrap());
+        let reopened = AppSessionStore::open(&path).unwrap();
+        let completed = reopened
+            .data_subscription("session_a", &subscription.id)
+            .await
+            .unwrap();
+        assert_eq!(completed.lifecycle, DataSubscriptionLifecycle::Dormant);
+        assert_eq!(
+            completed.refresh,
+            DataSubscriptionRefresh::Ready {
+                last_verified_at: 42,
+            }
+        );
+    }
 }

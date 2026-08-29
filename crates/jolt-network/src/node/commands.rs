@@ -96,6 +96,37 @@ impl NetworkNode {
                     );
                 }
             }
+            DaemonCommand::RefreshMaterializedRecordView {
+                identity,
+                path_prefix,
+                response_tx,
+            } => {
+                let is_local = identity == self.identity.identity_id();
+                if is_local {
+                    let result = self.materialized_record_view(
+                        &identity,
+                        &path_prefix,
+                        crate::command::MaterializedRecordRefreshOutcome::Ready,
+                    );
+                    let _ = response_tx.send(result);
+                } else {
+                    self.begin_device_writer_sync(
+                        super::resolution::DeviceWriterSyncWaiter::MaterializedView {
+                            identity,
+                            path_prefix,
+                            response_tx,
+                        },
+                    );
+                }
+            }
+            DaemonCommand::ReadMaterializedRecordSnapshot {
+                identity,
+                path_prefix,
+                response_tx,
+            } => {
+                let result = self.materialized_record_snapshot(&identity, &path_prefix);
+                let _ = response_tx.send(result);
+            }
             DaemonCommand::Fetch {
                 content_id,
                 response_tx,

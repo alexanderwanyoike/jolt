@@ -1,4 +1,4 @@
-import { createJoltClient } from "./client.js";
+import { createDataAppClient } from "./client.js";
 import type { JoltClient } from "./client.js";
 import {
   AppIncompatibleError,
@@ -11,6 +11,7 @@ import type {
 } from "./data.js";
 
 const DATA_RECORDS_LEVEL = 5;
+const DATA_SUBSCRIPTIONS_LEVEL = 1;
 const fallbackStorage = new Map<string, string>();
 
 /** @internal Client behavior used while the Data SDK establishes an App session. */
@@ -63,6 +64,9 @@ export function capabilitiesForDataApp(accessPlan: AppAccessPlan): string[] {
     if (grant.access.delete === true) {
       capabilities.push(`delete:${grant.path}`);
     }
+  }
+  for (const subscription of accessPlan.subscriptions) {
+    capabilities.push(`subscribe:any:${subscription.path}`);
   }
   return unique(capabilities);
 }
@@ -121,13 +125,13 @@ async function createDefaultClient(
 ): Promise<DataAppHostClient> {
   if (isTauriHost()) {
     const { TauriTransport } = await import("./transport-tauri.js");
-    return createJoltClient({
+    return createDataAppClient({
       transport: new TauriTransport({ plugin: true }),
       getSessionToken,
     });
   }
   const { HttpTransport } = await import("./transport-http.js");
-  return createJoltClient({
+  return createDataAppClient({
     transport: new HttpTransport({}),
     getSessionToken,
   });
@@ -152,7 +156,12 @@ export async function connectDataApp(
   const client = await dependencies.createClient(() => token);
   const compatibility = await client.checkCompatibility({
     appApi: 1,
-    requiredFeatures: { "data.records": DATA_RECORDS_LEVEL },
+    requiredFeatures: {
+      "data.records": DATA_RECORDS_LEVEL,
+      ...(app.accessPlan.subscriptions.length > 0
+        ? { "data.subscriptions": DATA_SUBSCRIPTIONS_LEVEL }
+        : {}),
+    },
   });
   if (compatibility.status !== "compatible") {
     throw new AppIncompatibleError(compatibility);

@@ -29,6 +29,16 @@ pub enum DaemonCommand {
         path_prefix: String,
         response_tx: oneshot::Sender<Result<Vec<AppendRecordInfo>, NetworkError>>,
     },
+    RefreshMaterializedRecordView {
+        identity: IdentityId,
+        path_prefix: String,
+        response_tx: oneshot::Sender<Result<MaterializedRecordView, NetworkError>>,
+    },
+    ReadMaterializedRecordSnapshot {
+        identity: IdentityId,
+        path_prefix: String,
+        response_tx: oneshot::Sender<Result<MaterializedRecordSnapshot, NetworkError>>,
+    },
     Fetch {
         content_id: String,
         response_tx: oneshot::Sender<Result<FetchResult, NetworkError>>,
@@ -213,7 +223,7 @@ pub struct PublishResponse {
     pub revision: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppendRecordInfo {
     pub path: String,
     pub content_id: String,
@@ -221,6 +231,40 @@ pub struct AppendRecordInfo {
     pub device_sequence: u64,
     pub created_at: u64,
     pub entry_hash: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterializedRecordInfo {
+    pub path: String,
+    pub content_id: String,
+    pub revision: String,
+    pub created_at: u64,
+}
+
+/// Result of one bounded attempt to refresh a generic logical-record view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MaterializedRecordRefreshOutcome {
+    Ready,
+    NetworkUnavailable,
+    VerificationFailed,
+    Overloaded,
+}
+
+/// The last verified records for one identity/path prefix and the outcome of
+/// the bounded refresh that preceded this snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterializedRecordView {
+    pub records: Vec<MaterializedRecordInfo>,
+    pub last_verified_at: Option<u64>,
+    pub refresh: MaterializedRecordRefreshOutcome,
+}
+
+/// Current verified records without initiating or describing network work.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterializedRecordSnapshot {
+    pub records: Vec<MaterializedRecordInfo>,
+    pub last_verified_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
