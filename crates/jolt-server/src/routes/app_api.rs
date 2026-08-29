@@ -795,6 +795,19 @@ pub async fn next_data_subscription_change(
         identity,
     )
     .await?;
+    let refresh_interval = state.sessions.data_subscription_change_refresh_interval();
+    let expires_at = session.expires_at;
+    let expiry = async move {
+        match expires_at {
+            Some(expires_at) => {
+                tokio::time::sleep(std::time::Duration::from_secs(
+                    expires_at.saturating_sub(unix_now()),
+                ))
+                .await;
+            }
+            None => std::future::pending::<()>().await,
+        }
+    };
 
     let change = state.data_change_streams.next(
         session_id,
@@ -805,17 +818,22 @@ pub async fn next_data_subscription_change(
         req.cursor.as_deref(),
     );
     tokio::pin!(change);
+    tokio::pin!(expiry);
     loop {
         tokio::select! {
             event = &mut change => return Ok(Json(event)),
-            () = tokio::time::sleep(std::time::Duration::from_millis(250)) => {
+            () = &mut expiry => {
+                state.data_change_streams.revoke_session(session_id).await;
+                return Ok(Json(crate::data_change_streams::DataChangeEvent::Revoked));
+            }
+            () = tokio::time::sleep(refresh_interval) => {
                 if !state
                     .sessions
                     .data_subscription_session_is_active(session_id)
                     .await
                 {
                     state.data_change_streams.revoke_session(session_id).await;
-                    continue;
+                    return Ok(Json(crate::data_change_streams::DataChangeEvent::Revoked));
                 }
                 let current = match state
                     .sessions

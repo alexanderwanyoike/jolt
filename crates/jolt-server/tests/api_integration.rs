@@ -30,14 +30,14 @@ async fn start_test_server_with_tcp_port(p2p_port: u16) -> (u16, DaemonHandle, t
     start_test_server_with_node(Some(p2p_port)).await
 }
 
-async fn start_test_server_with_tcp_port_and_subscription_refresh_interval(
+async fn start_test_server_with_tcp_port_and_subscription_refresh_interval_no_mdns(
     p2p_port: u16,
     refresh_interval: std::time::Duration,
 ) -> (u16, DaemonHandle, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let identity = NodeIdentity::generate();
     let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, no_mdns_config()).unwrap();
     node.listen_on(&format!("/ip4/127.0.0.1/tcp/{p2p_port}"))
         .unwrap();
     start_test_server_from_node_with_subscription_refresh_interval(node, dir, refresh_interval)
@@ -283,6 +283,18 @@ async fn approve_app_session(
     identity: &str,
     capabilities: &[&str],
 ) -> String {
+    approve_app_session_until(client, port, identity, capabilities, None)
+        .await
+        .0
+}
+
+async fn approve_app_session_until(
+    client: &reqwest::Client,
+    port: u16,
+    identity: &str,
+    capabilities: &[&str],
+    expires_at: Option<u64>,
+) -> (String, String) {
     let request_resp = client
         .post(format!("{}/app/v1/sessions/request", base_url(port)))
         .json(&serde_json::json!({
@@ -306,14 +318,17 @@ async fn approve_app_session(
         .json(&serde_json::json!({
             "identity": identity,
             "capabilities": capabilities,
-            "expires_at": null
+            "expires_at": expires_at
         }))
         .send()
         .await
         .unwrap();
     assert_eq!(approve_resp.status(), 200);
     let approved: serde_json::Value = approve_resp.json().await.unwrap();
-    approved["session_token"].as_str().unwrap().to_string()
+    (
+        approved["session_token"].as_str().unwrap().to_string(),
+        approved["session_id"].as_str().unwrap().to_string(),
+    )
 }
 
 async fn encrypted_spoke_reply_for_local_identity(handle: &DaemonHandle) -> (String, Vec<u8>) {
@@ -3082,6 +3097,74 @@ async fn test_revoking_an_app_session_terminates_its_pending_change_stream() {
 }
 
 #[tokio::test]
+async fn test_expiring_an_app_session_terminates_its_pending_change_stream() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let local_identity = handle.status().await.unwrap().identity_address;
+    let remote_identity = format!("{}.jolt", NodeIdentity::generate().identity_id());
+    let capability = format!("subscribe:{remote_identity}:/chirp/posts/*");
+    let expires_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 1;
+    let (token, _session_id) = approve_app_session_until(
+        &client,
+        port,
+        &local_identity,
+        &[capability.as_str()],
+        Some(expires_at),
+    )
+    .await;
+    let created = client
+        .post(format!("{}/app/v1/data-subscriptions", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "identity": remote_identity,
+            "prefix": "/chirp/posts/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    let created: serde_json::Value = created.json().await.unwrap();
+    let subscription_id = created["id"].as_str().unwrap();
+    let opened = client
+        .post(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+            base_url(port),
+        ))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    let opened: serde_json::Value = opened.json().await.unwrap();
+    let cursor = opened["cursor"].as_str().unwrap();
+
+    let terminal = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        client
+            .post(format!(
+                "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+                base_url(port),
+            ))
+            .bearer_auth(&token)
+            .json(&serde_json::json!({ "cursor": cursor }))
+            .send(),
+    )
+    .await
+    .expect("session expiry did not wake its Change Stream")
+    .unwrap();
+    assert_eq!(terminal.status(), 200);
+    assert_eq!(
+        terminal.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({ "type": "revoked" }),
+    );
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_data_subscription_is_session_private_durable_and_removable() {
     let holder = tempfile::tempdir().unwrap();
     let session_path = holder.path().join("app-sessions.json");
@@ -3223,7 +3306,7 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
     let alice_p2p = free_tcp_port();
     let (alice_port, alice_handle, _alice_dir) = start_test_server_with_tcp_port(alice_p2p).await;
     let (bob_port, bob_handle, _bob_dir) =
-        start_test_server_with_tcp_port_and_subscription_refresh_interval(
+        start_test_server_with_tcp_port_and_subscription_refresh_interval_no_mdns(
             free_tcp_port(),
             std::time::Duration::from_millis(10),
         )
