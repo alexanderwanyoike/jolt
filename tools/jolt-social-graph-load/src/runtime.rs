@@ -1,6 +1,6 @@
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::Path,
+    path::{Path, PathBuf},
     str::FromStr,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -37,7 +37,7 @@ use crate::{
 };
 
 const POSTS_PREFIX: &str = "/spoke/posts/";
-const RESULT_VERSION: u32 = 3;
+const RESULT_VERSION: u32 = 4;
 const VISIBILITY_POLL_DEADLINE: Duration = Duration::from_secs(75);
 const VISIBILITY_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -146,6 +146,12 @@ pub struct ProcessReport {
     pub accumulated_cpu_millis: u64,
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiskReport {
+    pub files: u64,
+    pub bytes: u64,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PhaseReport {
     pub name: String,
@@ -159,6 +165,8 @@ pub struct PhaseReport {
     pub cache_after: CacheReport,
     pub process_before: ProcessReport,
     pub process_after: ProcessReport,
+    pub disk_before: DiskReport,
+    pub disk_after: DiskReport,
     pub cpu_millis: u64,
     pub rss_growth_bytes: i64,
 }
@@ -509,6 +517,7 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
     let mut measurement = MeasurementContext {
         reader: &reader.handle,
         plan: &plan,
+        workdir,
         timeline_path: config.timeline_path,
         concurrency: config.concurrency,
         links: &links,
@@ -649,6 +658,7 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
     let mut restart_measurement = MeasurementContext {
         reader: &reader.handle,
         plan: &plan,
+        workdir,
         timeline_path: config.timeline_path,
         concurrency: config.concurrency,
         links: &links,
@@ -1099,6 +1109,7 @@ fn sync_work_report(
 struct MeasurementContext<'a> {
     reader: &'a DaemonHandle,
     plan: &'a WorkloadPlan,
+    workdir: &'a Path,
     timeline_path: TimelinePath,
     concurrency: usize,
     links: &'a [ShapedLink],
@@ -1115,6 +1126,7 @@ impl MeasurementContext<'_> {
         let network_before = snapshot_links(self.links);
         let cache_before = cache_report(self.reader).await?;
         let process_before = process_report(self.system)?;
+        let disk_before = disk_report(self.workdir)?;
         let sync_before = self.reader.status().await?;
         let stop_sampling = Arc::new(AtomicBool::new(false));
         let status_task = tokio::spawn(sample_daemon_status(
@@ -1137,6 +1149,7 @@ impl MeasurementContext<'_> {
         let sync_after = self.reader.status().await?;
         let process_after = process_report(self.system)?;
         let cache_after = cache_report(self.reader).await?;
+        let disk_after = disk_report(self.workdir)?;
         let network_after = snapshot_links(self.links);
         let cpu_millis = process_after
             .accumulated_cpu_millis
@@ -1155,6 +1168,8 @@ impl MeasurementContext<'_> {
                 cache_after,
                 process_before,
                 process_after,
+                disk_before,
+                disk_after,
                 cpu_millis,
                 rss_growth_bytes: rss_growth_bytes.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
             },
@@ -1173,6 +1188,7 @@ impl MeasurementContext<'_> {
         let network_before = snapshot_links(self.links);
         let cache_before = cache_report(self.reader).await?;
         let process_before = process_report(self.system)?;
+        let disk_before = disk_report(self.workdir)?;
         let sync_before = self.reader.status().await?;
         let stop_sampling = Arc::new(AtomicBool::new(false));
         let status_task = tokio::spawn(sample_daemon_status(
@@ -1198,6 +1214,7 @@ impl MeasurementContext<'_> {
         let sync_after = self.reader.status().await?;
         let process_after = process_report(self.system)?;
         let cache_after = cache_report(self.reader).await?;
+        let disk_after = disk_report(self.workdir)?;
         let network_after = snapshot_links(self.links);
         let cpu_millis = process_after
             .accumulated_cpu_millis
@@ -1216,6 +1233,8 @@ impl MeasurementContext<'_> {
                 cache_after,
                 process_before,
                 process_after,
+                disk_before,
+                disk_after,
                 cpu_millis,
                 rss_growth_bytes: rss_growth_bytes.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
             },
@@ -1223,6 +1242,39 @@ impl MeasurementContext<'_> {
             first_attempt_misses: outcome.first_attempt_misses,
         })
     }
+}
+
+fn disk_report(root: &Path) -> anyhow::Result<DiskReport> {
+    let mut report = DiskReport::default();
+    let mut directories = vec![PathBuf::from(root)];
+
+    while let Some(directory) = directories.pop() {
+        for entry in std::fs::read_dir(&directory)
+            .with_context(|| format!("read benchmark directory {}", directory.display()))?
+        {
+            let entry = entry.with_context(|| {
+                format!("read entry in benchmark directory {}", directory.display())
+            })?;
+            let file_type = entry
+                .file_type()
+                .with_context(|| format!("inspect benchmark path {}", entry.path().display()))?;
+            if file_type.is_dir() {
+                directories.push(entry.path());
+            } else if file_type.is_file() {
+                report.files = report.files.saturating_add(1);
+                report.bytes = report.bytes.saturating_add(
+                    entry
+                        .metadata()
+                        .with_context(|| {
+                            format!("inspect benchmark file {}", entry.path().display())
+                        })?
+                        .len(),
+                );
+            }
+        }
+    }
+
+    Ok(report)
 }
 
 async fn run_timeline(
@@ -1702,6 +1754,7 @@ mod tests {
         let cold = &report.phases[0];
         assert_eq!(cold.timeline_latency.successes, 1);
         assert_eq!(cold.activity.identity_sync_requests, 1);
+        assert!(cold.disk_after.bytes > cold.disk_before.bytes);
 
         let warm = &report.phases[1];
         assert_eq!(warm.name, "warm_no_change");

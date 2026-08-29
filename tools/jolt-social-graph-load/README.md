@@ -45,7 +45,7 @@ the stores and generated content are needed for diagnosis.
 
 Pass `--timeline-path legacy-refresh` to reproduce the old append/enumerate,
 resolve, and full-fetch behavior. Each JSON artifact records the selected
-path, and cache-first output uses result schema version 3.
+path, and cache-first output uses result schema version 4.
 
 `--one-way-latency-ms`, `--bandwidth-kbps`, and `--loss-percent` shape every
 reader/provider TCP link. `--churn-percent` deterministically stops a
