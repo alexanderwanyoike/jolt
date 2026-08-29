@@ -2316,7 +2316,10 @@ function createConnectedBackend(
                 signal: controller.signal,
               })
             ));
-            if (change.type === "resyncRequired") return { type: "resyncRequired" };
+            if (change.type === "resyncRequired") {
+              cursor = undefined;
+              return { type: "resyncRequired" };
+            }
             if (change.type === "cancelled" || change.type === "revoked") return change;
             cursor = change.cursor;
             if (change.type === "state") {

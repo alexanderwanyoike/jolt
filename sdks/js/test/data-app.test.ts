@@ -17,6 +17,7 @@ import {
   SubscriptionState,
   UpdateConflict,
 } from "jolt-sdk/data";
+import { createFakeJolt } from "jolt-sdk/testing";
 
 describe("Data SDK applications", () => {
   it("streams one typed Collection change after its initial snapshot", async () => {
@@ -100,6 +101,63 @@ describe("Data SDK applications", () => {
       done: true,
       value: undefined,
     });
+  });
+
+  it("signals an old cursor once and then automatically reopens from a snapshot", async () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: { read: Read.AnyIdentity, create: true },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts },
+    });
+    const fake = createFakeJolt("alice.jolt");
+    await fake.client.publishJson("/chirp/posts/jlt_one", {
+      version: 1,
+      value: { text: "Hello after restart" },
+    });
+    const cursors: Array<string | undefined> = [];
+    const client: typeof fake.client = {
+      ...fake.client,
+      async nextDataSubscriptionChange(subscriptionId, cursor) {
+        cursors.push(cursor);
+        if (cursor !== undefined) return { type: "resyncRequired" };
+        const view = await fake.client.getDataSubscriptionView(subscriptionId);
+        return {
+          type: "snapshot",
+          cursor: "stream_fresh:0",
+          records: view.records,
+          state: view.source.state,
+        };
+      },
+    };
+    const bob = await Chirp.connect({ identity: "bob.jolt", client });
+    const subscription = await Subscription.create(
+      bob.posts.for("alice.jolt"),
+    );
+    const events = subscription.changes({ cursor: "stream_old:7" })[
+      Symbol.asyncIterator
+    ]();
+
+    await expect(events.next()).resolves.toMatchObject({
+      value: { type: ChangeType.ResyncRequired },
+    });
+    const recovered = await events.next();
+    expect(recovered.value?.type).toBe(ChangeType.Snapshot);
+    if (recovered.value?.type === ChangeType.Snapshot) {
+      expect(recovered.value.items.map(item => item.value.text)).toEqual([
+        "Hello after restart",
+      ]);
+    }
+    expect(cursors).toEqual(["stream_old:7", undefined]);
   });
 
   it("creates a typed Data Subscription from a remote Collection view", async () => {

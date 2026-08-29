@@ -763,6 +763,88 @@ pub struct DataSubscriptionView {
     pub source: DataSubscriptionSource,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct NextDataSubscriptionChangeRequest {
+    pub cursor: Option<String>,
+}
+
+pub async fn next_data_subscription_change(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subscription_id): Path<String>,
+    Json(req): Json<NextDataSubscriptionChangeRequest>,
+) -> Result<Json<crate::data_change_streams::DataChangeEvent>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    let subscription = state
+        .sessions
+        .data_subscription(session_id, &subscription_id)
+        .await?;
+    let identity = recipient_identity(&subscription.identity)?;
+    require_data_subscription_capability(&session, &identity, &subscription.prefix)?;
+    let view = state
+        .daemon
+        .read_materialized_record_snapshot(identity.clone(), subscription.prefix.clone())
+        .await?;
+    let _ = begin_background_data_subscription_refresh(
+        state.clone(),
+        session_id.to_string(),
+        subscription.clone(),
+        identity,
+    )
+    .await?;
+
+    let change = state.data_change_streams.next(
+        session_id,
+        &subscription_id,
+        &subscription.identity,
+        view.records,
+        subscription.refresh,
+        req.cursor.as_deref(),
+    );
+    tokio::pin!(change);
+    loop {
+        tokio::select! {
+            event = &mut change => return Ok(Json(event)),
+            () = tokio::time::sleep(std::time::Duration::from_millis(250)) => {
+                if !state
+                    .sessions
+                    .data_subscription_session_is_active(session_id)
+                    .await
+                {
+                    state.data_change_streams.revoke_session(session_id).await;
+                    continue;
+                }
+                let current = match state
+                    .sessions
+                    .data_subscription(session_id, &subscription_id)
+                    .await
+                {
+                    Ok(current) => current,
+                    Err(AppSessionStoreError::DataSubscriptionNotFound(_)) => {
+                        state
+                            .data_change_streams
+                            .cancel_subscription(session_id, &subscription_id)
+                            .await;
+                        continue;
+                    }
+                    Err(error) => return Err(error.into()),
+                };
+                let identity = recipient_identity(&current.identity)?;
+                let _ = begin_background_data_subscription_refresh(
+                    state.clone(),
+                    session_id.to_string(),
+                    current,
+                    identity,
+                )
+                .await?;
+            }
+        }
+    }
+}
+
 pub async fn get_data_subscription_view(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -824,9 +906,11 @@ async fn begin_background_data_subscription_refresh(
     }
 
     tokio::spawn(async move {
+        let stream_identity = subscription.identity.clone();
+        let stream_prefix = subscription.prefix.clone();
         let refresh = match state
             .daemon
-            .refresh_materialized_record_view(identity, subscription.prefix)
+            .refresh_materialized_record_view(identity.clone(), stream_prefix.clone())
             .await
         {
             Ok(view) => completed_data_subscription_refresh(&view),
@@ -834,10 +918,28 @@ async fn begin_background_data_subscription_refresh(
                 reason: "networkUnavailable".to_string(),
             },
         };
-        let _ = state
+        let completed = state
             .sessions
-            .complete_data_subscription_refresh(&session_id, &subscription.id, refresh)
+            .complete_data_subscription_refresh(&session_id, &subscription.id, refresh.clone())
             .await;
+        if completed.is_ok() {
+            if let Ok(view) = state
+                .daemon
+                .read_materialized_record_snapshot(identity, stream_prefix)
+                .await
+            {
+                state
+                    .data_change_streams
+                    .publish(
+                        &session_id,
+                        &subscription.id,
+                        &stream_identity,
+                        view.records,
+                        refresh,
+                    )
+                    .await;
+            }
+        }
     });
     Ok(true)
 }
@@ -919,6 +1021,10 @@ pub async fn remove_data_subscription(
         .sessions
         .remove_data_subscription(session_id, &subscription_id)
         .await?;
+    state
+        .data_change_streams
+        .cancel_subscription(session_id, &subscription_id)
+        .await;
     Ok(Json(RemoveDataSubscriptionResponse {
         status: "cancelled",
         subscription_id,

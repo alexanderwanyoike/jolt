@@ -59,11 +59,16 @@ describe("Data SDK host bootstrap", () => {
       status: "compatible" as const,
       manifest: {
         appApi: 1,
-        features: { "data.records": 5, "data.subscriptions": 1 },
+        features: {
+          "data.change-streams": 1,
+          "data.records": 5,
+          "data.subscriptions": 1,
+        },
         discovery: "advertised" as const,
       },
       appApi: { requiredLevel: 1, availableLevel: 1, supported: true },
       requiredFeatures: {
+        "data.change-streams": { requiredLevel: 1, availableLevel: 1, supported: true },
         "data.records": { requiredLevel: 5, availableLevel: 5, supported: true },
         "data.subscriptions": { requiredLevel: 1, availableLevel: 1, supported: true },
       },
@@ -105,7 +110,11 @@ describe("Data SDK host bootstrap", () => {
 
     expect(checkCompatibility).toHaveBeenCalledWith({
       appApi: 1,
-      requiredFeatures: { "data.records": 5, "data.subscriptions": 1 },
+      requiredFeatures: {
+        "data.change-streams": 1,
+        "data.records": 5,
+        "data.subscriptions": 1,
+      },
     });
     expect(requestSession).toHaveBeenCalledWith({
       appId: "chirp.example",

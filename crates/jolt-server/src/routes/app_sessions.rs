@@ -120,6 +120,7 @@ pub async fn revoke_session(
         .sessions
         .revoke_session_for_identity(&session_id, &identity)
         .await?;
+    state.data_change_streams.revoke_session(&session_id).await;
     Ok(Json(response))
 }
 

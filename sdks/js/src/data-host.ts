@@ -12,6 +12,7 @@ import type {
 
 const DATA_RECORDS_LEVEL = 5;
 const DATA_SUBSCRIPTIONS_LEVEL = 1;
+const DATA_CHANGE_STREAMS_LEVEL = 1;
 const fallbackStorage = new Map<string, string>();
 
 /** @internal Client behavior used while the Data SDK establishes an App session. */
@@ -159,7 +160,10 @@ export async function connectDataApp(
     requiredFeatures: {
       "data.records": DATA_RECORDS_LEVEL,
       ...(app.accessPlan.subscriptions.length > 0
-        ? { "data.subscriptions": DATA_SUBSCRIPTIONS_LEVEL }
+        ? {
+            "data.change-streams": DATA_CHANGE_STREAMS_LEVEL,
+            "data.subscriptions": DATA_SUBSCRIPTIONS_LEVEL,
+          }
         : {}),
     },
   });

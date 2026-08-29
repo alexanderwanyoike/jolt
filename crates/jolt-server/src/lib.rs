@@ -1,3 +1,4 @@
+pub mod data_change_streams;
 pub mod device_authority;
 pub mod error;
 pub mod identity_recovery;

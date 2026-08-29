@@ -1,5 +1,6 @@
 use jolt_network::DaemonHandle;
 
+use crate::data_change_streams::DataChangeStreams;
 use crate::device_authority::DeviceAuthorityStore;
 use crate::identity_recovery::IdentityRecoveryStore;
 use crate::local_identities::LocalIdentityStore;
@@ -9,6 +10,7 @@ use crate::session_store::AppSessionStore;
 #[derive(Clone)]
 pub struct AppState {
     pub daemon: DaemonHandle,
+    pub data_change_streams: DataChangeStreams,
     pub sessions: AppSessionStore,
     pub network_settings: NetworkSettingsStore,
     pub local_identities: LocalIdentityStore,
