@@ -19,4 +19,21 @@ describe("beginner Chirp Data SDK example", () => {
       postedAt: new Date("2026-08-28T12:00:00.000Z"),
     });
   });
+
+  it("lets Bob read a post published by Alice", async () => {
+    const world = Chirp.testWorld();
+    const alice = world.as("alice.jolt");
+    const bob = world.as("bob.jolt");
+    const published = await alice.posts.create({
+      text: "Hello, Bob!",
+      postedAt: new Date("2026-08-29T09:00:00.000Z"),
+    });
+
+    const received = await bob.posts.for("alice.jolt").get(published.ref);
+
+    expect(received.isPresent()).toBe(true);
+    if (received.isPresent()) {
+      expect(received.value.text).toBe("Hello, Bob!");
+    }
+  });
 });

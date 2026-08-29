@@ -28,18 +28,19 @@
           <p class="kicker cyan">jolt-sdk · TypeScript</p>
           <h1>Build apps that<br />borrow an identity.</h1>
         </div>
-        <p>Jolt applications do not own accounts. They ask the local Jolt daemon for a capability-scoped session that the user approves in Jolt Console, then publish signed content under the user's identity, read other identities' content, and exchange encrypted objects through recipient-controlled ingress. The SDK is the typed client for that contract.</p>
+        <p>Define typed application data with Schema Classes, compose it through <code>App.create</code>, then connect or test it through one generated interface. Jolt owns identity, signed storage, paths, compatibility, and scoped approval. The low-level client remains available when an application needs explicit protocol control.</p>
       </header>
 
       <section class="sdk-section" id="install">
         <p class="kicker">01 / Install</p>
-        <h2>One package. Four entry points.</h2>
+        <h2>One package. Five entry points.</h2>
         <pre class="doc-code"><code data-lang="bash">yarn<span class="w"> </span>add<span class="w"> </span>jolt-sdk</code></pre>
         <p>The SDK also ships with every Jolt release as an installable tarball, if you prefer pinning to a release directly:</p>
         <pre class="doc-code"><code data-lang="bash">yarn<span class="w"> </span>add<span class="w"> </span>https://github.com/alexanderwanyoike/jolt/releases/latest/download/jolt-sdk.tgz</code></pre>
         <table>
           <thead><tr><th>Import</th><th>What it is</th></tr></thead>
           <tbody>
+            <tr><td><code>jolt-sdk/data</code></td><td>Beginner-first Schema Classes and typed application data APIs</td></tr>
             <tr><td><code>jolt-sdk</code></td><td>Types, typed errors, and <code>createJoltClient</code>: tolerant, domain-shaped operations</td></tr>
             <tr><td><code>jolt-sdk/transport-http</code></td><td><code>fetch</code>-based transport for browsers and Node.js 18+</td></tr>
             <tr><td><code>jolt-sdk/transport-tauri</code></td><td>Tauri <code>invoke</code>-based transport for desktop shells</td></tr>
@@ -48,9 +49,50 @@
         </table>
       </section>
 
+      <section class="sdk-section" id="data-quick-start">
+        <p class="kicker">02 / Beginner Chirp</p>
+        <h2>Describe the app. Jolt handles the machinery.</h2>
+        <p>A Schema Class is both your TypeScript type and runtime validation. <code>App.create</code> derives paths and access; <code>Chirp.connect()</code> handles compatibility, host selection, and approval.</p>
+        <pre class="doc-code"><code data-lang="ts">import { App, Collection, Field, Read, Schema } from "jolt-sdk/data";
+
+@Schema({ version: 1 })
+class Post {
+  @Field.string()
+  text!: string;
+
+  @Field.dateTime()
+  postedAt!: Date;
+}
+
+const Posts = Collection.create(Post, {
+  access: {
+    read: Read.AnyIdentity,
+    create: true,
+    update: true,
+    delete: true,
+    restore: true,
+  },
+});
+
+const Chirp = App.create({
+  id: "chirp.example",
+  name: "Chirp",
+  namespace: "chirp",
+  data: { posts: Posts },
+});
+
+const chirp = await Chirp.connect();
+const post = await chirp.posts.create({
+  text: "Hello, Jolt!",
+  postedAt: new Date(),
+});</code></pre>
+        <p><code>Chirp.test()</code> exposes the same typed API in memory. Follow the complete compile-checked <a href="../guides/app-development.html">Beginner Chirp guide</a>.</p>
+      </section>
+
       <section class="sdk-section" id="quick-start">
-        <p class="kicker">02 / Quick start</p>
+        <p class="kicker">03 / Advanced low-level client</p>
         <h2>Session in, signed content out.</h2>
+        <p>This explicit session, transport, path, and decoder flow is for advanced applications. Most applications should begin with <code>jolt-sdk/data</code>.</p>
         <p>An app declares who it is and exactly what it wants to do. The daemon holds the request until the user approves it in Jolt Console; the app polls until the approval carries a bearer token, then every call is checked against the granted capabilities.</p>
         <pre class="doc-code"><code data-lang="ts"><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">createJoltClient</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk&quot;</span><span class="p">;</span>
 <span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">HttpTransport</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/transport-http&quot;</span><span class="p">;</span>
@@ -88,7 +130,7 @@
       </section>
 
       <section class="sdk-section" id="transports">
-        <p class="kicker">03 / Transports</p>
+        <p class="kicker">04 / Transports</p>
         <h2>Same client. Two ways to the daemon.</h2>
         <p>Everything above the transport (operations, client, domain types) is identical in the browser, Node.js, and Tauri. Only the last hop changes.</p>
         <div class="sdk-columns">
@@ -114,7 +156,7 @@
       </section>
 
       <section class="sdk-section" id="testing">
-        <p class="kicker">04 / Testing</p>
+        <p class="kicker">05 / Testing</p>
         <h2>A whole daemon, faked in memory.</h2>
         <p><code>createFakeJolt</code> returns a fully working <code>JoltClient</code> with no daemon and no network: publishes land in an in-memory store, reads resolve against it, sends are recorded, and incoming envelopes can be injected. Your tests exercise your schemas and flows, not HPKE.</p>
         <pre class="doc-code"><code data-lang="ts"><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">createFakeJolt</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/testing&quot;</span><span class="p">;</span>
@@ -125,7 +167,7 @@
       </section>
 
       <section class="sdk-section" id="docs">
-        <p class="kicker">05 / Documentation</p>
+        <p class="kicker">06 / Documentation</p>
         <h2>Where to go next.</h2>
         <a class="doc-entry" href="reference.html">
           <span>API</span>
@@ -139,9 +181,18 @@
         <a class="doc-entry" href="../guides/app-development.html">
           <span>01</span>
           <div>
-            <p class="kicker cyan">Tutorial · Tauri + React</p>
-            <h2>App development guide</h2>
-            <p>Build Chirp, a minimal twitter-style app: scoped sessions, append records and timelines, follow requests over ingress, and tests against the fake.</p>
+            <p class="kicker cyan">Beginner tutorial · Data SDK</p>
+            <h2>Build Chirp</h2>
+            <p>Define a typed social app with Schema Classes, connect it, mutate posts, and test Alice and Bob without a daemon.</p>
+          </div>
+          <span class="open-arrow">→</span>
+        </a>
+        <a class="doc-entry" href="../guides/advanced-app-development.html">
+          <span>A1</span>
+          <div>
+            <p class="kicker cyan">Advanced tutorial · Low-level SDK</p>
+            <h2>Control the protocol seam</h2>
+            <p>Work explicitly with transports, compatibility Features, session Capabilities, paths, append records, ingress, encryption, and relay availability.</p>
           </div>
           <span class="open-arrow">→</span>
         </a>
