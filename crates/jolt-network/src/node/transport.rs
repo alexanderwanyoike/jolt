@@ -43,7 +43,12 @@ pub(super) async fn build_iroh_swarm(
     };
 
     let iroh_endpoint = transport.endpoint().ok();
-    let behaviour = build_behaviour(peer_id, &libp2p_keypair, config.enable_mdns)?;
+    let behaviour = build_behaviour(
+        peer_id,
+        &libp2p_keypair,
+        config.enable_mdns,
+        config.provider_record_capacity,
+    )?;
     let swarm = Swarm::new(
         transport.boxed(),
         behaviour,
@@ -75,7 +80,12 @@ pub(super) fn build_tcp_swarm(
         .multiplex(libp2p::yamux::Config::default())
         .boxed();
 
-    let behaviour = build_behaviour(peer_id, &libp2p_keypair, config.enable_mdns)?;
+    let behaviour = build_behaviour(
+        peer_id,
+        &libp2p_keypair,
+        config.enable_mdns,
+        config.provider_record_capacity,
+    )?;
     let swarm = Swarm::new(
         transport,
         behaviour,
@@ -95,6 +105,7 @@ fn build_behaviour(
     peer_id: libp2p::PeerId,
     libp2p_keypair: &libp2p::identity::Keypair,
     enable_mdns: bool,
+    provider_record_capacity: Option<usize>,
 ) -> Result<JoltBehaviour, NetworkError> {
     let mdns = if enable_mdns {
         Some(
@@ -142,7 +153,11 @@ fn build_behaviour(
 
     let mut kad_config = libp2p::kad::Config::new(StreamProtocol::new("/jolt/kad/1.0.0"));
     kad_config.set_query_timeout(Duration::from_secs(60));
-    let kad_store = libp2p::kad::store::MemoryStore::new(peer_id);
+    let mut store_config = libp2p::kad::store::MemoryStoreConfig::default();
+    if let Some(capacity) = provider_record_capacity {
+        store_config.max_provided_keys = capacity;
+    }
+    let kad_store = libp2p::kad::store::MemoryStore::with_config(peer_id, store_config);
     let kademlia = libp2p::kad::Behaviour::with_config(peer_id, kad_store, kad_config);
 
     let identify = libp2p::identify::Behaviour::new(libp2p::identify::Config::new(

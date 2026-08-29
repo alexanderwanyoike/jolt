@@ -43,6 +43,10 @@ pub struct NetworkConfig {
     /// Fixed UDP port for iroh P2P (0 = random). Use a fixed port on servers
     /// so the firewall can be configured once.
     pub p2p_port: u16,
+    /// Optional override for how many DHT keys this node may advertise itself
+    /// as a provider for. Production uses libp2p's default when unset; load
+    /// harnesses may raise it explicitly without changing normal nodes.
+    pub provider_record_capacity: Option<usize>,
     /// Bootstrap relays saved in persistent node config.
     pub configured_bootstrap_relays: Vec<String>,
     /// Bootstrap relays used for this daemon start after merging config, CLI,
@@ -63,6 +67,7 @@ impl Default for NetworkConfig {
             enable_mdns: true,
             enable_upnp: true,
             p2p_port: 0,
+            provider_record_capacity: None,
             configured_bootstrap_relays: Vec::new(),
             effective_bootstrap_relays: Vec::new(),
             bootstrap_relay: false,
@@ -80,6 +85,7 @@ impl NetworkConfig {
             enable_mdns: true,
             enable_upnp: false,
             p2p_port: 0,
+            provider_record_capacity: None,
             configured_bootstrap_relays: Vec::new(),
             effective_bootstrap_relays: Vec::new(),
             bootstrap_relay: false,
@@ -99,6 +105,7 @@ mod tests {
 
         assert!(config.bootstrap_peers.is_empty());
         assert!(config.configured_bootstrap_relays.is_empty());
+        assert!(config.provider_record_capacity.is_none());
         assert!(config.effective_bootstrap_relays.is_empty());
         assert!(!config.bootstrap_relay);
         assert!(config.home_relay.is_none());

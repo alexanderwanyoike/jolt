@@ -9,6 +9,7 @@ members = [
     "crates/jolt-node",
     "apps/jolt-console/src-tauri",
     "sdks/tauri-plugin",
+    "tools/jolt-social-graph-load",
 ]
 
 [workspace.package]
