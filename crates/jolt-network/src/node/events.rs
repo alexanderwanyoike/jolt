@@ -6,8 +6,8 @@ use jolt_core::verify_update_log_for_identity;
 use crate::behaviour::JoltBehaviourEvent;
 use crate::error::NetworkError;
 use crate::protocol::{
-    ContentResponse, DeviceWriterSyncResponse, IngressSubmitResponse, RelayExchangeRequest,
-    RelayExchangeResponse, UpdateLogRequest, UpdateLogResponse,
+    ContentResponse, DeviceWriterSyncRequest, DeviceWriterSyncResponse, IngressSubmitResponse,
+    RelayExchangeRequest, RelayExchangeResponse, UpdateLogRequest, UpdateLogResponse,
 };
 
 use super::{unix_now, NetworkNode, PeerConnectionInfo};
@@ -385,6 +385,14 @@ impl NetworkNode {
                     "Received device-writer sync request for: {}",
                     request.identity
                 );
+                let response_request = DeviceWriterSyncRequest {
+                    identity: request.identity.clone(),
+                    max_operation_version: request.max_operation_version,
+                    max_sync_version: request.max_sync_version,
+                    cursors: request.cursors.clone(),
+                    authority_records: Vec::new(),
+                    device_logs: Vec::new(),
+                };
 
                 if !request.authority_records.is_empty()
                     && request.identity == self.identity.identity_id()
@@ -424,8 +432,8 @@ impl NetworkNode {
                 let response = self
                     .device_writer_sync_snapshot(&request.identity)
                     .map(|(authority_records, device_logs)| {
-                        DeviceWriterSyncResponse::for_request(
-                            request.max_operation_version,
+                        DeviceWriterSyncResponse::for_sync_request(
+                            &response_request,
                             authority_records,
                             device_logs,
                         )
@@ -467,6 +475,7 @@ impl NetworkNode {
                         );
                     let protocol_result = if let Err(error) = response.ensure_supported(
                         crate::protocol::CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION,
+                        crate::protocol::DELTA_DEVICE_WRITER_SYNC_VERSION,
                     ) {
                         Err(error)
                     } else if response.authority_records.is_empty() {
@@ -478,11 +487,7 @@ impl NetworkNode {
                         Ok(())
                     };
                     if protocol_result.is_ok() && pending.identity != self.identity.identity_id() {
-                        self.schedule_device_writer_sync_verification(
-                            pending,
-                            response.authority_records,
-                            response.device_logs,
-                        );
+                        self.schedule_device_writer_sync_verification(pending, response);
                         return;
                     }
                     let result = protocol_result.and_then(|_| {

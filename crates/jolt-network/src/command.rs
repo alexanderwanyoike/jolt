@@ -457,6 +457,12 @@ pub struct DeviceWriterSyncWorkStatus {
     pub rejected: u64,
     pub cancelled: u64,
     pub timed_out: u64,
+    pub full_responses: u64,
+    pub delta_responses: u64,
+    pub delta_continuations: u64,
+    pub received_entries: u64,
+    pub received_bytes: u64,
+    pub full_recoveries: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
