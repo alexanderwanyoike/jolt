@@ -14,13 +14,13 @@ Every TypeScript file on this page comes from [`sdks/js/guide/src/beginner`](htt
 
 ## 1 · Install the SDK
 
-Create any TypeScript application and add Jolt:
+Create a Tauri or Node TypeScript application and add Jolt:
 
 ```bash
 yarn add jolt-sdk
 ```
 
-Schema Classes use standard TypeScript decorators. Enable them in `tsconfig.json`:
+Schema Classes use NestJS-style TypeScript decorators. Enable them in `tsconfig.json`:
 
 ```json tsconfig.json
 {
@@ -53,7 +53,7 @@ Create `src/posts.ts`:
 
 @include sdks/js/guide/src/beginner/posts.ts as src/posts.ts
 
-Call `exerciseConnectedPostLifecycle()` from your application. `Chirp.connect()` finds the local Jolt host, checks compatibility, derives the exact permissions from the app definition, reuses an approved session when possible, and waits for approval in Jolt Console when needed.
+Call `exerciseConnectedPostLifecycle()` from your Tauri or Node application. `Chirp.connect()` finds the local Jolt host, checks compatibility, derives the exact permissions from the app definition, reuses an approved session when possible, and waits for approval in Jolt Console when needed.
 
 Each operation returns an immutable Item. Updating a post returns a new Item with the same stable `ref`. The old Item does not change. Compare `item.state` with `State.Present` or use helpers such as `isPresent()` and `isDeleted()` to narrow the Item before accessing state-specific fields and methods.
 

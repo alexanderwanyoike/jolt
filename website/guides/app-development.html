@@ -11,7 +11,7 @@
     <meta property="og:site_name" content="Jolt" />
     <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="jolt-guide-source-sha256" content="b231051560fbb7874a80999ae07d8408c7915ad465e7bbf6fc957c416f1504e6" />
+    <meta name="jolt-guide-source-sha256" content="f30632812280cafa054ec5503fd7d354757a38fc822daeaa26b39cde326abf66" />
     <title>Jolt Guide | Build Chirp with the Data SDK</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -37,9 +37,9 @@
 
         </header>
         <h2 id="1-install-the-sdk">1 · Install the SDK</h2>
-<p>Create any TypeScript application and add Jolt:</p>
+<p>Create a Tauri or Node TypeScript application and add Jolt:</p>
 <pre class="doc-code"><code>yarn<span class="w"> </span>add<span class="w"> </span>jolt-sdk</code></pre>
-<p>Schema Classes use standard TypeScript decorators. Enable them in <code>tsconfig.json</code>:</p>
+<p>Schema Classes use NestJS-style TypeScript decorators. Enable them in <code>tsconfig.json</code>:</p>
 <figure class="code-figure"><figcaption><span>tsconfig.json</span><span>json</span></figcaption><pre class="doc-code"><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;compilerOptions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;experimentalDecorators&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
@@ -129,7 +129,7 @@
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">chirp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">Chirp</span><span class="p">.</span><span class="nx">connect</span><span class="p">();</span>
 <span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">exercisePostLifecycle</span><span class="p">(</span><span class="nx">chirp</span><span class="p">);</span>
 <span class="p">}</span></code></pre></figure>
-<p>Call <code>exerciseConnectedPostLifecycle()</code> from your application. <code>Chirp.connect()</code> finds the local Jolt host, checks compatibility, derives the exact permissions from the app definition, reuses an approved session when possible, and waits for approval in Jolt Console when needed.</p>
+<p>Call <code>exerciseConnectedPostLifecycle()</code> from your Tauri or Node application. <code>Chirp.connect()</code> finds the local Jolt host, checks compatibility, derives the exact permissions from the app definition, reuses an approved session when possible, and waits for approval in Jolt Console when needed.</p>
 <p>Each operation returns an immutable Item. Updating a post returns a new Item with the same stable <code>ref</code>. The old Item does not change. Compare <code>item.state</code> with <code>State.Present</code> or use helpers such as <code>isPresent()</code> and <code>isDeleted()</code> to narrow the Item before accessing state-specific fields and methods.</p>
 <h2 id="4-test-without-a-daemon">4 · Test without a daemon</h2>
 <p>Install Vitest and create <code>src/chirp.test.ts</code>:</p>
