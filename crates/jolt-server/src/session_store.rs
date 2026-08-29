@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::RngCore;
+use jolt_core::IdentityId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::Mutex;
@@ -135,6 +137,44 @@ pub struct AppSessionStatusResponse {
     pub expires_at: Option<u64>,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataSubscriptionLifecycle {
+    Active,
+    Dormant,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum DataSubscriptionRefresh {
+    Loading,
+    Updating {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        last_verified_at: Option<u64>,
+    },
+    Ready {
+        last_verified_at: u64,
+    },
+    Stale {
+        last_verified_at: u64,
+        reason: String,
+    },
+    Unavailable {
+        reason: String,
+    },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DataSubscriptionRecord {
+    pub id: String,
+    pub session_id: String,
+    pub identity: String,
+    pub prefix: String,
+    pub lifecycle: DataSubscriptionLifecycle,
+    pub refresh: DataSubscriptionRefresh,
+    pub created_at: u64,
+}
+
 #[derive(Debug, Error)]
 pub enum AppSessionStoreError {
     #[error("missing app session bearer token")]
@@ -153,6 +193,10 @@ pub enum AppSessionStoreError {
     CapabilityNotGrantable(String),
     #[error("app session capability was not requested: {0}")]
     CapabilityNotRequested(String),
+    #[error("data subscription capacity exceeded")]
+    DataSubscriptionCapacityExceeded,
+    #[error("data subscription not found: {0}")]
+    DataSubscriptionNotFound(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -167,7 +211,11 @@ pub struct AppSessionStore {
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct AppSessionState {
     records: Vec<AppSessionRecord>,
+    #[serde(default)]
+    data_subscriptions: Vec<DataSubscriptionRecord>,
 }
+
+const MAX_DATA_SUBSCRIPTIONS: usize = 4_096;
 
 impl AppSessionStore {
     pub fn open_default() -> std::io::Result<Self> {
@@ -420,6 +468,9 @@ impl AppSessionStore {
         record.status = AppSessionStatus::Revoked;
         record.revoked_at = Some(now_secs());
         let response = AppSessionView::from(&*record);
+        state
+            .data_subscriptions
+            .retain(|subscription| subscription.session_id != session_id);
         save_state(&self.path, &state)?;
         Ok(response)
     }
@@ -442,6 +493,9 @@ impl AppSessionStore {
         record.status = AppSessionStatus::Revoked;
         record.revoked_at = Some(now_secs());
         let response = AppSessionView::from(&*record);
+        state
+            .data_subscriptions
+            .retain(|subscription| subscription.session_id != session_id);
         save_state(&self.path, &state)?;
         Ok(response)
     }
@@ -463,6 +517,13 @@ impl AppSessionStore {
             revoked.push(AppSessionView::from(&*record));
         }
         if !revoked.is_empty() {
+            let revoked_session_ids = revoked
+                .iter()
+                .filter_map(|session| session.session_id.as_deref())
+                .collect::<Vec<_>>();
+            state.data_subscriptions.retain(|subscription| {
+                !revoked_session_ids.contains(&subscription.session_id.as_str())
+            });
             save_state(&self.path, &state)?;
         }
         Ok(revoked)
@@ -490,6 +551,12 @@ impl AppSessionStore {
             .is_some_and(|expires_at| expires_at <= now)
         {
             record.status = AppSessionStatus::Expired;
+            let session_id = record.session_id.clone();
+            if let Some(session_id) = session_id {
+                state
+                    .data_subscriptions
+                    .retain(|subscription| subscription.session_id != session_id);
+            }
             save_state(&self.path, &state)?;
             return Err(AppSessionStoreError::InvalidToken);
         }
@@ -498,6 +565,70 @@ impl AppSessionStore {
         let response = AppSessionView::from(&*record);
         save_state(&self.path, &state)?;
         Ok(response)
+    }
+
+    pub async fn register_data_subscription(
+        &self,
+        session_id: &str,
+        identity: String,
+        prefix: String,
+    ) -> Result<DataSubscriptionRecord, AppSessionStoreError> {
+        let mut state = self.state.lock().await;
+        if let Some(existing) = state.data_subscriptions.iter().find(|subscription| {
+            subscription.session_id == session_id
+                && subscription.identity == identity
+                && subscription.prefix == prefix
+        }) {
+            return Ok(existing.clone());
+        }
+        if state.data_subscriptions.len() >= MAX_DATA_SUBSCRIPTIONS {
+            return Err(AppSessionStoreError::DataSubscriptionCapacityExceeded);
+        }
+        let subscription = DataSubscriptionRecord {
+            id: new_id("sub"),
+            session_id: session_id.to_string(),
+            identity,
+            prefix,
+            lifecycle: DataSubscriptionLifecycle::Dormant,
+            refresh: DataSubscriptionRefresh::Loading,
+            created_at: now_secs(),
+        };
+        state.data_subscriptions.push(subscription.clone());
+        save_state(&self.path, &state)?;
+        Ok(subscription)
+    }
+
+    pub async fn list_data_subscriptions(
+        &self,
+        session_id: &str,
+    ) -> Vec<DataSubscriptionRecord> {
+        let state = self.state.lock().await;
+        state
+            .data_subscriptions
+            .iter()
+            .filter(|subscription| subscription.session_id == session_id)
+            .cloned()
+            .collect()
+    }
+
+    pub async fn remove_data_subscription(
+        &self,
+        session_id: &str,
+        subscription_id: &str,
+    ) -> Result<(), AppSessionStoreError> {
+        let mut state = self.state.lock().await;
+        let index = state
+            .data_subscriptions
+            .iter()
+            .position(|subscription| {
+                subscription.session_id == session_id && subscription.id == subscription_id
+            })
+            .ok_or_else(|| {
+                AppSessionStoreError::DataSubscriptionNotFound(subscription_id.to_string())
+            })?;
+        state.data_subscriptions.remove(index);
+        save_state(&self.path, &state)?;
+        Ok(())
     }
 }
 
@@ -518,6 +649,10 @@ enum AppCapability {
     IngressDecide,
     Enumerate {
         identity_scope: EnumerateIdentityScope,
+        scope: PathScope,
+    },
+    Subscribe {
+        identity: IdentityId,
         scope: PathScope,
     },
     Path {
@@ -565,6 +700,14 @@ impl AppCapability {
                 identity_scope: EnumerateIdentityScope::AnyIdentity,
                 scope: PathScope::parse(raw.strip_prefix("enumerate:any:")?)?,
             }),
+            _ if raw.starts_with("subscribe:") => {
+                let (identity, scope) = raw.strip_prefix("subscribe:")?.split_once(':')?;
+                let identity = IdentityId::from_str(identity.trim_end_matches(".jolt")).ok()?;
+                Some(Self::Subscribe {
+                    identity,
+                    scope: PathScope::parse(scope)?,
+                })
+            }
             _ => parse_path_capability(raw),
         }
     }
@@ -590,6 +733,16 @@ impl AppCapability {
             {
                 requested_scope.contains(granted_scope)
             }
+            (
+                Self::Subscribe {
+                    identity: requested_identity,
+                    scope: requested_scope,
+                },
+                Self::Subscribe {
+                    identity: granted_identity,
+                    scope: granted_scope,
+                },
+            ) if requested_identity == granted_identity => requested_scope.contains(granted_scope),
             (
                 Self::Path {
                     action: requested_action,

@@ -162,10 +162,14 @@ impl IntoResponse for AppSessionApiError {
             AppSessionStoreError::RequestNotFound(_) | AppSessionStoreError::SessionNotFound(_) => {
                 (StatusCode::NOT_FOUND, "app_session_store_error")
             }
+            AppSessionStoreError::DataSubscriptionNotFound(_) => {
+                (StatusCode::NOT_FOUND, "data_subscription_not_found")
+            }
             AppSessionStoreError::RequestNotPending(_)
             | AppSessionStoreError::MissingIdentity
             | AppSessionStoreError::CapabilityNotGrantable(_)
-            | AppSessionStoreError::CapabilityNotRequested(_) => {
+            | AppSessionStoreError::CapabilityNotRequested(_)
+            | AppSessionStoreError::DataSubscriptionCapacityExceeded => {
                 (StatusCode::BAD_REQUEST, "app_session_store_error")
             }
             AppSessionStoreError::Io(_) => {

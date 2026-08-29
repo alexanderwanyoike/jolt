@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -673,6 +673,69 @@ pub struct EnumerateRequest {
     pub path_prefix: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateDataSubscriptionRequest {
+    pub identity: String,
+    pub prefix: String,
+}
+
+pub async fn create_data_subscription(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateDataSubscriptionRequest>,
+) -> Result<Json<crate::session_store::DataSubscriptionRecord>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let identity = recipient_identity(&req.identity)?;
+    let prefix = normalize_path(&req.prefix)?;
+    require_data_subscription_capability(&session, &identity, &prefix)?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    let subscription = state
+        .sessions
+        .register_data_subscription(session_id, format!("{identity}.jolt"), prefix)
+        .await?;
+    Ok(Json(subscription))
+}
+
+pub async fn list_data_subscriptions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<crate::session_store::DataSubscriptionRecord>>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    Ok(Json(
+        state.sessions.list_data_subscriptions(session_id).await,
+    ))
+}
+
+#[derive(Debug, Serialize)]
+pub struct RemoveDataSubscriptionResponse {
+    pub status: &'static str,
+    pub subscription_id: String,
+}
+
+pub async fn remove_data_subscription(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subscription_id): Path<String>,
+) -> Result<Json<RemoveDataSubscriptionResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    state
+        .sessions
+        .remove_data_subscription(session_id, &subscription_id)
+        .await?;
+    Ok(Json(RemoveDataSubscriptionResponse {
+        status: "cancelled",
+        subscription_id,
+    }))
+}
+
 /// List an identity's append records whose path starts with `path_prefix`. This
 /// is the read seam a Collection is assembled from. Reads cached merged
 /// device-writer state, never a rewritten blob.
@@ -716,6 +779,30 @@ fn require_enumerate_capability(
     } else {
         Err(AppApiError::Forbidden(format!(
             "enumeration of identity {requested_identity} at {path} is outside the granted identity and path scope"
+        )))
+    }
+}
+
+fn require_data_subscription_capability(
+    session: &AppSessionView,
+    requested_identity: &IdentityId,
+    prefix: &str,
+) -> Result<(), AppApiError> {
+    let allowed = session.granted_capabilities.iter().any(|capability| {
+        let Some((identity, pattern)) = capability
+            .strip_prefix("subscribe:")
+            .and_then(|scope| scope.split_once(':'))
+        else {
+            return false;
+        };
+        recipient_identity(identity).is_ok_and(|identity| &identity == requested_identity)
+            && path_matches(pattern, prefix)
+    });
+    if allowed {
+        Ok(())
+    } else {
+        Err(AppApiError::Forbidden(format!(
+            "data subscription for identity {requested_identity} at {prefix} is outside the granted identity and path scope"
         )))
     }
 }

@@ -2813,6 +2813,165 @@ async fn test_app_can_append_and_enumerate_records_by_prefix() {
 }
 
 #[tokio::test]
+async fn test_app_data_subscription_registration_is_identity_and_prefix_scoped() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let local_identity = handle.status().await.unwrap().identity_address;
+    let remote_identity = format!("{}.jolt", NodeIdentity::generate().identity_id());
+    let other_identity = format!("{}.jolt", NodeIdentity::generate().identity_id());
+    let capability = format!("subscribe:{remote_identity}:/spoke/posts/*");
+    let token = approve_app_session(
+        &client,
+        port,
+        &local_identity,
+        &[capability.as_str()],
+    )
+    .await;
+
+    let create = || {
+        client
+            .post(format!("{}/app/v1/data-subscriptions", base_url(port)))
+            .bearer_auth(&token)
+            .json(&serde_json::json!({
+                "identity": remote_identity,
+                "prefix": "/spoke/posts/",
+            }))
+            .send()
+    };
+    let first = create().await.unwrap();
+    assert_eq!(first.status(), 200);
+    let first: serde_json::Value = first.json().await.unwrap();
+    assert_eq!(first["identity"], remote_identity);
+    assert_eq!(first["prefix"], "/spoke/posts/");
+    assert_eq!(first["lifecycle"], "dormant");
+    assert_eq!(first["refresh"]["status"], "loading");
+
+    let duplicate = create().await.unwrap();
+    assert_eq!(duplicate.status(), 200);
+    let duplicate: serde_json::Value = duplicate.json().await.unwrap();
+    assert_eq!(duplicate["id"], first["id"]);
+
+    for (identity, prefix) in [
+        (other_identity.as_str(), "/spoke/posts/"),
+        (remote_identity.as_str(), "/spoke/private/"),
+    ] {
+        let denied = client
+            .post(format!("{}/app/v1/data-subscriptions", base_url(port)))
+            .bearer_auth(&token)
+            .json(&serde_json::json!({ "identity": identity, "prefix": prefix }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), 403);
+    }
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_app_data_subscription_is_session_private_durable_and_removable() {
+    let holder = tempfile::tempdir().unwrap();
+    let session_path = holder.path().join("app-sessions.json");
+    let (first_port, first_handle, _first_dir) =
+        start_test_server_with_session_path(session_path.clone()).await;
+    let client = reqwest::Client::new();
+    let local_identity = first_handle.status().await.unwrap().identity_address;
+    let remote_identity = format!("{}.jolt", NodeIdentity::generate().identity_id());
+    let capability = format!("subscribe:{remote_identity}:/spoke/posts/*");
+    let owner_token = approve_app_session(
+        &client,
+        first_port,
+        &local_identity,
+        &[capability.as_str()],
+    )
+    .await;
+    let other_token = approve_app_session(
+        &client,
+        first_port,
+        &local_identity,
+        &[capability.as_str()],
+    )
+    .await;
+
+    let created = client
+        .post(format!(
+            "{}/app/v1/data-subscriptions",
+            base_url(first_port)
+        ))
+        .bearer_auth(&owner_token)
+        .json(&serde_json::json!({
+            "identity": remote_identity,
+            "prefix": "/spoke/posts/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), 200);
+    let created: serde_json::Value = created.json().await.unwrap();
+    let subscription_id = created["id"].as_str().unwrap().to_string();
+
+    let other_list = client
+        .get(format!(
+            "{}/app/v1/data-subscriptions",
+            base_url(first_port)
+        ))
+        .bearer_auth(&other_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(other_list.status(), 200);
+    assert_eq!(other_list.json::<serde_json::Value>().await.unwrap(), serde_json::json!([]));
+
+    first_handle.shutdown().await.ok();
+    let (second_port, second_handle, _second_dir) =
+        start_test_server_with_session_path(session_path).await;
+    let retained = client
+        .get(format!(
+            "{}/app/v1/data-subscriptions",
+            base_url(second_port)
+        ))
+        .bearer_auth(&owner_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(retained.status(), 200);
+    let retained: serde_json::Value = retained.json().await.unwrap();
+    assert_eq!(retained.as_array().unwrap().len(), 1);
+    assert_eq!(retained[0]["id"], subscription_id);
+
+    let removed = client
+        .delete(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}",
+            base_url(second_port)
+        ))
+        .bearer_auth(&owner_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(removed.status(), 200);
+    assert_eq!(
+        removed.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({
+            "status": "cancelled",
+            "subscription_id": subscription_id,
+        })
+    );
+
+    let other_remove = client
+        .delete(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}",
+            base_url(second_port)
+        ))
+        .bearer_auth(&other_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(other_remove.status(), 404);
+
+    second_handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_reads_authoritative_local_record_state_across_restart() {
     let profile = tempfile::tempdir().unwrap();
     let (first_port, first_handle, _first_holder) =
