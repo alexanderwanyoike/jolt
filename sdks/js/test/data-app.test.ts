@@ -160,6 +160,51 @@ describe("Data SDK applications", () => {
     expect(cursors).toEqual(["stream_old:7", undefined]);
   });
 
+  it("silently re-polls an idle transport timeout with the same cursor", async () => {
+    @Schema({ version: 1 })
+    class Post {
+      @Field.string()
+      text!: string;
+    }
+
+    const Posts = Collection.create(Post, {
+      access: { read: Read.AnyIdentity, create: true },
+    });
+    const Chirp = App.create({
+      id: "chirp.example",
+      name: "Chirp",
+      namespace: "chirp",
+      data: { posts: Posts },
+    });
+    const fake = createFakeJolt("alice.jolt");
+    const cursors: Array<string | undefined> = [];
+    let poll = 0;
+    const client: typeof fake.client = {
+      ...fake.client,
+      async nextDataSubscriptionChange(_subscriptionId, cursor) {
+        cursors.push(cursor);
+        poll += 1;
+        if (poll === 1) return { type: "timeout", cursor: cursor! };
+        return {
+          type: "snapshot",
+          cursor: cursor!,
+          records: [],
+          state: { status: "loading" },
+        };
+      },
+    };
+    const bob = await Chirp.connect({ identity: "bob.jolt", client });
+    const subscription = await Subscription.create(bob.posts.for("alice.jolt"));
+    const events = subscription.changes({ cursor: "stream_boot:4" })[
+      Symbol.asyncIterator
+    ]();
+
+    await expect(events.next()).resolves.toMatchObject({
+      value: { type: ChangeType.Snapshot, cursor: "stream_boot:4" },
+    });
+    expect(cursors).toEqual(["stream_boot:4", "stream_boot:4"]);
+  });
+
   it("creates a typed Data Subscription from a remote Collection view", async () => {
     @Schema({ version: 1 })
     class Post {

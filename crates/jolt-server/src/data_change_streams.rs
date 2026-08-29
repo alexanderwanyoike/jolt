@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use jolt_network::MaterializedRecordInfo;
 use serde::Serialize;
@@ -8,6 +9,8 @@ use tokio::sync::{Mutex, Notify};
 use crate::session_store::DataSubscriptionRefresh;
 
 const DEFAULT_CHANGE_JOURNAL_CAPACITY: usize = 64;
+const DEFAULT_CHANGE_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+const CHANGE_LONG_POLL_TIMEOUT: Duration = Duration::from_secs(25);
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -28,6 +31,9 @@ pub enum DataChangeEvent {
         cursor: String,
         state: DataSubscriptionRefresh,
     },
+    Timeout {
+        cursor: String,
+    },
     ResyncRequired,
     Cancelled,
     Revoked,
@@ -37,7 +43,14 @@ pub enum DataChangeEvent {
 pub struct DataChangeStreams {
     generation: Arc<str>,
     capacity: usize,
-    streams: Arc<Mutex<HashMap<String, StreamState>>>,
+    idle_timeout: Duration,
+    registry: Arc<Mutex<StreamRegistry>>,
+}
+
+#[derive(Debug, Default)]
+struct StreamRegistry {
+    active: HashMap<String, StreamState>,
+    terminal: HashMap<String, TerminalTombstone>,
 }
 
 #[derive(Debug)]
@@ -49,6 +62,14 @@ struct StreamState {
     sequence: u64,
     journal: VecDeque<SequencedEvent>,
     notify: Arc<Notify>,
+    last_polled_at: Instant,
+}
+
+#[derive(Debug)]
+struct TerminalTombstone {
+    session_id: String,
+    event: DataChangeEvent,
+    expires_at: Instant,
 }
 
 #[derive(Debug)]
@@ -63,12 +84,49 @@ impl DataChangeStreams {
         Self::with_generation_and_capacity(generation, DEFAULT_CHANGE_JOURNAL_CAPACITY)
     }
 
+    pub fn for_refresh_interval(refresh_interval: Duration) -> Self {
+        let refresh_interval = refresh_interval.max(Duration::from_secs(1));
+        let generation = format!("stream_{}", hex::encode(rand::random::<[u8; 16]>()));
+        Self::with_generation_capacity_and_idle_timeout(
+            generation,
+            DEFAULT_CHANGE_JOURNAL_CAPACITY,
+            refresh_interval.saturating_mul(3),
+        )
+    }
+
     fn with_generation_and_capacity(generation: impl Into<String>, capacity: usize) -> Self {
+        Self::with_generation_capacity_and_idle_timeout(
+            generation,
+            capacity,
+            DEFAULT_CHANGE_STREAM_IDLE_TIMEOUT,
+        )
+    }
+
+    fn with_generation_capacity_and_idle_timeout(
+        generation: impl Into<String>,
+        capacity: usize,
+        idle_timeout: Duration,
+    ) -> Self {
         Self {
             generation: Arc::from(generation.into()),
             capacity: capacity.max(1),
-            streams: Arc::new(Mutex::new(HashMap::new())),
+            idle_timeout,
+            registry: Arc::new(Mutex::new(StreamRegistry::default())),
         }
+    }
+
+    pub fn start_idle_eviction(&self, sweep_interval: Duration) {
+        let registry = Arc::downgrade(&self.registry);
+        let idle_timeout = self.idle_timeout;
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(sweep_interval).await;
+                let Some(registry) = registry.upgrade() else {
+                    return;
+                };
+                evict_idle_registry(&registry, idle_timeout).await;
+            }
+        });
     }
 
     pub async fn next(
@@ -80,6 +138,28 @@ impl DataChangeStreams {
         refresh: DataSubscriptionRefresh,
         cursor: Option<&str>,
     ) -> DataChangeEvent {
+        self.next_with_timeout(
+            session_id,
+            subscription_id,
+            identity,
+            records,
+            refresh,
+            cursor,
+            CHANGE_LONG_POLL_TIMEOUT,
+        )
+        .await
+    }
+
+    async fn next_with_timeout(
+        &self,
+        session_id: &str,
+        subscription_id: &str,
+        identity: &str,
+        records: Vec<MaterializedRecordInfo>,
+        refresh: DataSubscriptionRefresh,
+        cursor: Option<&str>,
+        timeout: Duration,
+    ) -> DataChangeEvent {
         let requested_sequence = match cursor {
             None => None,
             Some(cursor) => match self.parse_cursor(cursor) {
@@ -87,38 +167,50 @@ impl DataChangeStreams {
                 None => return DataChangeEvent::ResyncRequired,
             },
         };
+        let deadline = tokio::time::sleep(timeout);
+        tokio::pin!(deadline);
 
         loop {
             let notified = {
-                let mut streams = self.streams.lock().await;
-                let stream = streams
+                let mut registry = self.registry.lock().await;
+                if let Some(terminal) = registry.terminal.get(subscription_id) {
+                    return if terminal.session_id == session_id {
+                        terminal.event.clone()
+                    } else {
+                        DataChangeEvent::ResyncRequired
+                    };
+                }
+                let mut created = false;
+                let stream = registry
+                    .active
                     .entry(subscription_id.to_string())
-                    .or_insert_with(|| StreamState {
-                        session_id: session_id.to_string(),
-                        identity: identity.to_string(),
-                        records: records
-                            .iter()
-                            .cloned()
-                            .map(|record| (record.path.clone(), record))
-                            .collect(),
-                        refresh: refresh.clone(),
-                        sequence: 0,
-                        journal: VecDeque::new(),
-                        notify: Arc::new(Notify::new()),
+                    .or_insert_with(|| {
+                        created = true;
+                        StreamState {
+                            session_id: session_id.to_string(),
+                            identity: identity.to_string(),
+                            records: records
+                                .iter()
+                                .cloned()
+                                .map(|record| (record.path.clone(), record))
+                                .collect(),
+                            refresh: refresh.clone(),
+                            sequence: 0,
+                            journal: VecDeque::new(),
+                            notify: Arc::new(Notify::new()),
+                            last_polled_at: Instant::now(),
+                        }
                     });
                 if stream.session_id != session_id || stream.identity != identity {
                     return DataChangeEvent::ResyncRequired;
                 }
-                let Some(requested_sequence) = requested_sequence else {
+                stream.last_polled_at = Instant::now();
+                if created || requested_sequence.is_none() {
                     return self.snapshot(stream);
-                };
+                }
+                let requested_sequence = requested_sequence.expect("checked above");
                 if requested_sequence > stream.sequence {
                     return DataChangeEvent::ResyncRequired;
-                }
-                if let Some(terminal) = stream.journal.iter().find(|event| {
-                    event.sequence > requested_sequence && event_is_terminal(&event.event)
-                }) {
-                    return terminal.event.clone();
                 }
                 if let Some(first) = stream.journal.front() {
                     if requested_sequence < first.sequence.saturating_sub(1) {
@@ -134,7 +226,14 @@ impl DataChangeStreams {
                 }
                 stream.notify.clone().notified_owned()
             };
-            notified.await;
+            tokio::select! {
+                () = notified => {}
+                () = &mut deadline => {
+                    return DataChangeEvent::Timeout {
+                        cursor: self.cursor(requested_sequence.expect("a waiting poll has a cursor")),
+                    };
+                }
+            }
         }
     }
 
@@ -146,9 +245,12 @@ impl DataChangeStreams {
         records: Vec<MaterializedRecordInfo>,
         refresh: DataSubscriptionRefresh,
     ) {
-        let mut streams = self.streams.lock().await;
-        let Some(stream) = streams.get_mut(subscription_id) else {
-            streams.insert(
+        let mut registry = self.registry.lock().await;
+        if registry.terminal.contains_key(subscription_id) {
+            return;
+        }
+        let Some(stream) = registry.active.get_mut(subscription_id) else {
+            registry.active.insert(
                 subscription_id.to_string(),
                 StreamState {
                     session_id: session_id.to_string(),
@@ -161,6 +263,7 @@ impl DataChangeStreams {
                     sequence: 0,
                     journal: VecDeque::new(),
                     notify: Arc::new(Notify::new()),
+                    last_polled_at: Instant::now(),
                 },
             );
             return;
@@ -223,29 +326,65 @@ impl DataChangeStreams {
     }
 
     pub async fn cancel_subscription(&self, session_id: &str, subscription_id: &str) {
-        let mut streams = self.streams.lock().await;
-        let Some(stream) = streams.get_mut(subscription_id) else {
+        let mut registry = self.registry.lock().await;
+        let Some(stream) = registry.active.remove(subscription_id) else {
             return;
         };
-        if stream.session_id != session_id || stream_is_terminal(stream) {
+        if stream.session_id != session_id {
+            registry.active.insert(subscription_id.to_string(), stream);
             return;
         }
-        self.push_event(stream, DataChangeEvent::Cancelled);
-        stream.notify.notify_waiters();
+        let notify = stream.notify;
+        registry.terminal.insert(
+            subscription_id.to_string(),
+            TerminalTombstone {
+                session_id: session_id.to_string(),
+                event: DataChangeEvent::Cancelled,
+                expires_at: Instant::now() + self.idle_timeout,
+            },
+        );
+        notify.notify_waiters();
     }
 
     pub async fn revoke_session(&self, session_id: &str) {
-        let mut streams = self.streams.lock().await;
-        for stream in streams
-            .values_mut()
-            .filter(|stream| stream.session_id == session_id)
-        {
-            if stream_is_terminal(stream) {
-                continue;
-            }
-            self.push_event(stream, DataChangeEvent::Revoked);
-            stream.notify.notify_waiters();
+        let mut registry = self.registry.lock().await;
+        let subscription_ids = registry
+            .active
+            .iter()
+            .filter(|(_, stream)| stream.session_id == session_id)
+            .map(|(subscription_id, _)| subscription_id.clone())
+            .collect::<Vec<_>>();
+        for subscription_id in subscription_ids {
+            let stream = registry
+                .active
+                .remove(&subscription_id)
+                .expect("subscription id came from active registry");
+            let notify = stream.notify;
+            registry.terminal.insert(
+                subscription_id,
+                TerminalTombstone {
+                    session_id: session_id.to_string(),
+                    event: DataChangeEvent::Revoked,
+                    expires_at: Instant::now() + self.idle_timeout,
+                },
+            );
+            notify.notify_waiters();
         }
+    }
+
+    #[cfg(test)]
+    async fn evict_idle(&self) {
+        evict_idle_registry(&self.registry, self.idle_timeout).await;
+    }
+
+    #[cfg(test)]
+    async fn active_stream_count(&self) -> usize {
+        self.registry.lock().await.active.len()
+    }
+
+    #[cfg(test)]
+    async fn terminal_tombstone_count(&self) -> usize {
+        self.registry.lock().await.terminal.len()
     }
 
     fn push_event(&self, stream: &mut StreamState, event: DataChangeEvent) {
@@ -280,15 +419,16 @@ impl DataChangeStreams {
     }
 }
 
-fn stream_is_terminal(stream: &StreamState) -> bool {
-    stream
-        .journal
-        .back()
-        .is_some_and(|event| event_is_terminal(&event.event))
-}
-
-fn event_is_terminal(event: &DataChangeEvent) -> bool {
-    matches!(event, DataChangeEvent::Cancelled | DataChangeEvent::Revoked)
+async fn evict_idle_registry(registry: &Arc<Mutex<StreamRegistry>>, idle_timeout: Duration) {
+    let now = Instant::now();
+    let mut registry = registry.lock().await;
+    registry.active.retain(|_, stream| {
+        Arc::strong_count(&stream.notify) > 1
+            || now.duration_since(stream.last_polled_at) < idle_timeout
+    });
+    registry
+        .terminal
+        .retain(|_, tombstone| tombstone.expires_at > now);
 }
 
 fn refresh_transition_changed(
@@ -297,8 +437,10 @@ fn refresh_transition_changed(
 ) -> bool {
     match (previous, next) {
         (DataSubscriptionRefresh::Loading, DataSubscriptionRefresh::Loading)
-        | (DataSubscriptionRefresh::Updating { .. }, DataSubscriptionRefresh::Updating { .. })
-        | (DataSubscriptionRefresh::Ready { .. }, DataSubscriptionRefresh::Ready { .. }) => false,
+        | (DataSubscriptionRefresh::Updating { .. }, DataSubscriptionRefresh::Updating { .. }) => {
+            false
+        }
+        (DataSubscriptionRefresh::Ready { .. }, DataSubscriptionRefresh::Ready { .. }) => false,
         (
             DataSubscriptionRefresh::Stale {
                 reason: previous, ..
@@ -321,6 +463,8 @@ impl Default for DataChangeStreams {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use jolt_network::MaterializedRecordInfo;
 
     use crate::session_store::DataSubscriptionRefresh;
@@ -568,6 +712,174 @@ mod tests {
             tokio::time::timeout(std::time::Duration::from_millis(20), bob_waiter)
                 .await
                 .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn terminal_delivery_releases_the_materialized_view() {
+        let streams = DataChangeStreams::with_generation_and_capacity("boot_a", 4);
+        let initial = streams
+            .next(
+                "session_a",
+                "sub_a",
+                "alice.jolt",
+                vec![record("/chirp/posts/one", "revision_1")],
+                DataSubscriptionRefresh::Loading,
+                None,
+            )
+            .await;
+        let DataChangeEvent::Snapshot { cursor, .. } = initial else {
+            panic!("first poll must establish a snapshot boundary");
+        };
+
+        streams.cancel_subscription("session_a", "sub_a").await;
+
+        assert_eq!(streams.active_stream_count().await, 0);
+        assert_eq!(streams.terminal_tombstone_count().await, 1);
+        assert_eq!(
+            streams
+                .next(
+                    "session_a",
+                    "sub_a",
+                    "alice.jolt",
+                    vec![],
+                    DataSubscriptionRefresh::Loading,
+                    Some(&cursor),
+                )
+                .await,
+            DataChangeEvent::Cancelled,
+        );
+    }
+
+    #[tokio::test]
+    async fn idle_stream_is_evicted_and_rebuilt_from_a_snapshot() {
+        let streams = DataChangeStreams::with_generation_capacity_and_idle_timeout(
+            "boot_a",
+            4,
+            Duration::from_millis(10),
+        );
+        let initial = streams
+            .next(
+                "session_a",
+                "sub_a",
+                "alice.jolt",
+                vec![record("/chirp/posts/one", "revision_1")],
+                DataSubscriptionRefresh::Loading,
+                None,
+            )
+            .await;
+        let DataChangeEvent::Snapshot { cursor, .. } = initial else {
+            panic!("first poll must establish a snapshot boundary");
+        };
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        streams.evict_idle().await;
+        assert_eq!(streams.active_stream_count().await, 0);
+
+        assert!(matches!(
+            streams
+                .next(
+                    "session_a",
+                    "sub_a",
+                    "alice.jolt",
+                    vec![record("/chirp/posts/one", "revision_1")],
+                    DataSubscriptionRefresh::Loading,
+                    Some(&cursor),
+                )
+                .await,
+            DataChangeEvent::Snapshot { records, .. }
+                if records == vec![record("/chirp/posts/one", "revision_1")]
+        ));
+    }
+
+    #[tokio::test]
+    async fn idle_eviction_preserves_a_live_waiter() {
+        let streams = DataChangeStreams::with_generation_capacity_and_idle_timeout(
+            "boot_a",
+            4,
+            Duration::from_millis(10),
+        );
+        let initial = streams
+            .next(
+                "session_a",
+                "sub_a",
+                "alice.jolt",
+                vec![],
+                DataSubscriptionRefresh::Loading,
+                None,
+            )
+            .await;
+        let DataChangeEvent::Snapshot { cursor, .. } = initial else {
+            panic!("first poll must establish a snapshot boundary");
+        };
+        let waiter = tokio::spawn({
+            let streams = streams.clone();
+            async move {
+                streams
+                    .next_with_timeout(
+                        "session_a",
+                        "sub_a",
+                        "alice.jolt",
+                        vec![],
+                        DataSubscriptionRefresh::Loading,
+                        Some(&cursor),
+                        Duration::from_secs(1),
+                    )
+                    .await
+            }
+        });
+        tokio::task::yield_now().await;
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        streams.evict_idle().await;
+        assert_eq!(streams.active_stream_count().await, 1);
+        streams
+            .publish(
+                "session_a",
+                "sub_a",
+                "alice.jolt",
+                vec![record("/chirp/posts/one", "revision_1")],
+                DataSubscriptionRefresh::Loading,
+            )
+            .await;
+
+        assert!(matches!(
+            waiter.await.unwrap(),
+            DataChangeEvent::Changed { records, .. }
+                if records == vec![record("/chirp/posts/one", "revision_1")]
+        ));
+    }
+
+    #[tokio::test]
+    async fn idle_long_poll_returns_a_cursor_preserving_timeout() {
+        let streams = DataChangeStreams::with_generation_and_capacity("boot_a", 4);
+        let initial = streams
+            .next(
+                "session_a",
+                "sub_a",
+                "alice.jolt",
+                vec![],
+                DataSubscriptionRefresh::Loading,
+                None,
+            )
+            .await;
+        let DataChangeEvent::Snapshot { cursor, .. } = initial else {
+            panic!("first poll must establish a snapshot boundary");
+        };
+
+        assert_eq!(
+            streams
+                .next_with_timeout(
+                    "session_a",
+                    "sub_a",
+                    "alice.jolt",
+                    vec![],
+                    DataSubscriptionRefresh::Loading,
+                    Some(&cursor),
+                    Duration::from_millis(10),
+                )
+                .await,
+            DataChangeEvent::Timeout { cursor },
         );
     }
 }

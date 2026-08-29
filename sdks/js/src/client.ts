@@ -195,6 +195,7 @@ export type DataSubscriptionChange =
       cursor: string;
       state: DataSubscriptionRefresh;
     }
+  | { type: "timeout"; cursor: string }
   | { type: "resyncRequired" }
   | { type: "cancelled" }
   | { type: "revoked" };
@@ -744,6 +745,7 @@ export function createDataAppClient(
         call,
       );
       if (change.type === "resync_required") return { type: "resyncRequired" };
+      if (change.type === "timeout") return change;
       if (change.type === "cancelled" || change.type === "revoked") return change;
       if (change.type === "state") {
         return {

@@ -2311,45 +2311,53 @@ function createConnectedBackend(
         async next() {
           if (cancelled) return { type: "cancelled" };
           try {
-            const change = await withConnectedAccess(() => (
-              options.client.nextDataSubscriptionChange(subscriptionId, cursor, {
-                signal: controller.signal,
-              })
-            ));
-            if (change.type === "resyncRequired") {
-              cursor = undefined;
-              return { type: "resyncRequired" };
-            }
-            if (change.type === "cancelled" || change.type === "revoked") return change;
-            cursor = change.cursor;
-            if (change.type === "state") {
-              return {
-                type: "state",
-                cursor: change.cursor,
-                ...connectedSubscriptionState(change.state),
-              };
-            }
-            const refs = Object.freeze(change.records.map(record => (
-              createRef<object>(record.identity, record.path)
-            )));
-            if (change.type === "snapshot") {
-              return {
-                type: "snapshot",
-                cursor: change.cursor,
-                view: {
-                  refs,
+            while (true) {
+              const change = await withConnectedAccess(() => (
+                options.client.nextDataSubscriptionChange(subscriptionId, cursor, {
+                  signal: controller.signal,
+                })
+              ));
+              if (change.type === "timeout") {
+                cursor = change.cursor;
+                continue;
+              }
+              if (change.type === "resyncRequired") {
+                cursor = undefined;
+                return { type: "resyncRequired" };
+              }
+              if (change.type === "cancelled" || change.type === "revoked") {
+                return change;
+              }
+              cursor = change.cursor;
+              if (change.type === "state") {
+                return {
+                  type: "state",
+                  cursor: change.cursor,
                   ...connectedSubscriptionState(change.state),
-                },
+                };
+              }
+              const refs = Object.freeze(change.records.map(record => (
+                createRef<object>(record.identity, record.path)
+              )));
+              if (change.type === "snapshot") {
+                return {
+                  type: "snapshot",
+                  cursor: change.cursor,
+                  view: {
+                    refs,
+                    ...connectedSubscriptionState(change.state),
+                  },
+                };
+              }
+              return {
+                type: "changed",
+                cursor: change.cursor,
+                refs,
+                removed: Object.freeze(change.removed.map(ref => (
+                  createRef<object>(ref.identity, ref.path)
+                ))),
               };
             }
-            return {
-              type: "changed",
-              cursor: change.cursor,
-              refs,
-              removed: Object.freeze(change.removed.map(ref => (
-                createRef<object>(ref.identity, ref.path)
-              ))),
-            };
           } catch (error) {
             if (cancelled) return { type: "cancelled" };
             if (error instanceof AccessRevokedError) return { type: "revoked" };

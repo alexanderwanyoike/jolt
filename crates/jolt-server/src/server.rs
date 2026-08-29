@@ -47,9 +47,12 @@ pub fn build_router_with_stores(
     )
     .unwrap_or_else(|err| panic!("failed to open local identity store: {err}"));
     let device_authority = DeviceAuthorityStore::new();
+    let change_refresh_interval = sessions.data_subscription_change_refresh_interval();
+    let data_change_streams = DataChangeStreams::for_refresh_interval(change_refresh_interval);
+    data_change_streams.start_idle_eviction(change_refresh_interval);
     let state = AppState {
         daemon,
-        data_change_streams: DataChangeStreams::new(),
+        data_change_streams,
         sessions,
         network_settings,
         local_identities,

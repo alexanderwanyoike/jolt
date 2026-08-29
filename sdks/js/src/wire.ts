@@ -303,6 +303,7 @@ export type DataSubscriptionChangeResponse =
       cursor: string;
       state: DataSubscriptionRefreshResponse;
     }
+  | { type: "timeout"; cursor: string }
   | { type: "resync_required" }
   | { type: "cancelled" }
   | { type: "revoked" };
