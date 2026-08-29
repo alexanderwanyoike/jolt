@@ -333,11 +333,17 @@ impl DeviceWriterSyncResponse {
             starts.push(start);
         }
 
-        let mut continuation_cursors = cursors.clone();
-        for head in &heads {
-            continuation_cursors.insert(head.device_id.clone(), head.clone());
-        }
-        let mut continuation_cursors: Vec<_> = continuation_cursors.into_values().collect();
+        let mut continuation_device_ids: std::collections::HashSet<_> =
+            cursors.keys().cloned().collect();
+        continuation_device_ids.extend(heads.iter().map(|head| head.device_id.clone()));
+        let mut continuation_cursors: Vec<_> = continuation_device_ids
+            .into_iter()
+            .map(|device_id| DeviceWriterCursor {
+                device_id,
+                device_sequence: u64::MAX,
+                entry_hash: DeviceWriterLogEntryHash([u8::MAX; 32]),
+            })
+            .collect();
         continuation_cursors.sort_by(|left, right| left.device_id.cmp(&right.device_id));
         let envelope = Self {
             required_operation_version,
@@ -1143,7 +1149,7 @@ mod tests {
             authority,
             vec![vec![first, second, third]],
             usize::MAX,
-            one_entry_page_bytes.len(),
+            one_entry_page_bytes.len() + 128,
         );
         let mut byte_bounded_page_bytes = Vec::new();
         ciborium::into_writer(&byte_bounded_page, &mut byte_bounded_page_bytes).unwrap();
