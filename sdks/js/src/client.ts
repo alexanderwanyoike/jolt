@@ -177,6 +177,29 @@ export type DataSubscriptionView = {
   };
 };
 
+export type DataSubscriptionChange =
+  | {
+      type: "snapshot";
+      cursor: string;
+      records: MaterializedRecord[];
+      state: DataSubscriptionRefresh;
+    }
+  | {
+      type: "changed";
+      cursor: string;
+      records: MaterializedRecord[];
+      removed: Reference[];
+    }
+  | {
+      type: "state";
+      cursor: string;
+      state: DataSubscriptionRefresh;
+    }
+  | { type: "timeout"; cursor: string }
+  | { type: "resyncRequired" }
+  | { type: "cancelled" }
+  | { type: "revoked" };
+
 export type MaterializedRecord = {
   identity: string;
   path: string;
@@ -197,6 +220,11 @@ export interface JoltDataSubscriptionSdk {
     subscriptionId: string,
     options?: CallOptions,
   ): Promise<DataSubscriptionView>;
+  nextDataSubscriptionChange(
+    subscriptionId: string,
+    cursor?: string,
+    options?: CallOptions,
+  ): Promise<DataSubscriptionChange>;
   removeDataSubscription(
     subscriptionId: string,
     options?: CallOptions,
@@ -466,6 +494,7 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
     createDataSubscription: _createDataSubscription,
     listDataSubscriptions: _listDataSubscriptions,
     getDataSubscriptionView: _getDataSubscriptionView,
+    nextDataSubscriptionChange: _nextDataSubscriptionChange,
     removeDataSubscription: _removeDataSubscription,
     ...client
   } = createDataAppClient(options);
@@ -704,6 +733,47 @@ export function createDataAppClient(
           subscription: view.source.subscription,
           state: toDataSubscriptionRefresh(view.source.state),
         },
+      };
+    },
+
+    async nextDataSubscriptionChange(subscriptionId, cursor, call) {
+      const change = await ops.nextDataSubscriptionChange(
+        transport,
+        getSessionToken(),
+        subscriptionId,
+        cursor,
+        call,
+      );
+      if (change.type === "resync_required") return { type: "resyncRequired" };
+      if (change.type === "timeout") return change;
+      if (change.type === "cancelled" || change.type === "revoked") return change;
+      if (change.type === "state") {
+        return {
+          type: "state",
+          cursor: change.cursor,
+          state: toDataSubscriptionRefresh(change.state),
+        };
+      }
+      const records = change.records.map(record => ({
+        identity: change.identity,
+        path: record.path,
+        contentId: record.content_id,
+        revision: record.revision,
+        createdAt: record.created_at,
+      }));
+      if (change.type === "snapshot") {
+        return {
+          type: "snapshot",
+          cursor: change.cursor,
+          records,
+          state: toDataSubscriptionRefresh(change.state),
+        };
+      }
+      return {
+        type: "changed",
+        cursor: change.cursor,
+        records,
+        removed: change.removed.map(path => ({ identity: change.identity, path })),
       };
     },
 

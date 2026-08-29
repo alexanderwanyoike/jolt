@@ -282,6 +282,32 @@ export type DataSubscriptionViewResponse = {
   };
 };
 
+/** One bounded local Materialized View event returned by a Change Stream poll. */
+export type DataSubscriptionChangeResponse =
+  | {
+      type: "snapshot";
+      cursor: string;
+      identity: string;
+      records: MaterializedRecordInfo[];
+      state: DataSubscriptionRefreshResponse;
+    }
+  | {
+      type: "changed";
+      cursor: string;
+      identity: string;
+      records: MaterializedRecordInfo[];
+      removed: string[];
+    }
+  | {
+      type: "state";
+      cursor: string;
+      state: DataSubscriptionRefreshResponse;
+    }
+  | { type: "timeout"; cursor: string }
+  | { type: "resync_required" }
+  | { type: "cancelled" }
+  | { type: "revoked" };
+
 /** Terminal result of explicitly removing a Data Subscription. */
 export type RemoveDataSubscriptionResponse = {
   status: "cancelled";

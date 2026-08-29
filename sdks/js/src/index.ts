@@ -109,6 +109,7 @@ export type {
   AppSessionStatusResponse,
   CurrentAppSession,
   DataSubscriptionRecordResponse,
+  DataSubscriptionChangeResponse,
   DataSubscriptionRefreshResponse,
   DataSubscriptionViewResponse,
   DecryptedEncryptedObject,

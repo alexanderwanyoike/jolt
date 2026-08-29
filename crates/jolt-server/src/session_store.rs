@@ -694,6 +694,21 @@ impl AppSessionStore {
             })
     }
 
+    pub async fn data_subscription_session_is_active(&self, session_id: &str) -> bool {
+        let state = self.state.lock().await;
+        let now = now_secs();
+        state.records.iter().any(|record| {
+            record.session_id.as_deref() == Some(session_id)
+                && record.status == AppSessionStatus::Active
+                && record.expires_at.is_none_or(|expires_at| expires_at > now)
+        })
+    }
+
+    pub fn data_subscription_change_refresh_interval(&self) -> Duration {
+        self.data_subscription_refresh_interval
+            .max(Duration::from_secs(1))
+    }
+
     /// Mark a refresh active without rewriting durable session state.
     ///
     /// Returns `true` only to the caller that should start the coalesced
@@ -1215,6 +1230,38 @@ mod tests {
                 .await
                 .is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn change_stream_liveness_observes_session_expiry_without_touching_token_usage() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = AppSessionStore::open(dir.path().join("sessions.json")).unwrap();
+        let expired = approved_session(&store, Some(0)).await;
+        let active = approved_session(&store, Some(now_secs() + 3_600)).await;
+
+        assert!(
+            !store
+                .data_subscription_session_is_active(&expired.session_id)
+                .await
+        );
+        assert!(
+            store
+                .data_subscription_session_is_active(&active.session_id)
+                .await
+        );
+        assert_eq!(
+            store.data_subscription_change_refresh_interval(),
+            std::time::Duration::from_secs(30),
+        );
+        let fast_store = AppSessionStore::open_with_data_subscription_refresh_interval(
+            dir.path().join("fast-sessions.json"),
+            std::time::Duration::from_millis(10),
+        )
+        .unwrap();
+        assert_eq!(
+            fast_store.data_subscription_change_refresh_interval(),
+            std::time::Duration::from_secs(1),
+        );
     }
 
     #[tokio::test]

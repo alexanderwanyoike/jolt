@@ -30,14 +30,14 @@ async fn start_test_server_with_tcp_port(p2p_port: u16) -> (u16, DaemonHandle, t
     start_test_server_with_node(Some(p2p_port)).await
 }
 
-async fn start_test_server_with_tcp_port_and_subscription_refresh_interval(
+async fn start_test_server_with_tcp_port_and_subscription_refresh_interval_no_mdns(
     p2p_port: u16,
     refresh_interval: std::time::Duration,
 ) -> (u16, DaemonHandle, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let identity = NodeIdentity::generate();
     let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, no_mdns_config()).unwrap();
     node.listen_on(&format!("/ip4/127.0.0.1/tcp/{p2p_port}"))
         .unwrap();
     start_test_server_from_node_with_subscription_refresh_interval(node, dir, refresh_interval)
@@ -283,6 +283,18 @@ async fn approve_app_session(
     identity: &str,
     capabilities: &[&str],
 ) -> String {
+    approve_app_session_until(client, port, identity, capabilities, None)
+        .await
+        .0
+}
+
+async fn approve_app_session_until(
+    client: &reqwest::Client,
+    port: u16,
+    identity: &str,
+    capabilities: &[&str],
+    expires_at: Option<u64>,
+) -> (String, String) {
     let request_resp = client
         .post(format!("{}/app/v1/sessions/request", base_url(port)))
         .json(&serde_json::json!({
@@ -306,14 +318,17 @@ async fn approve_app_session(
         .json(&serde_json::json!({
             "identity": identity,
             "capabilities": capabilities,
-            "expires_at": null
+            "expires_at": expires_at
         }))
         .send()
         .await
         .unwrap();
     assert_eq!(approve_resp.status(), 200);
     let approved: serde_json::Value = approve_resp.json().await.unwrap();
-    approved["session_token"].as_str().unwrap().to_string()
+    (
+        approved["session_token"].as_str().unwrap().to_string(),
+        approved["session_id"].as_str().unwrap().to_string(),
+    )
 }
 
 async fn encrypted_spoke_reply_for_local_identity(handle: &DaemonHandle) -> (String, Vec<u8>) {
@@ -2945,6 +2960,211 @@ async fn test_app_data_subscription_registration_is_identity_and_prefix_scoped()
 }
 
 #[tokio::test]
+async fn test_app_data_subscription_change_stream_opens_with_a_local_snapshot() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let local_identity = handle.status().await.unwrap().identity_address;
+    let remote_identity = format!("{}.jolt", NodeIdentity::generate().identity_id());
+    let capability = format!("subscribe:{remote_identity}:/chirp/posts/*");
+    let token = approve_app_session(&client, port, &local_identity, &[capability.as_str()]).await;
+    let created = client
+        .post(format!("{}/app/v1/data-subscriptions", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "identity": remote_identity,
+            "prefix": "/chirp/posts/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), 200);
+    let created: serde_json::Value = created.json().await.unwrap();
+    let subscription_id = created["id"].as_str().unwrap().to_string();
+
+    let opened = client
+        .post(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+            base_url(port),
+        ))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(opened.status(), 200);
+    let opened: serde_json::Value = opened.json().await.unwrap();
+    assert_eq!(opened["type"], "snapshot");
+    assert_eq!(opened["identity"], remote_identity);
+    assert_eq!(opened["records"], serde_json::json!([]));
+    assert!(opened["cursor"].as_str().unwrap().starts_with("stream_"));
+
+    let old_daemon_cursor = client
+        .post(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+            base_url(port),
+        ))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "cursor": "stream_old:7" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(old_daemon_cursor.status(), 200);
+    assert_eq!(
+        old_daemon_cursor.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({ "type": "resync_required" }),
+    );
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_revoking_an_app_session_terminates_its_pending_change_stream() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let local_identity = handle.status().await.unwrap().identity_address;
+    let remote_identity = format!("{}.jolt", NodeIdentity::generate().identity_id());
+    let capability = format!("subscribe:{remote_identity}:/chirp/posts/*");
+    let token = approve_app_session(&client, port, &local_identity, &[capability.as_str()]).await;
+    let sessions = client
+        .get(format!("{}/admin/v1/app-sessions", base_url(port)))
+        .send()
+        .await
+        .unwrap();
+    let sessions: serde_json::Value = sessions.json().await.unwrap();
+    let session_id = sessions[0]["session_id"].as_str().unwrap().to_string();
+    let created = client
+        .post(format!("{}/app/v1/data-subscriptions", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "identity": remote_identity,
+            "prefix": "/chirp/posts/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    let created: serde_json::Value = created.json().await.unwrap();
+    let subscription_id = created["id"].as_str().unwrap().to_string();
+    let opened = client
+        .post(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+            base_url(port),
+        ))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    let opened: serde_json::Value = opened.json().await.unwrap();
+    let cursor = opened["cursor"].as_str().unwrap().to_string();
+    let pending_change = tokio::spawn({
+        let client = client.clone();
+        let token = token.clone();
+        async move {
+            client
+                .post(format!(
+                    "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+                    base_url(port),
+                ))
+                .bearer_auth(token)
+                .json(&serde_json::json!({ "cursor": cursor }))
+                .send()
+                .await
+                .unwrap()
+        }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    let revoked = client
+        .post(format!(
+            "{}/admin/v1/app-sessions/{session_id}/revoke",
+            base_url(port),
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoked.status(), 200);
+    let terminal = tokio::time::timeout(std::time::Duration::from_secs(1), pending_change)
+        .await
+        .expect("session revocation did not wake its Change Stream")
+        .unwrap();
+    assert_eq!(terminal.status(), 200);
+    assert_eq!(
+        terminal.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({ "type": "revoked" }),
+    );
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_expiring_an_app_session_terminates_its_pending_change_stream() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let local_identity = handle.status().await.unwrap().identity_address;
+    let remote_identity = format!("{}.jolt", NodeIdentity::generate().identity_id());
+    let capability = format!("subscribe:{remote_identity}:/chirp/posts/*");
+    let expires_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 1;
+    let (token, _session_id) = approve_app_session_until(
+        &client,
+        port,
+        &local_identity,
+        &[capability.as_str()],
+        Some(expires_at),
+    )
+    .await;
+    let created = client
+        .post(format!("{}/app/v1/data-subscriptions", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "identity": remote_identity,
+            "prefix": "/chirp/posts/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    let created: serde_json::Value = created.json().await.unwrap();
+    let subscription_id = created["id"].as_str().unwrap();
+    let opened = client
+        .post(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+            base_url(port),
+        ))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    let opened: serde_json::Value = opened.json().await.unwrap();
+    let cursor = opened["cursor"].as_str().unwrap();
+
+    let terminal = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        client
+            .post(format!(
+                "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+                base_url(port),
+            ))
+            .bearer_auth(&token)
+            .json(&serde_json::json!({ "cursor": cursor }))
+            .send(),
+    )
+    .await
+    .expect("session expiry did not wake its Change Stream")
+    .unwrap();
+    assert_eq!(terminal.status(), 200);
+    assert_eq!(
+        terminal.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({ "type": "revoked" }),
+    );
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
 async fn test_app_data_subscription_is_session_private_durable_and_removable() {
     let holder = tempfile::tempdir().unwrap();
     let session_path = holder.path().join("app-sessions.json");
@@ -3008,6 +3228,38 @@ async fn test_app_data_subscription_is_session_private_durable_and_removable() {
     assert_eq!(retained.as_array().unwrap().len(), 1);
     assert_eq!(retained[0]["id"], subscription_id);
 
+    let opened = client
+        .post(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+            base_url(second_port),
+        ))
+        .bearer_auth(&owner_token)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(opened.status(), 200);
+    let opened: serde_json::Value = opened.json().await.unwrap();
+    let cursor = opened["cursor"].as_str().unwrap().to_string();
+    let pending_change = tokio::spawn({
+        let client = client.clone();
+        let owner_token = owner_token.clone();
+        let subscription_id = subscription_id.clone();
+        async move {
+            client
+                .post(format!(
+                    "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+                    base_url(second_port),
+                ))
+                .bearer_auth(owner_token)
+                .json(&serde_json::json!({ "cursor": cursor }))
+                .send()
+                .await
+                .unwrap()
+        }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
     let removed = client
         .delete(format!(
             "{}/app/v1/data-subscriptions/{subscription_id}",
@@ -3024,6 +3276,15 @@ async fn test_app_data_subscription_is_session_private_durable_and_removable() {
             "status": "cancelled",
             "subscription_id": subscription_id,
         })
+    );
+    let cancelled = tokio::time::timeout(std::time::Duration::from_secs(1), pending_change)
+        .await
+        .expect("removing a Data Subscription did not wake its Change Stream")
+        .unwrap();
+    assert_eq!(cancelled.status(), 200);
+    assert_eq!(
+        cancelled.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({ "type": "cancelled" }),
     );
 
     let other_remove = client
@@ -3045,7 +3306,7 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
     let alice_p2p = free_tcp_port();
     let (alice_port, alice_handle, _alice_dir) = start_test_server_with_tcp_port(alice_p2p).await;
     let (bob_port, bob_handle, _bob_dir) =
-        start_test_server_with_tcp_port_and_subscription_refresh_interval(
+        start_test_server_with_tcp_port_and_subscription_refresh_interval_no_mdns(
             free_tcp_port(),
             std::time::Duration::from_millis(10),
         )
@@ -3115,7 +3376,7 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
         .unwrap();
     assert_eq!(created.status(), 200);
     let created: serde_json::Value = created.json().await.unwrap();
-    let subscription_id = created["id"].as_str().unwrap();
+    let subscription_id = created["id"].as_str().unwrap().to_string();
 
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
@@ -3195,7 +3456,108 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
 
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
+    let opened = client
+        .post(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+            base_url(bob_port),
+        ))
+        .bearer_auth(&bob_token)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(opened.status(), 200);
+    let opened: serde_json::Value = opened.json().await.unwrap();
+    assert_eq!(opened["type"], "snapshot");
+    assert_eq!(opened["records"].as_array().unwrap().len(), 2);
+    let cursor = opened["cursor"].as_str().unwrap().to_string();
+    let change_waiter = tokio::spawn({
+        let client = client.clone();
+        let bob_token = bob_token.clone();
+        let subscription_id = subscription_id.clone();
+        async move {
+            client
+                .post(format!(
+                    "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+                    base_url(bob_port),
+                ))
+                .bearer_auth(bob_token)
+                .json(&serde_json::json!({ "cursor": cursor }))
+                .send()
+                .await
+                .unwrap()
+        }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    let unrelated = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(stored.to_vec()).file_name("profile.json"),
+        )
+        .text("path", "/chirp/profiles/updated".to_string());
+    let published = client
+        .post(format!("{}/app/v1/publish", base_url(alice_port)))
+        .bearer_auth(&alice_token)
+        .multipart(unrelated)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(published.status(), 200);
+    tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+    assert!(
+        !change_waiter.is_finished(),
+        "an unrelated prefix must not emit a subscribed post change",
+    );
+
+    let third_post = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(stored.to_vec()).file_name("record.json"),
+        )
+        .text("path", "/chirp/posts/jlt_third".to_string());
+    let published = client
+        .post(format!("{}/app/v1/publish", base_url(alice_port)))
+        .bearer_auth(&alice_token)
+        .multipart(third_post)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(published.status(), 200);
+
+    let changed = tokio::time::timeout(std::time::Duration::from_secs(3), change_waiter)
+        .await
+        .expect("post Change Stream event did not arrive")
+        .unwrap();
+    assert_eq!(changed.status(), 200);
+    let changed: serde_json::Value = changed.json().await.unwrap();
+    assert_eq!(changed["type"], "changed");
+    assert_eq!(changed["records"].as_array().unwrap().len(), 1);
+    assert_eq!(changed["records"][0]["path"], "/chirp/posts/jlt_third");
+    assert_eq!(changed["removed"], serde_json::json!([]));
+    let changed_cursor = changed["cursor"].as_str().unwrap().to_string();
+
     alice_handle.shutdown().await.ok();
+    let stale = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        client
+            .post(format!(
+                "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+                base_url(bob_port),
+            ))
+            .bearer_auth(&bob_token)
+            .json(&serde_json::json!({ "cursor": changed_cursor }))
+            .send(),
+    )
+    .await
+    .expect("offline Change Stream state did not arrive")
+    .unwrap();
+    assert_eq!(stale.status(), 200);
+    let stale: serde_json::Value = stale.json().await.unwrap();
+    assert_eq!(stale["type"], "state");
+    assert_eq!(stale["state"]["status"], "stale");
+    assert_eq!(stale["state"]["reason"], "networkUnavailable");
+
     let retained = tokio::time::timeout(
         std::time::Duration::from_millis(250),
         client
@@ -3211,8 +3573,9 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
     .unwrap();
     assert_eq!(retained.status(), 200);
     let retained: serde_json::Value = retained.json().await.unwrap();
-    assert_eq!(retained["records"].as_array().unwrap().len(), 2);
-    assert_eq!(retained["source"]["state"]["status"], "updating");
+    assert_eq!(retained["records"].as_array().unwrap().len(), 3);
+    assert_eq!(retained["source"]["state"]["status"], "stale");
+    assert_eq!(retained["source"]["state"]["reason"], "networkUnavailable",);
 
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
@@ -5575,7 +5938,11 @@ async fn test_app_api_feature_manifest_is_public_and_generic() {
     assert_eq!(body["app_api"], 1);
     assert_eq!(
         body["features"],
-        serde_json::json!({ "data.records": 5, "data.subscriptions": 1 })
+        serde_json::json!({
+            "data.change-streams": 1,
+            "data.records": 5,
+            "data.subscriptions": 1,
+        })
     );
     assert!(body.get("daemon_version").is_none());
     assert!(body.get("applications").is_none());

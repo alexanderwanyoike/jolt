@@ -833,6 +833,46 @@ describe("createJoltClient", () => {
     ]);
   });
 
+  it("long-polls one internal Data Subscription change after a cursor", async () => {
+    const { transport, calls } = recordingTransport({
+      "/data-subscriptions/sub_1/changes": {
+        type: "changed",
+        cursor: "stream_boot_1:2",
+        identity: "alice.jolt",
+        records: [{
+          path: "/spoke/posts/p1",
+          content_id: "cid_1",
+          revision: "revision_7",
+          created_at: 43,
+        }],
+        removed: ["/spoke/posts/p0"],
+      },
+    });
+    const jolt = createDataAppClient({ transport, getSessionToken: token });
+
+    await expect(
+      jolt.nextDataSubscriptionChange("sub_1", "stream_boot_1:1"),
+    ).resolves.toEqual({
+      type: "changed",
+      cursor: "stream_boot_1:2",
+      records: [{
+        identity: "alice.jolt",
+        path: "/spoke/posts/p1",
+        contentId: "cid_1",
+        revision: "revision_7",
+        createdAt: 43,
+      }],
+      removed: [{ identity: "alice.jolt", path: "/spoke/posts/p0" }],
+    });
+    expect(calls.map(({ path, detail }) => ({ path, detail }))).toEqual([{
+      path: "/data-subscriptions/sub_1/changes",
+      detail: {
+        token: "tok_test",
+        json: { cursor: "stream_boot_1:1" },
+      },
+    }]);
+  });
+
   it("openIngress parses plaintext JSON and tolerates garbage", async () => {
     const payload = { schema: "x.v1" };
     const good = Array.from(new TextEncoder().encode(JSON.stringify(payload)));

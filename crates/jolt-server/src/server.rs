@@ -11,6 +11,7 @@ use tracing::info;
 
 use jolt_network::DaemonHandle;
 
+use crate::data_change_streams::DataChangeStreams;
 use crate::device_authority::DeviceAuthorityStore;
 use crate::identity_recovery::IdentityRecoveryStore;
 use crate::local_identities::LocalIdentityStore;
@@ -46,8 +47,12 @@ pub fn build_router_with_stores(
     )
     .unwrap_or_else(|err| panic!("failed to open local identity store: {err}"));
     let device_authority = DeviceAuthorityStore::new();
+    let change_refresh_interval = sessions.data_subscription_change_refresh_interval();
+    let data_change_streams = DataChangeStreams::for_refresh_interval(change_refresh_interval);
+    data_change_streams.start_idle_eviction(change_refresh_interval);
     let state = AppState {
         daemon,
+        data_change_streams,
         sessions,
         network_settings,
         local_identities,
@@ -103,6 +108,10 @@ pub fn build_router_with_stores(
             "/app/v1/data-subscriptions/{subscription_id}",
             get(routes::app_api::get_data_subscription_view)
                 .delete(routes::app_api::remove_data_subscription),
+        )
+        .route(
+            "/app/v1/data-subscriptions/{subscription_id}/changes",
+            post(routes::app_api::next_data_subscription_change),
         )
         .route(
             "/app/v1/encrypted/publish",
