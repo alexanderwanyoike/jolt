@@ -3107,7 +3107,7 @@ async fn test_expiring_an_app_session_terminates_its_pending_change_stream() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs()
-        + 1;
+        + 2;
     let (token, _session_id) = approve_app_session_until(
         &client,
         port,
@@ -3126,6 +3126,7 @@ async fn test_expiring_an_app_session_terminates_its_pending_change_stream() {
         .send()
         .await
         .unwrap();
+    assert_eq!(created.status(), 200);
     let created: serde_json::Value = created.json().await.unwrap();
     let subscription_id = created["id"].as_str().unwrap();
     let opened = client
@@ -3142,7 +3143,7 @@ async fn test_expiring_an_app_session_terminates_its_pending_change_stream() {
     let cursor = opened["cursor"].as_str().unwrap();
 
     let terminal = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
+        std::time::Duration::from_secs(3),
         client
             .post(format!(
                 "{}/app/v1/data-subscriptions/{subscription_id}/changes",
