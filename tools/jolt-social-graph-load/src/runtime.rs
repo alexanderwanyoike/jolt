@@ -1074,20 +1074,26 @@ fn disk_report(root: &Path) -> anyhow::Result<DiskReport> {
             if file_type.is_dir() {
                 directories.push(entry.path());
             } else if file_type.is_file() {
-                report.files = report.files.saturating_add(1);
-                report.bytes = report.bytes.saturating_add(
-                    entry
-                        .metadata()
-                        .with_context(|| {
-                            format!("inspect benchmark file {}", entry.path().display())
-                        })?
-                        .len(),
-                );
+                record_file(&mut report, &entry.path())?;
             }
         }
     }
 
     Ok(report)
+}
+
+fn record_file(report: &mut DiskReport, path: &Path) -> anyhow::Result<()> {
+    match std::fs::metadata(path) {
+        Ok(metadata) => {
+            report.files = report.files.saturating_add(1);
+            report.bytes = report.bytes.saturating_add(metadata.len());
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => {
+            Err(error).with_context(|| format!("inspect benchmark file {}", path.display()))
+        }
+    }
 }
 
 fn reader_store_path(workdir: &Path, plan: &WorkloadPlan) -> PathBuf {
@@ -1511,9 +1517,21 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        poll_until_visible, run, NetworkProfile, ReadFailure, ReadOutcome, RunConfig, TimelinePath,
+        poll_until_visible, record_file, run, DiskReport, NetworkProfile, ReadFailure, ReadOutcome,
+        RunConfig, TimelinePath,
     };
     use crate::WorkloadConfig;
+
+    #[test]
+    fn disk_snapshot_skips_a_file_removed_during_the_walk() {
+        let directory = tempdir().unwrap();
+        let removed = directory.path().join("atomic-write.tmp");
+        let mut report = DiskReport::default();
+
+        record_file(&mut report, &removed).unwrap();
+
+        assert_eq!(report, DiskReport::default());
+    }
 
     #[tokio::test]
     async fn cache_first_warm_open_is_a_local_read() {
