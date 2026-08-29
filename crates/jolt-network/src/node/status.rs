@@ -1,6 +1,6 @@
 use tracing::warn;
 
-use crate::command::NodeStatus;
+use crate::command::{DeviceWriterSyncWorkStatus, NodeStatus};
 
 use super::{unix_now, NetworkNode};
 
@@ -56,6 +56,17 @@ impl NetworkNode {
             effective_bootstrap_relays: self.effective_bootstrap_relays.clone(),
             effective_bootstrap_relay_count: self.effective_bootstrap_relays.len(),
             known_relay_count,
+            device_writer_sync_work: DeviceWriterSyncWorkStatus {
+                max_concurrency: self.device_writer_sync_work.max_concurrency,
+                queue_capacity: self.device_writer_sync_work.queue_capacity,
+                active: self.device_writer_sync_work.active.len(),
+                queued: self.device_writer_sync_work.queued.len(),
+                verified: self.device_writer_sync_work.verified,
+                verification_failed: self.device_writer_sync_work.verification_failed,
+                rejected: self.device_writer_sync_work.rejected,
+                cancelled: self.device_writer_sync_work.cancelled,
+                timed_out: self.device_writer_sync_work.timed_out,
+            },
             connected_bootstrap_peers,
             last_bootstrap_error: self.last_bootstrap_error.clone(),
             home_relay: self.home_relay.clone(),
@@ -141,6 +152,10 @@ mod tests {
         assert_eq!(status.daemon_version, env!("CARGO_PKG_VERSION"));
         assert!(!status.peer_id.is_empty());
         assert_eq!(status.connected_peers, 0);
+        assert_eq!(status.device_writer_sync_work.max_concurrency, 2);
+        assert_eq!(status.device_writer_sync_work.queue_capacity, 64);
+        assert_eq!(status.device_writer_sync_work.active, 0);
+        assert_eq!(status.device_writer_sync_work.queued, 0);
 
         handle.shutdown().await.unwrap();
         daemon.await.unwrap();

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use jolt_core::{
@@ -13,7 +14,6 @@ use crate::command::{AppendRecordInfo, ResolveResponse};
 use crate::error::NetworkError;
 use crate::protocol::{DeviceWriterSyncRequest, UpdateLogRequest};
 
-use super::CachedDeviceWriterState;
 use super::NetworkNode;
 
 /// A waiter parked on a device-writer sync for a remote identity. Once the sync
@@ -43,6 +43,19 @@ impl DeviceWriterSyncWaiter {
             Self::Refresh { identity } | Self::LocalRefresh { identity } => identity,
         }
     }
+
+    fn is_cancelled(&self) -> bool {
+        match self {
+            Self::Enumerate { response_tx, .. } => response_tx.is_closed(),
+            Self::Refresh { .. } | Self::LocalRefresh { .. } => false,
+        }
+    }
+
+    fn fail(self, error: NetworkError) {
+        if let Self::Enumerate { response_tx, .. } = self {
+            let _ = response_tx.send(Err(error));
+        }
+    }
 }
 
 /// An in-flight device-writer sync request to a single provider.
@@ -50,6 +63,68 @@ pub(super) struct PendingDeviceWriterSync {
     pub(super) identity: IdentityId,
     pub(super) provider: libp2p::PeerId,
     pub(super) deadline: Instant,
+}
+
+pub(super) struct DeviceWriterSyncWork {
+    pub(super) id: u64,
+    pub(super) identity: IdentityId,
+    pub(super) provider: libp2p::PeerId,
+    pub(super) deadline: Instant,
+    pub(super) settled: bool,
+    existing: Option<Arc<super::CachedDeviceWriterState>>,
+    authority_records: Vec<DeviceAuthorizationRecord>,
+    device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+}
+
+pub(super) struct ActiveDeviceWriterSyncWork {
+    pub(super) identity: IdentityId,
+    pub(super) provider: libp2p::PeerId,
+    pub(super) deadline: Instant,
+    pub(super) settled: bool,
+    base_state: Option<Arc<super::CachedDeviceWriterState>>,
+}
+
+pub(super) struct CompletedDeviceWriterSyncWork {
+    pub(super) id: u64,
+    pub(super) result: Result<super::CachedDeviceWriterState, NetworkError>,
+}
+
+pub(super) struct DeviceWriterSyncWorkQueue {
+    pub(super) completion_tx: tokio::sync::mpsc::Sender<CompletedDeviceWriterSyncWork>,
+    pub(super) completion_rx: tokio::sync::mpsc::Receiver<CompletedDeviceWriterSyncWork>,
+    pub(super) queued: std::collections::VecDeque<DeviceWriterSyncWork>,
+    pub(super) active: HashMap<u64, ActiveDeviceWriterSyncWork>,
+    pub(super) by_identity: HashMap<IdentityId, u64>,
+    pub(super) next_id: u64,
+    pub(super) max_concurrency: usize,
+    pub(super) queue_capacity: usize,
+    pub(super) rejected: u64,
+    pub(super) cancelled: u64,
+    pub(super) timed_out: u64,
+    pub(super) verified: u64,
+    pub(super) verification_failed: u64,
+}
+
+impl DeviceWriterSyncWorkQueue {
+    pub(super) fn new(max_concurrency: usize, queue_capacity: usize) -> Self {
+        let max_concurrency = max_concurrency.max(1);
+        let (completion_tx, completion_rx) = tokio::sync::mpsc::channel(max_concurrency);
+        Self {
+            completion_tx,
+            completion_rx,
+            queued: std::collections::VecDeque::new(),
+            active: HashMap::new(),
+            by_identity: HashMap::new(),
+            next_id: 0,
+            max_concurrency,
+            queue_capacity,
+            rejected: 0,
+            cancelled: 0,
+            timed_out: 0,
+            verified: 0,
+            verification_failed: 0,
+        }
+    }
 }
 
 pub(super) struct PendingResolve {
@@ -189,47 +264,24 @@ impl NetworkNode {
         authority_records: Vec<DeviceAuthorizationRecord>,
         device_logs: Vec<Vec<DeviceWriterLogEntry>>,
     ) -> Result<u64, NetworkError> {
-        let candidate_authority = verify_identity_authority_chain(&identity, &authority_records)
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
-
-        // Choose the authority chain to merge under: keep whichever verified
-        // chain has the higher sequence so a revocation is never dropped.
         let existing = self.device_writer_states.get(&identity);
-        let use_candidate_authority = existing
-            .map(|state| candidate_authority.latest_sequence >= state.authority_sequence)
-            .unwrap_or(true);
-        let authority_records = if use_candidate_authority {
-            authority_records
-        } else {
-            existing
-                .map(|state| state.authority_records.clone())
-                .unwrap_or(authority_records)
-        };
-        let authority = verify_identity_authority_chain(&identity, &authority_records)
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
-
-        // Accumulate device logs by device id. The longest log per device wins.
-        // Equal-length forks use the same terminal-entry ordering tuple as the
-        // core merge so provider arrival order cannot select the fork.
-        let mut accumulated: HashMap<String, Vec<DeviceWriterLogEntry>> = existing
-            .map(|state| state.device_logs.clone())
-            .unwrap_or_default();
-        for log in device_logs {
-            let Some(first) = log.first() else {
-                continue;
-            };
-            let device_id = first.body.device_id.clone();
-            if identity == self.identity.identity_id() && device_id == self.local_device_id() {
+        let state = merge_verified_device_writer_state(
+            &identity,
+            existing.cloned(),
+            authority_records,
+            device_logs,
+        )?;
+        if identity == self.identity.identity_id() {
+            let local_device_id = self.local_device_id();
+            if let Some(synced_local_log) = state.device_logs.get(&local_device_id) {
                 let local_log = self
                     .local_device_writer_logs
                     .get(&identity)
                     .cloned()
                     .unwrap_or_default();
-                let local_is_prefix = device_log_is_prefix(&local_log, &log);
-                let offered_is_prefix = device_log_is_prefix(&log, &local_log);
-                if !local_is_prefix && !offered_is_prefix {
-                    merge_device_writer_logs(&authority, [log.clone()])
-                        .map_err(|e| NetworkError::Protocol(e.to_string()))?;
+                let local_is_prefix = device_log_is_prefix(&local_log, synced_local_log);
+                let synced_is_prefix = device_log_is_prefix(synced_local_log, &local_log);
+                if !local_is_prefix && !synced_is_prefix {
                     self.blocked_local_device_writer_identities
                         .insert(identity.clone());
                     return Err(NetworkError::Protocol(format!(
@@ -237,27 +289,9 @@ impl NetworkNode {
                     )));
                 }
             }
-            let keep = accumulated
-                .get(&device_id)
-                .map(|known| device_log_is_newer(&log, known))
-                .unwrap_or(true);
-            if keep {
-                accumulated.insert(device_id, log);
-            }
         }
-
-        let merged = merge_device_writer_logs(&authority, accumulated.values().cloned())
-            .map_err(|e| NetworkError::Protocol(e.to_string()))?;
-        let authority_sequence = authority.latest_sequence;
-        self.device_writer_states.insert(
-            identity,
-            CachedDeviceWriterState {
-                authority_sequence,
-                merged,
-                authority_records,
-                device_logs: accumulated,
-            },
-        );
+        let authority_sequence = state.authority_sequence;
+        self.device_writer_states.insert(identity, Arc::new(state));
         Ok(authority_sequence)
     }
 
@@ -374,7 +408,11 @@ impl NetworkNode {
         let sync_in_flight = self
             .pending_device_writer_syncs
             .values()
-            .any(|pending| pending.identity == identity);
+            .any(|pending| pending.identity == identity)
+            || self
+                .device_writer_sync_work
+                .by_identity
+                .contains_key(&identity);
         if sync_in_flight {
             if is_background_refresh {
                 return;
@@ -634,6 +672,87 @@ impl NetworkNode {
                 self.retry_pending_local_device_writer_refresh();
             }
         }
+        self.expire_device_writer_sync_work(now);
+        self.prune_cancelled_device_writer_sync_waiters();
+    }
+
+    fn expire_device_writer_sync_work(&mut self, now: Instant) {
+        let expired_active: Vec<_> = self
+            .device_writer_sync_work
+            .active
+            .iter()
+            .filter_map(|(id, work)| (!work.settled && work.deadline <= now).then_some(*id))
+            .collect();
+        for id in expired_active {
+            let Some(work) = self.device_writer_sync_work.active.get_mut(&id) else {
+                continue;
+            };
+            work.settled = true;
+            let identity = work.identity.clone();
+            self.device_writer_sync_work.timed_out += 1;
+            self.answer_device_writer_waiters(&identity);
+        }
+
+        let mut expired_queued = Vec::new();
+        for work in &mut self.device_writer_sync_work.queued {
+            if !work.settled && work.deadline <= now {
+                work.settled = true;
+                expired_queued.push(work.identity.clone());
+            }
+        }
+        for identity in expired_queued {
+            self.device_writer_sync_work.timed_out += 1;
+            self.answer_device_writer_waiters(&identity);
+        }
+    }
+
+    fn prune_cancelled_device_writer_sync_waiters(&mut self) {
+        let mut cancelled_identities = Vec::new();
+        let mut cancelled_count = 0_u64;
+        self.pending_device_writer_waiters
+            .retain(|identity, waiters| {
+                let before = waiters.len();
+                waiters.retain(|waiter| !waiter.is_cancelled());
+                cancelled_count += (before - waiters.len()) as u64;
+                if waiters.is_empty() {
+                    cancelled_identities.push(identity.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+        self.device_writer_sync_work.cancelled += cancelled_count;
+        for identity in cancelled_identities {
+            self.cancel_device_writer_sync_for_identity(&identity);
+        }
+    }
+
+    fn cancel_device_writer_sync_for_identity(&mut self, identity: &IdentityId) {
+        self.pending_device_writer_syncs
+            .retain(|_, pending| &pending.identity != identity);
+        let Some(id) = self.device_writer_sync_work.by_identity.remove(identity) else {
+            return;
+        };
+        self.device_writer_sync_work
+            .queued
+            .retain(|work| work.id != id);
+        if let Some(active) = self.device_writer_sync_work.active.get_mut(&id) {
+            active.settled = true;
+        }
+    }
+
+    pub(super) fn shutdown_device_writer_sync_work(&mut self) {
+        for (_, waiters) in self.pending_device_writer_waiters.drain() {
+            for waiter in waiters {
+                waiter.fail(NetworkError::ShuttingDown);
+            }
+        }
+        self.pending_device_writer_syncs.clear();
+        self.device_writer_sync_work.queued.clear();
+        self.device_writer_sync_work.by_identity.clear();
+        for active in self.device_writer_sync_work.active.values_mut() {
+            active.settled = true;
+        }
     }
 
     /// Drive a device-writer sync forward after a response, failure, or timeout
@@ -822,6 +941,216 @@ fn device_log_is_newer(candidate: &[DeviceWriterLogEntry], known: &[DeviceWriter
     }
 }
 
+fn merge_verified_device_writer_state(
+    identity: &IdentityId,
+    existing: Option<Arc<super::CachedDeviceWriterState>>,
+    authority_records: Vec<DeviceAuthorizationRecord>,
+    device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+) -> Result<super::CachedDeviceWriterState, NetworkError> {
+    let candidate_authority = verify_identity_authority_chain(identity, &authority_records)
+        .map_err(|error| NetworkError::Protocol(error.to_string()))?;
+    let use_candidate_authority = existing
+        .as_ref()
+        .map(|state| candidate_authority.latest_sequence >= state.authority_sequence)
+        .unwrap_or(true);
+    let authority_records = if use_candidate_authority {
+        authority_records
+    } else {
+        existing
+            .as_ref()
+            .map(|state| state.authority_records.clone())
+            .unwrap_or(authority_records)
+    };
+    let authority = verify_identity_authority_chain(identity, &authority_records)
+        .map_err(|error| NetworkError::Protocol(error.to_string()))?;
+
+    let mut accumulated: HashMap<String, Vec<DeviceWriterLogEntry>> = existing
+        .map(|state| state.device_logs.clone())
+        .unwrap_or_default();
+    for log in device_logs {
+        let Some(first) = log.first() else {
+            continue;
+        };
+        let device_id = first.body.device_id.clone();
+        let keep = accumulated
+            .get(&device_id)
+            .map(|known| device_log_is_newer(&log, known))
+            .unwrap_or(true);
+        if keep {
+            accumulated.insert(device_id, log);
+        }
+    }
+
+    let merged = merge_device_writer_logs(&authority, accumulated.values().cloned())
+        .map_err(|error| NetworkError::Protocol(error.to_string()))?;
+    Ok(super::CachedDeviceWriterState {
+        authority_sequence: authority.latest_sequence,
+        merged,
+        authority_records,
+        device_logs: accumulated,
+    })
+}
+
+impl NetworkNode {
+    pub(super) fn schedule_device_writer_sync_verification(
+        &mut self,
+        pending: PendingDeviceWriterSync,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    ) {
+        let id = self.device_writer_sync_work.next_id;
+        self.device_writer_sync_work.next_id = self.device_writer_sync_work.next_id.wrapping_add(1);
+        let work = DeviceWriterSyncWork {
+            id,
+            existing: self.device_writer_states.get(&pending.identity).cloned(),
+            identity: pending.identity.clone(),
+            provider: pending.provider,
+            deadline: pending.deadline,
+            settled: false,
+            authority_records,
+            device_logs,
+        };
+
+        if self.device_writer_sync_work.active.len() < self.device_writer_sync_work.max_concurrency
+        {
+            self.device_writer_sync_work
+                .by_identity
+                .insert(pending.identity, id);
+            self.spawn_device_writer_sync_verification(work);
+        } else if self.device_writer_sync_work.queued.len()
+            < self.device_writer_sync_work.queue_capacity
+        {
+            self.device_writer_sync_work
+                .by_identity
+                .insert(pending.identity, id);
+            self.device_writer_sync_work.queued.push_back(work);
+        } else {
+            self.device_writer_sync_work.rejected += 1;
+            self.answer_device_writer_waiters(&pending.identity);
+            self.retry_pending_local_device_writer_refresh();
+        }
+    }
+
+    fn spawn_device_writer_sync_verification(&mut self, work: DeviceWriterSyncWork) {
+        let id = work.id;
+        let identity = work.identity.clone();
+        let base_state = work.existing.clone();
+        self.device_writer_sync_work.active.insert(
+            id,
+            ActiveDeviceWriterSyncWork {
+                identity: identity.clone(),
+                provider: work.provider,
+                deadline: work.deadline,
+                settled: work.settled,
+                base_state,
+            },
+        );
+        let completion_tx = self.device_writer_sync_work.completion_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = merge_verified_device_writer_state(
+                &identity,
+                work.existing,
+                work.authority_records,
+                work.device_logs,
+            );
+            let _ = completion_tx.blocking_send(CompletedDeviceWriterSyncWork { id, result });
+        });
+    }
+
+    pub(super) fn handle_device_writer_sync_completion(
+        &mut self,
+        completion: CompletedDeviceWriterSyncWork,
+    ) {
+        let Some(mut active) = self.device_writer_sync_work.active.remove(&completion.id) else {
+            return;
+        };
+        let owns_identity = self
+            .device_writer_sync_work
+            .by_identity
+            .get(&active.identity)
+            .is_some_and(|id| *id == completion.id);
+        if owns_identity {
+            self.device_writer_sync_work
+                .by_identity
+                .remove(&active.identity);
+        }
+
+        if !active.settled && active.deadline <= Instant::now() {
+            active.settled = true;
+            self.device_writer_sync_work.timed_out += 1;
+            if owns_identity {
+                self.answer_device_writer_waiters(&active.identity);
+            }
+        }
+
+        match completion.result {
+            Ok(state) => {
+                let snapshot_is_current = match (
+                    active.base_state.as_ref(),
+                    self.device_writer_states.get(&active.identity),
+                ) {
+                    (None, None) => true,
+                    (Some(base), Some(current)) => Arc::ptr_eq(base, current),
+                    _ => false,
+                };
+                if snapshot_is_current {
+                    self.device_writer_states
+                        .insert(active.identity.clone(), Arc::new(state));
+                }
+                self.device_writer_sync_work.verified += 1;
+
+                let has_waiters = self
+                    .pending_device_writer_waiters
+                    .contains_key(&active.identity);
+                if owns_identity && (!active.settled || has_waiters) {
+                    self.answer_device_writer_waiters(&active.identity);
+                }
+            }
+            Err(error) => {
+                self.device_writer_sync_work.verification_failed += 1;
+                let has_waiters = self
+                    .pending_device_writer_waiters
+                    .contains_key(&active.identity);
+                if owns_identity && (!active.settled || has_waiters) {
+                    let error = Self::identity_head_invalid_failure(
+                        &active.identity,
+                        error.to_string(),
+                    );
+                    self.on_device_writer_sync_settled(
+                        &active.identity,
+                        &active.provider,
+                        Some(error),
+                    );
+                }
+            }
+        }
+        self.retry_pending_local_device_writer_refresh();
+        self.start_queued_device_writer_sync_work();
+    }
+
+    fn start_queued_device_writer_sync_work(&mut self) {
+        while self.device_writer_sync_work.active.len()
+            < self.device_writer_sync_work.max_concurrency
+        {
+            let Some(work) = self.device_writer_sync_work.queued.pop_front() else {
+                break;
+            };
+            self.spawn_device_writer_sync_verification(work);
+        }
+    }
+
+    #[cfg(test)]
+    async fn complete_next_device_writer_sync_work(&mut self) {
+        let completion = self
+            .device_writer_sync_work
+            .completion_rx
+            .recv()
+            .await
+            .expect("scheduled device-writer verification must complete");
+        self.handle_device_writer_sync_completion(completion);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -868,6 +1197,36 @@ mod tests {
                 .unwrap(),
                 Some(previous) => previous
                     .append(operation, created_at, |bytes| device.sign(bytes))
+                    .unwrap(),
+            };
+            entries.push(entry);
+        }
+        entries
+    }
+
+    fn large_append_log(
+        identity: &jolt_core::IdentityId,
+        device: &NodeIdentity,
+        device_id: &str,
+        count: usize,
+    ) -> Vec<DeviceWriterLogEntry> {
+        let mut entries: Vec<DeviceWriterLogEntry> = Vec::with_capacity(count);
+        for index in 0..count {
+            let operation = DeviceWriterOperation::append_record(
+                format!("/load/items/{index:05}"),
+                ContentId::from_bytes(format!("item-{index}").as_bytes()),
+            );
+            let entry = match entries.last() {
+                None => DeviceWriterLogEntry::genesis(
+                    identity.clone(),
+                    device_id,
+                    operation,
+                    100,
+                    |bytes| device.sign(bytes),
+                )
+                .unwrap(),
+                Some(previous) => previous
+                    .append(operation, 100 + index as u64, |bytes| device.sign(bytes))
                     .unwrap(),
             };
             entries.push(entry);
@@ -930,7 +1289,7 @@ mod tests {
     /// Drive a device-writer sync triggered by a daemon command: feed the
     /// in-flight `device_writer_sync` request a provider response carrying the
     /// supplied authority records and device logs.
-    fn deliver_device_writer_sync_response(
+    fn receive_device_writer_sync_response(
         node: &mut NetworkNode,
         provider: libp2p::PeerId,
         authority_records: Vec<DeviceAuthorizationRecord>,
@@ -958,6 +1317,18 @@ mod tests {
         )));
     }
 
+    async fn deliver_device_writer_sync_response(
+        node: &mut NetworkNode,
+        provider: libp2p::PeerId,
+        authority_records: Vec<DeviceAuthorizationRecord>,
+        device_logs: Vec<Vec<DeviceWriterLogEntry>>,
+    ) {
+        receive_device_writer_sync_response(node, provider, authority_records, device_logs);
+        if !node.device_writer_sync_work.active.is_empty() {
+            node.complete_next_device_writer_sync_work().await;
+        }
+    }
+
     fn make_store(dir: &std::path::Path) -> ContentStore {
         ContentStore::open(dir, CacheConfig::default()).unwrap()
     }
@@ -966,6 +1337,12 @@ mod tests {
         let identity = NodeIdentity::generate();
         let store = make_store(dir);
         NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap()
+    }
+
+    fn make_node_with_config(dir: &std::path::Path, config: NetworkConfig) -> NetworkNode {
+        let identity = NodeIdentity::generate();
+        let store = make_store(dir);
+        NetworkNode::new_tcp(identity, store, config).unwrap()
     }
 
     fn authorize_device(
@@ -1187,7 +1564,7 @@ mod tests {
         });
         rx.await.unwrap().unwrap();
 
-        deliver_device_writer_sync_response(&mut node, provider, Vec::new(), Vec::new());
+        deliver_device_writer_sync_response(&mut node, provider, Vec::new(), Vec::new()).await;
         assert!(node.pending_device_writer_syncs.is_empty());
 
         // A relay may advertise the legacy update-log provider again. The
@@ -1531,7 +1908,7 @@ mod tests {
         // The enumerate is parked behind a device-writer sync, not answered yet.
         assert_eq!(node.pending_device_writer_syncs.len(), 1);
 
-        deliver_device_writer_sync_response(&mut node, provider, authority, vec![device_log]);
+        deliver_device_writer_sync_response(&mut node, provider, authority, vec![device_log]).await;
 
         let records = rx.await.unwrap().unwrap();
         assert_eq!(records.len(), 2);
@@ -1540,6 +1917,333 @@ mod tests {
         assert_eq!(records[1].path, "/spoke/posts/2");
         assert_eq!(records[1].content_id, post_b.to_string());
         assert_eq!(records[0].device_id, device_id);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn large_remote_sync_does_not_starve_unrelated_daemon_command() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_large_remote";
+        let authority = vec![authorize_device(&root, &laptop, device_id)];
+        let cached_log = large_append_log(&identity, &laptop, device_id, 100);
+        node.store_verified_device_writer_logs(
+            identity.clone(),
+            authority.clone(),
+            vec![cached_log],
+        )
+        .unwrap();
+        let device_log = large_append_log(&identity, &laptop, device_id, 101);
+        let provider = libp2p::PeerId::random();
+        let key = NetworkNode::update_log_provider_key(&identity);
+        node.discovered_providers.insert(key, vec![provider]);
+
+        node.begin_device_writer_sync(super::DeviceWriterSyncWaiter::Refresh {
+            identity: identity.clone(),
+        });
+
+        let started = Instant::now();
+        receive_device_writer_sync_response(&mut node, provider, authority, vec![device_log]);
+        assert_eq!(node.device_writer_sync_work.active.len(), 1);
+        let (status_tx, status_rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::GetStatus {
+            response_tx: status_tx,
+        });
+        status_rx.await.unwrap();
+        let scheduling_delay = started.elapsed();
+        assert!(
+            scheduling_delay < Duration::from_millis(250),
+            "large remote verification blocked an unrelated daemon command for {scheduling_delay:?}"
+        );
+
+        let (coalesced_tx, coalesced_rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: identity.clone(),
+            path_prefix: "/load/items/".to_string(),
+            response_tx: coalesced_tx,
+        });
+        assert!(node.pending_device_writer_syncs.is_empty());
+        assert_eq!(node.device_writer_sync_work.by_identity.len(), 1);
+
+        node.complete_next_device_writer_sync_work().await;
+        assert_eq!(coalesced_rx.await.unwrap().unwrap().len(), 101);
+        assert_eq!(
+            node.enumerate_append_records(&identity, "/load/items/")
+                .unwrap()
+                .len(),
+            101,
+            "bounded scheduling must preserve the verified merge result"
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_work_limits_reject_overload_and_report_status() {
+        let dir = tempdir().unwrap();
+        let mut config = NetworkConfig::test_config();
+        config.device_writer_sync_max_concurrency = 1;
+        config.device_writer_sync_queue_capacity = 1;
+        let mut node = make_node_with_config(dir.path(), config);
+        let mut overloaded_rx = None;
+
+        for index in 0..3 {
+            let root = NodeIdentity::generate();
+            let device = NodeIdentity::generate();
+            let identity = root.identity_id();
+            let device_id = format!("dev_{index}");
+            let authority = vec![authorize_device(&root, &device, &device_id)];
+            let device_log = large_append_log(&identity, &device, &device_id, 1);
+            let provider = libp2p::PeerId::random();
+            node.discovered_providers.insert(
+                NetworkNode::update_log_provider_key(&identity),
+                vec![provider],
+            );
+            if index == 2 {
+                let (response_tx, response_rx) = oneshot::channel();
+                overloaded_rx = Some(response_rx);
+                node.handle_command(DaemonCommand::EnumerateAppendRecords {
+                    identity: identity.clone(),
+                    path_prefix: "/load/items/".to_string(),
+                    response_tx,
+                });
+            } else {
+                node.begin_device_writer_sync(super::DeviceWriterSyncWaiter::Refresh {
+                    identity: identity.clone(),
+                });
+            }
+            receive_device_writer_sync_response(&mut node, provider, authority, vec![device_log]);
+        }
+
+        assert!(overloaded_rx.unwrap().await.unwrap().unwrap().is_empty());
+        let status = node.build_status().device_writer_sync_work;
+        assert_eq!(status.max_concurrency, 1);
+        assert_eq!(status.queue_capacity, 1);
+        assert_eq!(status.active, 1);
+        assert_eq!(status.queued, 1);
+        assert_eq!(status.rejected, 1);
+
+        node.complete_next_device_writer_sync_work().await;
+        node.complete_next_device_writer_sync_work().await;
+        let status = node.build_status().device_writer_sync_work;
+        assert_eq!(status.active, 0);
+        assert_eq!(status.queued, 0);
+        assert_eq!(status.verified, 2);
+        assert_eq!(status.verification_failed, 0);
+    }
+
+    #[tokio::test]
+    async fn invalid_remote_sync_keeps_the_last_verified_view_unchanged() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let authorized_device = NodeIdentity::generate();
+        let attacker = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_authorized";
+        let authority = vec![authorize_device(&root, &authorized_device, device_id)];
+        let invalid_log = vec![DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            device_id,
+            DeviceWriterOperation::append_record(
+                "/load/items/invalid",
+                ContentId::from_bytes(b"invalid"),
+            ),
+            100,
+            |bytes| attacker.sign(bytes),
+        )
+        .unwrap()];
+        let provider = libp2p::PeerId::random();
+        node.discovered_providers.insert(
+            NetworkNode::update_log_provider_key(&identity),
+            vec![provider],
+        );
+        let (response_tx, response_rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: identity.clone(),
+            path_prefix: "/load/items/".to_string(),
+            response_tx,
+        });
+        receive_device_writer_sync_response(
+            &mut node,
+            provider,
+            authority,
+            vec![invalid_log],
+        );
+        node.complete_next_device_writer_sync_work().await;
+
+        assert!(response_rx.await.unwrap().unwrap().is_empty());
+        assert!(!node.has_device_writer_state(&identity));
+        let status = node.build_status().device_writer_sync_work;
+        assert_eq!(status.verified, 0);
+        assert_eq!(status.verification_failed, 1);
+    }
+
+    #[tokio::test]
+    async fn sync_timeout_cancellation_and_shutdown_release_waiters() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+
+        let cancelled_identity = NodeIdentity::generate().identity_id();
+        let cancelled_provider = libp2p::PeerId::random();
+        node.discovered_providers.insert(
+            NetworkNode::update_log_provider_key(&cancelled_identity),
+            vec![cancelled_provider],
+        );
+        let (cancelled_tx, cancelled_rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: cancelled_identity.clone(),
+            path_prefix: "/".to_string(),
+            response_tx: cancelled_tx,
+        });
+        drop(cancelled_rx);
+        node.check_device_writer_sync_timeouts();
+        assert!(!node
+            .pending_device_writer_waiters
+            .contains_key(&cancelled_identity));
+        assert!(!node
+            .pending_device_writer_syncs
+            .values()
+            .any(|pending| pending.identity == cancelled_identity));
+        assert_eq!(node.build_status().device_writer_sync_work.cancelled, 1);
+
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let timed_out_identity = root.identity_id();
+        let timed_out_provider = libp2p::PeerId::random();
+        let authority = vec![authorize_device(&root, &device, "dev_timeout")];
+        let device_log = large_append_log(&timed_out_identity, &device, "dev_timeout", 100);
+        node.discovered_providers.insert(
+            NetworkNode::update_log_provider_key(&timed_out_identity),
+            vec![timed_out_provider],
+        );
+        node.set_resolve_timeout(Duration::ZERO);
+        let (timed_out_tx, timed_out_rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: timed_out_identity.clone(),
+            path_prefix: "/load/items/".to_string(),
+            response_tx: timed_out_tx,
+        });
+        receive_device_writer_sync_response(
+            &mut node,
+            timed_out_provider,
+            authority,
+            vec![device_log],
+        );
+        node.check_device_writer_sync_timeouts();
+        assert!(timed_out_rx.await.unwrap().unwrap().is_empty());
+        assert_eq!(node.build_status().device_writer_sync_work.timed_out, 1);
+
+        let shutdown_identity = NodeIdentity::generate().identity_id();
+        let shutdown_provider = libp2p::PeerId::random();
+        node.discovered_providers.insert(
+            NetworkNode::update_log_provider_key(&shutdown_identity),
+            vec![shutdown_provider],
+        );
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::EnumerateAppendRecords {
+            identity: shutdown_identity,
+            path_prefix: "/".to_string(),
+            response_tx: shutdown_tx,
+        });
+        node.shutdown_device_writer_sync_work();
+        assert!(matches!(
+            shutdown_rx.await.unwrap(),
+            Err(NetworkError::ShuttingDown)
+        ));
+
+        node.complete_next_device_writer_sync_work().await;
+        assert!(
+            node.has_device_writer_state(&timed_out_identity),
+            "valid work that misses the waiter deadline must still advance verified state"
+        );
+        assert_eq!(
+            node.enumerate_append_records(&timed_out_identity, "/load/items/")
+                .unwrap()
+                .len(),
+            100
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_sync_snapshot_cannot_overwrite_newer_verified_state() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_snapshot_race";
+        let authority = vec![authorize_device(&root, &device, device_id)];
+        let stale_log = large_append_log(&identity, &device, device_id, 1);
+        let newer_log = large_append_log(&identity, &device, device_id, 2);
+        let provider = libp2p::PeerId::random();
+        node.discovered_providers.insert(
+            NetworkNode::update_log_provider_key(&identity),
+            vec![provider],
+        );
+
+        node.begin_device_writer_sync(super::DeviceWriterSyncWaiter::Refresh {
+            identity: identity.clone(),
+        });
+        receive_device_writer_sync_response(
+            &mut node,
+            provider,
+            authority.clone(),
+            vec![stale_log],
+        );
+        node.store_verified_device_writer_logs(identity.clone(), authority, vec![newer_log])
+            .unwrap();
+        node.complete_next_device_writer_sync_work().await;
+
+        assert_eq!(
+            node.enumerate_append_records(&identity, "/load/items/")
+                .unwrap()
+                .len(),
+            2,
+            "a merge built from an old Arc snapshot must not replace newer verified state"
+        );
+    }
+
+    #[tokio::test]
+    async fn timed_out_queued_sync_still_advances_verified_state() {
+        let dir = tempdir().unwrap();
+        let mut config = NetworkConfig::test_config();
+        config.device_writer_sync_max_concurrency = 1;
+        config.device_writer_sync_queue_capacity = 1;
+        let mut node = make_node_with_config(dir.path(), config);
+        node.set_resolve_timeout(Duration::ZERO);
+        let mut identities = Vec::new();
+
+        for index in 0..2 {
+            let root = NodeIdentity::generate();
+            let device = NodeIdentity::generate();
+            let identity = root.identity_id();
+            let device_id = format!("dev_queued_timeout_{index}");
+            let authority = vec![authorize_device(&root, &device, &device_id)];
+            let log = large_append_log(&identity, &device, &device_id, 1);
+            let provider = libp2p::PeerId::random();
+            node.discovered_providers.insert(
+                NetworkNode::update_log_provider_key(&identity),
+                vec![provider],
+            );
+            node.begin_device_writer_sync(super::DeviceWriterSyncWaiter::Refresh {
+                identity: identity.clone(),
+            });
+            receive_device_writer_sync_response(&mut node, provider, authority, vec![log]);
+            identities.push(identity);
+        }
+
+        assert_eq!(node.device_writer_sync_work.active.len(), 1);
+        assert_eq!(node.device_writer_sync_work.queued.len(), 1);
+        node.check_device_writer_sync_timeouts();
+        assert_eq!(node.build_status().device_writer_sync_work.timed_out, 2);
+
+        node.complete_next_device_writer_sync_work().await;
+        node.complete_next_device_writer_sync_work().await;
+        for identity in identities {
+            assert!(node.has_device_writer_state(&identity));
+        }
+        assert_eq!(node.build_status().device_writer_sync_work.verified, 2);
     }
 
     #[tokio::test]
@@ -1585,7 +2289,8 @@ mod tests {
             provider,
             authority.clone(),
             vec![first_log],
-        );
+        )
+        .await;
         assert_eq!(rx.await.unwrap().unwrap().len(), 1);
         assert!(node.has_device_writer_state(&identity));
 
@@ -1615,7 +2320,7 @@ mod tests {
             1,
             "a cached-but-stale remote enumerate must trigger a refresh sync"
         );
-        deliver_device_writer_sync_response(&mut node, provider, authority, vec![second_log]);
+        deliver_device_writer_sync_response(&mut node, provider, authority, vec![second_log]).await;
 
         let records = rx.await.unwrap().unwrap();
         assert_eq!(records.len(), 1);
@@ -1702,7 +2407,8 @@ mod tests {
                 provider,
                 authority,
                 vec![first, second],
-            );
+            )
+            .await;
             rx.await
                 .unwrap()
                 .unwrap()
@@ -1847,7 +2553,7 @@ mod tests {
             path_prefix: "/spoke/posts/".to_string(),
             response_tx: tx,
         });
-        deliver_device_writer_sync_response(&mut node, provider, authority, vec![device_log]);
+        deliver_device_writer_sync_response(&mut node, provider, authority, vec![device_log]).await;
 
         let records = rx.await.unwrap().unwrap();
         assert!(
@@ -1909,7 +2615,7 @@ mod tests {
         let retry = node.pending_device_writer_syncs.values().next().unwrap();
         assert_eq!(retry.provider, fallback);
 
-        deliver_device_writer_sync_response(&mut node, fallback, authority, vec![device_log]);
+        deliver_device_writer_sync_response(&mut node, fallback, authority, vec![device_log]).await;
         let records = rx.await.unwrap().unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].content_id, record.to_string());

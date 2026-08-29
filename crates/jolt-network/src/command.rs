@@ -438,11 +438,25 @@ pub struct NodeStatus {
     pub effective_bootstrap_relays: Vec<String>,
     pub effective_bootstrap_relay_count: usize,
     pub known_relay_count: usize,
+    pub device_writer_sync_work: DeviceWriterSyncWorkStatus,
     pub connected_bootstrap_peers: usize,
     pub last_bootstrap_error: Option<String>,
     pub home_relay: Option<HomeRelayConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relay_record: Option<RelayRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceWriterSyncWorkStatus {
+    pub max_concurrency: usize,
+    pub queue_capacity: usize,
+    pub active: usize,
+    pub queued: usize,
+    pub verified: u64,
+    pub verification_failed: u64,
+    pub rejected: u64,
+    pub cancelled: u64,
+    pub timed_out: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
