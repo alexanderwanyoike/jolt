@@ -35,6 +35,20 @@ yarn add https://github.com/alexanderwanyoike/jolt/releases/latest/download/jolt
 | `jolt-sdk/transport-tauri` | Tauri `invoke`-based transport for desktop shells |
 | `jolt-sdk/testing` | `createFakeJolt`: a deterministic in-memory fake for tests |
 
+Advanced hosts that already own an approved session can construct the
+subscription-capable client required by `App.connect({ identity, client })`
+without exposing those operations on the ordinary application client:
+
+```ts
+import { createDataClient } from "jolt-sdk";
+
+const client = createDataClient({ transport, getSessionToken });
+const app = await MyApp.connect({ identity, client });
+```
+
+Beginner applications use `MyApp.connect()` and do not construct either client.
+`createJoltClient` intentionally omits raw Data Subscription operations.
+
 Schema Classes use NestJS-style TypeScript decorators. Enable
 `experimentalDecorators` in the application's `tsconfig.json` when using the
 `jolt-sdk/data` surface.

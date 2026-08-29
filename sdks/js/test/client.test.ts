@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createDataClient,
   createJoltClient,
   JoltApiError,
   JoltTransportError,
   type JoltTransport,
 } from "../src/index.js";
-import { createDataAppClient } from "../src/client.js";
 
 /** A transport that records every call and replays canned responses. */
 function recordingTransport(responses: Record<string, unknown>) {
@@ -787,7 +787,7 @@ describe("createJoltClient", () => {
         },
       },
     });
-    const jolt = createDataAppClient({ transport, getSessionToken: token });
+    const jolt = createDataClient({ transport, getSessionToken: token });
 
     await expect(
       jolt.createDataSubscription("alice.jolt", "/spoke/posts/"),
@@ -848,7 +848,7 @@ describe("createJoltClient", () => {
         removed: ["/spoke/posts/p0"],
       },
     });
-    const jolt = createDataAppClient({ transport, getSessionToken: token });
+    const jolt = createDataClient({ transport, getSessionToken: token });
 
     await expect(
       jolt.nextDataSubscriptionChange("sub_1", "stream_boot_1:1"),

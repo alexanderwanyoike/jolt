@@ -14,6 +14,8 @@
   Collections.
 - Matching deterministic `App.testWorld()` behavior and low-level fake/client
   transport support for Data Subscriptions.
+- An advanced `createDataClient(...)` host seam for applications that already
+  own an approved session and pass a client to `App.connect`.
 - A compile-checked beginner Chirp guide based on Schema Classes,
   `App.create`, and generated Resource interfaces.
 
