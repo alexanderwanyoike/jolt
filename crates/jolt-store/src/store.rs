@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,7 @@ pub struct ContentStore {
     update_logs_dir: PathBuf,
     device_writer_logs_dir: PathBuf,
     remote_identity_states_dir: PathBuf,
+    remote_identity_state_index: Arc<Mutex<RemoteIdentityStateIndex>>,
     home_relay_pins_path: PathBuf,
     ingress_queue_path: PathBuf,
     local_device_signing_key_path: PathBuf,
@@ -38,6 +40,21 @@ pub struct ContentStore {
 pub struct RemoteIdentityStateStore {
     dir: PathBuf,
     max_size_bytes: u64,
+    index: Arc<Mutex<RemoteIdentityStateIndex>>,
+}
+
+#[derive(Debug, Default)]
+struct RemoteIdentityStateIndex {
+    entries: HashMap<String, RemoteIdentityStateIndexEntry>,
+    total_size: u64,
+    next_write_order: u128,
+}
+
+#[derive(Debug)]
+struct RemoteIdentityStateIndexEntry {
+    path: PathBuf,
+    size: u64,
+    write_order: u128,
 }
 
 const MAX_DISCOVERED_PEER_HINTS: usize = 64;
@@ -228,6 +245,9 @@ impl ContentStore {
 
         let cache_index = Self::load_index(&cache_dir)?;
         let published_content = Self::scan_published(&published_dir)?;
+        let remote_identity_state_index = Arc::new(Mutex::new(RemoteIdentityStateIndex::scan(
+            &remote_identity_states_dir,
+        )?));
 
         info!(
             "Content store opened: {} published, {} cached",
@@ -241,6 +261,7 @@ impl ContentStore {
             update_logs_dir,
             device_writer_logs_dir,
             remote_identity_states_dir,
+            remote_identity_state_index,
             home_relay_pins_path,
             ingress_queue_path,
             local_device_signing_key_path,
@@ -493,6 +514,7 @@ impl ContentStore {
         RemoteIdentityStateStore {
             dir: self.remote_identity_states_dir.clone(),
             max_size_bytes: self.cache_config.max_size_bytes,
+            index: Arc::clone(&self.remote_identity_state_index),
         }
     }
 
@@ -1068,47 +1090,88 @@ impl RemoteIdentityStateStore {
         if json.len() as u64 > self.max_size_bytes {
             return Err(StoreError::RemoteIdentityStateTooLarge);
         }
+        let mut index = self
+            .index
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         std::fs::write(&tmp_path, json)?;
+        let new_size = std::fs::metadata(&tmp_path)?.len();
+        let identity = record.identity.to_string();
+        if let Some(previous) = index.entries.remove(&identity) {
+            index.total_size = index.total_size.saturating_sub(previous.size);
+        }
+        while index.entries.len() >= MAX_REMOTE_IDENTITY_STATES
+            || index.total_size.saturating_add(new_size) > self.max_size_bytes
+        {
+            let Some(oldest) = index
+                .entries
+                .iter()
+                .min_by(|left, right| {
+                    (left.1.write_order, &left.1.path).cmp(&(right.1.write_order, &right.1.path))
+                })
+                .map(|(identity, _)| identity.clone())
+            else {
+                let _ = std::fs::remove_file(&tmp_path);
+                return Err(StoreError::RemoteIdentityStateTooLarge);
+            };
+            let evicted = index.entries.remove(&oldest).expect("indexed entry exists");
+            std::fs::remove_file(&evicted.path)?;
+            index.total_size = index.total_size.saturating_sub(evicted.size);
+        }
+        std::fs::rename(tmp_path, &path)?;
+        let write_order = index.next_write_order;
+        index.next_write_order = index.next_write_order.saturating_add(1);
+        index.total_size = index.total_size.saturating_add(new_size);
+        index.entries.insert(
+            identity,
+            RemoteIdentityStateIndexEntry {
+                path,
+                size: new_size,
+                write_order,
+            },
+        );
+        Ok(())
+    }
+}
 
-        let mut retained_bytes = 0_u64;
+impl RemoteIdentityStateIndex {
+    fn scan(dir: &Path) -> Result<Self, StoreError> {
         let mut candidates = Vec::new();
-        for entry in std::fs::read_dir(&self.dir)? {
+        for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
-            let candidate_path = entry.path();
-            if candidate_path == path
-                || candidate_path
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    != Some("json")
-            {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
                 continue;
             }
             let metadata = entry.metadata()?;
-            let size = metadata.len();
-            retained_bytes = retained_bytes.saturating_add(size);
-            let last_modified = metadata
+            let modified = metadata
                 .modified()
                 .ok()
-                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
                 .map(|duration| duration.as_nanos())
                 .unwrap_or_default();
-            candidates.push((last_modified, candidate_path, size));
+            candidates.push((modified, path, metadata.len()));
         }
         candidates.sort_by(|left, right| (left.0, &left.1).cmp(&(right.0, &right.1)));
-        let mut retained_count = candidates.len();
-        let new_size = std::fs::metadata(&tmp_path)?.len();
-        for (_, candidate_path, size) in candidates {
-            if retained_count < MAX_REMOTE_IDENTITY_STATES
-                && retained_bytes.saturating_add(new_size) <= self.max_size_bytes
-            {
-                break;
-            }
-            std::fs::remove_file(candidate_path)?;
-            retained_count -= 1;
-            retained_bytes = retained_bytes.saturating_sub(size);
+
+        let mut index = Self::default();
+        for (_, path, size) in candidates {
+            let Some(identity) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                continue;
+            };
+            let write_order = index.next_write_order;
+            index.next_write_order = index.next_write_order.saturating_add(1);
+            index.total_size = index.total_size.saturating_add(size);
+            index.entries.insert(
+                identity.to_string(),
+                RemoteIdentityStateIndexEntry {
+                    path,
+                    size,
+                    write_order,
+                },
+            );
         }
-        std::fs::rename(tmp_path, path)?;
-        Ok(())
+        Ok(index)
     }
 }
 
