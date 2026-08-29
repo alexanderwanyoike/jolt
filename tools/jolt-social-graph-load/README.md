@@ -64,13 +64,15 @@ Each JSON artifact contains:
 
 - the complete workload and network configuration plus a deterministic plan
   digest;
-- cold, no-change warm, and new-record phase latency percentiles;
+- cold, no-change warm, and new-record success-only latency percentiles;
 - successful and failed identity refresh counts with classified failures;
 - enumerate-sync, resolve, fetch, provider-announcement, content-announcement,
   and churn counts;
 - bytes forwarded in each direction and bytes deliberately dropped;
 - aggregate CPU time, RSS, virtual memory, and reader cache growth; and
-- per-author time from new-record publication to successful refreshed view.
+- per-author time from new-record publication to successful refreshed view,
+  with old-count responses polled for up to 75 seconds and first-attempt misses
+  reported separately.
 
 CPU and memory cover all daemon loops because they share one process. Provider
 activity records harness requests and announcements, not internal Kademlia

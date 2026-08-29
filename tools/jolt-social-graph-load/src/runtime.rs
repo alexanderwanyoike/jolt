@@ -33,7 +33,9 @@ use crate::{
 };
 
 const POSTS_PREFIX: &str = "/spoke/posts/";
-const RESULT_VERSION: u32 = 1;
+const RESULT_VERSION: u32 = 2;
+const VISIBILITY_POLL_DEADLINE: Duration = Duration::from_secs(75);
+const VISIBILITY_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NetworkProfile {
@@ -143,6 +145,7 @@ pub struct PropagationReport {
     pub published_records: u64,
     pub visible_records: u64,
     pub failed_records: u64,
+    pub first_attempt_misses: u64,
     pub latency_micros: crate::LatencyPercentiles,
 }
 
@@ -325,6 +328,7 @@ struct TimelineOutcome {
     accounting: PhaseAccounting,
     activity: ActivityReport,
     visibility: PhaseAccounting,
+    first_attempt_misses: u64,
 }
 
 struct AuthorOutcome {
@@ -333,6 +337,8 @@ struct AuthorOutcome {
     latency_micros: u64,
     resolves: u64,
     fetches: u64,
+    refresh_attempts: u64,
+    first_attempt_missed: bool,
     error: Option<String>,
 }
 
@@ -457,6 +463,7 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
         published_records,
         visible_records: visible,
         failed_records: published_records.saturating_sub(visible),
+        first_attempt_misses: measured_new_phase.first_attempt_misses,
         latency_micros: measured_new_phase.visibility.latency_micros,
     };
     phases.push(new_phase);
@@ -771,6 +778,7 @@ async fn publish_and_refresh_new_records(
 struct MeasuredPhase {
     report: PhaseReport,
     visibility: PhaseSummary,
+    first_attempt_misses: u64,
 }
 
 struct MeasurementContext<'a> {
@@ -816,6 +824,7 @@ impl MeasurementContext<'_> {
                 rss_growth_bytes: rss_growth_bytes.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
             },
             visibility: outcome.visibility.summarize(),
+            first_attempt_misses: outcome.first_attempt_misses,
         })
     }
 
@@ -863,6 +872,7 @@ impl MeasurementContext<'_> {
                 rss_growth_bytes: rss_growth_bytes.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
             },
             visibility: outcome.visibility.summarize(),
+            first_attempt_misses: outcome.first_attempt_misses,
         })
     }
 }
@@ -901,17 +911,33 @@ fn spawn_author_refresh(
     tasks.spawn(async move {
         let permit = semaphore.acquire_owned().await;
         let started = Instant::now();
-        let result = match permit {
-            Ok(_permit) => refresh_author(&reader, &author, expected_records).await,
-            Err(error) => Err((0, 0, error.to_string())),
+        let poll = match permit {
+            Ok(_permit) if published_at.is_some() => {
+                poll_until_visible(VISIBILITY_POLL_DEADLINE, VISIBILITY_POLL_INTERVAL, || {
+                    refresh_author(&reader, &author, expected_records)
+                })
+                .await
+            }
+            Ok(_permit) => VisibilityPollOutcome {
+                result: refresh_author(&reader, &author, expected_records).await,
+                attempts: 1,
+                first_attempt_missed: false,
+            },
+            Err(error) => VisibilityPollOutcome {
+                result: Err((0, 0, error.to_string())),
+                attempts: 0,
+                first_attempt_missed: false,
+            },
         };
-        match result {
+        match poll.result {
             Ok((resolves, fetches)) => AuthorOutcome {
                 published_at,
                 completed_at: Instant::now(),
                 latency_micros: started.elapsed().as_micros() as u64,
                 resolves,
                 fetches,
+                refresh_attempts: poll.attempts,
+                first_attempt_missed: poll.first_attempt_missed,
                 error: None,
             },
             Err((resolves, fetches, error)) => AuthorOutcome {
@@ -920,6 +946,8 @@ fn spawn_author_refresh(
                 latency_micros: started.elapsed().as_micros() as u64,
                 resolves,
                 fetches,
+                refresh_attempts: poll.attempts,
+                first_attempt_missed: poll.first_attempt_missed,
                 error: Some(error),
             },
         }
@@ -929,9 +957,10 @@ fn spawn_author_refresh(
 async fn collect_author_outcomes(mut tasks: JoinSet<AuthorOutcome>) -> TimelineOutcome {
     let mut outcome = TimelineOutcome::default();
     while let Some(result) = tasks.join_next().await {
-        outcome.activity.identity_sync_requests += 1;
         match result {
             Ok(author) => {
+                outcome.activity.identity_sync_requests += author.refresh_attempts;
+                outcome.first_attempt_misses += u64::from(author.first_attempt_missed);
                 if let Some(published) = author.published_at {
                     let latency = author
                         .completed_at
@@ -952,12 +981,62 @@ async fn collect_author_outcomes(mut tasks: JoinSet<AuthorOutcome>) -> TimelineO
                     None => outcome.accounting.record_success(author.latency_micros),
                 }
             }
-            Err(error) => outcome
-                .accounting
-                .record_failure(0, format!("task:{error}")),
+            Err(error) => {
+                outcome.activity.identity_sync_requests += 1;
+                outcome
+                    .accounting
+                    .record_failure(0, format!("task:{error}"));
+            }
         }
     }
     outcome
+}
+
+struct VisibilityPollOutcome<T, E> {
+    result: Result<T, E>,
+    attempts: u64,
+    first_attempt_missed: bool,
+}
+
+async fn poll_until_visible<T, F, Fut>(
+    max_wait: Duration,
+    interval: Duration,
+    mut refresh: F,
+) -> VisibilityPollOutcome<T, (u64, u64, String)>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, (u64, u64, String)>>,
+{
+    let deadline = Instant::now() + max_wait;
+    let mut attempts = 0;
+    let mut first_attempt_missed = false;
+    loop {
+        attempts += 1;
+        match refresh().await {
+            Ok(value) => {
+                return VisibilityPollOutcome {
+                    result: Ok(value),
+                    attempts,
+                    first_attempt_missed,
+                };
+            }
+            Err(error) => {
+                let old_count = error.2.starts_with("record_count:");
+                if attempts == 1 && old_count {
+                    first_attempt_missed = true;
+                }
+                let now = Instant::now();
+                if !old_count || now >= deadline {
+                    return VisibilityPollOutcome {
+                        result: Err(error),
+                        attempts,
+                        first_attempt_missed,
+                    };
+                }
+                tokio::time::sleep(interval.min(deadline.saturating_duration_since(now))).await;
+            }
+        }
+    }
 }
 
 async fn refresh_author(
@@ -1072,5 +1151,50 @@ fn environment_report() -> EnvironmentReport {
         jolt_version: env!("CARGO_PKG_VERSION").to_string(),
         transport: "libp2p TCP through local shaped links".to_string(),
         process_model: "multiple real NetworkNode daemon loops in one process".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::Cell, time::Duration};
+
+    use super::poll_until_visible;
+
+    #[tokio::test]
+    async fn visibility_poll_retries_old_counts_until_the_record_is_visible() {
+        let attempts = Cell::new(0_u64);
+
+        let outcome = poll_until_visible(Duration::from_millis(50), Duration::ZERO, || {
+            let attempt = attempts.get() + 1;
+            attempts.set(attempt);
+            async move {
+                if attempt < 3 {
+                    Err((0, 0, "record_count:1_expected:2".to_string()))
+                } else {
+                    Ok((1, 2))
+                }
+            }
+        })
+        .await;
+
+        assert_eq!(outcome.result, Ok((1, 2)));
+        assert_eq!(outcome.attempts, 3);
+        assert!(outcome.first_attempt_missed);
+    }
+
+    #[tokio::test]
+    async fn visibility_poll_stops_at_its_deadline() {
+        let attempts = Cell::new(0_u64);
+
+        let outcome =
+            poll_until_visible(Duration::from_millis(5), Duration::from_millis(1), || {
+                attempts.set(attempts.get() + 1);
+                async { Err::<(), _>((0, 0, "record_count:1_expected:2".to_string())) }
+            })
+            .await;
+
+        assert!(outcome.result.is_err());
+        assert!(outcome.attempts >= 1);
+        assert!(outcome.first_attempt_missed);
     }
 }

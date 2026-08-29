@@ -157,27 +157,26 @@ fn select_indices(seed: u64, domain: &str, count: usize, take: usize) -> Vec<usi
 
 #[derive(Debug, Clone, Default)]
 pub struct PhaseAccounting {
-    latencies_micros: Vec<u64>,
+    successful_latencies_micros: Vec<u64>,
     successes: u64,
     failures: BTreeMap<String, u64>,
 }
 
 impl PhaseAccounting {
     pub fn record_success(&mut self, latency_micros: u64) {
-        self.latencies_micros.push(latency_micros);
+        self.successful_latencies_micros.push(latency_micros);
         self.successes += 1;
     }
 
-    pub fn record_failure(&mut self, latency_micros: u64, reason: impl Into<String>) {
-        self.latencies_micros.push(latency_micros);
+    pub fn record_failure(&mut self, _latency_micros: u64, reason: impl Into<String>) {
         *self.failures.entry(reason.into()).or_default() += 1;
     }
 
     pub fn summarize(&self) -> PhaseSummary {
-        let mut latencies = self.latencies_micros.clone();
+        let mut latencies = self.successful_latencies_micros.clone();
         latencies.sort_unstable();
         PhaseSummary {
-            operations: latencies.len() as u64,
+            operations: self.successes + self.failures.values().sum::<u64>(),
             successes: self.successes,
             failures: self.failures.clone(),
             latency_micros: LatencyPercentiles {
@@ -242,14 +241,14 @@ mod tests {
         first_accounting.record_success(1_000);
         first_accounting.record_success(4_000);
         first_accounting.record_success(2_000);
-        first_accounting.record_failure(3_000, "timeout");
+        first_accounting.record_failure(99_000, "timeout");
         let first_summary = first_accounting.summarize();
 
         let mut second_accounting = PhaseAccounting::default();
         second_accounting.record_success(1_000);
         second_accounting.record_success(4_000);
         second_accounting.record_success(2_000);
-        second_accounting.record_failure(3_000, "timeout");
+        second_accounting.record_failure(99_000, "timeout");
         let second_summary = second_accounting.summarize();
 
         assert_eq!(first_summary, second_summary);
@@ -258,5 +257,6 @@ mod tests {
         assert_eq!(first_summary.failures["timeout"], 1);
         assert_eq!(first_summary.latency_micros.p50, 2_000);
         assert_eq!(first_summary.latency_micros.p95, 4_000);
+        assert_eq!(first_summary.latency_micros.max, 4_000);
     }
 }
