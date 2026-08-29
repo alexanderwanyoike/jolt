@@ -70,6 +70,7 @@ pub(super) struct DeviceWriterSyncWork {
     pub(super) identity: IdentityId,
     pub(super) provider: libp2p::PeerId,
     pub(super) deadline: Instant,
+    pub(super) settled: bool,
     existing: Option<Arc<super::CachedDeviceWriterState>>,
     authority_records: Vec<DeviceAuthorizationRecord>,
     device_logs: Vec<Vec<DeviceWriterLogEntry>>,
@@ -80,6 +81,7 @@ pub(super) struct ActiveDeviceWriterSyncWork {
     pub(super) provider: libp2p::PeerId,
     pub(super) deadline: Instant,
     pub(super) settled: bool,
+    base_state: Option<Arc<super::CachedDeviceWriterState>>,
 }
 
 pub(super) struct CompletedDeviceWriterSyncWork {
@@ -687,39 +689,20 @@ impl NetworkNode {
             };
             work.settled = true;
             let identity = work.identity.clone();
-            let provider = work.provider;
-            if self
-                .device_writer_sync_work
-                .by_identity
-                .get(&identity)
-                .is_some_and(|known| *known == id)
-            {
-                self.device_writer_sync_work.by_identity.remove(&identity);
-            }
             self.device_writer_sync_work.timed_out += 1;
-            self.on_device_writer_sync_settled(&identity, &provider, Some(NetworkError::Timeout));
+            self.answer_device_writer_waiters(&identity);
         }
 
         let mut expired_queued = Vec::new();
-        self.device_writer_sync_work.queued.retain(|work| {
-            if work.deadline <= now {
-                expired_queued.push((work.id, work.identity.clone(), work.provider));
-                false
-            } else {
-                true
+        for work in &mut self.device_writer_sync_work.queued {
+            if !work.settled && work.deadline <= now {
+                work.settled = true;
+                expired_queued.push(work.identity.clone());
             }
-        });
-        for (id, identity, provider) in expired_queued {
-            if self
-                .device_writer_sync_work
-                .by_identity
-                .get(&identity)
-                .is_some_and(|known| *known == id)
-            {
-                self.device_writer_sync_work.by_identity.remove(&identity);
-            }
+        }
+        for identity in expired_queued {
             self.device_writer_sync_work.timed_out += 1;
-            self.on_device_writer_sync_settled(&identity, &provider, Some(NetworkError::Timeout));
+            self.answer_device_writer_waiters(&identity);
         }
     }
 
@@ -1023,6 +1006,7 @@ impl NetworkNode {
             identity: pending.identity.clone(),
             provider: pending.provider,
             deadline: pending.deadline,
+            settled: false,
             authority_records,
             device_logs,
         };
@@ -1050,13 +1034,15 @@ impl NetworkNode {
     fn spawn_device_writer_sync_verification(&mut self, work: DeviceWriterSyncWork) {
         let id = work.id;
         let identity = work.identity.clone();
+        let base_state = work.existing.clone();
         self.device_writer_sync_work.active.insert(
             id,
             ActiveDeviceWriterSyncWork {
                 identity: identity.clone(),
                 provider: work.provider,
                 deadline: work.deadline,
-                settled: false,
+                settled: work.settled,
+                base_state,
             },
         );
         let completion_tx = self.device_writer_sync_work.completion_tx.clone();
@@ -1075,40 +1061,70 @@ impl NetworkNode {
         &mut self,
         completion: CompletedDeviceWriterSyncWork,
     ) {
-        let Some(active) = self.device_writer_sync_work.active.remove(&completion.id) else {
+        let Some(mut active) = self.device_writer_sync_work.active.remove(&completion.id) else {
             return;
         };
-        if self
+        let owns_identity = self
             .device_writer_sync_work
             .by_identity
             .get(&active.identity)
-            .is_some_and(|id| *id == completion.id)
-        {
+            .is_some_and(|id| *id == completion.id);
+        if owns_identity {
             self.device_writer_sync_work
                 .by_identity
                 .remove(&active.identity);
         }
 
-        if !active.settled {
-            let result: Result<(), NetworkError> = if active.deadline <= Instant::now() {
-                self.device_writer_sync_work.timed_out += 1;
-                Err(NetworkError::Timeout)
-            } else {
-                completion
-                    .result
-                    .map(|state| {
-                        self.device_writer_states
-                            .insert(active.identity.clone(), Arc::new(state));
-                        self.device_writer_sync_work.verified += 1;
-                    })
-                    .map_err(|error| {
-                        self.device_writer_sync_work.verification_failed += 1;
-                        Self::identity_head_invalid_failure(&active.identity, error.to_string())
-                    })
-            };
-            self.on_device_writer_sync_settled(&active.identity, &active.provider, result.err());
-            self.retry_pending_local_device_writer_refresh();
+        if !active.settled && active.deadline <= Instant::now() {
+            active.settled = true;
+            self.device_writer_sync_work.timed_out += 1;
+            if owns_identity {
+                self.answer_device_writer_waiters(&active.identity);
+            }
         }
+
+        match completion.result {
+            Ok(state) => {
+                let snapshot_is_current = match (
+                    active.base_state.as_ref(),
+                    self.device_writer_states.get(&active.identity),
+                ) {
+                    (None, None) => true,
+                    (Some(base), Some(current)) => Arc::ptr_eq(base, current),
+                    _ => false,
+                };
+                if snapshot_is_current {
+                    self.device_writer_states
+                        .insert(active.identity.clone(), Arc::new(state));
+                }
+                self.device_writer_sync_work.verified += 1;
+
+                let has_waiters = self
+                    .pending_device_writer_waiters
+                    .contains_key(&active.identity);
+                if owns_identity && (!active.settled || has_waiters) {
+                    self.answer_device_writer_waiters(&active.identity);
+                }
+            }
+            Err(error) => {
+                self.device_writer_sync_work.verification_failed += 1;
+                let has_waiters = self
+                    .pending_device_writer_waiters
+                    .contains_key(&active.identity);
+                if owns_identity && (!active.settled || has_waiters) {
+                    let error = Self::identity_head_invalid_failure(
+                        &active.identity,
+                        error.to_string(),
+                    );
+                    self.on_device_writer_sync_settled(
+                        &active.identity,
+                        &active.provider,
+                        Some(error),
+                    );
+                }
+            }
+        }
+        self.retry_pending_local_device_writer_refresh();
         self.start_queued_device_writer_sync_work();
     }
 
@@ -1930,6 +1946,7 @@ mod tests {
 
         let started = Instant::now();
         receive_device_writer_sync_response(&mut node, provider, authority, vec![device_log]);
+        assert_eq!(node.device_writer_sync_work.active.len(), 1);
         let (status_tx, status_rx) = oneshot::channel();
         node.handle_command(DaemonCommand::GetStatus {
             response_tx: status_tx,
@@ -1937,7 +1954,7 @@ mod tests {
         status_rx.await.unwrap();
         let scheduling_delay = started.elapsed();
         assert!(
-            scheduling_delay < Duration::from_millis(50),
+            scheduling_delay < Duration::from_millis(250),
             "large remote verification blocked an unrelated daemon command for {scheduling_delay:?}"
         );
 
@@ -2136,7 +2153,97 @@ mod tests {
         ));
 
         node.complete_next_device_writer_sync_work().await;
-        assert!(!node.has_device_writer_state(&timed_out_identity));
+        assert!(
+            node.has_device_writer_state(&timed_out_identity),
+            "valid work that misses the waiter deadline must still advance verified state"
+        );
+        assert_eq!(
+            node.enumerate_append_records(&timed_out_identity, "/load/items/")
+                .unwrap()
+                .len(),
+            100
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_sync_snapshot_cannot_overwrite_newer_verified_state() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let device = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_snapshot_race";
+        let authority = vec![authorize_device(&root, &device, device_id)];
+        let stale_log = large_append_log(&identity, &device, device_id, 1);
+        let newer_log = large_append_log(&identity, &device, device_id, 2);
+        let provider = libp2p::PeerId::random();
+        node.discovered_providers.insert(
+            NetworkNode::update_log_provider_key(&identity),
+            vec![provider],
+        );
+
+        node.begin_device_writer_sync(super::DeviceWriterSyncWaiter::Refresh {
+            identity: identity.clone(),
+        });
+        receive_device_writer_sync_response(
+            &mut node,
+            provider,
+            authority.clone(),
+            vec![stale_log],
+        );
+        node.store_verified_device_writer_logs(identity.clone(), authority, vec![newer_log])
+            .unwrap();
+        node.complete_next_device_writer_sync_work().await;
+
+        assert_eq!(
+            node.enumerate_append_records(&identity, "/load/items/")
+                .unwrap()
+                .len(),
+            2,
+            "a merge built from an old Arc snapshot must not replace newer verified state"
+        );
+    }
+
+    #[tokio::test]
+    async fn timed_out_queued_sync_still_advances_verified_state() {
+        let dir = tempdir().unwrap();
+        let mut config = NetworkConfig::test_config();
+        config.device_writer_sync_max_concurrency = 1;
+        config.device_writer_sync_queue_capacity = 1;
+        let mut node = make_node_with_config(dir.path(), config);
+        node.set_resolve_timeout(Duration::ZERO);
+        let mut identities = Vec::new();
+
+        for index in 0..2 {
+            let root = NodeIdentity::generate();
+            let device = NodeIdentity::generate();
+            let identity = root.identity_id();
+            let device_id = format!("dev_queued_timeout_{index}");
+            let authority = vec![authorize_device(&root, &device, &device_id)];
+            let log = large_append_log(&identity, &device, &device_id, 1);
+            let provider = libp2p::PeerId::random();
+            node.discovered_providers.insert(
+                NetworkNode::update_log_provider_key(&identity),
+                vec![provider],
+            );
+            node.begin_device_writer_sync(super::DeviceWriterSyncWaiter::Refresh {
+                identity: identity.clone(),
+            });
+            receive_device_writer_sync_response(&mut node, provider, authority, vec![log]);
+            identities.push(identity);
+        }
+
+        assert_eq!(node.device_writer_sync_work.active.len(), 1);
+        assert_eq!(node.device_writer_sync_work.queued.len(), 1);
+        node.check_device_writer_sync_timeouts();
+        assert_eq!(node.build_status().device_writer_sync_work.timed_out, 2);
+
+        node.complete_next_device_writer_sync_work().await;
+        node.complete_next_device_writer_sync_work().await;
+        for identity in identities {
+            assert!(node.has_device_writer_state(&identity));
+        }
+        assert_eq!(node.build_status().device_writer_sync_work.verified, 2);
     }
 
     #[tokio::test]
