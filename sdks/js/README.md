@@ -2,17 +2,24 @@
 
 TypeScript SDK for building applications on the [Jolt](https://github.com/alexanderwanyoike/jolt) network.
 
-Jolt applications do not own accounts. They ask the local Jolt daemon for a
-capability-scoped session that the user approves in Jolt Console, then publish
-signed content under the user's identity, read other identities' content, and
-exchange encrypted objects through recipient-controlled ingress. This SDK is
-the typed client for that contract, extracted from the seam proven in
+Jolt applications do not own accounts. Define typed application data with
+Schema Classes, compose it through `App.create`, and connect or test it through
+one generated interface. Jolt handles identity, signed storage, paths,
+compatibility, and scoped approval. The low-level client remains available for
+applications that need explicit protocol control. The SDK is extracted from
+the seam proven in
 [Spoke](https://github.com/alexanderwanyoike/spoke) and
 [Pastey](https://github.com/alexanderwanyoike/pastey).
 
 ## Install
 
-From a jolt release tarball (no registry required):
+From npm:
+
+```sh
+yarn add jolt-sdk
+```
+
+Or from a Jolt release tarball:
 
 ```sh
 yarn add https://github.com/alexanderwanyoike/jolt/releases/latest/download/jolt-sdk.tgz
@@ -35,39 +42,61 @@ Schema Classes use NestJS-style TypeScript decorators. Enable
 ## Quick start
 
 ```ts
-import { createJoltClient } from "jolt-sdk";
-import { HttpTransport } from "jolt-sdk/transport-http";
+import { App, Collection, Field, Read, Schema, State } from "jolt-sdk/data";
 
-let token = "";
-const jolt = createJoltClient({
-  transport: new HttpTransport({ daemonUrl: "http://127.0.0.1:9862" }),
-  getSessionToken: () => token,
-});
+@Schema({ version: 1 })
+class Post {
+  @Field.string()
+  text!: string;
 
-// 1. Ask for a scoped session; the user approves it in Jolt Console.
-const status = await jolt.getStatus();
-const request = await jolt.requestSession({
-  appId: "myapp.local",
-  appName: "My App",
-  appOrigin: window.location.origin,
-  identity: status.identity_address,
-  capabilities: ["publish:/myapp/*", "resolve:public", "fetch:public"],
-});
-
-// 2. Poll until approved.
-for (;;) {
-  const s = await jolt.getSessionRequestStatus(request.request_id);
-  if (s.session_token) { token = s.session_token; break; }
-  await new Promise((r) => setTimeout(r, 1000));
+  @Field.dateTime()
+  postedAt!: Date;
 }
 
-// 3. Publish signed content and read it back, versioned and decoded.
-await jolt.publishJson("/myapp/profile", { name: "Alice" });
-const profile = await jolt.read(
-  { identity: status.identity_address, path: "/myapp/profile" },
-  (v) => (typeof v === "object" && v && "name" in v ? (v as { name: string }) : null)
-);
+const Posts = Collection.create(Post, {
+  access: {
+    read: Read.AnyIdentity,
+    create: true,
+    update: true,
+    delete: true,
+    restore: true,
+  },
+});
+
+const Chirp = App.create({
+  id: "chirp.example",
+  name: "Chirp",
+  namespace: "chirp",
+  data: { posts: Posts },
+});
+
+const chirp = await Chirp.connect();
+const created = await chirp.posts.create({
+  text: "Hello, Jolt!",
+  postedAt: new Date(),
+});
+const updated = await created.update({ text: "Hello, everyone!" });
+const deleted = await updated.delete();
+
+if (deleted.state === State.Deleted && deleted.isDeleted()) {
+  await deleted.restore({ text: "Hello again!", postedAt: new Date() });
+}
 ```
+
+`Chirp.connect()` checks compatibility, selects the local host, derives the
+exact access request, reuses an approved session, and waits for approval when
+needed. Use `Chirp.test()` for the same typed interface in memory.
+
+See the [beginner Chirp guide](https://alexanderwanyoike.github.io/jolt/guides/app-development.html)
+for the complete compile-checked walkthrough.
+
+## Advanced low-level client
+
+Import from `jolt-sdk` when an application deliberately needs explicit paths,
+content IDs, transports, compatibility Features, session Capabilities,
+encryption, ingress, or relay availability. The
+[advanced app guide](https://alexanderwanyoike.github.io/jolt/guides/advanced-app-development.html)
+preserves that complete flow.
 
 ## App API compatibility
 
@@ -149,22 +178,25 @@ both contracts, including local-only to relay-backed inventory transitions.
 ## Testing your app
 
 ```ts
-import { createFakeJolt } from "jolt-sdk/testing";
-
-const { client, sent, deliverIngress } = createFakeJolt("alice.jolt", {
-  appApi: 1,
-  features: { "data.documents": 1 },
+const chirp = Chirp.test({ identity: "alice.jolt" });
+const post = await chirp.posts.create({
+  text: "No daemon needed",
+  postedAt: new Date(),
 });
-// client satisfies JoltClient and all of its sub-interfaces; sends are
-// recorded in `sent`, and deliverIngress() injects incoming envelopes.
+
+console.log(post.value.text);
 ```
+
+Advanced low-level applications can still use `createFakeJolt` from
+`jolt-sdk/testing`.
 
 ## Documentation
 
 Full API reference is generated from the TSDoc comments with
 `yarn docs` (typedoc) and published on the
-[Jolt website](https://alexanderwanyoike.github.io/jolt/sdk/). The app
-development guide walks through building a small social app with Tauri.
+[Jolt website](https://alexanderwanyoike.github.io/jolt/sdk/). The beginner app
+development guide builds a social app through `jolt-sdk/data`; the advanced
+guide covers the low-level client and Tauri integration.
 
 ## Development
 
