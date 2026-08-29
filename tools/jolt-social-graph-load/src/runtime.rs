@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -36,17 +36,21 @@ use crate::{
     WorkloadPlan,
 };
 
+mod daemons;
+mod shaping;
+
+use daemons::{
+    connect_reader_to_providers, listener_socket, start_daemon, wait_for_peer_absence, DaemonSpec,
+    RunningDaemon,
+};
+use shaping::{snapshot_links, wait_for_link_quiescence, ShapedLink};
+pub use shaping::{NetworkBytes, NetworkProfile};
+
 const POSTS_PREFIX: &str = "/spoke/posts/";
 const RESULT_VERSION: u32 = 4;
+const STATUS_SAMPLE_INTERVAL: Duration = Duration::from_millis(50);
 const VISIBILITY_POLL_DEADLINE: Duration = Duration::from_secs(75);
 const VISIBILITY_POLL_INTERVAL: Duration = Duration::from_millis(100);
-
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct NetworkProfile {
-    pub one_way_latency_ms: u64,
-    pub bandwidth_kbps: u64,
-    pub loss_percent: u8,
-}
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "snake_case")]
@@ -97,27 +101,6 @@ pub struct EnvironmentReport {
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct NetworkBytes {
-    pub reader_to_providers: u64,
-    pub providers_to_reader: u64,
-    pub dropped: u64,
-}
-
-impl NetworkBytes {
-    fn difference(&self, before: &Self) -> Self {
-        Self {
-            reader_to_providers: self
-                .reader_to_providers
-                .saturating_sub(before.reader_to_providers),
-            providers_to_reader: self
-                .providers_to_reader
-                .saturating_sub(before.providers_to_reader),
-            dropped: self.dropped.saturating_sub(before.dropped),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActivityReport {
     pub identity_sync_requests: u64,
     pub resolves: u64,
@@ -165,8 +148,8 @@ pub struct PhaseReport {
     pub cache_after: CacheReport,
     pub process_before: ProcessReport,
     pub process_after: ProcessReport,
-    pub disk_before: DiskReport,
-    pub disk_after: DiskReport,
+    pub reader_disk_before: DiskReport,
+    pub reader_disk_after: DiskReport,
     pub cpu_millis: u64,
     pub rss_growth_bytes: i64,
 }
@@ -213,172 +196,6 @@ pub struct BenchmarkReport {
     pub limitations: Vec<String>,
 }
 
-#[derive(Clone)]
-struct LinkCounters {
-    reader_to_provider: Arc<AtomicU64>,
-    provider_to_reader: Arc<AtomicU64>,
-    dropped: Arc<AtomicU64>,
-    chunks: Arc<AtomicU64>,
-}
-
-impl LinkCounters {
-    fn new() -> Self {
-        Self {
-            reader_to_provider: Arc::new(AtomicU64::new(0)),
-            provider_to_reader: Arc::new(AtomicU64::new(0)),
-            dropped: Arc::new(AtomicU64::new(0)),
-            chunks: Arc::new(AtomicU64::new(0)),
-        }
-    }
-}
-
-struct ShapedLink {
-    port: u16,
-    counters: LinkCounters,
-    offline: watch::Sender<bool>,
-    accept_task: JoinHandle<()>,
-}
-
-impl ShapedLink {
-    async fn start(upstream: SocketAddr, profile: NetworkProfile) -> anyhow::Result<Self> {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
-        let port = listener.local_addr()?.port();
-        let counters = LinkCounters::new();
-        let (offline, offline_state) = watch::channel(false);
-        let task_counters = counters.clone();
-        let accept_task = tokio::spawn(async move {
-            while let Ok((downstream, _)) = listener.accept().await {
-                let counters = task_counters.clone();
-                let offline = offline_state.clone();
-                let profile = profile.clone();
-                tokio::spawn(async move {
-                    if *offline.borrow() {
-                        return;
-                    }
-                    let Ok(upstream_stream) = TcpStream::connect(upstream).await else {
-                        return;
-                    };
-                    let (downstream_read, downstream_write) = downstream.into_split();
-                    let (upstream_read, upstream_write) = upstream_stream.into_split();
-                    let left = pump(
-                        downstream_read,
-                        upstream_write,
-                        counters.reader_to_provider.clone(),
-                        counters.clone(),
-                        offline.clone(),
-                        profile.clone(),
-                    );
-                    let right = pump(
-                        upstream_read,
-                        downstream_write,
-                        counters.provider_to_reader.clone(),
-                        counters,
-                        offline,
-                        profile,
-                    );
-                    let _ = tokio::join!(left, right);
-                });
-            }
-        });
-        Ok(Self {
-            port,
-            counters,
-            offline,
-            accept_task,
-        })
-    }
-
-    fn set_offline(&self, offline: bool) {
-        self.offline.send_replace(offline);
-    }
-
-    fn snapshot(&self) -> NetworkBytes {
-        NetworkBytes {
-            reader_to_providers: self.counters.reader_to_provider.load(Ordering::Relaxed),
-            providers_to_reader: self.counters.provider_to_reader.load(Ordering::Relaxed),
-            dropped: self.counters.dropped.load(Ordering::Relaxed),
-        }
-    }
-}
-
-impl Drop for ShapedLink {
-    fn drop(&mut self) {
-        self.accept_task.abort();
-    }
-}
-
-async fn pump<R, W>(
-    mut reader: R,
-    mut writer: W,
-    forwarded: Arc<AtomicU64>,
-    counters: LinkCounters,
-    mut offline: watch::Receiver<bool>,
-    profile: NetworkProfile,
-) where
-    R: AsyncRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
-    let mut buffer = vec![0u8; 16 * 1024];
-    loop {
-        if *offline.borrow() {
-            break;
-        }
-        let read = tokio::select! {
-            result = reader.read(&mut buffer) => match result {
-                Ok(read) => read,
-                Err(_) => break,
-            },
-            changed = offline.changed() => {
-                if changed.is_err() || *offline.borrow() {
-                    break;
-                }
-                continue;
-            }
-        };
-        if read == 0 {
-            break;
-        }
-        if profile.one_way_latency_ms > 0 {
-            tokio::time::sleep(Duration::from_millis(profile.one_way_latency_ms)).await;
-        }
-        let chunk = counters.chunks.fetch_add(1, Ordering::Relaxed);
-        if profile.loss_percent > 0 && chunk % 100 < u64::from(profile.loss_percent) {
-            counters.dropped.fetch_add(read as u64, Ordering::Relaxed);
-            continue;
-        }
-        if profile.bandwidth_kbps > 0 {
-            let seconds = (read as f64 * 8.0) / (profile.bandwidth_kbps as f64 * 1_000.0);
-            tokio::time::sleep(Duration::from_secs_f64(seconds)).await;
-        }
-        if writer.write_all(&buffer[..read]).await.is_err() {
-            break;
-        }
-        if writer.flush().await.is_err() {
-            break;
-        }
-        forwarded.fetch_add(read as u64, Ordering::Relaxed);
-    }
-    let _ = writer.shutdown().await;
-}
-
-struct RunningDaemon {
-    handle: DaemonHandle,
-    peer_id: String,
-    listen_addr: String,
-    task: JoinHandle<()>,
-}
-
-impl RunningDaemon {
-    async fn stop(&mut self) {
-        let _ = self.handle.shutdown().await;
-        let _ = (&mut self.task).await;
-    }
-
-    async fn shutdown(mut self) {
-        self.stop().await;
-    }
-}
-
 struct AuthorState {
     plan: AuthorPlan,
     authority: Vec<DeviceAuthorizationRecord>,
@@ -404,6 +221,40 @@ struct AuthorOutcome {
     first_attempt_missed: bool,
     error: Option<String>,
 }
+
+#[derive(Debug, Default, Eq, PartialEq)]
+struct ReadOutcome {
+    resolves: u64,
+    fetches: u64,
+    refresh: Option<MaterializedRecordRefreshOutcome>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct ReadFailure {
+    resolves: u64,
+    fetches: u64,
+    reason: String,
+}
+
+impl ReadFailure {
+    fn new(reason: impl ToString) -> Self {
+        Self {
+            resolves: 0,
+            fetches: 0,
+            reason: reason.to_string(),
+        }
+    }
+
+    fn after_activity(resolves: u64, fetches: u64, reason: impl ToString) -> Self {
+        Self {
+            resolves,
+            fetches,
+            reason: reason.to_string(),
+        }
+    }
+}
+
+type ReadResult = Result<ReadOutcome, ReadFailure>;
 
 #[derive(Clone, Copy)]
 enum TimelineOperation {
@@ -474,11 +325,13 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
             start_daemon(
                 workdir,
                 config.workload.seed,
-                "provider",
-                index,
-                config.provider_record_capacity,
-                CacheConfig::default().max_size_bytes,
-                0,
+                DaemonSpec {
+                    domain: "provider",
+                    index,
+                    provider_record_capacity: config.provider_record_capacity,
+                    cache_max_bytes: CacheConfig::default().max_size_bytes,
+                    listen_port: 0,
+                },
             )
             .await?,
         );
@@ -493,17 +346,19 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
             .await?,
         );
     }
-    let mut reader = start_daemon(
+    let reader = start_daemon(
         workdir,
         config.workload.seed,
-        "reader",
-        plan.provider_count,
-        config.provider_record_capacity,
-        config.reader_cache_max_bytes,
-        0,
+        DaemonSpec {
+            domain: "reader",
+            index: plan.provider_count,
+            provider_record_capacity: config.provider_record_capacity,
+            cache_max_bytes: config.reader_cache_max_bytes,
+            listen_port: 0,
+        },
     )
     .await?;
-    connect_reader_to_providers(&reader, &providers, &links).await?;
+    connect_reader_to_providers(&reader.handle, &providers, &links).await?;
 
     let mut author_states = seed_authors(&plan, &providers, workdir, config.timeline_path).await?;
     tokio::time::sleep(Duration::from_millis(250)).await;
@@ -514,166 +369,67 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
     };
 
     let mut system = System::new();
-    let mut measurement = MeasurementContext {
-        reader: &reader.handle,
-        plan: &plan,
-        workdir,
-        timeline_path: config.timeline_path,
-        concurrency: config.concurrency,
-        links: &links,
-        system: &mut system,
-    };
-    let mut phases = Vec::new();
-    let cold = measurement
-        .measure(
-            "cold",
-            config.workload.records_per_identity,
-            TimelineOperation::cold(config.timeline_path),
-        )
-        .await?
-        .report;
-    print_phase_progress(&cold);
-    phases.push(cold);
-    wait_for_link_quiescence(&links).await;
-    let warm = measurement
-        .measure(
-            "warm_no_change",
-            config.workload.records_per_identity,
-            TimelineOperation::warm(config.timeline_path),
-        )
-        .await?
-        .report;
-    print_phase_progress(&warm);
-    phases.push(warm);
-
-    let measured_new_phase = measurement
-        .measure_new_records(
-            &mut author_states,
-            &providers,
+    let (mut phases, propagation) = {
+        let mut measurement = MeasurementContext {
+            reader: &reader.handle,
+            plan: &plan,
             workdir,
-            config.publish_rate_per_second,
-        )
-        .await?;
-    let mut new_phase = measured_new_phase.report;
-    new_phase.activity.content_announcements = plan.followed_authors.len() as u64;
-    new_phase.activity.churn_events = plan.churned_providers.len() as u64;
-    print_phase_progress(&new_phase);
-    let visible = measured_new_phase.visibility.successes;
-    let published_records = plan.followed_authors.len() as u64;
-    let propagation = PropagationReport {
-        published_records,
-        visible_records: visible,
-        failed_records: published_records.saturating_sub(visible),
-        first_attempt_misses: measured_new_phase.first_attempt_misses,
-        latency_micros: measured_new_phase.visibility.latency_micros,
-    };
-    phases.push(new_phase);
-
-    if !plan.churned_providers.is_empty() && config.timeline_path == TimelinePath::CacheFirst {
-        let mut stopped_providers = Vec::with_capacity(plan.churned_providers.len());
-        for index in &plan.churned_providers {
-            links[*index].set_offline(true);
-            let port = listener_socket(&providers[*index].listen_addr)?.port();
-            let peer_id = providers[*index].peer_id.clone();
-            providers[*index].stop().await;
-            stopped_providers.push((*index, port, peer_id));
-        }
-        wait_for_peer_absence(
-            &reader.handle,
-            &stopped_providers
-                .iter()
-                .map(|(_, _, peer_id)| peer_id.clone())
-                .collect::<Vec<_>>(),
-        )
-        .await?;
-        tokio::time::sleep(Duration::from_millis(config.churn_duration_ms)).await;
+            timeline_path: config.timeline_path,
+            concurrency: config.concurrency,
+            links: &links,
+            system: &mut system,
+        };
+        let mut phases = Vec::new();
+        phases.push(
+            measurement
+                .measure_named(
+                    "cold",
+                    config.workload.records_per_identity,
+                    TimelineOperation::cold(config.timeline_path),
+                )
+                .await?,
+        );
         wait_for_link_quiescence(&links).await;
+        phases.push(
+            measurement
+                .measure_named(
+                    "warm_no_change",
+                    config.workload.records_per_identity,
+                    TimelineOperation::warm(config.timeline_path),
+                )
+                .await?,
+        );
 
-        let mut offline_warm = measurement
-            .measure(
-                "offline_warm",
-                config.workload.records_per_identity + 1,
-                TimelineOperation::CacheReadAll,
-            )
-            .await?
-            .report;
-        offline_warm.activity.churn_events = plan.churned_providers.len() as u64;
-        print_phase_progress(&offline_warm);
-        phases.push(offline_warm);
-
-        let offline_refresh = measurement
-            .measure(
-                "offline_refresh",
-                config.workload.records_per_identity + 1,
-                TimelineOperation::CacheRefreshAll,
-            )
-            .await?
-            .report;
-        print_phase_progress(&offline_refresh);
-        phases.push(offline_refresh);
-
-        for (index, port, _) in stopped_providers {
-            providers[index] = start_daemon(
-                workdir,
-                config.workload.seed,
-                "provider",
-                index,
-                config.provider_record_capacity,
-                CacheConfig::default().max_size_bytes,
-                port,
+        let (active, propagation) = measurement
+            .measure_active_records(
+                &mut author_states,
+                &providers,
+                config.publish_rate_per_second,
             )
             .await?;
-            links[index].set_offline(false);
+        phases.push(active);
+
+        if !plan.churned_providers.is_empty() && config.timeline_path == TimelinePath::CacheFirst {
+            phases.extend(run_churn_phases(&mut measurement, &mut providers, &config).await?);
         }
-        connect_reader_to_providers(&reader, &providers, &links).await?;
+        (phases, propagation)
+    };
 
-        let recovered = measurement
-            .measure(
-                "churn_recovery",
-                config.workload.records_per_identity + 1,
-                TimelineOperation::CacheRefreshAll,
-            )
-            .await?
-            .report;
-        print_phase_progress(&recovered);
-        phases.push(recovered);
-    }
-
-    drop(measurement);
-    reader.shutdown().await;
-    let restart_started = Instant::now();
-    reader = start_daemon(
-        workdir,
-        config.workload.seed,
-        "reader",
-        plan.provider_count,
-        config.provider_record_capacity,
-        config.reader_cache_max_bytes,
-        0,
+    let restart = run_restart_phase(
+        RestartPhaseSpec {
+            workdir,
+            config: &config,
+            plan: &plan,
+            providers: &providers,
+            links: &links,
+        },
+        reader,
+        &mut system,
     )
     .await?;
-    let restart_startup_micros = restart_started.elapsed().as_micros() as u64;
-    connect_reader_to_providers(&reader, &providers, &links).await?;
-    wait_for_link_quiescence(&links).await;
-    let mut restart_measurement = MeasurementContext {
-        reader: &reader.handle,
-        plan: &plan,
-        workdir,
-        timeline_path: config.timeline_path,
-        concurrency: config.concurrency,
-        links: &links,
-        system: &mut system,
-    };
-    let restarted = restart_measurement
-        .measure(
-            "restart_warm",
-            config.workload.records_per_identity + 1,
-            TimelineOperation::warm(config.timeline_path),
-        )
-        .await?
-        .report;
-    print_phase_progress(&restarted);
-    phases.push(restarted);
+    phases.push(restart.phase);
+    let reader = restart.reader;
+    let restart_startup_micros = restart.startup_micros;
 
     let final_network_bytes = snapshot_links(&links);
     let environment = environment_report();
@@ -687,6 +443,7 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
         "Daemons are real NetworkNode daemon loops in one OS process, so CPU and RSS are aggregate rather than per daemon.".to_string(),
         "The workload uses localhost TCP; the optional shaper adds delay and bandwidth per TCP chunk, and loss deliberately drops encrypted stream chunks rather than modelling kernel-level packet retransmission.".to_string(),
         "Provider activity counts harness requests and announcements; Jolt does not yet expose internal Kademlia packet counters.".to_string(),
+        "Active visibility polling calls the daemon refresh command directly and bypasses the App API's refresh cooldown, so identity sync request counts represent a deliberately aggressive daemon workload rather than normal Spoke polling.".to_string(),
         "This local benchmark does not exercise iroh hole punching, NATS coordination, relays, or Internet path diversity.".to_string(),
         "Results are comparative engineering evidence, not an Internet-wide capacity or marketing claim.".to_string(),
     ];
@@ -715,22 +472,148 @@ pub async fn run(config: RunConfig, workdir: &Path) -> anyhow::Result<BenchmarkR
     })
 }
 
-async fn connect_reader_to_providers(
-    reader: &RunningDaemon,
-    providers: &[RunningDaemon],
-    links: &[ShapedLink],
-) -> anyhow::Result<()> {
-    for (provider, link) in providers.iter().zip(links) {
-        reader
-            .handle
-            .connect_peer(format!(
-                "/ip4/127.0.0.1/tcp/{}/p2p/{}",
-                link.port, provider.peer_id
-            ))
-            .await
-            .with_context(|| format!("connect reader to provider {}", provider.peer_id))?;
+struct RestartPhaseSpec<'a> {
+    workdir: &'a Path,
+    config: &'a RunConfig,
+    plan: &'a WorkloadPlan,
+    providers: &'a [RunningDaemon],
+    links: &'a [ShapedLink],
+}
+
+struct RestartPhaseResult {
+    reader: RunningDaemon,
+    phase: PhaseReport,
+    startup_micros: u64,
+}
+
+async fn run_restart_phase(
+    spec: RestartPhaseSpec<'_>,
+    reader: RunningDaemon,
+    system: &mut System,
+) -> anyhow::Result<RestartPhaseResult> {
+    reader.shutdown().await;
+    let started = Instant::now();
+    let reader = start_daemon(
+        spec.workdir,
+        spec.config.workload.seed,
+        DaemonSpec {
+            domain: "reader",
+            index: spec.plan.provider_count,
+            provider_record_capacity: spec.config.provider_record_capacity,
+            cache_max_bytes: spec.config.reader_cache_max_bytes,
+            listen_port: 0,
+        },
+    )
+    .await?;
+    let startup_micros = started.elapsed().as_micros() as u64;
+    connect_reader_to_providers(&reader.handle, spec.providers, spec.links).await?;
+    wait_for_link_quiescence(spec.links).await;
+    let phase = MeasurementContext {
+        reader: &reader.handle,
+        plan: spec.plan,
+        workdir: spec.workdir,
+        timeline_path: spec.config.timeline_path,
+        concurrency: spec.config.concurrency,
+        links: spec.links,
+        system,
     }
-    wait_for_peer_count(&reader.handle, providers.len()).await
+    .measure_named(
+        "restart_warm",
+        spec.config.workload.records_per_identity + 1,
+        TimelineOperation::warm(spec.config.timeline_path),
+    )
+    .await?;
+
+    Ok(RestartPhaseResult {
+        reader,
+        phase,
+        startup_micros,
+    })
+}
+
+async fn run_churn_phases(
+    measurement: &mut MeasurementContext<'_>,
+    providers: &mut [RunningDaemon],
+    config: &RunConfig,
+) -> anyhow::Result<Vec<PhaseReport>> {
+    let stopped_providers = stop_churned_providers(measurement, providers).await?;
+    tokio::time::sleep(Duration::from_millis(config.churn_duration_ms)).await;
+    wait_for_link_quiescence(measurement.links).await;
+
+    let expected_records = config.workload.records_per_identity + 1;
+    let mut offline_warm = measurement
+        .measure_named(
+            "offline_warm",
+            expected_records,
+            TimelineOperation::CacheReadAll,
+        )
+        .await?;
+    offline_warm.activity.churn_events = measurement.plan.churned_providers.len() as u64;
+    let offline_refresh = measurement
+        .measure_named(
+            "offline_refresh",
+            expected_records,
+            TimelineOperation::CacheRefreshAll,
+        )
+        .await?;
+
+    restart_churned_providers(measurement, providers, stopped_providers, config).await?;
+    let recovered = measurement
+        .measure_named(
+            "churn_recovery",
+            expected_records,
+            TimelineOperation::CacheRefreshAll,
+        )
+        .await?;
+
+    Ok(vec![offline_warm, offline_refresh, recovered])
+}
+
+async fn stop_churned_providers(
+    measurement: &MeasurementContext<'_>,
+    providers: &mut [RunningDaemon],
+) -> anyhow::Result<Vec<(usize, u16, String)>> {
+    let mut stopped = Vec::with_capacity(measurement.plan.churned_providers.len());
+    for index in &measurement.plan.churned_providers {
+        measurement.links[*index].set_offline(true);
+        let port = listener_socket(&providers[*index].listen_addr)?.port();
+        let peer_id = providers[*index].peer_id.clone();
+        providers[*index].stop().await;
+        stopped.push((*index, port, peer_id));
+    }
+    wait_for_peer_absence(
+        measurement.reader,
+        &stopped
+            .iter()
+            .map(|(_, _, peer_id)| peer_id.clone())
+            .collect::<Vec<_>>(),
+    )
+    .await?;
+    Ok(stopped)
+}
+
+async fn restart_churned_providers(
+    measurement: &MeasurementContext<'_>,
+    providers: &mut [RunningDaemon],
+    stopped: Vec<(usize, u16, String)>,
+    config: &RunConfig,
+) -> anyhow::Result<()> {
+    for (index, port, _) in stopped {
+        providers[index] = start_daemon(
+            measurement.workdir,
+            config.workload.seed,
+            DaemonSpec {
+                domain: "provider",
+                index,
+                provider_record_capacity: config.provider_record_capacity,
+                cache_max_bytes: CacheConfig::default().max_size_bytes,
+                listen_port: port,
+            },
+        )
+        .await?;
+        measurement.links[index].set_offline(false);
+    }
+    connect_reader_to_providers(measurement.reader, providers, measurement.links).await
 }
 
 fn print_phase_progress(phase: &PhaseReport) {
@@ -742,125 +625,6 @@ fn print_phase_progress(phase: &PhaseReport) {
         phase.timeline_latency.successes,
         failures
     );
-}
-
-async fn start_daemon(
-    workdir: &Path,
-    seed: u64,
-    domain: &str,
-    index: usize,
-    provider_record_capacity: usize,
-    cache_max_bytes: u64,
-    listen_port: u16,
-) -> anyhow::Result<RunningDaemon> {
-    let root = workdir.join(format!("{domain}-{index}"));
-    std::fs::create_dir_all(&root)?;
-    let identity = NodeIdentity::from_signing_key_bytes(&deterministic_bytes(seed, domain, index))
-        .map_err(|error| anyhow::anyhow!("create {domain} identity {index}: {error}"))?;
-    let identity_id = identity.identity_id().to_string();
-    let store = ContentStore::open(
-        &root,
-        CacheConfig {
-            max_size_bytes: cache_max_bytes,
-        },
-    )?;
-    let mut node = NetworkNode::new_tcp(
-        identity,
-        store,
-        NetworkConfig {
-            enable_mdns: false,
-            provider_record_capacity: (provider_record_capacity > 0)
-                .then_some(provider_record_capacity),
-            ..NetworkConfig::test_config()
-        },
-    )?;
-    let listen_address = format!("/ip4/127.0.0.1/tcp/{listen_port}");
-    node.listen_on(&listen_address)?;
-    node = wait_for_listener(node).await?;
-    let peer_id = node.local_peer_id().to_string();
-    let listen_addr = node
-        .listeners()
-        .first()
-        .context("daemon has no listener")?
-        .to_string();
-    let (tx, rx) = mpsc::channel::<DaemonCommand>(4_096);
-    let handle = DaemonHandle::new_with_local_identity(tx, identity_id);
-    let task = tokio::spawn(async move { node.run_daemon_loop(rx).await });
-    Ok(RunningDaemon {
-        handle,
-        peer_id,
-        listen_addr,
-        task,
-    })
-}
-
-async fn wait_for_listener(mut node: NetworkNode) -> anyhow::Result<NetworkNode> {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            let event = node.next_event().await;
-            node.handle_swarm_event(event);
-            if !node.listeners().is_empty() {
-                return node;
-            }
-        }
-    })
-    .await
-    .context("timed out waiting for daemon listener")
-}
-
-fn listener_socket(address: &str) -> anyhow::Result<SocketAddr> {
-    let multiaddr: libp2p::Multiaddr = address.parse()?;
-    let mut ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-    let mut port = None;
-    for protocol in multiaddr.iter() {
-        match protocol {
-            Protocol::Ip4(value) => ip = IpAddr::V4(value),
-            Protocol::Ip6(value) => ip = IpAddr::V6(value),
-            Protocol::Tcp(value) => port = Some(value),
-            _ => {}
-        }
-    }
-    Ok(SocketAddr::new(
-        ip,
-        port.context("listener has no TCP port")?,
-    ))
-}
-
-async fn wait_for_peer_count(handle: &DaemonHandle, expected: usize) -> anyhow::Result<()> {
-    tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            if handle
-                .status()
-                .await
-                .is_ok_and(|status| status.connected_peers >= expected)
-            {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-    })
-    .await
-    .context("timed out connecting benchmark daemons")
-}
-
-async fn wait_for_peer_absence(
-    handle: &DaemonHandle,
-    absent_peer_ids: &[String],
-) -> anyhow::Result<()> {
-    tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            if handle.peers().await.is_ok_and(|peers| {
-                peers
-                    .iter()
-                    .all(|peer| !absent_peer_ids.contains(&peer.peer_id))
-            }) {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-    })
-    .await
-    .context("timed out disconnecting benchmark providers")
 }
 
 async fn seed_authors(
@@ -962,20 +726,24 @@ async fn publish_record(
         .map_err(|error| anyhow::anyhow!("daemon returned invalid content id: {error}"))
 }
 
-async fn publish_and_refresh_new_records(
-    states: &mut [AuthorState],
-    plan: &WorkloadPlan,
-    providers: &[RunningDaemon],
-    workdir: &Path,
-    rate: u64,
-    reader: &DaemonHandle,
+struct ActiveRefreshContext<'a> {
+    plan: &'a WorkloadPlan,
+    providers: &'a [RunningDaemon],
+    workdir: &'a Path,
+    reader: &'a DaemonHandle,
     concurrency: usize,
     timeline_path: TimelinePath,
+}
+
+async fn publish_and_refresh_new_records(
+    states: &mut [AuthorState],
+    context: ActiveRefreshContext<'_>,
+    rate: u64,
 ) -> anyhow::Result<TimelineOutcome> {
-    let semaphore = Arc::new(Semaphore::new(concurrency));
+    let semaphore = Arc::new(Semaphore::new(context.concurrency));
     let mut tasks = JoinSet::new();
     let delay = (rate > 0).then(|| Duration::from_secs_f64(1.0 / rate as f64));
-    for author_index in &plan.followed_authors {
+    for author_index in &context.plan.followed_authors {
         let state = &mut states[*author_index];
         let record_index = state.plan.records.len();
         let record = RecordPlan {
@@ -987,18 +755,18 @@ async fn publish_and_refresh_new_records(
             body: serde_json::json!({
                 "authorIndex": state.plan.index,
                 "recordIndex": record_index,
-                "seed": plan.seed,
+                "seed": context.plan.seed,
                 "text": format!("new deterministic post from author {}", state.plan.index),
             })
             .to_string(),
         };
-        let provider = &providers[state.plan.provider_index];
-        let content = publish_record(provider, workdir, state.plan.index, &record).await?;
+        let provider = &context.providers[state.plan.provider_index];
+        let content = publish_record(provider, context.workdir, state.plan.index, &record).await?;
         let owner = state.plan.identity_key()?;
         let operation = DeviceWriterOperation::set_path(
             record.path.clone(),
             content,
-            writer_path_mode(timeline_path),
+            writer_path_mode(context.timeline_path),
         );
         let created_at = 1_800_000_000 + state.plan.index as u64 * 1_000 + record_index as u64;
         let entry = state
@@ -1019,11 +787,11 @@ async fn publish_and_refresh_new_records(
         spawn_author_refresh(
             &mut tasks,
             semaphore.clone(),
-            reader.clone(),
+            context.reader.clone(),
             state.plan.clone(),
             state.plan.records.len(),
             Some(Instant::now()),
-            TimelineOperation::active(timeline_path),
+            TimelineOperation::active(context.timeline_path),
         );
         if let Some(delay) = delay {
             tokio::time::sleep(delay).await;
@@ -1052,7 +820,10 @@ impl StatusSampling {
     }
 }
 
-async fn sample_daemon_status(handle: DaemonHandle, stop: Arc<AtomicBool>) -> StatusSampling {
+async fn sample_daemon_status(
+    handle: DaemonHandle,
+    mut stop: watch::Receiver<bool>,
+) -> StatusSampling {
     let mut sampling = StatusSampling::default();
     loop {
         let started = Instant::now();
@@ -1068,10 +839,17 @@ async fn sample_daemon_status(handle: DaemonHandle, stop: Arc<AtomicBool>) -> St
                 classify_error(&error.to_string()),
             ),
         }
-        if stop.load(Ordering::Relaxed) {
+        if *stop.borrow() {
             return sampling;
         }
-        tokio::time::sleep(Duration::from_millis(5)).await;
+        tokio::select! {
+            _ = tokio::time::sleep(STATUS_SAMPLE_INTERVAL) => {}
+            changed = stop.changed() => {
+                if changed.is_err() || *stop.borrow() {
+                    return sampling;
+                }
+            }
+        }
     }
 }
 
@@ -1106,6 +884,87 @@ fn sync_work_report(
     }
 }
 
+struct PhaseCapture {
+    network_before: NetworkBytes,
+    cache_before: CacheReport,
+    process_before: ProcessReport,
+    reader_disk_before: DiskReport,
+    sync_before: NodeStatus,
+    stop_sampling: watch::Sender<bool>,
+    status_task: JoinHandle<StatusSampling>,
+    started: Instant,
+}
+
+impl PhaseCapture {
+    async fn begin(context: &mut MeasurementContext<'_>) -> anyhow::Result<Self> {
+        let network_before = snapshot_links(context.links);
+        let cache_before = cache_report(context.reader).await?;
+        let process_before = process_report(context.system)?;
+        let reader_disk_before = disk_report(&reader_store_path(context.workdir, context.plan))?;
+        let sync_before = context.reader.status().await?;
+        let (stop_sampling, stop_signal) = watch::channel(false);
+        let status_task = tokio::spawn(sample_daemon_status(context.reader.clone(), stop_signal));
+        tokio::task::yield_now().await;
+
+        Ok(Self {
+            network_before,
+            cache_before,
+            process_before,
+            reader_disk_before,
+            sync_before,
+            stop_sampling,
+            status_task,
+            started: Instant::now(),
+        })
+    }
+
+    async fn finish(
+        self,
+        context: &mut MeasurementContext<'_>,
+        name: &str,
+        outcome: TimelineOutcome,
+    ) -> anyhow::Result<MeasuredPhase> {
+        let wall_time_micros = self.started.elapsed().as_micros() as u64;
+        self.stop_sampling.send_replace(true);
+        let status_sampling = self
+            .status_task
+            .await
+            .context("status sampler task failed")?;
+        let sync_after = context.reader.status().await?;
+        let process_after = process_report(context.system)?;
+        let cache_after = cache_report(context.reader).await?;
+        let reader_disk_after = disk_report(&reader_store_path(context.workdir, context.plan))?;
+        let network_after = snapshot_links(context.links);
+        let cpu_millis = process_after
+            .accumulated_cpu_millis
+            .saturating_sub(self.process_before.accumulated_cpu_millis);
+        let rss_growth_bytes =
+            process_after.rss_bytes as i128 - self.process_before.rss_bytes as i128;
+
+        Ok(MeasuredPhase {
+            report: PhaseReport {
+                name: name.to_string(),
+                wall_time_micros,
+                timeline_latency: outcome.accounting.summarize(),
+                network_bytes: network_after.difference(&self.network_before),
+                activity: outcome.activity,
+                daemon_api_latency: status_sampling.accounting.summarize(),
+                sync_work: sync_work_report(&self.sync_before, &sync_after, &status_sampling),
+                cache_before: self.cache_before,
+                cache_after,
+                process_before: self.process_before,
+                process_after,
+                reader_disk_before: self.reader_disk_before,
+                reader_disk_after,
+                cpu_millis,
+                rss_growth_bytes: rss_growth_bytes.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
+            },
+            visibility: outcome.visibility.summarize(),
+            first_attempt_misses: outcome.first_attempt_misses,
+        })
+    }
+}
+
 struct MeasurementContext<'a> {
     reader: &'a DaemonHandle,
     plan: &'a WorkloadPlan,
@@ -1117,24 +976,52 @@ struct MeasurementContext<'a> {
 }
 
 impl MeasurementContext<'_> {
+    async fn measure_named(
+        &mut self,
+        name: &str,
+        expected_records: usize,
+        operation: TimelineOperation,
+    ) -> anyhow::Result<PhaseReport> {
+        let phase = self
+            .measure(name, expected_records, operation)
+            .await?
+            .report;
+        print_phase_progress(&phase);
+        Ok(phase)
+    }
+
+    async fn measure_active_records(
+        &mut self,
+        states: &mut [AuthorState],
+        providers: &[RunningDaemon],
+        publish_rate_per_second: u64,
+    ) -> anyhow::Result<(PhaseReport, PropagationReport)> {
+        let measured = self
+            .measure_new_records(states, providers, publish_rate_per_second)
+            .await?;
+        let mut phase = measured.report;
+        phase.activity.content_announcements = self.plan.followed_authors.len() as u64;
+        phase.activity.churn_events = self.plan.churned_providers.len() as u64;
+        print_phase_progress(&phase);
+
+        let published_records = self.plan.followed_authors.len() as u64;
+        let propagation = PropagationReport {
+            published_records,
+            visible_records: measured.visibility.successes,
+            failed_records: published_records.saturating_sub(measured.visibility.successes),
+            first_attempt_misses: measured.first_attempt_misses,
+            latency_micros: measured.visibility.latency_micros,
+        };
+        Ok((phase, propagation))
+    }
+
     async fn measure(
         &mut self,
         name: &str,
         expected_records: usize,
         operation: TimelineOperation,
     ) -> anyhow::Result<MeasuredPhase> {
-        let network_before = snapshot_links(self.links);
-        let cache_before = cache_report(self.reader).await?;
-        let process_before = process_report(self.system)?;
-        let disk_before = disk_report(self.workdir)?;
-        let sync_before = self.reader.status().await?;
-        let stop_sampling = Arc::new(AtomicBool::new(false));
-        let status_task = tokio::spawn(sample_daemon_status(
-            self.reader.clone(),
-            stop_sampling.clone(),
-        ));
-        tokio::task::yield_now().await;
-        let started = Instant::now();
+        let capture = PhaseCapture::begin(self).await?;
         let outcome = run_timeline(
             self.reader,
             self.plan,
@@ -1143,104 +1030,30 @@ impl MeasurementContext<'_> {
             operation,
         )
         .await;
-        let wall_time_micros = started.elapsed().as_micros() as u64;
-        stop_sampling.store(true, Ordering::Relaxed);
-        let status_sampling = status_task.await.context("status sampler task failed")?;
-        let sync_after = self.reader.status().await?;
-        let process_after = process_report(self.system)?;
-        let cache_after = cache_report(self.reader).await?;
-        let disk_after = disk_report(self.workdir)?;
-        let network_after = snapshot_links(self.links);
-        let cpu_millis = process_after
-            .accumulated_cpu_millis
-            .saturating_sub(process_before.accumulated_cpu_millis);
-        let rss_growth_bytes = process_after.rss_bytes as i128 - process_before.rss_bytes as i128;
-        Ok(MeasuredPhase {
-            report: PhaseReport {
-                name: name.to_string(),
-                wall_time_micros,
-                timeline_latency: outcome.accounting.summarize(),
-                network_bytes: network_after.difference(&network_before),
-                activity: outcome.activity,
-                daemon_api_latency: status_sampling.accounting.summarize(),
-                sync_work: sync_work_report(&sync_before, &sync_after, &status_sampling),
-                cache_before,
-                cache_after,
-                process_before,
-                process_after,
-                disk_before,
-                disk_after,
-                cpu_millis,
-                rss_growth_bytes: rss_growth_bytes.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
-            },
-            visibility: outcome.visibility.summarize(),
-            first_attempt_misses: outcome.first_attempt_misses,
-        })
+        capture.finish(self, name, outcome).await
     }
 
     async fn measure_new_records(
         &mut self,
         states: &mut [AuthorState],
         providers: &[RunningDaemon],
-        workdir: &Path,
         publish_rate_per_second: u64,
     ) -> anyhow::Result<MeasuredPhase> {
-        let network_before = snapshot_links(self.links);
-        let cache_before = cache_report(self.reader).await?;
-        let process_before = process_report(self.system)?;
-        let disk_before = disk_report(self.workdir)?;
-        let sync_before = self.reader.status().await?;
-        let stop_sampling = Arc::new(AtomicBool::new(false));
-        let status_task = tokio::spawn(sample_daemon_status(
-            self.reader.clone(),
-            stop_sampling.clone(),
-        ));
-        tokio::task::yield_now().await;
-        let started = Instant::now();
+        let capture = PhaseCapture::begin(self).await?;
         let outcome = publish_and_refresh_new_records(
             states,
-            self.plan,
-            providers,
-            workdir,
+            ActiveRefreshContext {
+                plan: self.plan,
+                providers,
+                workdir: self.workdir,
+                reader: self.reader,
+                concurrency: self.concurrency,
+                timeline_path: self.timeline_path,
+            },
             publish_rate_per_second,
-            self.reader,
-            self.concurrency,
-            self.timeline_path,
         )
         .await?;
-        let wall_time_micros = started.elapsed().as_micros() as u64;
-        stop_sampling.store(true, Ordering::Relaxed);
-        let status_sampling = status_task.await.context("status sampler task failed")?;
-        let sync_after = self.reader.status().await?;
-        let process_after = process_report(self.system)?;
-        let cache_after = cache_report(self.reader).await?;
-        let disk_after = disk_report(self.workdir)?;
-        let network_after = snapshot_links(self.links);
-        let cpu_millis = process_after
-            .accumulated_cpu_millis
-            .saturating_sub(process_before.accumulated_cpu_millis);
-        let rss_growth_bytes = process_after.rss_bytes as i128 - process_before.rss_bytes as i128;
-        Ok(MeasuredPhase {
-            report: PhaseReport {
-                name: "new_record_refresh".to_string(),
-                wall_time_micros,
-                timeline_latency: outcome.accounting.summarize(),
-                network_bytes: network_after.difference(&network_before),
-                activity: outcome.activity,
-                daemon_api_latency: status_sampling.accounting.summarize(),
-                sync_work: sync_work_report(&sync_before, &sync_after, &status_sampling),
-                cache_before,
-                cache_after,
-                process_before,
-                process_after,
-                disk_before,
-                disk_after,
-                cpu_millis,
-                rss_growth_bytes: rss_growth_bytes.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
-            },
-            visibility: outcome.visibility.summarize(),
-            first_attempt_misses: outcome.first_attempt_misses,
-        })
+        capture.finish(self, "new_record_refresh", outcome).await
     }
 }
 
@@ -1275,6 +1088,10 @@ fn disk_report(root: &Path) -> anyhow::Result<DiskReport> {
     }
 
     Ok(report)
+}
+
+fn reader_store_path(workdir: &Path, plan: &WorkloadPlan) -> PathBuf {
+    workdir.join(format!("reader-{}", plan.provider_count))
 }
 
 async fn run_timeline(
@@ -1327,33 +1144,33 @@ fn spawn_author_refresh(
                 first_attempt_missed: false,
             },
             Err(error) => VisibilityPollOutcome {
-                result: Err((0, 0, error.to_string())),
+                result: Err(ReadFailure::new(error)),
                 attempts: 0,
                 first_attempt_missed: false,
             },
         };
         match poll.result {
-            Ok((resolves, fetches, refresh)) => AuthorOutcome {
+            Ok(read) => AuthorOutcome {
                 published_at,
                 completed_at: Instant::now(),
                 latency_micros: started.elapsed().as_micros() as u64,
-                resolves,
-                fetches,
+                resolves: read.resolves,
+                fetches: read.fetches,
                 sync_requests: operation.sync_requests(poll.attempts),
-                refresh,
+                refresh: read.refresh,
                 first_attempt_missed: poll.first_attempt_missed,
                 error: None,
             },
-            Err((resolves, fetches, error)) => AuthorOutcome {
+            Err(failure) => AuthorOutcome {
                 published_at,
                 completed_at: Instant::now(),
                 latency_micros: started.elapsed().as_micros() as u64,
-                resolves,
-                fetches,
+                resolves: failure.resolves,
+                fetches: failure.fetches,
                 sync_requests: operation.sync_requests(poll.attempts),
                 refresh: None,
                 first_attempt_missed: poll.first_attempt_missed,
-                error: Some(error),
+                error: Some(failure.reason),
             },
         }
     });
@@ -1419,14 +1236,14 @@ struct VisibilityPollOutcome<T, E> {
     first_attempt_missed: bool,
 }
 
-async fn poll_until_visible<T, F, Fut>(
+async fn poll_until_visible<F, Fut>(
     max_wait: Duration,
     interval: Duration,
     mut refresh: F,
-) -> VisibilityPollOutcome<T, (u64, u64, String)>
+) -> VisibilityPollOutcome<ReadOutcome, ReadFailure>
 where
     F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Result<T, (u64, u64, String)>>,
+    Fut: std::future::Future<Output = ReadResult>,
 {
     let deadline = Instant::now() + max_wait;
     let mut attempts = 0;
@@ -1442,7 +1259,7 @@ where
                 };
             }
             Err(error) => {
-                let old_count = error.2.starts_with("record_count:");
+                let old_count = error.reason.starts_with("record_count:");
                 if attempts == 1 && old_count {
                     first_attempt_missed = true;
                 }
@@ -1465,11 +1282,11 @@ async fn read_author(
     author: &AuthorPlan,
     expected_records: usize,
     operation: TimelineOperation,
-) -> Result<(u64, u64, Option<MaterializedRecordRefreshOutcome>), (u64, u64, String)> {
+) -> ReadResult {
     match operation {
-        TimelineOperation::LegacyRefresh => refresh_legacy_author(reader, author, expected_records)
-            .await
-            .map(|(resolves, fetches)| (resolves, fetches, None)),
+        TimelineOperation::LegacyRefresh => {
+            refresh_legacy_author(reader, author, expected_records).await
+        }
         TimelineOperation::CacheRefreshAll => {
             refresh_cache_first_author(reader, author, expected_records, RecordFetch::All).await
         }
@@ -1486,46 +1303,52 @@ async fn refresh_legacy_author(
     reader: &DaemonHandle,
     author: &AuthorPlan,
     expected_records: usize,
-) -> Result<(u64, u64), (u64, u64, String)> {
+) -> ReadResult {
     let identity = author
         .identity_key()
-        .map_err(|error| (0, 0, error.to_string()))?
+        .map_err(ReadFailure::new)?
         .identity_id();
     let records = reader
         .enumerate_append_records(identity.clone(), POSTS_PREFIX.to_string())
         .await
-        .map_err(|error| (0, 0, error.to_string()))?;
+        .map_err(ReadFailure::new)?;
     if records.len() != expected_records {
-        return Err((
-            0,
-            0,
-            format!("record_count:{}_expected:{expected_records}", records.len()),
-        ));
+        return Err(ReadFailure::new(format!(
+            "record_count:{}_expected:{expected_records}",
+            records.len()
+        )));
     }
-    let profile = JoltAddress::new(identity.clone(), "/profile")
-        .map_err(|error| (0, 0, error.to_string()))?;
+    let profile = JoltAddress::new(identity.clone(), "/profile").map_err(ReadFailure::new)?;
     let resolved_profile = reader
         .resolve(profile.to_string())
         .await
-        .map_err(|error| (0, 0, error.to_string()))?;
+        .map_err(ReadFailure::new)?;
     let resolves = 1;
     let mut fetches = 0;
     reader
         .fetch(resolved_profile.content_id)
         .await
-        .map_err(|error| (resolves, fetches, error.to_string()))?;
+        .map_err(|error| ReadFailure::after_activity(resolves, fetches, error))?;
     fetches += 1;
     for record in records {
         let fetched = reader
             .fetch(record.content_id.clone())
             .await
-            .map_err(|error| (resolves, fetches, error.to_string()))?;
+            .map_err(|error| ReadFailure::after_activity(resolves, fetches, error))?;
         fetches += 1;
         if fetched.content_id != record.content_id {
-            return Err((resolves, fetches, "fetch_content_mismatch".to_string()));
+            return Err(ReadFailure::after_activity(
+                resolves,
+                fetches,
+                "fetch_content_mismatch",
+            ));
         }
     }
-    Ok((resolves, fetches))
+    Ok(ReadOutcome {
+        resolves,
+        fetches,
+        refresh: None,
+    })
 }
 
 async fn refresh_cache_first_author(
@@ -1533,15 +1356,15 @@ async fn refresh_cache_first_author(
     author: &AuthorPlan,
     expected_records: usize,
     fetch: RecordFetch,
-) -> Result<(u64, u64, Option<MaterializedRecordRefreshOutcome>), (u64, u64, String)> {
+) -> ReadResult {
     let identity = author
         .identity_key()
-        .map_err(|error| (0, 0, error.to_string()))?
+        .map_err(ReadFailure::new)?
         .identity_id();
     let view = reader
         .refresh_materialized_record_view(identity, POSTS_PREFIX.to_string())
         .await
-        .map_err(|error| (0, 0, error.to_string()))?;
+        .map_err(ReadFailure::new)?;
     validate_record_count(&view.records, expected_records, Some(view.refresh))?;
     let records = match fetch {
         RecordFetch::All => view.records.iter().collect(),
@@ -1550,76 +1373,78 @@ async fn refresh_cache_first_author(
                 .records
                 .get(expected_records.saturating_sub(1))
                 .map(|record| &record.path)
-                .ok_or_else(|| (0, 0, "newest_planned_record_missing".to_string()))?;
+                .ok_or_else(|| ReadFailure::new("newest_planned_record_missing"))?;
             let latest = view
                 .records
                 .iter()
                 .find(|record| &record.path == expected_path)
-                .ok_or_else(|| (0, 0, "newest_materialized_record_missing".to_string()))?;
+                .ok_or_else(|| ReadFailure::new("newest_materialized_record_missing"))?;
             vec![latest]
         }
     };
-    fetch_materialized_records(reader, records)
-        .await
-        .map(|(resolves, fetches)| (resolves, fetches, Some(view.refresh)))
+    let mut outcome = fetch_materialized_records(reader, records).await?;
+    outcome.refresh = Some(view.refresh);
+    Ok(outcome)
 }
 
 async fn read_cached_author(
     reader: &DaemonHandle,
     author: &AuthorPlan,
     expected_records: usize,
-) -> Result<(u64, u64, Option<MaterializedRecordRefreshOutcome>), (u64, u64, String)> {
+) -> ReadResult {
     let identity = author
         .identity_key()
-        .map_err(|error| (0, 0, error.to_string()))?
+        .map_err(ReadFailure::new)?
         .identity_id();
     let snapshot = reader
         .read_materialized_record_snapshot(identity, POSTS_PREFIX.to_string())
         .await
-        .map_err(|error| (0, 0, error.to_string()))?;
+        .map_err(ReadFailure::new)?;
     validate_record_count(&snapshot.records, expected_records, None)?;
-    fetch_materialized_records(reader, snapshot.records.iter().collect())
-        .await
-        .map(|(resolves, fetches)| (resolves, fetches, None))
+    fetch_materialized_records(reader, snapshot.records.iter().collect()).await
 }
 
 fn validate_record_count(
     records: &[MaterializedRecordInfo],
     expected_records: usize,
     refresh: Option<MaterializedRecordRefreshOutcome>,
-) -> Result<(), (u64, u64, String)> {
+) -> Result<(), ReadFailure> {
     if records.len() == expected_records {
         return Ok(());
     }
     let refresh = refresh
         .map(|outcome| format!("_refresh:{outcome:?}"))
         .unwrap_or_default();
-    Err((
-        0,
-        0,
-        format!(
-            "record_count:{}_expected:{expected_records}{refresh}",
-            records.len()
-        ),
-    ))
+    Err(ReadFailure::new(format!(
+        "record_count:{}_expected:{expected_records}{refresh}",
+        records.len()
+    )))
 }
 
 async fn fetch_materialized_records(
     reader: &DaemonHandle,
     records: Vec<&MaterializedRecordInfo>,
-) -> Result<(u64, u64), (u64, u64, String)> {
+) -> ReadResult {
     let mut fetches = 0;
     for record in records {
         let fetched = reader
             .fetch(record.content_id.clone())
             .await
-            .map_err(|error| (0, fetches, error.to_string()))?;
+            .map_err(|error| ReadFailure::after_activity(0, fetches, error))?;
         fetches += 1;
         if fetched.content_id != record.content_id {
-            return Err((0, fetches, "fetch_content_mismatch".to_string()));
+            return Err(ReadFailure::after_activity(
+                0,
+                fetches,
+                "fetch_content_mismatch",
+            ));
         }
     }
-    Ok((0, fetches))
+    Ok(ReadOutcome {
+        resolves: 0,
+        fetches,
+        refresh: None,
+    })
 }
 
 fn classify_error(error: &str) -> String {
@@ -1632,39 +1457,6 @@ fn classify_error(error: &str) -> String {
         "unreachable".to_string()
     } else {
         error.chars().take(160).collect()
-    }
-}
-
-fn snapshot_links(links: &[ShapedLink]) -> NetworkBytes {
-    links
-        .iter()
-        .fold(NetworkBytes::default(), |mut total, link| {
-            let snapshot = link.snapshot();
-            total.reader_to_providers += snapshot.reader_to_providers;
-            total.providers_to_reader += snapshot.providers_to_reader;
-            total.dropped += snapshot.dropped;
-            total
-        })
-}
-
-async fn wait_for_link_quiescence(links: &[ShapedLink]) {
-    const QUIET_FOR: Duration = Duration::from_millis(50);
-    const GIVE_UP_AFTER: Duration = Duration::from_secs(2);
-    const SAMPLE_EVERY: Duration = Duration::from_millis(10);
-
-    let deadline = Instant::now() + GIVE_UP_AFTER;
-    let mut last_activity = Instant::now();
-    let mut previous = snapshot_links(links);
-    loop {
-        tokio::time::sleep(SAMPLE_EVERY).await;
-        let current = snapshot_links(links);
-        if current != previous {
-            previous = current;
-            last_activity = Instant::now();
-        }
-        if last_activity.elapsed() >= QUIET_FOR || Instant::now() >= deadline {
-            return;
-        }
     }
 }
 
@@ -1718,7 +1510,9 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{poll_until_visible, run, NetworkProfile, RunConfig, TimelinePath};
+    use super::{
+        poll_until_visible, run, NetworkProfile, ReadFailure, ReadOutcome, RunConfig, TimelinePath,
+    };
     use crate::WorkloadConfig;
 
     #[tokio::test]
@@ -1754,7 +1548,7 @@ mod tests {
         let cold = &report.phases[0];
         assert_eq!(cold.timeline_latency.successes, 1);
         assert_eq!(cold.activity.identity_sync_requests, 1);
-        assert!(cold.disk_after.bytes > cold.disk_before.bytes);
+        assert!(cold.reader_disk_after.bytes > cold.reader_disk_before.bytes);
 
         let warm = &report.phases[1];
         assert_eq!(warm.name, "warm_no_change");
@@ -1914,15 +1708,26 @@ mod tests {
             attempts.set(attempt);
             async move {
                 if attempt < 3 {
-                    Err((0, 0, "record_count:1_expected:2".to_string()))
+                    Err(ReadFailure::new("record_count:1_expected:2"))
                 } else {
-                    Ok((1, 2))
+                    Ok(ReadOutcome {
+                        resolves: 1,
+                        fetches: 2,
+                        refresh: None,
+                    })
                 }
             }
         })
         .await;
 
-        assert_eq!(outcome.result, Ok((1, 2)));
+        assert_eq!(
+            outcome.result,
+            Ok(ReadOutcome {
+                resolves: 1,
+                fetches: 2,
+                refresh: None,
+            })
+        );
         assert_eq!(outcome.attempts, 3);
         assert!(outcome.first_attempt_missed);
     }
@@ -1934,7 +1739,7 @@ mod tests {
         let outcome =
             poll_until_visible(Duration::from_millis(5), Duration::from_millis(1), || {
                 attempts.set(attempts.get() + 1);
-                async { Err::<(), _>((0, 0, "record_count:1_expected:2".to_string())) }
+                async { Err(ReadFailure::new("record_count:1_expected:2")) }
             })
             .await;
 

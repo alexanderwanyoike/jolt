@@ -97,7 +97,8 @@ Each JSON artifact contains:
 - enumerate-sync, resolve, fetch, provider-announcement, content-announcement,
   and churn counts;
 - bytes forwarded in each direction and bytes deliberately dropped;
-- aggregate CPU time, RSS, virtual memory, and reader cache growth; and
+- aggregate CPU time, RSS, and virtual memory, plus reader-only cache and
+  on-disk store growth; and
 - per-author time from new-record publication to successful refreshed view,
   with old-count responses polled for up to 75 seconds and first-attempt misses
   reported separately.
@@ -112,6 +113,10 @@ CPU and memory cover all daemon loops because they share one process. Provider
 activity records harness requests and announcements, not internal Kademlia
 packet counts. The artifact repeats these and the remaining local-network
 limitations so results cannot be mistaken for Internet-wide capacity claims.
+Status API latency is sampled every 50 ms so the observer does not become a
+hostile 200-request-per-second client. Active visibility polling deliberately
+uses the daemon refresh command directly; each retry therefore bypasses the
+App API cooldown and represents a more aggressive workload than Spoke.
 
 The fixed-seed unit test covers plan generation and result accounting only.
 Wall-clock performance is deliberately measured, not asserted in CI.
