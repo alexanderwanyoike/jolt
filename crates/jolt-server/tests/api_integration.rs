@@ -3107,7 +3107,7 @@ async fn test_expiring_an_app_session_terminates_its_pending_change_stream() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs()
-        + 1;
+        + 2;
     let (token, _session_id) = approve_app_session_until(
         &client,
         port,
@@ -3126,6 +3126,7 @@ async fn test_expiring_an_app_session_terminates_its_pending_change_stream() {
         .send()
         .await
         .unwrap();
+    assert_eq!(created.status(), 200);
     let created: serde_json::Value = created.json().await.unwrap();
     let subscription_id = created["id"].as_str().unwrap();
     let opened = client
@@ -3142,7 +3143,7 @@ async fn test_expiring_an_app_session_terminates_its_pending_change_stream() {
     let cursor = opened["cursor"].as_str().unwrap();
 
     let terminal = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
+        std::time::Duration::from_secs(3),
         client
             .post(format!(
                 "{}/app/v1/data-subscriptions/{subscription_id}/changes",
@@ -3558,6 +3559,10 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
     assert_eq!(stale["state"]["status"], "stale");
     assert_eq!(stale["state"]["reason"], "networkUnavailable");
 
+    // Let the test server's 10 ms refresh cooldown expire so this read proves
+    // that retained records remain immediate while a new refresh is active.
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
     let retained = tokio::time::timeout(
         std::time::Duration::from_millis(250),
         client
@@ -3574,8 +3579,8 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
     assert_eq!(retained.status(), 200);
     let retained: serde_json::Value = retained.json().await.unwrap();
     assert_eq!(retained["records"].as_array().unwrap().len(), 3);
-    assert_eq!(retained["source"]["state"]["status"], "stale");
-    assert_eq!(retained["source"]["state"]["reason"], "networkUnavailable",);
+    assert_eq!(retained["source"]["state"]["status"], "updating");
+    assert!(retained["source"]["state"]["last_verified_at"].is_number());
 
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {

@@ -1,4 +1,4 @@
-import { createDataAppClient } from "./client.js";
+import { createDataClient } from "./client.js";
 import type { JoltClient } from "./client.js";
 import {
   AppIncompatibleError,
@@ -126,13 +126,13 @@ async function createDefaultClient(
 ): Promise<DataAppHostClient> {
   if (isTauriHost()) {
     const { TauriTransport } = await import("./transport-tauri.js");
-    return createDataAppClient({
+    return createDataClient({
       transport: new TauriTransport({ plugin: true }),
       getSessionToken,
     });
   }
   const { HttpTransport } = await import("./transport-http.js");
-  return createDataAppClient({
+  return createDataClient({
     transport: new HttpTransport({}),
     getSessionToken,
   });

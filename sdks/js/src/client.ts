@@ -497,12 +497,12 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
     nextDataSubscriptionChange: _nextDataSubscriptionChange,
     removeDataSubscription: _removeDataSubscription,
     ...client
-  } = createDataAppClient(options);
+  } = createDataClient(options);
   return client;
 }
 
-/** @internal Build the additional raw transport required by the high-level Data SDK. */
-export function createDataAppClient(
+/** Build the advanced transport required by an already-authorized Data SDK host. */
+export function createDataClient(
   options: JoltClientOptions,
 ): JoltClient & JoltDataSubscriptionSdk {
   const { transport, getSessionToken } = options;
