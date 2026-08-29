@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Connected and deterministic Data SDK App instances now expose their local
+  `identity` alongside their named Resources.
+- The beginner Chirp guide now builds a complete Tauri and React social app
+  with persistent follows, a live subscription-backed timeline, post editing,
+  deletion, restore, and an Alice/Bob test.
+
 ## 0.3.0
 
 ### Added

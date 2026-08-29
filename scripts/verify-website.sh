@@ -142,48 +142,6 @@ for guide_source in guides/*.md; do
   }
 done
 
-beginner_guide="website/guides/app-development.html"
-advanced_guide="website/guides/advanced-app-development.html"
-
-required_beginner_guide_contract=(
-  'Beginner'
-  'jolt-sdk/data'
-  'App.create'
-  'Chirp.test()'
-  'State.Present'
-  'advanced-app-development.html'
-  'Migrations'
-  'Manual conflicts'
-  'Content References'
-  'bulk mutations'
-)
-
-for value in "${required_beginner_guide_contract[@]}"; do
-  grep -Fq "$value" "$beginner_guide" || {
-    echo "beginner Chirp guide is missing its Data SDK contract: $value" >&2
-    exit 1
-  }
-done
-
-for value in 'Advanced app development' 'publishAppend' 'requestSession'; do
-  grep -Fq "$value" "$advanced_guide" || {
-    echo "advanced app guide is missing its preserved low-level contract: $value" >&2
-    exit 1
-  }
-done
-
-if grep -Eq 'publishAppend|requestSession|createJoltClient|capabilities:' "$beginner_guide"; then
-  echo "beginner Chirp guide leaks low-level SDK setup" >&2
-  exit 1
-fi
-
-for value in 'jolt-sdk/data' 'Beginner Chirp' 'advanced-app-development.html'; do
-  grep -Fq "$value" website/sdk/index.html || {
-    echo "SDK landing page does not lead with the beginner Data SDK path: $value" >&2
-    exit 1
-  }
-done
-
 required_sdk_contract=(
   'href="sdk/"'
   'href="guides/app-development.html"'

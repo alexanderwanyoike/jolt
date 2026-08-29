@@ -1,6 +1,7 @@
 import {
   App,
   Collection,
+  Document,
   Field,
   Read,
   Schema,
@@ -15,6 +16,12 @@ export class Post {
   postedAt!: Date;
 }
 
+@Schema({ version: 1 })
+export class Following {
+  @Field.array(Field.identity)
+  identities!: string[];
+}
+
 export const Posts = Collection.create(Post, {
   access: {
     read: Read.AnyIdentity,
@@ -25,13 +32,24 @@ export const Posts = Collection.create(Post, {
   },
 });
 
+export const FollowingDocument = Document.create(Following, {
+  access: {
+    read: Read.OwnIdentity,
+    create: true,
+    update: true,
+  },
+});
+
 export const Chirp = App.create({
   id: "chirp.example",
   name: "Chirp",
   namespace: "chirp",
   data: {
     posts: Posts,
+    following: FollowingDocument,
   },
 });
 
-export type ChirpApplication = ReturnType<typeof Chirp.test>;
+export type ChirpApplication = Awaited<ReturnType<typeof Chirp.connect>>;
+export type ChirpPost = Awaited<ReturnType<ChirpApplication["posts"]["create"]>>;
+export type DeletedChirpPost = Awaited<ReturnType<ChirpPost["delete"]>>;

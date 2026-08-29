@@ -7,7 +7,7 @@ Code blocks come in two forms:
   literal code
   ```
 
-  @include sdks/js/guide/src/chirp.ts as src/chirp.ts
+  @include sdks/js/guide/src/beginner/chirp.ts as src/chirp.ts
 
 `@include` blocks pull the file straight from the repository, so the rendered
 guide can never drift from code that is type-checked and tested. The output

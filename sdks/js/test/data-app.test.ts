@@ -140,6 +140,7 @@ describe("Data SDK applications", () => {
       },
     };
     const bob = await Chirp.connect({ identity: "bob.jolt", client });
+    expect(bob.identity).toBe("bob.jolt");
     const subscription = await Subscription.create(
       bob.posts.for("alice.jolt"),
     );
@@ -562,6 +563,9 @@ describe("Data SDK applications", () => {
     });
     const chirp = Chirp.test({ identity: "alice.jolt" });
 
+    expect(chirp.identity).toBe("alice.jolt");
+    expectTypeOf(chirp.identity).toEqualTypeOf<string>();
+
     const created = await chirp.posts.create({ text: "Hello!" });
 
     expect(created.state).toBe(State.Present);
@@ -581,6 +585,24 @@ describe("Data SDK applications", () => {
     const readByState = await chirp.posts.get(created.ref);
     if (readByState.state !== State.Present) throw new Error("expected a present post");
     expect(readByState.value.text).toBe("Hello!");
+  });
+
+  it("reserves identity for the connected App's local identity", () => {
+    @Schema({ version: 1 })
+    class Profile {
+      @Field.string()
+      name!: string;
+    }
+    const Identity = Document.create(Profile, {
+      access: { read: Read.OwnIdentity },
+    });
+
+    expect(() => App.create({
+      id: "profiles.example",
+      name: "Profiles",
+      namespace: "profiles",
+      data: { identity: Identity },
+    })).toThrow("Resource name is reserved: identity");
   });
 
   it("keeps nested Item values immutable and separate from deterministic state", async () => {
