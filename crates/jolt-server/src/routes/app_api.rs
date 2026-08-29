@@ -23,7 +23,9 @@ use crate::error::ApiError;
 use crate::routes::fetch::{fetch_error_for_target, FetchRequest};
 use crate::routes::home_relay::HomeRelayPinRequest;
 use crate::routes::resolve::ResolveRequest;
-use crate::session_store::{AppSessionStoreError, AppSessionView};
+use crate::session_store::{
+    AppSessionStoreError, AppSessionView, DataSubscriptionRecord, DataSubscriptionRefresh,
+};
 use crate::state::AppState;
 
 static APP_TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -719,41 +721,13 @@ pub async fn create_data_subscription(
         .sessions
         .register_data_subscription(session_id, format!("{identity}.jolt"), prefix)
         .await?;
-    let refresh_state = state.clone();
-    let refresh_subscription = subscription.clone();
-    let refresh_session_id = session_id.to_string();
-    tokio::spawn(async move {
-        let in_progress = refreshing_data_subscription(&refresh_subscription.refresh);
-        if refresh_state
-            .sessions
-            .update_data_subscription_state(
-                &refresh_session_id,
-                &refresh_subscription.id,
-                crate::session_store::DataSubscriptionLifecycle::Active,
-                in_progress,
-            )
-            .await
-            .is_err()
-        {
-            return;
-        }
-        let Ok(view) = refresh_state
-            .daemon
-            .refresh_materialized_record_view(identity, refresh_subscription.prefix.clone())
-            .await
-        else {
-            return;
-        };
-        let _ = refresh_state
-            .sessions
-            .update_data_subscription_state(
-                &refresh_session_id,
-                &refresh_subscription.id,
-                crate::session_store::DataSubscriptionLifecycle::Dormant,
-                completed_data_subscription_refresh(&view),
-            )
-            .await;
-    });
+    let _ = begin_background_data_subscription_refresh(
+        state,
+        session_id.to_string(),
+        subscription.clone(),
+        identity,
+    )
+    .await?;
     Ok(Json(subscription.into()))
 }
 
@@ -806,50 +780,66 @@ pub async fn get_data_subscription_view(
     require_data_subscription_capability(&session, &identity, &subscription.prefix)?;
 
     let in_progress = refreshing_data_subscription(&subscription.refresh);
-    state
-        .sessions
-        .update_data_subscription_state(
-            session_id,
-            &subscription_id,
-            crate::session_store::DataSubscriptionLifecycle::Active,
-            in_progress,
-        )
-        .await?;
-
     let view = state
         .daemon
-        .refresh_materialized_record_view(identity.clone(), subscription.prefix.clone())
+        .read_materialized_record_snapshot(identity.clone(), subscription.prefix.clone())
         .await?;
-
-    // Re-check the session after network work. Revocation or expiry during the
-    // refresh must prevent the retained records from being exposed.
-    let current_session = authenticated_session(&state, &headers).await?;
-    if current_session.session_id.as_deref() != Some(session_id) {
-        return Err(AppApiError::Forbidden(
-            "app session changed during data subscription refresh".to_string(),
-        ));
-    }
-    require_data_subscription_capability(&current_session, &identity, &subscription.prefix)?;
-
-    let refresh = completed_data_subscription_refresh(&view);
-    state
-        .sessions
-        .update_data_subscription_state(
-            session_id,
-            &subscription_id,
-            crate::session_store::DataSubscriptionLifecycle::Dormant,
-            refresh.clone(),
-        )
-        .await?;
+    let refresh_started = begin_background_data_subscription_refresh(
+        state,
+        session_id.to_string(),
+        subscription.clone(),
+        identity,
+    )
+    .await?;
+    let response_refresh = if refresh_started
+        || subscription.lifecycle == crate::session_store::DataSubscriptionLifecycle::Active
+    {
+        in_progress
+    } else {
+        subscription.refresh.clone()
+    };
 
     Ok(Json(DataSubscriptionView {
         identity: subscription.identity,
         records: view.records,
         source: DataSubscriptionSource {
             subscription: subscription_id,
-            state: refresh,
+            state: response_refresh,
         },
     }))
+}
+
+async fn begin_background_data_subscription_refresh(
+    state: AppState,
+    session_id: String,
+    subscription: DataSubscriptionRecord,
+    identity: IdentityId,
+) -> Result<bool, AppApiError> {
+    if !state
+        .sessions
+        .begin_data_subscription_refresh(&session_id, &subscription.id)
+        .await?
+    {
+        return Ok(false);
+    }
+
+    tokio::spawn(async move {
+        let refresh = match state
+            .daemon
+            .refresh_materialized_record_view(identity, subscription.prefix)
+            .await
+        {
+            Ok(view) => completed_data_subscription_refresh(&view),
+            Err(_) => DataSubscriptionRefresh::Unavailable {
+                reason: "networkUnavailable".to_string(),
+            },
+        };
+        let _ = state
+            .sessions
+            .complete_data_subscription_refresh(&session_id, &subscription.id, refresh)
+            .await;
+    });
+    Ok(true)
 }
 
 fn refreshing_data_subscription(
@@ -987,18 +977,7 @@ fn require_data_subscription_capability(
     requested_identity: &IdentityId,
     prefix: &str,
 ) -> Result<(), AppApiError> {
-    let allowed = session.granted_capabilities.iter().any(|capability| {
-        let Some((identity, pattern)) = capability
-            .strip_prefix("subscribe:")
-            .and_then(|scope| scope.split_once(':'))
-        else {
-            return false;
-        };
-        (identity == "any"
-            || recipient_identity(identity).is_ok_and(|identity| &identity == requested_identity))
-            && path_matches(pattern, prefix)
-    });
-    if allowed {
+    if session.allows_data_subscription(requested_identity, prefix) {
         Ok(())
     } else {
         Err(AppApiError::Forbidden(format!(

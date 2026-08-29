@@ -119,6 +119,14 @@ impl NetworkNode {
                     );
                 }
             }
+            DaemonCommand::ReadMaterializedRecordSnapshot {
+                identity,
+                path_prefix,
+                response_tx,
+            } => {
+                let result = self.materialized_record_snapshot(&identity, &path_prefix);
+                let _ = response_tx.send(result);
+            }
             DaemonCommand::Fetch {
                 content_id,
                 response_tx,

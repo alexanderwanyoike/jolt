@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 
 use crate::command::{
     AppendRecordInfo, MaterializedRecordInfo, MaterializedRecordRefreshOutcome,
-    MaterializedRecordView, ResolveResponse,
+    MaterializedRecordSnapshot, MaterializedRecordView, ResolveResponse,
 };
 use crate::error::NetworkError;
 use crate::protocol::{
@@ -413,6 +413,19 @@ impl NetworkNode {
         path_prefix: &str,
         refresh: MaterializedRecordRefreshOutcome,
     ) -> Result<MaterializedRecordView, NetworkError> {
+        let snapshot = self.materialized_record_snapshot(identity, path_prefix)?;
+        Ok(MaterializedRecordView {
+            records: snapshot.records,
+            last_verified_at: snapshot.last_verified_at,
+            refresh,
+        })
+    }
+
+    pub(super) fn materialized_record_snapshot(
+        &self,
+        identity: &IdentityId,
+        path_prefix: &str,
+    ) -> Result<MaterializedRecordSnapshot, NetworkError> {
         let records = self
             .device_writer_states
             .get(identity)
@@ -439,15 +452,10 @@ impl NetworkNode {
             .get(identity)
             .map(|state| state.last_verified_at)
             .filter(|verified_at| *verified_at > 0)
-            .or_else(|| {
-                (*identity == self.identity.identity_id()
-                    && refresh == MaterializedRecordRefreshOutcome::Ready)
-                    .then(super::unix_now)
-            });
-        Ok(MaterializedRecordView {
+            .or_else(|| (*identity == self.identity.identity_id()).then(super::unix_now));
+        Ok(MaterializedRecordSnapshot {
             records,
             last_verified_at,
-            refresh,
         })
     }
 

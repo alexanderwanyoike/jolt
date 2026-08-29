@@ -265,7 +265,6 @@ export type DataSubscriptionRefreshResponse =
 /** Persisted Data Subscription metadata owned by the current app session. */
 export type DataSubscriptionRecordResponse = {
   id: string;
-  session_id: string;
   identity: string;
   prefix: string;
   lifecycle: "active" | "dormant";

@@ -30,6 +30,20 @@ async fn start_test_server_with_tcp_port(p2p_port: u16) -> (u16, DaemonHandle, t
     start_test_server_with_node(Some(p2p_port)).await
 }
 
+async fn start_test_server_with_tcp_port_and_subscription_refresh_interval(
+    p2p_port: u16,
+    refresh_interval: std::time::Duration,
+) -> (u16, DaemonHandle, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = NodeIdentity::generate();
+    let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    node.listen_on(&format!("/ip4/127.0.0.1/tcp/{p2p_port}"))
+        .unwrap();
+    start_test_server_from_node_with_subscription_refresh_interval(node, dir, refresh_interval)
+        .await
+}
+
 async fn start_test_server_with_session_path(
     session_path: PathBuf,
 ) -> (u16, DaemonHandle, tempfile::TempDir) {
@@ -160,8 +174,21 @@ async fn start_test_server_with_node(
 }
 
 async fn start_test_server_from_node(
+    node: NetworkNode,
+    dir: tempfile::TempDir,
+) -> (u16, DaemonHandle, tempfile::TempDir) {
+    start_test_server_from_node_with_subscription_refresh_interval(
+        node,
+        dir,
+        std::time::Duration::from_secs(30),
+    )
+    .await
+}
+
+async fn start_test_server_from_node_with_subscription_refresh_interval(
     mut node: NetworkNode,
     dir: tempfile::TempDir,
+    refresh_interval: std::time::Duration,
 ) -> (u16, DaemonHandle, tempfile::TempDir) {
     // Use short fetch timeout for tests
     node.set_fetch_timeout(std::time::Duration::from_secs(2));
@@ -179,8 +206,11 @@ async fn start_test_server_from_node(
 
     // Start HTTP server on random port
     let sessions =
-        jolt_server::session_store::AppSessionStore::open(dir.path().join("app-sessions.json"))
-            .unwrap();
+        jolt_server::session_store::AppSessionStore::open_with_data_subscription_refresh_interval(
+            dir.path().join("app-sessions.json"),
+            refresh_interval,
+        )
+        .unwrap();
     let (port, _server_handle) =
         jolt_server::server::start_server_with_session_store(handle.clone(), 0, sessions)
             .await
@@ -2842,15 +2872,19 @@ async fn test_app_data_subscription_registration_is_identity_and_prefix_scoped()
     assert_eq!(first["refresh"]["status"], "loading");
     let subscription_id = first["id"].as_str().unwrap();
 
-    let view = client
-        .get(format!(
-            "{}/app/v1/data-subscriptions/{subscription_id}",
-            base_url(port)
-        ))
-        .bearer_auth(&token)
-        .send()
-        .await
-        .unwrap();
+    let view = tokio::time::timeout(
+        std::time::Duration::from_millis(250),
+        client
+            .get(format!(
+                "{}/app/v1/data-subscriptions/{subscription_id}",
+                base_url(port)
+            ))
+            .bearer_auth(&token)
+            .send(),
+    )
+    .await
+    .expect("a Data Subscription read must return the Last Verified View immediately")
+    .unwrap();
     assert_eq!(view.status(), 200);
     let view: serde_json::Value = view.json().await.unwrap();
     assert_eq!(view["records"], serde_json::json!([]));
@@ -3010,7 +3044,12 @@ async fn test_app_data_subscription_is_session_private_durable_and_removable() {
 async fn test_app_data_subscription_materializes_remote_stable_records_between_two_nodes() {
     let alice_p2p = free_tcp_port();
     let (alice_port, alice_handle, _alice_dir) = start_test_server_with_tcp_port(alice_p2p).await;
-    let (bob_port, bob_handle, _bob_dir) = start_test_server_with_tcp_port(free_tcp_port()).await;
+    let (bob_port, bob_handle, _bob_dir) =
+        start_test_server_with_tcp_port_and_subscription_refresh_interval(
+            free_tcp_port(),
+            std::time::Duration::from_millis(10),
+        )
+        .await;
     let client = reqwest::Client::new();
 
     let alice_status = alice_handle.status().await.unwrap();
@@ -3097,6 +3136,8 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
     .await
     .expect("initial Data Subscription refresh did not complete");
 
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
     let refreshed = client
         .get(format!(
             "{}/app/v1/data-subscriptions/{subscription_id}",
@@ -3108,7 +3149,7 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
         .unwrap();
     assert_eq!(refreshed.status(), 200);
     let refreshed: serde_json::Value = refreshed.json().await.unwrap();
-    assert_eq!(refreshed["source"]["state"]["status"], "ready");
+    assert_eq!(refreshed["source"]["state"]["status"], "updating");
     let records = refreshed["records"].as_array().unwrap();
     assert_eq!(records.len(), 2);
     assert_eq!(records[0]["path"], "/chirp/posts/jlt_first");
@@ -3133,21 +3174,65 @@ async fn test_app_data_subscription_materializes_remote_stable_records_between_t
         .collect::<Vec<_>>();
     assert_eq!(bytes, stored);
 
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let listed = client
+                .get(format!("{}/app/v1/data-subscriptions", base_url(bob_port)))
+                .bearer_auth(&bob_token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(listed.status(), 200);
+            let listed: serde_json::Value = listed.json().await.unwrap();
+            if listed[0]["refresh"]["status"] == "ready" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("online background Data Subscription refresh did not complete");
+
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
     alice_handle.shutdown().await.ok();
-    let retained = client
-        .get(format!(
-            "{}/app/v1/data-subscriptions/{subscription_id}",
-            base_url(bob_port)
-        ))
-        .bearer_auth(&bob_token)
-        .send()
-        .await
-        .unwrap();
+    let retained = tokio::time::timeout(
+        std::time::Duration::from_millis(250),
+        client
+            .get(format!(
+                "{}/app/v1/data-subscriptions/{subscription_id}",
+                base_url(bob_port)
+            ))
+            .bearer_auth(&bob_token)
+            .send(),
+    )
+    .await
+    .expect("an offline Data Subscription read must return retained records immediately")
+    .unwrap();
     assert_eq!(retained.status(), 200);
     let retained: serde_json::Value = retained.json().await.unwrap();
     assert_eq!(retained["records"].as_array().unwrap().len(), 2);
-    assert_eq!(retained["source"]["state"]["status"], "stale");
-    assert_eq!(retained["source"]["state"]["reason"], "networkUnavailable");
+    assert_eq!(retained["source"]["state"]["status"], "updating");
+
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let listed = client
+                .get(format!("{}/app/v1/data-subscriptions", base_url(bob_port)))
+                .bearer_auth(&bob_token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(listed.status(), 200);
+            let listed: serde_json::Value = listed.json().await.unwrap();
+            if listed[0]["refresh"]["status"] == "stale" {
+                assert_eq!(listed[0]["refresh"]["reason"], "networkUnavailable");
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("background Data Subscription refresh did not report stale state");
 
     bob_handle.shutdown().await.ok();
 }

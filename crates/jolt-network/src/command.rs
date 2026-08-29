@@ -34,6 +34,11 @@ pub enum DaemonCommand {
         path_prefix: String,
         response_tx: oneshot::Sender<Result<MaterializedRecordView, NetworkError>>,
     },
+    ReadMaterializedRecordSnapshot {
+        identity: IdentityId,
+        path_prefix: String,
+        response_tx: oneshot::Sender<Result<MaterializedRecordSnapshot, NetworkError>>,
+    },
     Fetch {
         content_id: String,
         response_tx: oneshot::Sender<Result<FetchResult, NetworkError>>,
@@ -253,6 +258,13 @@ pub struct MaterializedRecordView {
     pub records: Vec<MaterializedRecordInfo>,
     pub last_verified_at: Option<u64>,
     pub refresh: MaterializedRecordRefreshOutcome,
+}
+
+/// Current verified records without initiating or describing network work.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterializedRecordSnapshot {
+    pub records: Vec<MaterializedRecordInfo>,
+    pub last_verified_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
