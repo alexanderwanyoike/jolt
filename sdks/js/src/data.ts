@@ -3051,25 +3051,25 @@ export const App = {
       .map(([resourceName, resource]) => Object.freeze({
         resource: resourceName,
         path: `${resource.path}/*`,
-      })));
+    })));
     const accessPlan = Object.freeze({ requirements, grants, subscriptions });
     let pendingHostConnection: ReturnType<typeof connectDataApp> | undefined;
-    const connectThroughHost = (): ReturnType<typeof connectDataApp> => {
+    const connectThroughHost = async (): ReturnType<typeof connectDataApp> => {
       if (pendingHostConnection) return pendingHostConnection;
 
-      const connection = connectDataApp({
+      const pending = connectDataApp({
         id: options.id,
         name: options.name,
         accessPlan,
       });
-      pendingHostConnection = connection;
-      const clearPendingConnection = () => {
-        if (pendingHostConnection === connection) {
+      pendingHostConnection = pending;
+      try {
+        return await pending;
+      } finally {
+        if (pendingHostConnection === pending) {
           pendingHostConnection = undefined;
         }
-      };
-      void connection.then(clearPendingConnection, clearPendingConnection);
-      return connection;
+      }
     };
     return {
       id: options.id,
