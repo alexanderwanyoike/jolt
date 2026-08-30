@@ -245,11 +245,62 @@ impl DataChangeStreams {
         records: Vec<MaterializedRecordInfo>,
         refresh: DataSubscriptionRefresh,
     ) {
+        self.publish_inner(
+            session_id,
+            subscription_id,
+            identity,
+            records,
+            refresh,
+            true,
+        )
+        .await;
+    }
+
+    pub async fn publish_if_active(
+        &self,
+        session_id: &str,
+        subscription_id: &str,
+        identity: &str,
+        records: Vec<MaterializedRecordInfo>,
+        refresh: DataSubscriptionRefresh,
+    ) {
+        self.publish_inner(
+            session_id,
+            subscription_id,
+            identity,
+            records,
+            refresh,
+            false,
+        )
+        .await;
+    }
+
+    pub async fn is_active(&self, session_id: &str, subscription_id: &str) -> bool {
+        self.registry
+            .lock()
+            .await
+            .active
+            .get(subscription_id)
+            .is_some_and(|stream| stream.session_id == session_id)
+    }
+
+    async fn publish_inner(
+        &self,
+        session_id: &str,
+        subscription_id: &str,
+        identity: &str,
+        records: Vec<MaterializedRecordInfo>,
+        refresh: DataSubscriptionRefresh,
+        register_if_missing: bool,
+    ) {
         let mut registry = self.registry.lock().await;
         if registry.terminal.contains_key(subscription_id) {
             return;
         }
         let Some(stream) = registry.active.get_mut(subscription_id) else {
+            if !register_if_missing {
+                return;
+            }
             registry.active.insert(
                 subscription_id.to_string(),
                 StreamState {
@@ -525,6 +576,38 @@ mod tests {
                 removed: vec![],
             }
         );
+    }
+
+    #[tokio::test]
+    async fn local_publish_does_not_register_a_dormant_change_stream() {
+        let streams = DataChangeStreams::with_generation_and_capacity("boot_a", 4);
+        assert!(!streams.is_active("session_a", "sub_a").await);
+        streams
+            .publish_if_active(
+                "session_a",
+                "sub_a",
+                "alice.jolt",
+                vec![record("/chirp/posts/one", "revision_1")],
+                DataSubscriptionRefresh::Loading,
+            )
+            .await;
+        assert!(!streams.is_active("session_a", "sub_a").await);
+
+        let opened = streams
+            .next(
+                "session_a",
+                "sub_a",
+                "alice.jolt",
+                vec![],
+                DataSubscriptionRefresh::Loading,
+                None,
+            )
+            .await;
+        let DataChangeEvent::Snapshot { records, .. } = opened else {
+            panic!("first poll must establish a snapshot boundary");
+        };
+        assert!(records.is_empty());
+        assert!(streams.is_active("session_a", "sub_a").await);
     }
 
     #[tokio::test]

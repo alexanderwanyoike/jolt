@@ -212,13 +212,14 @@ pub async fn update_local_record(
     let updated = state
         .daemon
         .update_local_record(
-            path,
+            path.clone(),
             req.data,
             req.revision,
             req.observed_revisions,
             req.mutation_id,
         )
         .await?;
+    publish_local_record_change(&state, &path).await;
     Ok(Json(updated))
 }
 
@@ -242,8 +243,14 @@ pub async fn delete_local_record(
     require_path_capability(&session, "delete:", &path)?;
     let deleted = state
         .daemon
-        .delete_local_record(path, req.revision, req.observed_revisions, req.mutation_id)
+        .delete_local_record(
+            path.clone(),
+            req.revision,
+            req.observed_revisions,
+            req.mutation_id,
+        )
         .await?;
+    publish_local_record_change(&state, &path).await;
     Ok(Json(deleted))
 }
 
@@ -259,13 +266,14 @@ pub async fn restore_local_record(
     let restored = state
         .daemon
         .restore_local_record(
-            path,
+            path.clone(),
             req.data,
             req.revision,
             req.observed_revisions,
             req.mutation_id,
         )
         .await?;
+    publish_local_record_change(&state, &path).await;
     Ok(Json(restored))
 }
 
@@ -575,14 +583,8 @@ pub async fn publish_file(
     let (data, path) = read_file_and_path_fields(multipart).await?;
     require_path_capability(&session, "publish:", &path)?;
 
-    let temp_path = persist_app_temp_file("publish", &data)?;
-    let result = state.daemon.publish(temp_path.clone(), Some(path)).await;
-    let _ = std::fs::remove_file(&temp_path);
-
-    match result {
-        Ok(response) => Ok((StatusCode::OK, Json(json!(response))).into_response()),
-        Err(e) => Err(AppApiError::Network(e)),
-    }
+    let response = publish_app_bytes(&state, data, path).await?;
+    Ok((StatusCode::OK, Json(json!(response))).into_response())
 }
 
 /// Publish content as an append record bound to a path the app owns. Unlike
@@ -1116,9 +1118,54 @@ async fn publish_app_bytes(
     path: String,
 ) -> Result<PublishResponse, AppApiError> {
     let temp_path = persist_app_temp_file("publish", &data)?;
-    let result = state.daemon.publish(temp_path.clone(), Some(path)).await;
+    let result = state
+        .daemon
+        .publish(temp_path.clone(), Some(path.clone()))
+        .await;
     let _ = std::fs::remove_file(&temp_path);
-    result.map_err(AppApiError::Network)
+    let published = result.map_err(AppApiError::Network)?;
+    publish_local_record_change(state, &path).await;
+    Ok(published)
+}
+
+async fn publish_local_record_change(state: &AppState, path: &str) {
+    let Some(identity) = state.daemon.local_identity_address() else {
+        return;
+    };
+    let subscriptions = state
+        .sessions
+        .data_subscriptions_matching_record(identity, path)
+        .await;
+    let Ok(identity_id) = recipient_identity(identity) else {
+        return;
+    };
+
+    for subscription in subscriptions {
+        if !state
+            .data_change_streams
+            .is_active(&subscription.session_id, &subscription.id)
+            .await
+        {
+            continue;
+        }
+        let Ok(view) = state
+            .daemon
+            .read_materialized_record_snapshot(identity_id.clone(), subscription.prefix.clone())
+            .await
+        else {
+            continue;
+        };
+        state
+            .data_change_streams
+            .publish_if_active(
+                &subscription.session_id,
+                &subscription.id,
+                &subscription.identity,
+                view.records,
+                subscription.refresh,
+            )
+            .await;
+    }
 }
 
 async fn publish_app_append_bytes(
