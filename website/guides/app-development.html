@@ -11,7 +11,7 @@
     <meta property="og:site_name" content="Jolt" />
     <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="jolt-guide-source-sha256" content="971e9c61472841e0fd3459b943e6b12164c2ad4b8cafa7d3f62b5c5b8970b4a2" />
+    <meta name="jolt-guide-source-sha256" content="2f8e8d18b0fbbc08a5707f9dd748147560b21172d606e2b1f8a601956085f432" />
     <title>Jolt Guide | Build Chirp with the Data SDK</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -178,12 +178,26 @@ user receives the Document already stored under their Jolt identity. Updating
 returns a new immutable Item, so React can replace its old state directly.</p>
 <h2 id="5-build-the-live-timeline">5 · Build the live timeline</h2>
 <p>Chirp's timeline reads the signed-in person's posts and the posts of every
-identity they follow. Each identity gets one cache-first Data Subscription.
-Create <code>src/timeline.ts</code>:</p>
+identity they follow. Each identity gets one cache-first Data Subscription.</p>
+<p>Think of a subscription as one local, verified window onto one person's Posts
+Collection. It does not expose networking to Chirp. Jolt discovers that
+person's nodes, verifies their signed records, retains the last good view, and
+refreshes it in the background.</p>
+<p>The Change Stream has a deliberate order:</p>
+<ol>
+<li>It begins with a <strong>Snapshot</strong> containing the complete Last Verified View.
+   Chirp can render that immediately, even while the other person is offline.</li>
+<li>Later <strong>Changed</strong> events patch that view with verified additions, edits,
+   deletions, and restores.</li>
+<li><strong>ResyncRequired</strong> means Chirp missed part of the stream, so it asks the
+   subscription for a fresh complete view instead of guessing.</li>
+</ol>
+<p>Create <code>src/timeline.ts</code>:</p>
 <figure class="code-figure"><figcaption><span>src/timeline.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="nx">ChangeType</span><span class="p">,</span>
 <span class="w">  </span><span class="nx">Subscription</span><span class="p">,</span>
 <span class="w">  </span><span class="kr">type</span><span class="w"> </span><span class="nx">DataChangeStream</span><span class="p">,</span>
+<span class="w">  </span><span class="kr">type</span><span class="w"> </span><span class="nx">DataSubscriptionChange</span><span class="p">,</span>
 <span class="w">  </span><span class="kr">type</span><span class="w"> </span><span class="nx">DataSubscription</span><span class="p">,</span>
 <span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
 
@@ -264,8 +278,18 @@ Create <code>src/timeline.ts</code>:</p>
 <span class="w">      </span><span class="nx">items</span><span class="o">:</span><span class="w"> </span><span class="kt">new</span><span class="w"> </span><span class="nb">Map</span><span class="p">(),</span>
 <span class="w">    </span><span class="p">};</span>
 <span class="w">    </span><span class="k">this</span><span class="p">.</span><span class="nx">sources</span><span class="p">.</span><span class="nx">set</span><span class="p">(</span><span class="nx">identity</span><span class="p">,</span><span class="w"> </span><span class="nx">source</span><span class="p">);</span>
-<span class="w">    </span><span class="ow">void</span><span class="w"> </span><span class="k">this</span><span class="p">.</span><span class="nx">watch</span><span class="p">(</span><span class="nx">source</span><span class="p">).</span><span class="k">catch</span><span class="p">(</span><span class="nx">error</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="k">this</span><span class="p">.</span><span class="nx">fail</span><span class="p">(</span><span class="nx">error</span><span class="p">));</span>
-<span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="k">this</span><span class="p">.</span><span class="nx">refreshSource</span><span class="p">(</span><span class="nx">source</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// A Change Stream always begins with Jolt&#39;s retained verified Snapshot.</span>
+<span class="w">    </span><span class="c1">// Await it before listening for deltas so an older parallel read can never</span>
+<span class="w">    </span><span class="c1">// replace a newer post that has already arrived through the stream.</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">changes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">source</span><span class="p">.</span><span class="nx">stream</span><span class="p">[</span><span class="nb">Symbol</span><span class="p">.</span><span class="nx">asyncIterator</span><span class="p">]();</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">initial</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">changes</span><span class="p">.</span><span class="nx">next</span><span class="p">();</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">initial</span><span class="p">.</span><span class="nx">done</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">initial</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="kr">type</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="nx">ChangeType</span><span class="p">.</span><span class="nx">Snapshot</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="k">throw</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="ne">Error</span><span class="p">(</span><span class="s2">&quot;Data Subscription did not begin with a Snapshot&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="nx">source</span><span class="p">.</span><span class="nx">items</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">itemsByRef</span><span class="p">(</span><span class="nx">initial</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">items</span><span class="p">);</span>
+<span class="w">    </span><span class="k">this</span><span class="p">.</span><span class="nx">publish</span><span class="p">();</span>
+<span class="w">    </span><span class="ow">void</span><span class="w"> </span><span class="k">this</span><span class="p">.</span><span class="nx">watch</span><span class="p">(</span><span class="nx">source</span><span class="p">,</span><span class="w"> </span><span class="nx">changes</span><span class="p">).</span><span class="k">catch</span><span class="p">(</span><span class="nx">error</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="k">this</span><span class="p">.</span><span class="nx">fail</span><span class="p">(</span><span class="nx">error</span><span class="p">));</span>
 <span class="w">  </span><span class="p">}</span>
 
 <span class="w">  </span><span class="k">private</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="nx">refreshSource</span><span class="p">(</span><span class="nx">source</span><span class="o">:</span><span class="w"> </span><span class="kt">TimelineSource</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="ow">void</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
@@ -273,8 +297,14 @@ Create <code>src/timeline.ts</code>:</p>
 <span class="w">    </span><span class="k">this</span><span class="p">.</span><span class="nx">publish</span><span class="p">();</span>
 <span class="w">  </span><span class="p">}</span>
 
-<span class="w">  </span><span class="k">private</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="nx">watch</span><span class="p">(</span><span class="nx">source</span><span class="o">:</span><span class="w"> </span><span class="kt">TimelineSource</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="ow">void</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">change</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="nx">source</span><span class="p">.</span><span class="nx">stream</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">private</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="nx">watch</span><span class="p">(</span>
+<span class="w">    </span><span class="nx">source</span><span class="o">:</span><span class="w"> </span><span class="kt">TimelineSource</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">changes</span><span class="o">:</span><span class="w"> </span><span class="kt">AsyncIterator</span><span class="o">&lt;</span><span class="nx">DataSubscriptionChange</span><span class="o">&lt;</span><span class="nx">Post</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+<span class="w">  </span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="ow">void</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="kd">const</span><span class="w"> </span><span class="nx">event</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">changes</span><span class="p">.</span><span class="nx">next</span><span class="p">();</span>
+<span class="w">      </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">event</span><span class="p">.</span><span class="nx">done</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
+<span class="w">      </span><span class="kd">const</span><span class="w"> </span><span class="nx">change</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">event</span><span class="p">.</span><span class="nx">value</span><span class="p">;</span>
 <span class="w">      </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">closed</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
 
 <span class="w">      </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="nx">change</span><span class="p">.</span><span class="kr">type</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
@@ -314,11 +344,12 @@ Create <code>src/timeline.ts</code>:</p>
 <span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">listener</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="k">this</span><span class="p">.</span><span class="nx">listeners</span><span class="p">)</span><span class="w"> </span><span class="nx">listener</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">snapshot</span><span class="p">);</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span></code></pre></figure>
-<p>The initial <code>get()</code> renders Jolt's Last Verified View immediately and refreshes
-it in the background. The Change Stream then applies verified additions,
-updates, deletions, and restores without making React poll the daemon. The
-switch is exhaustive because terminal and resynchronization events are real
-states, not strings for the UI to guess about.</p>
+<p><code>Timeline.open()</code> waits for that first Snapshot before it returns. This avoids
+racing an older view read against a newer streamed change. One <code>Map</code> holds the
+current Items for each followed identity; <code>publish()</code> combines those Maps and
+sorts their typed <code>postedAt</code> values for React. The exhaustive <code>switch</code> makes
+resynchronization and terminal events explicit instead of turning them into
+strings for the UI to guess about.</p>
 <p>Keep the React boundary small with <code>src/use-timeline.ts</code>:</p>
 <figure class="code-figure"><figcaption><span>src/use-timeline.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">useEffect</span><span class="p">,</span><span class="w"> </span><span class="nx">useState</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;react&quot;</span><span class="p">;</span>
 

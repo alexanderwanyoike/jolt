@@ -113,15 +113,31 @@ returns a new immutable Item, so React can replace its old state directly.
 
 Chirp's timeline reads the signed-in person's posts and the posts of every
 identity they follow. Each identity gets one cache-first Data Subscription.
+
+Think of a subscription as one local, verified window onto one person's Posts
+Collection. It does not expose networking to Chirp. Jolt discovers that
+person's nodes, verifies their signed records, retains the last good view, and
+refreshes it in the background.
+
+The Change Stream has a deliberate order:
+
+1. It begins with a **Snapshot** containing the complete Last Verified View.
+   Chirp can render that immediately, even while the other person is offline.
+2. Later **Changed** events patch that view with verified additions, edits,
+   deletions, and restores.
+3. **ResyncRequired** means Chirp missed part of the stream, so it asks the
+   subscription for a fresh complete view instead of guessing.
+
 Create `src/timeline.ts`:
 
 @include sdks/js/guide/src/beginner/timeline.ts as src/timeline.ts
 
-The initial `get()` renders Jolt's Last Verified View immediately and refreshes
-it in the background. The Change Stream then applies verified additions,
-updates, deletions, and restores without making React poll the daemon. The
-switch is exhaustive because terminal and resynchronization events are real
-states, not strings for the UI to guess about.
+`Timeline.open()` waits for that first Snapshot before it returns. This avoids
+racing an older view read against a newer streamed change. One `Map` holds the
+current Items for each followed identity; `publish()` combines those Maps and
+sorts their typed `postedAt` values for React. The exhaustive `switch` makes
+resynchronization and terminal events explicit instead of turning them into
+strings for the UI to guess about.
 
 Keep the React boundary small with `src/use-timeline.ts`:
 

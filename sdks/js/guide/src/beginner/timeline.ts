@@ -2,6 +2,7 @@ import {
   ChangeType,
   Subscription,
   type DataChangeStream,
+  type DataSubscriptionChange,
   type DataSubscription,
 } from "jolt-sdk/data";
 
@@ -82,8 +83,18 @@ export class Timeline {
       items: new Map(),
     };
     this.sources.set(identity, source);
-    void this.watch(source).catch(error => this.fail(error));
-    await this.refreshSource(source);
+
+    // A Change Stream always begins with Jolt's retained verified Snapshot.
+    // Await it before listening for deltas so an older parallel read can never
+    // replace a newer post that has already arrived through the stream.
+    const changes = source.stream[Symbol.asyncIterator]();
+    const initial = await changes.next();
+    if (initial.done || initial.value.type !== ChangeType.Snapshot) {
+      throw new Error("Data Subscription did not begin with a Snapshot");
+    }
+    source.items = itemsByRef(initial.value.items);
+    this.publish();
+    void this.watch(source, changes).catch(error => this.fail(error));
   }
 
   private async refreshSource(source: TimelineSource): Promise<void> {
@@ -91,8 +102,14 @@ export class Timeline {
     this.publish();
   }
 
-  private async watch(source: TimelineSource): Promise<void> {
-    for await (const change of source.stream) {
+  private async watch(
+    source: TimelineSource,
+    changes: AsyncIterator<DataSubscriptionChange<Post>>,
+  ): Promise<void> {
+    while (true) {
+      const event = await changes.next();
+      if (event.done) return;
+      const change = event.value;
       if (this.closed) return;
 
       switch (change.type) {
