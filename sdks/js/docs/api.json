@@ -29685,7 +29685,7 @@
 								"summary": [
 									{
 										"kind": "text",
-										"text": "Whether a failed Jolt operation should be presented as unavailable.\n\nTyped transport failures mean the daemon could not be reached. HTTP 500 and\nunstructured 502 responses also cover browser development proxies that could\nnot complete the request. This classifies the attempt, not the availability\nof content requested through a reachable daemon."
+										"text": "Whether a failed Jolt operation should be presented as unavailable.\n\nTyped transport failures mean the daemon could not be reached. Unstructured\nHTTP 500 and 502 responses also cover browser development proxies that could\nnot complete the request. A machine-readable API error code proves that the\ndaemon answered and must not be weakened into host unavailability. This\nclassifies the attempt, not the availability of content requested through a\nreachable daemon."
 									}
 								]
 							},
