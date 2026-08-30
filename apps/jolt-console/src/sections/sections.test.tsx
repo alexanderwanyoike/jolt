@@ -668,6 +668,70 @@ describe("Console section pages", () => {
     );
   });
 
+  it("can approve Chirp Data SDK capabilities", async () => {
+    const requestedCapabilities = [
+      "resolve:public",
+      "fetch:public",
+      "publish:/chirp/posts/*",
+      "delete:/chirp/posts/*",
+      "publish:/chirp/following",
+      "subscribe:any:/chirp/posts/*",
+    ];
+    const client: DaemonClient = {
+      daemonUrl: "http://127.0.0.1:9862",
+      get: vi.fn(async (path: string) => {
+        if (path === "/admin/v1/app-requests") {
+          return [
+            {
+              request_id: "req_chirp",
+              app_id: "chirp.example",
+              app_name: "Chirp",
+              app_origin: "http://127.0.0.1:1430",
+              requested_identity: "alice.jolt",
+              requested_capabilities: requestedCapabilities,
+              granted_capabilities: [],
+              status: "pending",
+              created_at: 1_788_082_165,
+            },
+          ];
+        }
+        if (path === "/admin/v1/app-sessions") return [];
+        if (path === "/admin/v1/identities") return localIdentitiesPayload();
+        throw new Error(`unexpected path ${path}`);
+      }),
+      post: vi.fn(async () => ({ ok: true })),
+    };
+
+    render(<AppsPage client={client} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /request details/i }),
+    );
+    expect(
+      screen.getByText("delete records under /chirp/posts/*"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "subscribe to verified records under /chirp/posts/* for any identity",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("admin-only request: cannot be approved"),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Approve Chirp" }),
+    );
+    expect(client.post).toHaveBeenCalledWith(
+      "/admin/v1/app-requests/req_chirp/approve",
+      {
+        identity: "alice.jolt",
+        capabilities: requestedCapabilities,
+        expires_at: null,
+      },
+    );
+  });
+
   it("can approve Spoke ingress review capabilities", async () => {
     const requestedCapabilities = [
       "resolve:public",

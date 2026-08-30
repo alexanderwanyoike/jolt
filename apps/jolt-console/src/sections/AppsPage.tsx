@@ -466,6 +466,27 @@ function capabilityInfo(capability: string): CapabilityInfo {
       broadPath: isBroadPathScope(scope)
     };
   }
+  if (capability.startsWith("delete:")) {
+    const scope = capability.slice("delete:".length);
+    return {
+      label: `delete records under ${scope}`,
+      kind: "write",
+      grantable: isGrantablePathCapability("delete:", capability),
+      broadPath: isBroadPathScope(scope)
+    };
+  }
+  const subscription = parseSubscriptionCapability(capability);
+  if (subscription) {
+    const identity = subscription.identity === "any"
+      ? "any identity"
+      : subscription.identity;
+    return {
+      label: `subscribe to verified records under ${subscription.scope} for ${identity}`,
+      kind: "read",
+      grantable: true,
+      broadPath: isBroadPathScope(subscription.scope)
+    };
+  }
   if (capability.startsWith("inventory:")) {
     const scope = capability.slice("inventory:".length);
     return {
@@ -532,13 +553,32 @@ function isGrantableCapability(capability: string) {
     capability === "ingress:decide" ||
     isGrantablePathCapability("publish:encrypted:", capability) ||
     isGrantablePathCapability("publish:", capability) ||
+    isGrantablePathCapability("delete:", capability) ||
     isGrantablePathCapability("inventory:", capability) ||
     isGrantablePathCapability("pin:own:", capability) ||
     isGrantablePathCapability("encrypt:", capability) ||
     isGrantablePathCapability("decrypt:", capability)
     || isGrantablePathCapability("enumerate:self:", capability)
     || isGrantablePathCapability("enumerate:any:", capability)
+    || parseSubscriptionCapability(capability) !== null
   );
+}
+
+function parseSubscriptionCapability(capability: string) {
+  if (!capability.startsWith("subscribe:")) return null;
+
+  const remainder = capability.slice("subscribe:".length);
+  const separator = remainder.indexOf(":");
+  if (separator <= 0) return null;
+
+  const identity = remainder.slice(0, separator);
+  const scope = remainder.slice(separator + 1);
+  const validIdentity = identity === "any" || /^[a-z2-7]+(?:\.jolt)?$/.test(identity);
+  if (!validIdentity || !isGrantablePathCapability(`subscribe:${identity}:`, capability)) {
+    return null;
+  }
+
+  return { identity, scope };
 }
 
 function isGrantablePathCapability(prefix: string, capability: string) {
