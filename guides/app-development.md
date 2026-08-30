@@ -6,13 +6,13 @@ App: Chirp
 Stack: Tauri 2 · React
 Level: Beginner
 SDK: jolt-sdk/data
-Description: Build a small social app with a composer, follows, a live timeline, editing, deletion, restore, and an Alice/Bob test.
+Description: Build a small social app with profiles, follows, a live timeline, editing, deletion, restore, and an Alice/Bob test.
 ```
 
-Chirp is a small social app. You can publish a post, follow another Jolt
-identity, see their posts appear in your timeline, edit your own posts, and undo
-a deletion. There is no application server, account table, path design,
-decoder, session code, or network polling to write.
+Chirp is a small social app. You can choose a nickname, publish a post, follow
+another Jolt identity, see who you follow beside the timeline, edit your own
+posts, and undo a deletion. There is no application server, account table, path
+design, decoder, session code, or network polling to write.
 
 This is a complete application tutorial. Every TypeScript file shown here is
 compiled and tested against the public SDK in Jolt's repository. Follow it from
@@ -88,13 +88,15 @@ Create `src/chirp.ts`:
 
 @include sdks/js/guide/src/beginner/chirp.ts as src/chirp.ts
 
-`Post` and `Following` are ordinary classes and runtime schemas at the same
-time. `Collection.create` gives every post a stable reference. The `following`
+`Post`, `Profile`, and `Following` are ordinary classes and runtime schemas at
+the same time. `Collection.create` gives every post a stable reference. The
+public `profile` Document stores one nickname, while the private `following`
 Document stores one identity list for the signed-in person.
 
 The access declarations are also the complete permission declaration:
 
 - anyone may read posts;
+- anyone may read a Chirp nickname, but only its identity may change it;
 - the local identity may create, edit, delete, and restore its posts; and
 - only the local identity may read or change its following list.
 
@@ -103,7 +105,17 @@ capability strings, revision tokens, mutation IDs, or decoders in application
 code. Automatic conflict handling is used unless the application explicitly
 chooses a different policy.
 
-## 4 · Remember who the user follows
+## 4 · Add profiles and remember who the user follows
+
+Create `src/profiles.ts`:
+
+@include sdks/js/guide/src/beginner/profiles.ts as src/profiles.ts
+
+`saveNickname()` creates the local profile once and updates the same typed
+Document afterward. `getProfiles()` reads each public profile through its Jolt
+identity. A nickname is friendly and deliberately non-unique, so Chirp always
+keeps the canonical `.jolt` identity next to it on posts and in the Following
+list. Missing profiles simply fall back to that identity.
 
 Create `src/following.ts`:
 
@@ -160,10 +172,12 @@ Create `src/PostCard.tsx`:
 
 @include sdks/js/guide/src/beginner/PostCard.tsx as src/PostCard.tsx
 
-Remote posts are read-only. Chirp shows edit and delete controls only when the
-post reference belongs to `chirp.identity`. The callback receives the stable
-post reference; the application asks its local Collection for the current Item
-before mutating it.
+Remote posts are read-only. Each card uses the separately loaded public profile
+for its friendly nickname and keeps the post reference's Jolt identity visible
+underneath. Chirp shows edit and delete controls only when that reference
+belongs to `chirp.identity`. The callback receives the stable post reference;
+the application asks its local Collection for the current Item before mutating
+it.
 
 ## 7 · Build the screen
 
@@ -175,10 +189,11 @@ This is the whole product flow:
 
 1. `Chirp.connect()` connects and exposes the local Jolt identity.
 2. `getFollowing()` loads the user's saved follows.
-3. `useTimeline()` opens subscriptions for the user and their friends.
-4. The composer calls `chirp.posts.create(...)`.
-5. Following somebody updates one typed Document.
-6. Edit, delete, and restore call methods on typed Items.
+3. `getProfiles()` loads public nicknames without replacing canonical IDs.
+4. `useTimeline()` opens subscriptions for the user and their friends.
+5. The profile form and composer save typed Documents and Posts.
+6. Following somebody updates one typed Document and the sidebar.
+7. Edit, delete, and restore call methods on typed Items.
 
 Each button action uses the small `run()` helper. It clears the previous
 message, runs the typed operation, and shows a dismissible error without
@@ -211,9 +226,9 @@ The first launch waits at **Approve Chirp in Jolt Console**. Open Jolt Console,
 review the generated request, and approve it. Chirp then shows the identity
 owned by that Jolt installation.
 
-Publish a post. Close and reopen Chirp: the post and following Document remain
-under the same identity, and the timeline starts from its retained verified
-view rather than waiting for the network.
+Save a nickname and publish a post. Close and reopen Chirp: the profile, post,
+and following Document remain under the same identity, and the timeline starts
+from its retained verified view rather than waiting for the network.
 
 ## 9 · Test Alice and Bob without two daemons
 
@@ -229,8 +244,9 @@ Create `src/chirp.test.ts`:
 
 `Chirp.test()` gives one isolated typed app. `Chirp.testWorld()` gives Alice and
 Bob two identity-bound views of shared deterministic state. The tests use the
-same `posts`, `following`, Item mutations, Data Subscription, and Change Stream
-interfaces as the desktop application; no daemon or network is needed.
+same public profiles, private following list, posts, Item mutations, Data
+Subscription, and Change Stream interfaces as the desktop application; no
+daemon or network is needed.
 
 Run them:
 
@@ -245,8 +261,9 @@ another through Jolt:
 
 1. Alice and Bob each start Jolt Console and Chirp.
 2. Each approves Chirp's generated request.
-3. Alice publishes a chirp.
-4. Bob enters Alice's `.jolt` identity in the follow form.
+3. Alice saves a nickname and publishes a chirp.
+4. Bob enters Alice's `.jolt` identity in the follow form; Alice appears in his
+   Following sidebar by nickname and canonical identity.
 5. Alice's existing posts appear from Bob's retained verified view, and later
    verified changes arrive through the same timeline subscription.
 6. Alice can follow Bob in the same way.

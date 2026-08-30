@@ -8,6 +8,11 @@ import {
 } from "./chirp";
 import { follow, getFollowing, type FollowingItem } from "./following";
 import { PostCard } from "./PostCard";
+import {
+  getProfiles,
+  saveNickname,
+  type ChirpProfile,
+} from "./profiles";
 import { postKey, type TimelinePost } from "./timeline";
 import { useTimeline } from "./use-timeline";
 import "./App.css";
@@ -20,6 +25,10 @@ type DeletedPost = {
 export default function App() {
   const [chirp, setChirp] = useState<ChirpApplication | null>(null);
   const [following, setFollowing] = useState<FollowingItem | null>(null);
+  const [profiles, setProfiles] = useState<ReadonlyMap<string, ChirpProfile>>(
+    () => new Map(),
+  );
+  const [nickname, setNickname] = useState("");
   const [draft, setDraft] = useState("");
   const [friend, setFriend] = useState("");
   const [deleted, setDeleted] = useState<DeletedPost | null>(null);
@@ -48,6 +57,21 @@ export default function App() {
   );
   const timeline = useTimeline(chirp, identities);
 
+  useEffect(() => {
+    if (chirp === null) return;
+    let cancelled = false;
+    void getProfiles(chirp, identities)
+      .then((loaded) => {
+        if (cancelled) return;
+        setProfiles(loaded);
+        setNickname(current => current || (loaded.get(chirp.identity)?.nickname ?? ""));
+      })
+      .catch(profileError => {
+        if (!cancelled) setError(profileError);
+      });
+    return () => { cancelled = true; };
+  }, [chirp, identities, timeline.posts]);
+
   const run = async (action: () => Promise<void>) => {
     setError(null);
     try {
@@ -67,6 +91,15 @@ export default function App() {
     if (chirp === null || !friend.trim()) return;
     setFollowing(await follow(chirp, friend.trim()));
     setFriend("");
+  };
+
+  const updateNickname = async () => {
+    if (chirp === null) return;
+    const saved = await saveNickname(chirp, nickname);
+    setProfiles(current => new Map(current).set(chirp.identity, {
+      identity: chirp.identity,
+      nickname: saved.value.nickname,
+    }));
   };
 
   const updatePost = async (post: TimelinePost, text: string) => {
@@ -121,6 +154,26 @@ export default function App() {
       <section className="workspace">
         <div className="compose-column">
           <form
+            className="profile-form paper"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(updateNickname);
+            }}
+          >
+            <label htmlFor="nickname">Your nickname</label>
+            <div>
+              <input
+                id="nickname"
+                value={nickname}
+                maxLength={40}
+                placeholder="Alice"
+                onChange={event => setNickname(event.target.value)}
+              />
+              <button className="button" type="submit">Save</button>
+            </div>
+          </form>
+
+          <form
             className="composer paper"
             onSubmit={(event) => {
               event.preventDefault();
@@ -159,6 +212,28 @@ export default function App() {
               <button className="button button--ink" type="submit">Follow</button>
             </div>
           </form>
+
+          <section className="following-list paper" aria-labelledby="following-heading">
+            <header>
+              <h2 id="following-heading">Following</h2>
+              <span>{following.value.identities.length}</span>
+            </header>
+            {following.value.identities.length === 0 ? (
+              <p>People you follow will appear here.</p>
+            ) : (
+              <ul>
+                {following.value.identities.map((identity) => {
+                  const profile = profiles.get(identity);
+                  return (
+                    <li key={identity}>
+                      <strong>{profile?.nickname ?? identity}</strong>
+                      {profile?.nickname && <span>{identity}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
         </div>
 
         <section className="timeline" aria-labelledby="timeline-heading">
@@ -179,6 +254,7 @@ export default function App() {
             <PostCard
               key={postKey(post)}
               post={post}
+              profile={profiles.get(post.ref.identity)}
               ownPost={post.ref.identity === chirp.identity}
               onUpdate={(post, text) => run(() => updatePost(post, text))}
               onDelete={post => run(() => deletePost(post))}

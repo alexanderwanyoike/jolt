@@ -28,6 +28,8 @@ h1, h2, p { margin-top: 0; }
 .post__meta,
 .post__actions,
 .follow-form > div,
+.profile-form > div,
+.following-list > header,
 .notice,
 .undo {
   display: flex;
@@ -55,12 +57,12 @@ h1 span, .eyebrow { color: #d84f38; }
   background: #fff;
 }
 
-.follow-form { margin-top: 1rem; }
+.composer, .follow-form, .following-list { margin-top: 1rem; }
 label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
 textarea, input { width: 100%; padding: 0.7rem; border: 1px solid #78918c; }
 textarea { min-height: 8rem; resize: vertical; }
 .composer__footer { margin-top: 0.75rem; }
-.follow-form > div input { flex: 1; }
+.follow-form > div input, .profile-form > div input { flex: 1; }
 
 .button {
   padding: 0.6rem 0.8rem;
@@ -77,10 +79,15 @@ textarea { min-height: 8rem; resize: vertical; }
 
 .post { padding: 1rem 0; border-top: 1px solid #78918c; }
 .post__meta { font-size: 0.8rem; }
+.post__author, .following-list li { display: grid; gap: 0.2rem; }
+.post__author span, .following-list li span { overflow-wrap: anywhere; color: #526b66; }
 .post__text { margin: 1rem 0; font-size: 1.2rem; line-height: 1.5; }
 .post__actions { justify-content: flex-end; }
 .post__editor textarea { min-height: 5rem; margin-top: 0.75rem; }
 .empty { text-align: center; }
+.following-list h2 { margin: 0; font-size: 1rem; }
+.following-list ul { display: grid; gap: 0.8rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+.following-list p { margin: 1rem 0 0; color: #526b66; }
 
 .notice { margin-bottom: 1rem; }
 .notice button, .undo button { border: 0; color: inherit; background: transparent; cursor: pointer; text-decoration: underline; }

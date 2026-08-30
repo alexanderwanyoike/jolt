@@ -3,6 +3,7 @@ import { State } from "jolt-sdk/data";
 
 import { Chirp, Post } from "./chirp";
 import { follow } from "./following";
+import { getProfiles, saveNickname } from "./profiles";
 import { Timeline } from "./timeline";
 
 describe("beginner Chirp Data SDK example", () => {
@@ -13,6 +14,32 @@ describe("beginner Chirp Data SDK example", () => {
 
     expect(following.value.identities).toEqual(["bob.jolt"]);
     expect((await alice.following.get()).isPresent()).toBe(true);
+  });
+
+  it("shares a nickname without hiding its canonical Jolt identity", async () => {
+    const world = Chirp.testWorld();
+    const alice = world.as("alice.jolt");
+    const bob = world.as("bob.jolt");
+
+    await saveNickname(alice, "Alice");
+    await saveNickname(alice, "Alice W.");
+    const profiles = await getProfiles(bob, ["alice.jolt"]);
+
+    expect(profiles.get("alice.jolt")).toEqual({
+      identity: "alice.jolt",
+      nickname: "Alice W.",
+    });
+  });
+
+  it("keeps followed identities readable when they have no nickname", async () => {
+    const world = Chirp.testWorld();
+    const alice = world.as("alice.jolt");
+    const bob = world.as("bob.jolt");
+    await follow(alice, "bob.jolt");
+
+    const profiles = await getProfiles(alice, ["bob.jolt"]);
+
+    expect(profiles.get("bob.jolt")).toEqual({ identity: "bob.jolt" });
   });
 
   it("shows Alice's new post in Bob's open timeline", async () => {
