@@ -3053,6 +3053,24 @@ export const App = {
         path: `${resource.path}/*`,
       })));
     const accessPlan = Object.freeze({ requirements, grants, subscriptions });
+    let pendingHostConnection: ReturnType<typeof connectDataApp> | undefined;
+    const connectThroughHost = (): ReturnType<typeof connectDataApp> => {
+      if (pendingHostConnection) return pendingHostConnection;
+
+      const connection = connectDataApp({
+        id: options.id,
+        name: options.name,
+        accessPlan,
+      });
+      pendingHostConnection = connection;
+      const clearPendingConnection = () => {
+        if (pendingHostConnection === connection) {
+          pendingHostConnection = undefined;
+        }
+      };
+      void connection.then(clearPendingConnection, clearPendingConnection);
+      return connection;
+    };
     return {
       id: options.id,
       name: options.name,
@@ -3060,11 +3078,7 @@ export const App = {
       data,
       accessPlan,
       connect: async (connectOptions?: AppConnectOptions) => {
-        const connection = connectOptions ?? await connectDataApp({
-          id: options.id,
-          name: options.name,
-          accessPlan,
-        });
+        const connection = connectOptions ?? await connectThroughHost();
         return createAppInstance(data, createConnectedBackend(connection));
       },
       test: testOptions => createTestApp(data, testOptions),
