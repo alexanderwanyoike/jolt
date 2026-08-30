@@ -2,38 +2,80 @@ import { describe, expect, it } from "vitest";
 import { State } from "jolt-sdk/data";
 
 import { Chirp, Post } from "./chirp";
-import { exercisePostLifecycle } from "./posts";
+import { follow } from "./following";
+import { Timeline } from "./timeline";
 
 describe("beginner Chirp Data SDK example", () => {
-  it("uses the same typed App without a daemon or network", async () => {
+  it("persists the identities Alice follows", async () => {
+    const alice = Chirp.test({ identity: "alice.jolt" });
+
+    const following = await follow(alice, "bob.jolt");
+
+    expect(following.value.identities).toEqual(["bob.jolt"]);
+    expect((await alice.following.get()).isPresent()).toBe(true);
+  });
+
+  it("shows Alice's new post in Bob's open timeline", async () => {
+    const world = Chirp.testWorld();
+    const alice = world.as("alice.jolt");
+    const bob = world.as("bob.jolt");
+    const timeline = await Timeline.open(bob.posts, ["alice.jolt"]);
+    const changed = new Promise<void>((resolve) => {
+      timeline.subscribe((snapshot) => {
+        if (snapshot.posts.some(post => post.value.text === "Hello, Bob!")) resolve();
+      });
+    });
+
+    await alice.posts.create({
+      text: "Hello, Bob!",
+      postedAt: new Date("2026-08-29T09:00:00.000Z"),
+    });
+    await changed;
+
+    expect(timeline.getSnapshot().posts[0]?.value.text).toBe("Hello, Bob!");
+    await timeline.close();
+  });
+
+  it("creates, edits, deletes, and restores Alice's post", async () => {
     const chirp = Chirp.test({ identity: "alice.jolt" });
-    const restored = await exercisePostLifecycle(
-      chirp,
-      new Date("2026-08-28T12:00:00.000Z"),
-    );
+    const postedAt = new Date("2026-08-28T12:00:00.000Z");
+
+    const created = await chirp.posts.create({ text: "Hello!", postedAt });
+    const updated = await created.update({ text: "Hello, everyone!" });
+    const deleted = await updated.delete();
+    const restored = await deleted.restore({ text: updated.value.text, postedAt });
 
     expect(restored.state).toBe(State.Present);
     expect(restored.value).toBeInstanceOf(Post);
     expect(restored.value).toEqual({
-      text: "Hello again!",
-      postedAt: new Date("2026-08-28T12:00:00.000Z"),
+      text: "Hello, everyone!",
+      postedAt,
     });
   });
 
-  it("lets Bob read a post published by Alice", async () => {
+  it("loads Alice's existing posts after Bob follows her", async () => {
     const world = Chirp.testWorld();
     const alice = world.as("alice.jolt");
     const bob = world.as("bob.jolt");
-    const published = await alice.posts.create({
-      text: "Hello, Bob!",
+    await alice.posts.create({
+      text: "First chirp",
+      postedAt: new Date("2026-08-29T08:00:00.000Z"),
+    });
+    await alice.posts.create({
+      text: "Second chirp",
       postedAt: new Date("2026-08-29T09:00:00.000Z"),
     });
+    const following = await follow(bob, "alice.jolt");
 
-    const received = await bob.posts.for("alice.jolt").get(published.ref);
+    const timeline = await Timeline.open(bob.posts, [
+      bob.identity,
+      ...following.value.identities,
+    ]);
 
-    expect(received.isPresent()).toBe(true);
-    if (received.isPresent()) {
-      expect(received.value.text).toBe("Hello, Bob!");
-    }
+    expect(timeline.getSnapshot().posts.map(post => post.value.text)).toEqual([
+      "Second chirp",
+      "First chirp",
+    ]);
+    await timeline.close();
   });
 });

@@ -939,8 +939,10 @@ export type AppResource<TDefinition> = TDefinition extends CollectionDefinition<
     ? DocumentResource<TValue, TAccess, TConflicts>
     : object;
 
-/** The direct named Resource surface returned by App.test or App.connect. */
+/** The local identity and direct named Resources returned by App.test or App.connect. */
 export type AppInstance<TData extends AppDataDefinitions> = {
+  readonly identity: Identity;
+} & {
   readonly [K in keyof TData]: AppResource<TData[K]>;
 };
 
@@ -2981,12 +2983,15 @@ function createAppInstance<TData extends AppDataDefinitions>(
   data: BoundAppData<TData>,
   backend: DataBackend,
 ): AppInstance<TData> {
-  return Object.fromEntries(Object.entries(data).map(([name, resource]) => [
-    name,
-    resource[resourceDefinition] === ResourceKind.Collection
-      ? createCollection(resource, backend)
-      : createDocument(resource, backend),
-  ])) as AppInstance<TData>;
+  return {
+    identity: backend.identity,
+    ...Object.fromEntries(Object.entries(data).map(([name, resource]) => [
+      name,
+      resource[resourceDefinition] === ResourceKind.Collection
+        ? createCollection(resource, backend)
+        : createDocument(resource, backend),
+    ])),
+  } as AppInstance<TData>;
 }
 
 function createTestApp<TData extends AppDataDefinitions>(
@@ -3009,6 +3014,9 @@ export const App = {
     readonly data: TData;
   }): AppDefinition<TData> => {
     requirePathSegment(options.namespace, "App namespace");
+    if (Object.hasOwn(options.data, "identity")) {
+      throw new TypeError("Resource name is reserved: identity");
+    }
     const data = Object.fromEntries(Object.entries(options.data).map(([name, resource]) => {
       requirePathSegment(name, "Resource name");
       return [

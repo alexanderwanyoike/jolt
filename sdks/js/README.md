@@ -85,6 +85,7 @@ const Chirp = App.create({
 });
 
 const chirp = await Chirp.connect();
+console.log(`Connected as ${chirp.identity}`);
 const created = await chirp.posts.create({
   text: "Hello, Jolt!",
   postedAt: new Date(),
@@ -104,13 +105,11 @@ needed. Use `Chirp.test()` for the same typed interface in memory.
 See the [beginner Chirp guide](https://alexanderwanyoike.github.io/jolt/guides/app-development.html)
 for the complete compile-checked walkthrough.
 
-## Advanced low-level client
+## Low-level API reference
 
-Import from `jolt-sdk` when an application deliberately needs explicit paths,
-content IDs, transports, compatibility Features, session Capabilities,
-encryption, ingress, or relay availability. The
-[advanced app guide](https://alexanderwanyoike.github.io/jolt/guides/advanced-app-development.html)
-preserves that complete flow.
+The package still exports protocol-facing primitives for Jolt runtime and SDK
+work. They are documented in the generated API reference; application
+tutorials use `jolt-sdk/data`.
 
 ## App API compatibility
 
@@ -208,9 +207,8 @@ Advanced low-level applications can still use `createFakeJolt` from
 
 Full API reference is generated from the TSDoc comments with
 `yarn docs` (typedoc) and published on the
-[Jolt website](https://alexanderwanyoike.github.io/jolt/sdk/). The beginner app
-development guide builds a social app through `jolt-sdk/data`; the advanced
-guide covers the low-level client and Tauri integration.
+[Jolt website](https://alexanderwanyoike.github.io/jolt/sdk/). The app
+development guide builds Chirp through `jolt-sdk/data`.
 
 ## Development
 

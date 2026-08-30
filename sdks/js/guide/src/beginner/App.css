@@ -1,0 +1,93 @@
+:root {
+  color: #17342f;
+  background: #f4efe3;
+  font-family: system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input, textarea { font: inherit; }
+h1, h2, p { margin-top: 0; }
+
+.chirp-shell {
+  width: min(64rem, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0 4rem;
+}
+
+.chirp-shell--centered {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+
+.masthead,
+.timeline__heading,
+.composer__footer,
+.post__meta,
+.post__actions,
+.follow-form > div,
+.notice,
+.undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.masthead { margin-bottom: 2rem; border-bottom: 2px solid; }
+h1 { margin-bottom: 0.5rem; font-size: 3rem; }
+h1 span, .eyebrow { color: #d84f38; }
+.eyebrow { margin-bottom: 0.35rem; font-size: 0.8rem; }
+.identity { overflow-wrap: anywhere; font-size: 0.8rem; }
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1fr) minmax(0, 2fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+.paper, .notice {
+  padding: 1rem;
+  border: 1px solid #78918c;
+  background: #fff;
+}
+
+.follow-form { margin-top: 1rem; }
+label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+textarea, input { width: 100%; padding: 0.7rem; border: 1px solid #78918c; }
+textarea { min-height: 8rem; resize: vertical; }
+.composer__footer { margin-top: 0.75rem; }
+.follow-form > div input { flex: 1; }
+
+.button {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #17342f;
+  color: #17342f;
+  background: #ffd84a;
+  cursor: pointer;
+}
+
+.button--ink { color: #fff; background: #17342f; }
+.button--quiet, .button--danger { background: transparent; }
+.button--danger, .notice--error { color: #a72d1e; }
+.timeline__heading { align-items: end; }
+
+.post { padding: 1rem 0; border-top: 1px solid #78918c; }
+.post__meta { font-size: 0.8rem; }
+.post__text { margin: 1rem 0; font-size: 1.2rem; line-height: 1.5; }
+.post__actions { justify-content: flex-end; }
+.post__editor textarea { min-height: 5rem; margin-top: 0.75rem; }
+.empty { text-align: center; }
+
+.notice { margin-bottom: 1rem; }
+.notice button, .undo button { border: 0; color: inherit; background: transparent; cursor: pointer; text-decoration: underline; }
+.undo { position: fixed; right: 1rem; bottom: 1rem; padding: 0.8rem 1rem; color: #fff; background: #17342f; }
+.undo button { color: #ffd84a; }
+
+@media (max-width: 700px) {
+  .masthead { align-items: start; }
+  .workspace { grid-template-columns: 1fr; }
+}
