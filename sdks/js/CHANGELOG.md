@@ -10,6 +10,11 @@
   with persistent follows, a live subscription-backed timeline, post editing,
   deletion, restore, and an Alice/Bob test.
 
+### Fixed
+
+- Simultaneous no-argument `App.connect()` calls now share one pending host
+  approval flow. A failed shared attempt is cleared so the app can retry.
+
 ## 0.3.0
 
 ### Added

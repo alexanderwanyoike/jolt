@@ -3051,8 +3051,26 @@ export const App = {
       .map(([resourceName, resource]) => Object.freeze({
         resource: resourceName,
         path: `${resource.path}/*`,
-      })));
+    })));
     const accessPlan = Object.freeze({ requirements, grants, subscriptions });
+    let pendingHostConnection: ReturnType<typeof connectDataApp> | undefined;
+    const connectThroughHost = async (): ReturnType<typeof connectDataApp> => {
+      if (pendingHostConnection) return pendingHostConnection;
+
+      const pending = connectDataApp({
+        id: options.id,
+        name: options.name,
+        accessPlan,
+      });
+      pendingHostConnection = pending;
+      try {
+        return await pending;
+      } finally {
+        if (pendingHostConnection === pending) {
+          pendingHostConnection = undefined;
+        }
+      }
+    };
     return {
       id: options.id,
       name: options.name,
@@ -3060,11 +3078,7 @@ export const App = {
       data,
       accessPlan,
       connect: async (connectOptions?: AppConnectOptions) => {
-        const connection = connectOptions ?? await connectDataApp({
-          id: options.id,
-          name: options.name,
-          accessPlan,
-        });
+        const connection = connectOptions ?? await connectThroughHost();
         return createAppInstance(data, createConnectedBackend(connection));
       },
       test: testOptions => createTestApp(data, testOptions),
