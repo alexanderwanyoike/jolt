@@ -694,6 +694,28 @@ impl AppSessionStore {
             })
     }
 
+    pub async fn data_subscriptions_matching_record(
+        &self,
+        identity: &str,
+        path: &str,
+    ) -> Vec<DataSubscriptionRecord> {
+        let state = self.state.lock().await;
+        state
+            .data_subscriptions
+            .iter()
+            .filter(|subscription| {
+                subscription.identity == identity && path.starts_with(&subscription.prefix)
+            })
+            .cloned()
+            .map(|subscription| {
+                with_runtime_data_subscription_state(
+                    subscription,
+                    &state.active_data_subscription_refreshes,
+                )
+            })
+            .collect()
+    }
+
     pub async fn data_subscription_session_is_active(&self, session_id: &str) -> bool {
         let state = self.state.lock().await;
         let now = now_secs();
@@ -1197,6 +1219,43 @@ mod tests {
             vec![first]
         );
         assert!(store.list_data_subscriptions("session_b").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn matching_record_subscriptions_are_identity_and_prefix_scoped() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = AppSessionStore::open(dir.path().join("sessions.json")).unwrap();
+        let expected = store
+            .register_data_subscription(
+                "session_a",
+                "alice.jolt".to_string(),
+                "/chirp/posts/".to_string(),
+            )
+            .await
+            .unwrap();
+        store
+            .register_data_subscription(
+                "session_a",
+                "alice.jolt".to_string(),
+                "/chirp/profiles/".to_string(),
+            )
+            .await
+            .unwrap();
+        store
+            .register_data_subscription(
+                "session_b",
+                "bob.jolt".to_string(),
+                "/chirp/posts/".to_string(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store
+                .data_subscriptions_matching_record("alice.jolt", "/chirp/posts/jlt_immediate",)
+                .await,
+            vec![expected],
+        );
     }
 
     #[tokio::test]

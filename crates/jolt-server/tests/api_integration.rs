@@ -256,6 +256,42 @@ fn base_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
+fn poll_data_subscription_change(
+    client: &reqwest::Client,
+    port: u16,
+    token: &str,
+    subscription_id: &str,
+    cursor: &str,
+) -> tokio::task::JoinHandle<reqwest::Response> {
+    let client = client.clone();
+    let token = token.to_string();
+    let subscription_id = subscription_id.to_string();
+    let cursor = cursor.to_string();
+    tokio::spawn(async move {
+        client
+            .post(format!(
+                "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+                base_url(port),
+            ))
+            .bearer_auth(token)
+            .json(&serde_json::json!({ "cursor": cursor }))
+            .send()
+            .await
+            .unwrap()
+    })
+}
+
+async fn immediate_data_subscription_change(
+    pending: tokio::task::JoinHandle<reqwest::Response>,
+) -> serde_json::Value {
+    let response = tokio::time::timeout(std::time::Duration::from_secs(1), pending)
+        .await
+        .expect("local mutation did not wake its Change Stream")
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    response.json().await.unwrap()
+}
+
 fn joining_device_request(identity_address: &str, label: &str) -> serde_json::Value {
     let owner = JoltAddress::from_str(identity_address).unwrap();
     let device = NodeIdentity::generate();
@@ -3013,6 +3049,150 @@ async fn test_app_data_subscription_change_stream_opens_with_a_local_snapshot() 
         old_daemon_cursor.json::<serde_json::Value>().await.unwrap(),
         serde_json::json!({ "type": "resync_required" }),
     );
+
+    handle.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_local_record_mutations_wake_matching_change_stream_without_polling() {
+    let (port, handle, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let local_identity = handle.status().await.unwrap().identity_address;
+    let token = approve_app_session(
+        &client,
+        port,
+        &local_identity,
+        &[
+            "publish:/chirp/posts/*",
+            "delete:/chirp/posts/*",
+            "subscribe:any:/chirp/posts/*",
+        ],
+    )
+    .await;
+    let created = client
+        .post(format!("{}/app/v1/data-subscriptions", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "identity": local_identity,
+            "prefix": "/chirp/posts/",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), 200);
+    let created: serde_json::Value = created.json().await.unwrap();
+    let subscription_id = created["id"].as_str().unwrap().to_string();
+
+    let opened = client
+        .post(format!(
+            "{}/app/v1/data-subscriptions/{subscription_id}/changes",
+            base_url(port),
+        ))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(opened.status(), 200);
+    let opened: serde_json::Value = opened.json().await.unwrap();
+    assert_eq!(opened["type"], "snapshot");
+    let cursor = opened["cursor"].as_str().unwrap().to_string();
+
+    let pending_change =
+        poll_data_subscription_change(&client, port, &token, &subscription_id, &cursor);
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    let path = "/chirp/posts/jlt_immediate";
+    let stored = br#"{"version":1,"value":{"text":"Hello immediately"}}"#;
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(stored.to_vec()).file_name("record.json"),
+        )
+        .text("path", path.to_string());
+    let published = client
+        .post(format!("{}/app/v1/publish", base_url(port)))
+        .bearer_auth(&token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(published.status(), 200);
+    let published: serde_json::Value = published.json().await.unwrap();
+
+    let changed = immediate_data_subscription_change(pending_change).await;
+    assert_eq!(changed["type"], "changed");
+    assert_eq!(changed["records"].as_array().unwrap().len(), 1);
+    assert_eq!(changed["records"][0]["path"], path);
+    assert_eq!(changed["removed"], serde_json::json!([]));
+    let cursor = changed["cursor"].as_str().unwrap();
+
+    let pending_change =
+        poll_data_subscription_change(&client, port, &token, &subscription_id, cursor);
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let updated_bytes = br#"{"version":1,"value":{"text":"Edited immediately"}}"#;
+    let updated = client
+        .post(format!("{}/app/v1/records/update", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": published["revision"],
+            "mutation_id": "mut_stream_update",
+            "data": updated_bytes.to_vec(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), 200);
+    let updated: serde_json::Value = updated.json().await.unwrap();
+    let changed = immediate_data_subscription_change(pending_change).await;
+    assert_eq!(changed["type"], "changed");
+    assert_eq!(changed["records"][0]["path"], path);
+    assert_eq!(changed["removed"], serde_json::json!([]));
+    let cursor = changed["cursor"].as_str().unwrap();
+
+    let pending_change =
+        poll_data_subscription_change(&client, port, &token, &subscription_id, cursor);
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let deleted = client
+        .post(format!("{}/app/v1/records/delete", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": updated["revision"],
+            "mutation_id": "mut_stream_delete",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 200);
+    let deleted: serde_json::Value = deleted.json().await.unwrap();
+    let changed = immediate_data_subscription_change(pending_change).await;
+    assert_eq!(changed["type"], "changed");
+    assert_eq!(changed["records"], serde_json::json!([]));
+    assert_eq!(changed["removed"], serde_json::json!([path]));
+    let cursor = changed["cursor"].as_str().unwrap();
+
+    let pending_change =
+        poll_data_subscription_change(&client, port, &token, &subscription_id, cursor);
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let restored = client
+        .post(format!("{}/app/v1/records/restore", base_url(port)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({
+            "path": path,
+            "revision": deleted["revision"],
+            "mutation_id": "mut_stream_restore",
+            "data": stored.to_vec(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(restored.status(), 200);
+    let changed = immediate_data_subscription_change(pending_change).await;
+    assert_eq!(changed["type"], "changed");
+    assert_eq!(changed["records"][0]["path"], path);
+    assert_eq!(changed["removed"], serde_json::json!([]));
 
     handle.shutdown().await.ok();
 }
