@@ -22,6 +22,12 @@ export class Following {
   identities!: string[];
 }
 
+@Schema({ version: 1 })
+export class Profile {
+  @Field.string()
+  nickname!: string;
+}
+
 export const Posts = Collection.create(Post, {
   access: {
     read: Read.AnyIdentity,
@@ -40,6 +46,14 @@ export const FollowingDocument = Document.create(Following, {
   },
 });
 
+export const ProfileDocument = Document.create(Profile, {
+  access: {
+    read: Read.AnyIdentity,
+    create: true,
+    update: true,
+  },
+});
+
 export const Chirp = App.create({
   id: "chirp.example",
   name: "Chirp",
@@ -47,6 +61,7 @@ export const Chirp = App.create({
   data: {
     posts: Posts,
     following: FollowingDocument,
+    profile: ProfileDocument,
   },
 });
 

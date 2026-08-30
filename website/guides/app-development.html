@@ -4,14 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d0f0f" />
-    <meta name="description" content="Build a small social app with a composer, follows, a live timeline, editing, deletion, restore, and an Alice/Bob test." />
+    <meta name="description" content="Build a small social app with profiles, follows, a live timeline, editing, deletion, restore, and an Alice/Bob test." />
     <meta property="og:title" content="Jolt Guide | Build Chirp with the Data SDK" />
-    <meta property="og:description" content="Build a small social app with a composer, follows, a live timeline, editing, deletion, restore, and an Alice/Bob test." />
+    <meta property="og:description" content="Build a small social app with profiles, follows, a live timeline, editing, deletion, restore, and an Alice/Bob test." />
     <meta property="og:type" content="article" />
     <meta property="og:site_name" content="Jolt" />
     <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="jolt-guide-source-sha256" content="d7690f9c24e4ae4ea55aa718b4b154ba79e9029b24ffd38355d2f3b20613a8dc" />
+    <meta name="jolt-guide-source-sha256" content="13ae6f3262ecaffb0a2693e158ed22c1320c94bffe4b6090b29262c09cdd8f88" />
     <title>Jolt Guide | Build Chirp with the Data SDK</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -24,7 +24,7 @@
         <div><dt>App</dt><dd>Chirp</dd></div><div><dt>Stack</dt><dd>Tauri 2 · React</dd></div><div><dt>Level</dt><dd>Beginner</dd></div><div><dt>SDK</dt><dd>jolt-sdk/data</dd></div>
       </dl>
       <nav aria-label="Guide contents">
-        <ul class="toc"><li class="toc-module"><a href="#1-create-the-app">1 · Create the app</a></li><li class="toc-module"><a href="#2-let-the-desktop-app-talk-to-jolt">2 · Let the desktop app talk to Jolt</a></li><li class="toc-module"><a href="#3-describe-chirps-data">3 · Describe Chirp's data</a></li><li class="toc-module"><a href="#4-remember-who-the-user-follows">4 · Remember who the user follows</a></li><li class="toc-module"><a href="#5-build-the-live-timeline">5 · Build the live timeline</a></li><li class="toc-module"><a href="#6-add-a-post-card">6 · Add a post card</a></li><li class="toc-module"><a href="#7-build-the-screen">7 · Build the screen</a></li><li class="toc-module"><a href="#8-run-chirp">8 · Run Chirp</a></li><li class="toc-module"><a href="#9-test-alice-and-bob-without-two-daemons">9 · Test Alice and Bob without two daemons</a></li><li class="toc-module"><a href="#10-run-it-with-a-friend">10 · Run it with a friend</a></li><li class="toc-module"><a href="#where-to-go-next">Where to go next</a></li></ul>
+        <ul class="toc"><li class="toc-module"><a href="#1-create-the-app">1 · Create the app</a></li><li class="toc-module"><a href="#2-let-the-desktop-app-talk-to-jolt">2 · Let the desktop app talk to Jolt</a></li><li class="toc-module"><a href="#3-describe-chirps-data">3 · Describe Chirp's data</a></li><li class="toc-module"><a href="#4-add-profiles-and-remember-who-the-user-follows">4 · Add profiles and remember who the user follows</a></li><li class="toc-module"><a href="#5-build-the-live-timeline">5 · Build the live timeline</a></li><li class="toc-module"><a href="#6-add-a-post-card">6 · Add a post card</a></li><li class="toc-module"><a href="#7-build-the-screen">7 · Build the screen</a></li><li class="toc-module"><a href="#8-run-chirp">8 · Run Chirp</a></li><li class="toc-module"><a href="#9-test-alice-and-bob-without-two-daemons">9 · Test Alice and Bob without two daemons</a></li><li class="toc-module"><a href="#10-run-it-with-a-friend">10 · Run it with a friend</a></li><li class="toc-module"><a href="#where-to-go-next">Where to go next</a></li></ul>
       </nav>
     </aside>
     <main class="doc-main">
@@ -32,10 +32,10 @@
         <header class="doc-title">
           <p>JOLT APP DEVELOPMENT GUIDE · 01</p>
           <h1>Build Chirp with the Data SDK</h1>
-          <p class="doc-lede">Chirp is a small social app. You can publish a post, follow another Jolt
-identity, see their posts appear in your timeline, edit your own posts, and undo
-a deletion. There is no application server, account table, path design,
-decoder, session code, or network polling to write.</p>
+          <p class="doc-lede">Chirp is a small social app. You can choose a nickname, publish a post, follow
+another Jolt identity, see who you follow beside the timeline, edit your own
+posts, and undo a deletion. There is no application server, account table, path
+design, decoder, session code, or network polling to write.</p>
 <p>This is a complete application tutorial. Every TypeScript file shown here is
 compiled and tested against the public SDK in Jolt's repository. Follow it from
 the top and you will finish with a working desktop app, not an isolated API
@@ -109,6 +109,12 @@ new approval is required.</p>
 <span class="w">  </span><span class="nx">identities</span><span class="o">!:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span>
 <span class="p">}</span>
 
+<span class="kd">@Schema</span><span class="p">({</span><span class="w"> </span><span class="nx">version</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="w"> </span><span class="p">})</span>
+<span class="k">export</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nx">Profile</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="kt">string</span><span class="p">()</span>
+<span class="w">  </span><span class="nx">nickname</span><span class="o">!:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<span class="p">}</span>
+
 <span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">Posts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Collection</span><span class="p">.</span><span class="nx">create</span><span class="p">(</span><span class="nx">Post</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="nx">access</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nx">read</span><span class="o">:</span><span class="w"> </span><span class="kt">Read.AnyIdentity</span><span class="p">,</span>
@@ -127,6 +133,14 @@ new approval is required.</p>
 <span class="w">  </span><span class="p">},</span>
 <span class="p">});</span>
 
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">ProfileDocument</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Document</span><span class="p">.</span><span class="nx">create</span><span class="p">(</span><span class="nx">Profile</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">access</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">read</span><span class="o">:</span><span class="w"> </span><span class="kt">Read.AnyIdentity</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">create</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">update</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="p">});</span>
+
 <span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">Chirp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">App</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span>
 <span class="w">  </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;chirp.example&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Chirp&quot;</span><span class="p">,</span>
@@ -134,18 +148,21 @@ new approval is required.</p>
 <span class="w">  </span><span class="nx">data</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nx">posts</span><span class="o">:</span><span class="w"> </span><span class="kt">Posts</span><span class="p">,</span>
 <span class="w">    </span><span class="nx">following</span><span class="o">:</span><span class="w"> </span><span class="kt">FollowingDocument</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">profile</span><span class="o">:</span><span class="w"> </span><span class="kt">ProfileDocument</span><span class="p">,</span>
 <span class="w">  </span><span class="p">},</span>
 <span class="p">});</span>
 
 <span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">ChirpApplication</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Awaited</span><span class="o">&lt;</span><span class="nx">ReturnType</span><span class="o">&lt;</span><span class="ow">typeof</span><span class="w"> </span><span class="nx">Chirp</span><span class="p">.</span><span class="nx">connect</span><span class="o">&gt;&gt;</span><span class="p">;</span>
 <span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">ChirpPost</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Awaited</span><span class="o">&lt;</span><span class="nx">ReturnType</span><span class="o">&lt;</span><span class="nx">ChirpApplication</span><span class="p">[</span><span class="s2">&quot;posts&quot;</span><span class="p">][</span><span class="s2">&quot;create&quot;</span><span class="p">]</span><span class="o">&gt;&gt;</span><span class="p">;</span>
 <span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">DeletedChirpPost</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Awaited</span><span class="o">&lt;</span><span class="nx">ReturnType</span><span class="o">&lt;</span><span class="nx">ChirpPost</span><span class="p">[</span><span class="s2">&quot;delete&quot;</span><span class="p">]</span><span class="o">&gt;&gt;</span><span class="p">;</span></code></pre></figure>
-<p><code>Post</code> and <code>Following</code> are ordinary classes and runtime schemas at the same
-time. <code>Collection.create</code> gives every post a stable reference. The <code>following</code>
+<p><code>Post</code>, <code>Profile</code>, and <code>Following</code> are ordinary classes and runtime schemas at
+the same time. <code>Collection.create</code> gives every post a stable reference. The
+public <code>profile</code> Document stores one nickname, while the private <code>following</code>
 Document stores one identity list for the signed-in person.</p>
 <p>The access declarations are also the complete permission declaration:</p>
 <ul>
 <li>anyone may read posts;</li>
+<li>anyone may read a Chirp nickname, but only its identity may change it;</li>
 <li>the local identity may create, edit, delete, and restore its posts; and</li>
 <li>only the local identity may read or change its following list.</li>
 </ul>
@@ -153,7 +170,50 @@ Document stores one identity list for the signed-in person.</p>
 capability strings, revision tokens, mutation IDs, or decoders in application
 code. Automatic conflict handling is used unless the application explicitly
 chooses a different policy.</p>
-<h2 id="4-remember-who-the-user-follows">4 · Remember who the user follows</h2>
+<h2 id="4-add-profiles-and-remember-who-the-user-follows">4 · Add profiles and remember who the user follows</h2>
+<p>Create <code>src/profiles.ts</code>:</p>
+<figure class="code-figure"><figcaption><span>src/profiles.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">ChirpApplication</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./chirp&quot;</span><span class="p">;</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">ChirpProfile</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">readonly</span><span class="w"> </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<span class="w">  </span><span class="k">readonly</span><span class="w"> </span><span class="nx">nickname?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<span class="p">};</span>
+
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">saveNickname</span><span class="p">(</span>
+<span class="w">  </span><span class="nx">chirp</span><span class="o">:</span><span class="w"> </span><span class="kt">ChirpApplication</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">nickname</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span>
+<span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">trimmed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">nickname</span><span class="p">.</span><span class="nx">trim</span><span class="p">();</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">trimmed</span><span class="p">)</span><span class="w"> </span><span class="k">throw</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="ne">Error</span><span class="p">(</span><span class="s2">&quot;Enter a nickname&quot;</span><span class="p">);</span>
+
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">profile</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">chirp</span><span class="p">.</span><span class="nx">profile</span><span class="p">.</span><span class="nx">getOrCreate</span><span class="p">({</span><span class="w"> </span><span class="nx">nickname</span><span class="o">:</span><span class="w"> </span><span class="kt">trimmed</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">profile</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">nickname</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="nx">trimmed</span>
+<span class="w">    </span><span class="o">?</span><span class="w"> </span><span class="nx">profile</span>
+<span class="w">    </span><span class="o">:</span><span class="w"> </span><span class="kt">profile.update</span><span class="p">({</span><span class="w"> </span><span class="nx">nickname</span><span class="o">:</span><span class="w"> </span><span class="kt">trimmed</span><span class="w"> </span><span class="p">});</span>
+<span class="p">}</span>
+
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">getProfiles</span><span class="p">(</span>
+<span class="w">  </span><span class="nx">chirp</span><span class="o">:</span><span class="w"> </span><span class="kt">ChirpApplication</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">identities</span><span class="o">:</span><span class="w"> </span><span class="kt">readonly</span><span class="w"> </span><span class="kt">string</span><span class="p">[],</span>
+<span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">ReadonlyMap</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">ChirpProfile</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">profiles</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nb">Promise</span><span class="p">.</span><span class="nx">all</span><span class="p">(</span>
+<span class="w">    </span><span class="p">[...</span><span class="ow">new</span><span class="w"> </span><span class="nb">Set</span><span class="p">(</span><span class="nx">identities</span><span class="p">)].</span><span class="nx">map</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">(</span><span class="nx">identity</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="kd">const</span><span class="w"> </span><span class="nx">item</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">identity</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="nx">chirp</span><span class="p">.</span><span class="nx">identity</span>
+<span class="w">        </span><span class="o">?</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">chirp</span><span class="p">.</span><span class="nx">profile</span><span class="p">.</span><span class="nx">get</span><span class="p">()</span>
+<span class="w">        </span><span class="o">:</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">chirp</span><span class="p">.</span><span class="nx">profile</span><span class="p">.</span><span class="k">for</span><span class="p">(</span><span class="nx">identity</span><span class="p">).</span><span class="nx">get</span><span class="p">();</span>
+<span class="w">      </span><span class="kd">const</span><span class="w"> </span><span class="nx">profile</span><span class="o">:</span><span class="w"> </span><span class="kt">ChirpProfile</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">item</span><span class="p">.</span><span class="nx">isPresent</span><span class="p">()</span>
+<span class="w">        </span><span class="o">?</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">identity</span><span class="p">,</span><span class="w"> </span><span class="nx">nickname</span><span class="o">:</span><span class="w"> </span><span class="kt">item.value.nickname</span><span class="w"> </span><span class="p">}</span>
+<span class="w">        </span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">identity</span><span class="w"> </span><span class="p">};</span>
+<span class="w">      </span><span class="k">return</span><span class="w"> </span><span class="p">[</span><span class="nx">identity</span><span class="p">,</span><span class="w"> </span><span class="nx">profile</span><span class="p">]</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}),</span>
+<span class="w">  </span><span class="p">);</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nb">Map</span><span class="p">(</span><span class="nx">profiles</span><span class="p">);</span>
+<span class="p">}</span></code></pre></figure>
+<p><code>saveNickname()</code> creates the local profile once and updates the same typed
+Document afterward. <code>getProfiles()</code> reads each public profile through its Jolt
+identity. A nickname is friendly and deliberately non-unique, so Chirp always
+keeps the canonical <code>.jolt</code> identity next to it on posts and in the Following
+list. Missing profiles simply fall back to that identity.</p>
 <p>Create <code>src/following.ts</code>:</p>
 <figure class="code-figure"><figcaption><span>src/following.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">ChirpApplication</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./chirp&quot;</span><span class="p">;</span>
 
@@ -414,15 +474,23 @@ subscriptions instead; Chirp deliberately does not teach that optimisation.</p>
 <figure class="code-figure"><figcaption><span>src/PostCard.tsx</span><span>tsx</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">useEffect</span><span class="p">,</span><span class="w"> </span><span class="nx">useState</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;react&quot;</span><span class="p">;</span>
 
 <span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">TimelinePost</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./timeline&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">ChirpProfile</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./profiles&quot;</span><span class="p">;</span>
 
 <span class="kr">type</span><span class="w"> </span><span class="nx">PostCardProps</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="nx">post</span><span class="o">:</span><span class="w"> </span><span class="kt">TimelinePost</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">profile?</span><span class="o">:</span><span class="w"> </span><span class="kt">ChirpProfile</span><span class="p">;</span>
 <span class="w">  </span><span class="nx">ownPost</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
 <span class="w">  </span><span class="nx">onDelete</span><span class="p">(</span><span class="nx">post</span><span class="o">:</span><span class="w"> </span><span class="kt">TimelinePost</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="ow">void</span><span class="o">&gt;</span><span class="p">;</span>
 <span class="w">  </span><span class="nx">onUpdate</span><span class="p">(</span><span class="nx">post</span><span class="o">:</span><span class="w"> </span><span class="kt">TimelinePost</span><span class="p">,</span><span class="w"> </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="ow">void</span><span class="o">&gt;</span><span class="p">;</span>
 <span class="p">};</span>
 
-<span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">PostCard</span><span class="p">({</span><span class="w"> </span><span class="nx">post</span><span class="p">,</span><span class="w"> </span><span class="nx">ownPost</span><span class="p">,</span><span class="w"> </span><span class="nx">onDelete</span><span class="p">,</span><span class="w"> </span><span class="nx">onUpdate</span><span class="w"> </span><span class="p">}</span><span class="o">:</span><span class="w"> </span><span class="nx">PostCardProps</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">PostCard</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">post</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">profile</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">ownPost</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">onDelete</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">onUpdate</span><span class="p">,</span>
+<span class="p">}</span><span class="o">:</span><span class="w"> </span><span class="nx">PostCardProps</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">editing</span><span class="p">,</span><span class="w"> </span><span class="nx">setEditing</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">text</span><span class="p">,</span><span class="w"> </span><span class="nx">setText</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="p">(</span><span class="nx">post</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">text</span><span class="p">);</span>
 
@@ -440,7 +508,10 @@ subscriptions instead; Chirp deliberately does not teach that optimisation.</p>
 <span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="p">(</span>
 <span class="w">    </span><span class="o">&lt;</span><span class="nx">article</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;post&quot;</span><span class="o">&gt;</span>
 <span class="w">      </span><span class="o">&lt;</span><span class="nx">header</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;post__meta&quot;</span><span class="o">&gt;</span>
-<span class="w">        </span><span class="o">&lt;</span><span class="nx">strong</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">post</span><span class="p">.</span><span class="nx">ref</span><span class="p">.</span><span class="nx">identity</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/strong&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">div</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;post__author&quot;</span><span class="o">&gt;</span>
+<span class="w">          </span><span class="o">&lt;</span><span class="nx">strong</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">profile</span><span class="o">?</span><span class="p">.</span><span class="nx">nickname</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="nx">post</span><span class="p">.</span><span class="nx">ref</span><span class="p">.</span><span class="nx">identity</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/strong&gt;</span>
+<span class="w">          </span><span class="p">{</span><span class="nx">profile</span><span class="o">?</span><span class="p">.</span><span class="nx">nickname</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="o">&lt;</span><span class="nx">span</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">post</span><span class="p">.</span><span class="nx">ref</span><span class="p">.</span><span class="nx">identity</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/span&gt;}</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="err">/div&gt;</span>
 <span class="w">        </span><span class="o">&lt;</span><span class="nx">time</span><span class="w"> </span><span class="nx">dateTime</span><span class="o">=</span><span class="p">{</span><span class="nx">post</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">postedAt</span><span class="p">.</span><span class="nx">toISOString</span><span class="p">()}</span><span class="o">&gt;</span>
 <span class="w">          </span><span class="p">{</span><span class="nx">post</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">postedAt</span><span class="p">.</span><span class="nx">toLocaleString</span><span class="p">()}</span>
 <span class="w">        </span><span class="o">&lt;</span><span class="err">/time&gt;</span>
@@ -479,10 +550,12 @@ subscriptions instead; Chirp deliberately does not teach that optimisation.</p>
 <span class="w">    </span><span class="o">&lt;</span><span class="err">/article&gt;</span>
 <span class="w">  </span><span class="p">);</span>
 <span class="p">}</span></code></pre></figure>
-<p>Remote posts are read-only. Chirp shows edit and delete controls only when the
-post reference belongs to <code>chirp.identity</code>. The callback receives the stable
-post reference; the application asks its local Collection for the current Item
-before mutating it.</p>
+<p>Remote posts are read-only. Each card uses the separately loaded public profile
+for its friendly nickname and keeps the post reference's Jolt identity visible
+underneath. Chirp shows edit and delete controls only when that reference
+belongs to <code>chirp.identity</code>. The callback receives the stable post reference;
+the application asks its local Collection for the current Item before mutating
+it.</p>
 <h2 id="7-build-the-screen">7 · Build the screen</h2>
 <p>Replace the generated <code>src/App.tsx</code>:</p>
 <figure class="code-figure"><figcaption><span>src/App.tsx</span><span>tsx</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">useEffect</span><span class="p">,</span><span class="w"> </span><span class="nx">useMemo</span><span class="p">,</span><span class="w"> </span><span class="nx">useState</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;react&quot;</span><span class="p">;</span>
@@ -495,6 +568,11 @@ before mutating it.</p>
 <span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./chirp&quot;</span><span class="p">;</span>
 <span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">follow</span><span class="p">,</span><span class="w"> </span><span class="nx">getFollowing</span><span class="p">,</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">FollowingItem</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./following&quot;</span><span class="p">;</span>
 <span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">PostCard</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./PostCard&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">getProfiles</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">saveNickname</span><span class="p">,</span>
+<span class="w">  </span><span class="kr">type</span><span class="w"> </span><span class="nx">ChirpProfile</span><span class="p">,</span>
+<span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./profiles&quot;</span><span class="p">;</span>
 <span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">postKey</span><span class="p">,</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">TimelinePost</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./timeline&quot;</span><span class="p">;</span>
 <span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">useTimeline</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./use-timeline&quot;</span><span class="p">;</span>
 <span class="k">import</span><span class="w"> </span><span class="s2">&quot;./App.css&quot;</span><span class="p">;</span>
@@ -507,6 +585,10 @@ before mutating it.</p>
 <span class="k">export</span><span class="w"> </span><span class="k">default</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">App</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">chirp</span><span class="p">,</span><span class="w"> </span><span class="nx">setChirp</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="nx">ChirpApplication</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="o">&gt;</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">following</span><span class="p">,</span><span class="w"> </span><span class="nx">setFollowing</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="nx">FollowingItem</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="o">&gt;</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">profiles</span><span class="p">,</span><span class="w"> </span><span class="nx">setProfiles</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="nx">ReadonlyMap</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">ChirpProfile</span><span class="o">&gt;&gt;</span><span class="p">(</span>
+<span class="w">    </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nb">Map</span><span class="p">(),</span>
+<span class="w">  </span><span class="p">);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">nickname</span><span class="p">,</span><span class="w"> </span><span class="nx">setNickname</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">);</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">draft</span><span class="p">,</span><span class="w"> </span><span class="nx">setDraft</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">);</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">friend</span><span class="p">,</span><span class="w"> </span><span class="nx">setFriend</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">);</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">deleted</span><span class="p">,</span><span class="w"> </span><span class="nx">setDeleted</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="nx">DeletedPost</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="o">&gt;</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
@@ -535,6 +617,21 @@ before mutating it.</p>
 <span class="w">  </span><span class="p">);</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">timeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useTimeline</span><span class="p">(</span><span class="nx">chirp</span><span class="p">,</span><span class="w"> </span><span class="nx">identities</span><span class="p">);</span>
 
+<span class="w">  </span><span class="nx">useEffect</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">chirp</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="nx">cancelled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="p">;</span>
+<span class="w">    </span><span class="ow">void</span><span class="w"> </span><span class="nx">getProfiles</span><span class="p">(</span><span class="nx">chirp</span><span class="p">,</span><span class="w"> </span><span class="nx">identities</span><span class="p">)</span>
+<span class="w">      </span><span class="p">.</span><span class="nx">then</span><span class="p">((</span><span class="nx">loaded</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">cancelled</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
+<span class="w">        </span><span class="nx">setProfiles</span><span class="p">(</span><span class="nx">loaded</span><span class="p">);</span>
+<span class="w">        </span><span class="nx">setNickname</span><span class="p">(</span><span class="nx">current</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">current</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="p">(</span><span class="nx">loaded</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="nx">chirp</span><span class="p">.</span><span class="nx">identity</span><span class="p">)</span><span class="o">?</span><span class="p">.</span><span class="nx">nickname</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">));</span>
+<span class="w">      </span><span class="p">})</span>
+<span class="w">      </span><span class="p">.</span><span class="k">catch</span><span class="p">(</span><span class="nx">profileError</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">cancelled</span><span class="p">)</span><span class="w"> </span><span class="nx">setError</span><span class="p">(</span><span class="nx">profileError</span><span class="p">);</span>
+<span class="w">      </span><span class="p">});</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">cancelled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+<span class="w">  </span><span class="p">},</span><span class="w"> </span><span class="p">[</span><span class="nx">chirp</span><span class="p">,</span><span class="w"> </span><span class="nx">identities</span><span class="p">,</span><span class="w"> </span><span class="nx">timeline</span><span class="p">.</span><span class="nx">posts</span><span class="p">]);</span>
+
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">run</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">(</span><span class="nx">action</span><span class="o">:</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="ow">void</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nx">setError</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
 <span class="w">    </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
@@ -554,6 +651,15 @@ before mutating it.</p>
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">chirp</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="nx">friend</span><span class="p">.</span><span class="nx">trim</span><span class="p">())</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
 <span class="w">    </span><span class="nx">setFollowing</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">follow</span><span class="p">(</span><span class="nx">chirp</span><span class="p">,</span><span class="w"> </span><span class="nx">friend</span><span class="p">.</span><span class="nx">trim</span><span class="p">()));</span>
 <span class="w">    </span><span class="nx">setFriend</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="p">};</span>
+
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">updateNickname</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">chirp</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">saved</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">saveNickname</span><span class="p">(</span><span class="nx">chirp</span><span class="p">,</span><span class="w"> </span><span class="nx">nickname</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">setProfiles</span><span class="p">(</span><span class="nx">current</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nb">Map</span><span class="p">(</span><span class="nx">current</span><span class="p">).</span><span class="nx">set</span><span class="p">(</span><span class="nx">chirp</span><span class="p">.</span><span class="nx">identity</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="kt">chirp.identity</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">nickname</span><span class="o">:</span><span class="w"> </span><span class="kt">saved.value.nickname</span><span class="p">,</span>
+<span class="w">    </span><span class="p">}));</span>
 <span class="w">  </span><span class="p">};</span>
 
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">updatePost</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">(</span><span class="nx">post</span><span class="o">:</span><span class="w"> </span><span class="kt">TimelinePost</span><span class="p">,</span><span class="w"> </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
@@ -608,6 +714,26 @@ before mutating it.</p>
 <span class="w">      </span><span class="o">&lt;</span><span class="nx">section</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;workspace&quot;</span><span class="o">&gt;</span>
 <span class="w">        </span><span class="o">&lt;</span><span class="nx">div</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;compose-column&quot;</span><span class="o">&gt;</span>
 <span class="w">          </span><span class="o">&lt;</span><span class="nx">form</span>
+<span class="w">            </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;profile-form paper&quot;</span>
+<span class="w">            </span><span class="nx">onSubmit</span><span class="o">=</span><span class="p">{(</span><span class="nx">event</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">              </span><span class="nx">event</span><span class="p">.</span><span class="nx">preventDefault</span><span class="p">();</span>
+<span class="w">              </span><span class="ow">void</span><span class="w"> </span><span class="nx">run</span><span class="p">(</span><span class="nx">updateNickname</span><span class="p">);</span>
+<span class="w">            </span><span class="p">}}</span>
+<span class="w">          </span><span class="o">&gt;</span>
+<span class="w">            </span><span class="o">&lt;</span><span class="nx">label</span><span class="w"> </span><span class="nx">htmlFor</span><span class="o">=</span><span class="s2">&quot;nickname&quot;</span><span class="o">&gt;</span><span class="nx">Your</span><span class="w"> </span><span class="nx">nickname</span><span class="o">&lt;</span><span class="err">/label&gt;</span>
+<span class="w">            </span><span class="o">&lt;</span><span class="nx">div</span><span class="o">&gt;</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">input</span>
+<span class="w">                </span><span class="nx">id</span><span class="o">=</span><span class="s2">&quot;nickname&quot;</span>
+<span class="w">                </span><span class="nx">value</span><span class="o">=</span><span class="p">{</span><span class="nx">nickname</span><span class="p">}</span>
+<span class="w">                </span><span class="nx">maxLength</span><span class="o">=</span><span class="p">{</span><span class="mf">40</span><span class="p">}</span>
+<span class="w">                </span><span class="nx">placeholder</span><span class="o">=</span><span class="s2">&quot;Alice&quot;</span>
+<span class="w">                </span><span class="nx">onChange</span><span class="o">=</span><span class="p">{</span><span class="nx">event</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">setNickname</span><span class="p">(</span><span class="nx">event</span><span class="p">.</span><span class="nx">target</span><span class="p">.</span><span class="nx">value</span><span class="p">)}</span>
+<span class="w">              </span><span class="o">/&gt;</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">button</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;button&quot;</span><span class="w"> </span><span class="kr">type</span><span class="o">=</span><span class="s2">&quot;submit&quot;</span><span class="o">&gt;</span><span class="nx">Save</span><span class="o">&lt;</span><span class="err">/button&gt;</span>
+<span class="w">            </span><span class="o">&lt;</span><span class="err">/div&gt;</span>
+<span class="w">          </span><span class="o">&lt;</span><span class="err">/form&gt;</span>
+
+<span class="w">          </span><span class="o">&lt;</span><span class="nx">form</span>
 <span class="w">            </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;composer paper&quot;</span>
 <span class="w">            </span><span class="nx">onSubmit</span><span class="o">=</span><span class="p">{(</span><span class="nx">event</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="w">              </span><span class="nx">event</span><span class="p">.</span><span class="nx">preventDefault</span><span class="p">();</span>
@@ -646,6 +772,28 @@ before mutating it.</p>
 <span class="w">              </span><span class="o">&lt;</span><span class="nx">button</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;button button--ink&quot;</span><span class="w"> </span><span class="kr">type</span><span class="o">=</span><span class="s2">&quot;submit&quot;</span><span class="o">&gt;</span><span class="nx">Follow</span><span class="o">&lt;</span><span class="err">/button&gt;</span>
 <span class="w">            </span><span class="o">&lt;</span><span class="err">/div&gt;</span>
 <span class="w">          </span><span class="o">&lt;</span><span class="err">/form&gt;</span>
+
+<span class="w">          </span><span class="o">&lt;</span><span class="nx">section</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;following-list paper&quot;</span><span class="w"> </span><span class="nx">aria</span><span class="o">-</span><span class="nx">labelledby</span><span class="o">=</span><span class="s2">&quot;following-heading&quot;</span><span class="o">&gt;</span>
+<span class="w">            </span><span class="o">&lt;</span><span class="nx">header</span><span class="o">&gt;</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">h2</span><span class="w"> </span><span class="nx">id</span><span class="o">=</span><span class="s2">&quot;following-heading&quot;</span><span class="o">&gt;</span><span class="nx">Following</span><span class="o">&lt;</span><span class="err">/h2&gt;</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">span</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">following</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">identities</span><span class="p">.</span><span class="nx">length</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/span&gt;</span>
+<span class="w">            </span><span class="o">&lt;</span><span class="err">/header&gt;</span>
+<span class="w">            </span><span class="p">{</span><span class="nx">following</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">identities</span><span class="p">.</span><span class="nx">length</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="mf">0</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">p</span><span class="o">&gt;</span><span class="nx">People</span><span class="w"> </span><span class="nx">you</span><span class="w"> </span><span class="nx">follow</span><span class="w"> </span><span class="nx">will</span><span class="w"> </span><span class="nx">appear</span><span class="w"> </span><span class="nx">here</span><span class="p">.</span><span class="o">&lt;</span><span class="err">/p&gt;</span>
+<span class="w">            </span><span class="p">)</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="p">(</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="nx">ul</span><span class="o">&gt;</span>
+<span class="w">                </span><span class="p">{</span><span class="nx">following</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">identities</span><span class="p">.</span><span class="nx">map</span><span class="p">((</span><span class="nx">identity</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                  </span><span class="kd">const</span><span class="w"> </span><span class="nx">profile</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">profiles</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="nx">identity</span><span class="p">);</span>
+<span class="w">                  </span><span class="k">return</span><span class="w"> </span><span class="p">(</span>
+<span class="w">                    </span><span class="o">&lt;</span><span class="nx">li</span><span class="w"> </span><span class="nx">key</span><span class="o">=</span><span class="p">{</span><span class="nx">identity</span><span class="p">}</span><span class="o">&gt;</span>
+<span class="w">                      </span><span class="o">&lt;</span><span class="nx">strong</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">profile</span><span class="o">?</span><span class="p">.</span><span class="nx">nickname</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="nx">identity</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/strong&gt;</span>
+<span class="w">                      </span><span class="p">{</span><span class="nx">profile</span><span class="o">?</span><span class="p">.</span><span class="nx">nickname</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="o">&lt;</span><span class="nx">span</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">identity</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/span&gt;}</span>
+<span class="w">                    </span><span class="o">&lt;</span><span class="err">/li&gt;</span>
+<span class="w">                  </span><span class="p">);</span>
+<span class="w">                </span><span class="p">})}</span>
+<span class="w">              </span><span class="o">&lt;</span><span class="err">/ul&gt;</span>
+<span class="w">            </span><span class="p">)}</span>
+<span class="w">          </span><span class="o">&lt;</span><span class="err">/section&gt;</span>
 <span class="w">        </span><span class="o">&lt;</span><span class="err">/div&gt;</span>
 
 <span class="w">        </span><span class="o">&lt;</span><span class="nx">section</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;timeline&quot;</span><span class="w"> </span><span class="nx">aria</span><span class="o">-</span><span class="nx">labelledby</span><span class="o">=</span><span class="s2">&quot;timeline-heading&quot;</span><span class="o">&gt;</span>
@@ -666,6 +814,7 @@ before mutating it.</p>
 <span class="w">            </span><span class="o">&lt;</span><span class="nx">PostCard</span>
 <span class="w">              </span><span class="nx">key</span><span class="o">=</span><span class="p">{</span><span class="nx">postKey</span><span class="p">(</span><span class="nx">post</span><span class="p">)}</span>
 <span class="w">              </span><span class="nx">post</span><span class="o">=</span><span class="p">{</span><span class="nx">post</span><span class="p">}</span>
+<span class="w">              </span><span class="nx">profile</span><span class="o">=</span><span class="p">{</span><span class="nx">profiles</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="nx">post</span><span class="p">.</span><span class="nx">ref</span><span class="p">.</span><span class="nx">identity</span><span class="p">)}</span>
 <span class="w">              </span><span class="nx">ownPost</span><span class="o">=</span><span class="p">{</span><span class="nx">post</span><span class="p">.</span><span class="nx">ref</span><span class="p">.</span><span class="nx">identity</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="nx">chirp</span><span class="p">.</span><span class="nx">identity</span><span class="p">}</span>
 <span class="w">              </span><span class="nx">onUpdate</span><span class="o">=</span><span class="p">{(</span><span class="nx">post</span><span class="p">,</span><span class="w"> </span><span class="nx">text</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">run</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">updatePost</span><span class="p">(</span><span class="nx">post</span><span class="p">,</span><span class="w"> </span><span class="nx">text</span><span class="p">))}</span>
 <span class="w">              </span><span class="nx">onDelete</span><span class="o">=</span><span class="p">{</span><span class="nx">post</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">run</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">deletePost</span><span class="p">(</span><span class="nx">post</span><span class="p">))}</span>
@@ -687,9 +836,10 @@ before mutating it.</p>
 <ol>
 <li><code>Chirp.connect()</code> connects and exposes the local Jolt identity.</li>
 <li><code>getFollowing()</code> loads the user's saved follows.</li>
+<li><code>getProfiles()</code> loads public nicknames without replacing canonical IDs.</li>
 <li><code>useTimeline()</code> opens subscriptions for the user and their friends.</li>
-<li>The composer calls <code>chirp.posts.create(...)</code>.</li>
-<li>Following somebody updates one typed Document.</li>
+<li>The profile form and composer save typed Documents and Posts.</li>
+<li>Following somebody updates one typed Document and the sidebar.</li>
 <li>Edit, delete, and restore call methods on typed Items.</li>
 </ol>
 <p>Each button action uses the small <code>run()</code> helper. It clears the previous
@@ -732,6 +882,8 @@ component.</p>
 <span class="p">.</span><span class="nc">post__meta</span><span class="o">,</span>
 <span class="p">.</span><span class="nc">post__actions</span><span class="o">,</span>
 <span class="p">.</span><span class="nc">follow-form</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="nt">div</span><span class="o">,</span>
+<span class="p">.</span><span class="nc">profile-form</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="nt">div</span><span class="o">,</span>
+<span class="p">.</span><span class="nc">following-list</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="nt">header</span><span class="o">,</span>
 <span class="p">.</span><span class="nc">notice</span><span class="o">,</span>
 <span class="p">.</span><span class="nc">undo</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">flex</span><span class="p">;</span>
@@ -759,12 +911,12 @@ component.</p>
 <span class="w">  </span><span class="k">background</span><span class="p">:</span><span class="w"> </span><span class="mh">#fff</span><span class="p">;</span>
 <span class="p">}</span>
 
-<span class="p">.</span><span class="nc">follow-form</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">margin-top</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">composer</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">follow-form</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">following-list</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">margin-top</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="nt">label</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">block</span><span class="p">;</span><span class="w"> </span><span class="k">margin-bottom</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="k">font-weight</span><span class="p">:</span><span class="w"> </span><span class="mi">600</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="nt">textarea</span><span class="o">,</span><span class="w"> </span><span class="nt">input</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="kt">%</span><span class="p">;</span><span class="w"> </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mf">0.7</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="k">border</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="mh">#78918c</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="nt">textarea</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">min-height</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="k">resize</span><span class="p">:</span><span class="w"> </span><span class="kc">vertical</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">composer__footer</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">margin-top</span><span class="p">:</span><span class="w"> </span><span class="mf">0.75</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
-<span class="p">.</span><span class="nc">follow-form</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="nt">div</span><span class="w"> </span><span class="nt">input</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">flex</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">follow-form</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="nt">div</span><span class="w"> </span><span class="nt">input</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">profile-form</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="nt">div</span><span class="w"> </span><span class="nt">input</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">flex</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 
 <span class="p">.</span><span class="nc">button</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mf">0.6</span><span class="kt">rem</span><span class="w"> </span><span class="mf">0.8</span><span class="kt">rem</span><span class="p">;</span>
@@ -781,10 +933,15 @@ component.</p>
 
 <span class="p">.</span><span class="nc">post</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">rem</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="k">border-top</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="mh">#78918c</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">post__meta</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mf">0.8</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">post__author</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">following-list</span><span class="w"> </span><span class="nt">li</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="k">grid</span><span class="p">;</span><span class="w"> </span><span class="k">gap</span><span class="p">:</span><span class="w"> </span><span class="mf">0.2</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">post__author</span><span class="w"> </span><span class="nt">span</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">following-list</span><span class="w"> </span><span class="nt">li</span><span class="w"> </span><span class="nt">span</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">overflow-wrap</span><span class="p">:</span><span class="w"> </span><span class="n">anywhere</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#526b66</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">post__text</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">rem</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mf">1.2</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="k">line-height</span><span class="p">:</span><span class="w"> </span><span class="mf">1.5</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">post__actions</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">justify-content</span><span class="p">:</span><span class="w"> </span><span class="kc">flex-end</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">post__editor</span><span class="w"> </span><span class="nt">textarea</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">min-height</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="k">margin-top</span><span class="p">:</span><span class="w"> </span><span class="mf">0.75</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">empty</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">text-align</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">following-list</span><span class="w"> </span><span class="nt">h2</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">following-list</span><span class="w"> </span><span class="nt">ul</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="k">grid</span><span class="p">;</span><span class="w"> </span><span class="k">gap</span><span class="p">:</span><span class="w"> </span><span class="mf">0.8</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">rem</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="k">list-style</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">following-list</span><span class="w"> </span><span class="nt">p</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">rem</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#526b66</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 
 <span class="p">.</span><span class="nc">notice</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">margin-bottom</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">notice</span><span class="w"> </span><span class="nt">button</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">undo</span><span class="w"> </span><span class="nt">button</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="kc">inherit</span><span class="p">;</span><span class="w"> </span><span class="k">background</span><span class="p">:</span><span class="w"> </span><span class="kc">transparent</span><span class="p">;</span><span class="w"> </span><span class="k">cursor</span><span class="p">:</span><span class="w"> </span><span class="kc">pointer</span><span class="p">;</span><span class="w"> </span><span class="k">text-decoration</span><span class="p">:</span><span class="w"> </span><span class="kc">underline</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
@@ -803,9 +960,9 @@ no other frontend files to change.</p>
 <p>The first launch waits at <strong>Approve Chirp in Jolt Console</strong>. Open Jolt Console,
 review the generated request, and approve it. Chirp then shows the identity
 owned by that Jolt installation.</p>
-<p>Publish a post. Close and reopen Chirp: the post and following Document remain
-under the same identity, and the timeline starts from its retained verified
-view rather than waiting for the network.</p>
+<p>Save a nickname and publish a post. Close and reopen Chirp: the profile, post,
+and following Document remain under the same identity, and the timeline starts
+from its retained verified view rather than waiting for the network.</p>
 <h2 id="9-test-alice-and-bob-without-two-daemons">9 · Test Alice and Bob without two daemons</h2>
 <p>Install Vitest:</p>
 <pre class="doc-code"><code>yarn<span class="w"> </span>add<span class="w"> </span>--dev<span class="w"> </span>vitest</code></pre>
@@ -815,6 +972,7 @@ view rather than waiting for the network.</p>
 
 <span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Chirp</span><span class="p">,</span><span class="w"> </span><span class="nx">Post</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./chirp&quot;</span><span class="p">;</span>
 <span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">follow</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./following&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">getProfiles</span><span class="p">,</span><span class="w"> </span><span class="nx">saveNickname</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./profiles&quot;</span><span class="p">;</span>
 <span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Timeline</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./timeline&quot;</span><span class="p">;</span>
 
 <span class="nx">describe</span><span class="p">(</span><span class="s2">&quot;beginner Chirp Data SDK example&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
@@ -825,6 +983,32 @@ view rather than waiting for the network.</p>
 
 <span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">following</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">identities</span><span class="p">).</span><span class="nx">toEqual</span><span class="p">([</span><span class="s2">&quot;bob.jolt&quot;</span><span class="p">]);</span>
 <span class="w">    </span><span class="nx">expect</span><span class="p">((</span><span class="k">await</span><span class="w"> </span><span class="nx">alice</span><span class="p">.</span><span class="nx">following</span><span class="p">.</span><span class="nx">get</span><span class="p">()).</span><span class="nx">isPresent</span><span class="p">()).</span><span class="nx">toBe</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span>
+<span class="w">  </span><span class="p">});</span>
+
+<span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;shares a nickname without hiding its canonical Jolt identity&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">world</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Chirp</span><span class="p">.</span><span class="nx">testWorld</span><span class="p">();</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">alice</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">world</span><span class="p">.</span><span class="kr">as</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">bob</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">world</span><span class="p">.</span><span class="kr">as</span><span class="p">(</span><span class="s2">&quot;bob.jolt&quot;</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">saveNickname</span><span class="p">(</span><span class="nx">alice</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Alice&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">saveNickname</span><span class="p">(</span><span class="nx">alice</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Alice W.&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">profiles</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">getProfiles</span><span class="p">(</span><span class="nx">bob</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">]);</span>
+
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">profiles</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">)).</span><span class="nx">toEqual</span><span class="p">({</span>
+<span class="w">      </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">nickname</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Alice W.&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">});</span>
+<span class="w">  </span><span class="p">});</span>
+
+<span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;keeps followed identities readable when they have no nickname&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">world</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Chirp</span><span class="p">.</span><span class="nx">testWorld</span><span class="p">();</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">alice</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">world</span><span class="p">.</span><span class="kr">as</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">bob</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">world</span><span class="p">.</span><span class="kr">as</span><span class="p">(</span><span class="s2">&quot;bob.jolt&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">follow</span><span class="p">(</span><span class="nx">alice</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;bob.jolt&quot;</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">profiles</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">getProfiles</span><span class="p">(</span><span class="nx">alice</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;bob.jolt&quot;</span><span class="p">]);</span>
+
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">profiles</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="s2">&quot;bob.jolt&quot;</span><span class="p">)).</span><span class="nx">toEqual</span><span class="p">({</span><span class="w"> </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;bob.jolt&quot;</span><span class="w"> </span><span class="p">});</span>
 <span class="w">  </span><span class="p">});</span>
 
 <span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;shows Alice&#39;s new post in Bob&#39;s open timeline&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
@@ -893,8 +1077,9 @@ view rather than waiting for the network.</p>
 <span class="p">});</span></code></pre></figure>
 <p><code>Chirp.test()</code> gives one isolated typed app. <code>Chirp.testWorld()</code> gives Alice and
 Bob two identity-bound views of shared deterministic state. The tests use the
-same <code>posts</code>, <code>following</code>, Item mutations, Data Subscription, and Change Stream
-interfaces as the desktop application; no daemon or network is needed.</p>
+same public profiles, private following list, posts, Item mutations, Data
+Subscription, and Change Stream interfaces as the desktop application; no
+daemon or network is needed.</p>
 <p>Run them:</p>
 <pre class="doc-code"><code>yarn<span class="w"> </span>vitest<span class="w"> </span>run</code></pre>
 <h2 id="10-run-it-with-a-friend">10 · Run it with a friend</h2>
@@ -903,8 +1088,9 @@ another through Jolt:</p>
 <ol>
 <li>Alice and Bob each start Jolt Console and Chirp.</li>
 <li>Each approves Chirp's generated request.</li>
-<li>Alice publishes a chirp.</li>
-<li>Bob enters Alice's <code>.jolt</code> identity in the follow form.</li>
+<li>Alice saves a nickname and publishes a chirp.</li>
+<li>Bob enters Alice's <code>.jolt</code> identity in the follow form; Alice appears in his
+   Following sidebar by nickname and canonical identity.</li>
 <li>Alice's existing posts appear from Bob's retained verified view, and later
    verified changes arrive through the same timeline subscription.</li>
 <li>Alice can follow Bob in the same way.</li>

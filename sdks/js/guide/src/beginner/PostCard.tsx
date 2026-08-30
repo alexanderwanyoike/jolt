@@ -1,15 +1,23 @@
 import { useEffect, useState } from "react";
 
 import type { TimelinePost } from "./timeline";
+import type { ChirpProfile } from "./profiles";
 
 type PostCardProps = {
   post: TimelinePost;
+  profile?: ChirpProfile;
   ownPost: boolean;
   onDelete(post: TimelinePost): Promise<void>;
   onUpdate(post: TimelinePost, text: string): Promise<void>;
 };
 
-export function PostCard({ post, ownPost, onDelete, onUpdate }: PostCardProps) {
+export function PostCard({
+  post,
+  profile,
+  ownPost,
+  onDelete,
+  onUpdate,
+}: PostCardProps) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(post.value.text);
 
@@ -27,7 +35,10 @@ export function PostCard({ post, ownPost, onDelete, onUpdate }: PostCardProps) {
   return (
     <article className="post">
       <header className="post__meta">
-        <strong>{post.ref.identity}</strong>
+        <div className="post__author">
+          <strong>{profile?.nickname ?? post.ref.identity}</strong>
+          {profile?.nickname && <span>{post.ref.identity}</span>}
+        </div>
         <time dateTime={post.value.postedAt.toISOString()}>
           {post.value.postedAt.toLocaleString()}
         </time>
