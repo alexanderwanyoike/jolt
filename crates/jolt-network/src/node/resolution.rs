@@ -752,6 +752,18 @@ impl NetworkNode {
         }
     }
 
+    /// Refresh a cached remote device-writer view after returning it immediately.
+    /// Local device-writer state is authoritative and must never trigger a sync.
+    pub(super) fn begin_cached_device_writer_refresh(&mut self, identity: &IdentityId) {
+        if identity == &self.identity.identity_id() {
+            return;
+        }
+
+        self.begin_device_writer_sync(DeviceWriterSyncWaiter::Refresh {
+            identity: identity.clone(),
+        });
+    }
+
     fn mark_device_writer_refresh_if_due(&mut self, identity: &IdentityId) -> bool {
         Self::mark_refresh_if_due(&mut self.device_writer_refreshes, identity)
     }
@@ -2160,6 +2172,161 @@ mod tests {
         assert_eq!(resolved.content_id, content_id.to_string());
         assert_eq!(resolved.path, "/profile");
         assert_eq!(resolved.source, "device_writer_cache");
+    }
+
+    #[tokio::test]
+    async fn remote_daemon_resolution_refreshes_cached_device_writer_state() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_laptop";
+        let authority = vec![authorize_device(&root, &laptop, device_id)];
+        let old_content = ContentId::from_bytes(b"old reachability");
+        let new_content = ContentId::from_bytes(b"new reachability");
+        let old_entry = DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            device_id,
+            DeviceWriterOperation::set_path(
+                "/.well-known/jolt/reachability",
+                old_content.clone(),
+                DeviceWriterPathMode::Singleton,
+            ),
+            100,
+            |bytes| laptop.sign(bytes),
+        )
+        .unwrap();
+        let new_entry = old_entry
+            .append(
+                DeviceWriterOperation::set_path(
+                    "/.well-known/jolt/reachability",
+                    new_content.clone(),
+                    DeviceWriterPathMode::Singleton,
+                ),
+                101,
+                |bytes| laptop.sign(bytes),
+            )
+            .unwrap();
+        node.store_verified_device_writer_logs(
+            identity.clone(),
+            authority.clone(),
+            vec![vec![old_entry.clone()]],
+        )
+        .unwrap();
+        let provider = libp2p::PeerId::random();
+        node.discovered_providers.insert(
+            NetworkNode::update_log_provider_key(&identity),
+            vec![provider],
+        );
+        let address = JoltAddress::new(identity, "/.well-known/jolt/reachability").unwrap();
+
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::Resolve {
+            address: address.to_string(),
+            response_tx: tx,
+        });
+
+        let cached = rx.await.unwrap().unwrap();
+        assert_eq!(cached.content_id, old_content.to_string());
+        assert_eq!(cached.source, "device_writer_cache");
+        assert_eq!(
+            node.pending_device_writer_syncs.len(),
+            1,
+            "a cached remote resolve must refresh in the background"
+        );
+
+        deliver_device_writer_sync_response(
+            &mut node,
+            provider,
+            authority,
+            vec![vec![old_entry, new_entry]],
+        )
+        .await;
+
+        let refreshed = node
+            .resolve_device_writer_response_from_cache(&address, "device_writer_cache")
+            .unwrap();
+        assert_eq!(refreshed.content_id, new_content.to_string());
+    }
+
+    #[tokio::test]
+    async fn remote_daemon_resolution_refreshes_a_cached_tombstone() {
+        let dir = tempdir().unwrap();
+        let mut node = make_node(dir.path());
+        let root = NodeIdentity::generate();
+        let laptop = NodeIdentity::generate();
+        let identity = root.identity_id();
+        let device_id = "dev_laptop";
+        let path = "/spoke/profile";
+        let authority = vec![authorize_device(&root, &laptop, device_id)];
+        let old_content = ContentId::from_bytes(b"old profile");
+        let restored_content = ContentId::from_bytes(b"restored profile");
+        let present = DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            device_id,
+            DeviceWriterOperation::set_path(path, old_content, DeviceWriterPathMode::Singleton),
+            100,
+            |bytes| laptop.sign(bytes),
+        )
+        .unwrap();
+        let tombstone = present
+            .append(DeviceWriterOperation::tombstone_path(path), 101, |bytes| {
+                laptop.sign(bytes)
+            })
+            .unwrap();
+        let restored = tombstone
+            .append(
+                DeviceWriterOperation::set_path(
+                    path,
+                    restored_content.clone(),
+                    DeviceWriterPathMode::Singleton,
+                ),
+                102,
+                |bytes| laptop.sign(bytes),
+            )
+            .unwrap();
+        node.store_verified_device_writer_logs(
+            identity.clone(),
+            authority.clone(),
+            vec![vec![present.clone(), tombstone.clone()]],
+        )
+        .unwrap();
+        let provider = libp2p::PeerId::random();
+        node.discovered_providers.insert(
+            NetworkNode::update_log_provider_key(&identity),
+            vec![provider],
+        );
+        let address = JoltAddress::new(identity, path).unwrap();
+
+        let (tx, rx) = oneshot::channel();
+        node.handle_command(DaemonCommand::Resolve {
+            address: address.to_string(),
+            response_tx: tx,
+        });
+
+        assert!(matches!(
+            rx.await.unwrap(),
+            Err(NetworkError::PathTombstoned { path: deleted_path }) if deleted_path == path
+        ));
+        assert_eq!(
+            node.pending_device_writer_syncs.len(),
+            1,
+            "a cached remote tombstone must refresh so restores can become visible"
+        );
+
+        deliver_device_writer_sync_response(
+            &mut node,
+            provider,
+            authority,
+            vec![vec![present, tombstone, restored]],
+        )
+        .await;
+
+        let refreshed = node
+            .resolve_device_writer_response_from_cache(&address, "device_writer_cache")
+            .unwrap();
+        assert_eq!(refreshed.content_id, restored_content.to_string());
     }
 
     #[tokio::test]

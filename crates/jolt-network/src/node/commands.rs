@@ -185,10 +185,12 @@ impl NetworkNode {
                 {
                     Ok(response) => {
                         let _ = response_tx.send(Ok(response));
+                        self.begin_cached_device_writer_refresh(address.identity());
                         return;
                     }
                     Err(error @ NetworkError::PathTombstoned { .. }) => {
                         let _ = response_tx.send(Err(error));
+                        self.begin_cached_device_writer_refresh(address.identity());
                         return;
                     }
                     Err(_) => {}
