@@ -118,6 +118,52 @@ function localIdentitiesPayload() {
   };
 }
 
+function pendingChirpRequestClient(
+  requestedCapabilities: string[],
+): DaemonClient {
+  return {
+    daemonUrl: "http://127.0.0.1:9862",
+    get: vi.fn(async (path: string) => {
+      if (path === "/admin/v1/app-requests") {
+        return [
+          {
+            request_id: "req_chirp",
+            app_id: "chirp.example",
+            app_name: "Chirp",
+            app_origin: "http://127.0.0.1:1430",
+            requested_identity: "alice.jolt",
+            requested_capabilities: requestedCapabilities,
+            granted_capabilities: [],
+            status: "pending",
+            created_at: 1_788_082_165,
+          },
+        ];
+      }
+      if (path === "/admin/v1/app-sessions") return [];
+      if (path === "/admin/v1/identities") return localIdentitiesPayload();
+      throw new Error(`unexpected path ${path}`);
+    }),
+    post: vi.fn(async () => ({ ok: true })),
+  };
+}
+
+async function expectChirpCapabilityBlocked(capability: string) {
+  const client = pendingChirpRequestClient(["resolve:public", capability]);
+
+  render(<AppsPage client={client} />);
+
+  await userEvent.click(
+    await screen.findByRole("button", { name: /request details/i }),
+  );
+  expect(
+    screen.getByText("admin-only request: cannot be approved"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Approve Chirp" }),
+  ).toBeDisabled();
+  expect(client.post).not.toHaveBeenCalled();
+}
+
 describe("Console section pages", () => {
   it("renders overview daemon metrics", () => {
     render(<OverviewPage snapshot={snapshot()} />);
@@ -677,30 +723,7 @@ describe("Console section pages", () => {
       "publish:/chirp/following",
       "subscribe:any:/chirp/posts/*",
     ];
-    const client: DaemonClient = {
-      daemonUrl: "http://127.0.0.1:9862",
-      get: vi.fn(async (path: string) => {
-        if (path === "/admin/v1/app-requests") {
-          return [
-            {
-              request_id: "req_chirp",
-              app_id: "chirp.example",
-              app_name: "Chirp",
-              app_origin: "http://127.0.0.1:1430",
-              requested_identity: "alice.jolt",
-              requested_capabilities: requestedCapabilities,
-              granted_capabilities: [],
-              status: "pending",
-              created_at: 1_788_082_165,
-            },
-          ];
-        }
-        if (path === "/admin/v1/app-sessions") return [];
-        if (path === "/admin/v1/identities") return localIdentitiesPayload();
-        throw new Error(`unexpected path ${path}`);
-      }),
-      post: vi.fn(async () => ({ ok: true })),
-    };
+    const client = pendingChirpRequestClient(requestedCapabilities);
 
     render(<AppsPage client={client} />);
 
@@ -727,6 +750,52 @@ describe("Console section pages", () => {
       {
         identity: "alice.jolt",
         capabilities: requestedCapabilities,
+        expires_at: null,
+      },
+    );
+  });
+
+  it("blocks a subscription for a malformed exact identity", async () => {
+    const malformedCapability = "subscribe:a.jolt:/chirp/posts/*";
+    await expectChirpCapabilityBlocked(malformedCapability);
+    expect(screen.getByText(malformedCapability)).toBeInTheDocument();
+  });
+
+  it("blocks a delete capability with a malformed wildcard scope", async () => {
+    await expectChirpCapabilityBlocked("delete:/chirp/posts/*/archive");
+  });
+
+  it("blocks a subscription capability with a malformed path scope", async () => {
+    await expectChirpCapabilityBlocked("subscribe:any:/chirp/posts?private");
+  });
+
+  it("can approve a subscription for one exact identity", async () => {
+    const identity = "boraugen54xu6zhtctqpmtqrx4ep26el4cjkw45iv4ev2jmbs2eq.jolt";
+    const capability = `subscribe:${identity}:/chirp/posts/*`;
+    const client = pendingChirpRequestClient([capability]);
+
+    render(<AppsPage client={client} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /request details/i }),
+    );
+    expect(
+      screen.getByText(
+        `subscribe to verified records under /chirp/posts/* for ${identity}`,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("admin-only request: cannot be approved"),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Approve Chirp" }),
+    );
+    expect(client.post).toHaveBeenCalledWith(
+      "/admin/v1/app-requests/req_chirp/approve",
+      {
+        identity: "alice.jolt",
+        capabilities: [capability],
         expires_at: null,
       },
     );

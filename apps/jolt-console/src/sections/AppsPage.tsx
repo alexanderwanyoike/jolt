@@ -557,10 +557,10 @@ function isGrantableCapability(capability: string) {
     isGrantablePathCapability("inventory:", capability) ||
     isGrantablePathCapability("pin:own:", capability) ||
     isGrantablePathCapability("encrypt:", capability) ||
-    isGrantablePathCapability("decrypt:", capability)
-    || isGrantablePathCapability("enumerate:self:", capability)
-    || isGrantablePathCapability("enumerate:any:", capability)
-    || parseSubscriptionCapability(capability) !== null
+    isGrantablePathCapability("decrypt:", capability) ||
+    isGrantablePathCapability("enumerate:self:", capability) ||
+    isGrantablePathCapability("enumerate:any:", capability) ||
+    parseSubscriptionCapability(capability) !== null
   );
 }
 
@@ -573,17 +573,53 @@ function parseSubscriptionCapability(capability: string) {
 
   const identity = remainder.slice(0, separator);
   const scope = remainder.slice(separator + 1);
-  const validIdentity = identity === "any" || /^[a-z2-7]+(?:\.jolt)?$/.test(identity);
-  if (!validIdentity || !isGrantablePathCapability(`subscribe:${identity}:`, capability)) {
+  if (
+    !isGrantableSubscriptionIdentity(identity)
+    || !isGrantablePathCapability(`subscribe:${identity}:`, capability)
+  ) {
     return null;
   }
 
   return { identity, scope };
 }
 
+function isGrantableSubscriptionIdentity(identity: string) {
+  if (identity === "any") return true;
+  const label = identity.endsWith(".jolt")
+    ? identity.slice(0, -".jolt".length)
+    : identity;
+  return isCanonicalIdentityLabel(label);
+}
+
+function isCanonicalIdentityLabel(label: string) {
+  // A 32-byte key is 52 unpadded base32 characters; its final character is A or Q.
+  return /^[a-z2-7]{51}[aq]$/.test(label);
+}
+
 function isGrantablePathCapability(prefix: string, capability: string) {
+  if (!capability.startsWith(prefix)) return false;
   const scope = capability.slice(prefix.length);
-  return capability.startsWith(prefix) && scope.startsWith("/") && !scope.includes("..");
+  return isGrantablePathScope(scope);
+}
+
+function isGrantablePathScope(scope: string) {
+  if (!scope.startsWith("/") || /[?#\s]/.test(scope)) return false;
+
+  const wildcardCount = [...scope].filter(character => character === "*").length;
+  if (wildcardCount > 1) return false;
+  if (wildcardCount === 1) {
+    if (!scope.endsWith("/*")) return false;
+    return isGrantableExactScopeBase(scope.slice(0, -"/*".length));
+  }
+
+  return isGrantableExactScopeBase(scope);
+}
+
+function isGrantableExactScopeBase(scope: string) {
+  return scope !== "/" && scope
+    .split("/")
+    .filter(segment => segment.length > 0)
+    .every(segment => segment !== "." && segment !== "..");
 }
 
 function isBroadPathScope(scope: string) {
