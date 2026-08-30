@@ -3,18 +3,18 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Chirp,
   type ChirpApplication,
+  type ChirpPost,
   type DeletedChirpPost,
-  type Post,
 } from "./chirp";
 import { follow, getFollowing, type FollowingItem } from "./following";
 import { PostCard } from "./PostCard";
-import type { TimelinePost } from "./timeline";
+import { postKey, type TimelinePost } from "./timeline";
 import { useTimeline } from "./use-timeline";
 import "./App.css";
 
 type DeletedPost = {
-  item: DeletedChirpPost;
-  value: Post;
+  deleted: DeletedChirpPost;
+  previous: ChirpPost;
 };
 
 export default function App() {
@@ -34,7 +34,9 @@ export default function App() {
         setChirp(connection.connected);
         setFollowing(connection.following);
       })
-      .catch(error => setError(error));
+      .catch(error => {
+        if (!cancelled) setError(error);
+      });
     return () => { cancelled = true; };
   }, []);
 
@@ -47,6 +49,7 @@ export default function App() {
   const timeline = useTimeline(chirp, identities);
 
   const run = async (action: () => Promise<void>) => {
+    setError(null);
     try {
       await action();
     } catch (actionError) {
@@ -76,23 +79,17 @@ export default function App() {
     if (chirp === null) return;
     const current = await chirp.posts.get(post.ref);
     if (!current.isPresent()) return;
-    setDeleted({
-      item: await current.delete(),
-      value: {
-        text: current.value.text,
-        postedAt: current.value.postedAt,
-      },
-    });
+    setDeleted({ deleted: await current.delete(), previous: current });
   };
 
   const restorePost = async () => {
     if (deleted === null) return;
-    await deleted.item.restore(deleted.value);
+    await deleted.deleted.restore(deleted.previous.value);
     setDeleted(null);
   };
 
-  if (error !== null || timeline.error !== null) {
-    return <main className="chirp-shell"><p className="notice notice--error">{String(error ?? timeline.error)}</p></main>;
+  if (timeline.error !== null || (chirp === null && error !== null)) {
+    return <main className="chirp-shell"><p className="notice notice--error">{String(timeline.error ?? error)}</p></main>;
   }
 
   if (chirp === null || following === null) {
@@ -113,6 +110,13 @@ export default function App() {
         </div>
         <p className="identity">{chirp.identity}</p>
       </header>
+
+      {error !== null && (
+        <aside className="notice notice--error" role="alert">
+          <span>{String(error)}</span>
+          <button type="button" onClick={() => setError(null)}>Dismiss</button>
+        </aside>
+      )}
 
       <section className="workspace">
         <div className="compose-column">
@@ -173,7 +177,7 @@ export default function App() {
             </div>
           ) : timeline.posts.map(post => (
             <PostCard
-              key={`${post.ref.identity}${post.ref.path}`}
+              key={postKey(post)}
               post={post}
               ownPost={post.ref.identity === chirp.identity}
               onUpdate={(post, text) => run(() => updatePost(post, text))}

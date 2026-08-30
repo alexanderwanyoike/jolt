@@ -142,6 +142,13 @@ for guide_source in guides/*.md; do
   }
 done
 
+# These calls expose protocol/session plumbing. Their presence in the rendered
+# beginner app is an architectural regression, independent of tutorial wording.
+if grep -Eq 'publishAppend|requestSession|createJoltClient' website/guides/app-development.html; then
+  echo "beginner Chirp guide leaks low-level SDK setup" >&2
+  exit 1
+fi
+
 required_sdk_contract=(
   'href="sdk/"'
   'href="guides/app-development.html"'

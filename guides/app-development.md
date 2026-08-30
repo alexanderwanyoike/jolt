@@ -19,6 +19,10 @@ compiled and tested against the public SDK in Jolt's repository. Follow it from
 the top and you will finish with a working desktop app, not an isolated API
 example.
 
+> **Before you start:** Chirp requires Jolt **0.3.23 or newer**. Jolt 0.3.22
+> does not yet provide the live Data SDK behavior used by this tutorial. This
+> guide must remain on the development site until 0.3.23 is released.
+
 ## 1 · Create the app
 
 Start with Tauri's React and TypeScript template:
@@ -146,6 +150,10 @@ Keep the React boundary small with `src/use-timeline.ts`:
 Opening, cancelling, and replacing timeline sources now follows the normal
 React effect lifecycle. The component receives one immutable snapshot.
 
+To keep this tutorial small, changing the follow list closes and rebuilds its
+few subscriptions. A large production feed would reconcile long-lived
+subscriptions instead; Chirp deliberately does not teach that optimisation.
+
 ## 6 · Add a post card
 
 Create `src/PostCard.tsx`:
@@ -172,6 +180,11 @@ This is the whole product flow:
 5. Following somebody updates one typed Document.
 6. Edit, delete, and restore call methods on typed Items.
 
+Each button action uses the small `run()` helper. It clears the previous
+message, runs the typed operation, and shows a dismissible error without
+throwing away the rest of the screen. Connection and timeline startup errors
+still stop the app because Chirp cannot work without those foundations.
+
 Present Items carry `State.Present`; deleted Items carry `State.Deleted` and
 offer `restore(...)` only when the Resource declaration allows it.
 
@@ -188,7 +201,7 @@ no other frontend files to change.
 
 ## 8 · Run Chirp
 
-Start Jolt Console, then run:
+Confirm Jolt Console is version 0.3.23 or newer, start it, then run:
 
 ```bash
 yarn tauri dev

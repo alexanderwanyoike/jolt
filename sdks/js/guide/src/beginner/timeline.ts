@@ -24,7 +24,7 @@ type TimelineSource = {
   items: Map<string, TimelinePost>;
 };
 
-function postKey(post: Pick<TimelinePost, "ref">): string {
+export function postKey(post: Pick<TimelinePost, "ref">): string {
   return `${post.ref.identity}${post.ref.path}`;
 }
 
@@ -62,10 +62,6 @@ export class Timeline {
   subscribe(listener: TimelineListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
-  }
-
-  async refresh(): Promise<void> {
-    await Promise.all([...this.sources.values()].map(source => this.refreshSource(source)));
   }
 
   async close(): Promise<void> {
@@ -120,7 +116,7 @@ export class Timeline {
         case ChangeType.Changed:
           for (const item of change.items) source.items.set(postKey(item), item);
           for (const ref of change.removed) {
-            source.items.delete(`${ref.identity}${ref.path}`);
+            source.items.delete(postKey({ ref }));
           }
           this.publish();
           break;
@@ -131,6 +127,9 @@ export class Timeline {
           break;
         case ChangeType.Cancelled:
         case ChangeType.Revoked:
+          // A terminal stream can no longer keep this person's view current.
+          source.items.clear();
+          this.publish();
           return;
       }
     }
@@ -140,7 +139,10 @@ export class Timeline {
     const posts = [...this.sources.values()]
       .flatMap(source => [...source.items.values()])
       .sort((left, right) => right.value.postedAt.getTime() - left.value.postedAt.getTime());
-    this.snapshot = Object.freeze({ posts: Object.freeze(posts), error: null });
+    this.snapshot = Object.freeze({
+      posts: Object.freeze(posts),
+      error: this.snapshot.error,
+    });
     for (const listener of this.listeners) listener(this.snapshot);
   }
 
