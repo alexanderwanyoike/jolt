@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  apiErrorMessage,
   isContentUnavailableError,
   isJoltUnavailableError,
   JoltApiError,
@@ -24,6 +25,17 @@ describe("isJoltUnavailableError", () => {
     },
   );
 
+  it("does not classify a structured daemon error as daemon unavailability", () => {
+    expect(
+      isJoltUnavailableError(
+        new JoltApiError("Could not deliver ingress envelope", {
+          status: 500,
+          code: "internal_error",
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it.each(["content_provider_not_found", "content_fetch_failed"])(
     "does not classify reachable-daemon content code %s as daemon unavailability",
     (code) => {
@@ -46,6 +58,17 @@ describe("isJoltUnavailableError", () => {
     new Error("Unexpected application failure"),
   ])("does not weaken a non-availability failure", (error) => {
     expect(isJoltUnavailableError(error)).toBe(false);
+  });
+});
+
+describe("apiErrorMessage", () => {
+  it("preserves the message from a structured daemon error", () => {
+    const error = new JoltApiError("Could not deliver ingress envelope", {
+      status: 500,
+      code: "internal_error",
+    });
+
+    expect(apiErrorMessage(error)).toBe("Could not deliver ingress envelope");
   });
 });
 

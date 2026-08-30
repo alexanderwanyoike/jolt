@@ -46,17 +46,19 @@ export class JoltTransportError extends Error {
 /**
  * Whether a failed Jolt operation should be presented as unavailable.
  *
- * Typed transport failures mean the daemon could not be reached. HTTP 500 and
- * unstructured 502 responses also cover browser development proxies that could
- * not complete the request. This classifies the attempt, not the availability
- * of content requested through a reachable daemon.
+ * Typed transport failures mean the daemon could not be reached. Unstructured
+ * HTTP 500 and 502 responses also cover browser development proxies that could
+ * not complete the request. A machine-readable API error code proves that the
+ * daemon answered and must not be weakened into host unavailability. This
+ * classifies the attempt, not the availability of content requested through a
+ * reachable daemon.
  */
 export function isJoltUnavailableError(error: unknown): boolean {
   return (
     error instanceof JoltTransportError ||
     (error instanceof JoltApiError &&
-      (error.status === 500 ||
-        (error.status === 502 && error.code !== "content_hash_mismatch")))
+      error.code === undefined &&
+      (error.status === 500 || error.status === 502))
   );
 }
 
@@ -78,7 +80,10 @@ export function apiErrorMessage(error: unknown): string {
     return "Cannot reach the Jolt daemon. Start it on the configured API port and try again.";
   }
   if (error instanceof JoltApiError) {
-    if (error.status === 500 || error.status === 502) {
+    if (
+      error.code === undefined &&
+      (error.status === 500 || error.status === 502)
+    ) {
       return "The Jolt daemon returned an internal error. Check the daemon log.";
     }
     return error.message;
