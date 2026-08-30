@@ -40,7 +40,6 @@ pub async fn run(
 
     let identity = NodeIdentity::load_or_generate(&config.identity_dir)?;
     info!("Peer ID: {}", identity.peer_id());
-    let identity_peer_id = identity.peer_id().to_string();
     let local_identity_address = identity.jolt_address().to_string();
     let local_identity = identity.identity_id();
     let mut settings = config.load_settings()?;
@@ -119,6 +118,8 @@ pub async fn run(
     // Create command channel and daemon handle
     let (cmd_tx, cmd_rx) = mpsc::channel(256);
     let handle = DaemonHandle::new_with_local_identity(cmd_tx, local_identity_address);
+    let direct_ingress_endpoint =
+        local_direct_ingress_reachability_endpoint(&node, api_bind, api_port);
 
     // Spawn daemon event loop
     tokio::spawn(async move {
@@ -127,9 +128,7 @@ pub async fn run(
 
     publish_direct_ingress_reachability(
         &handle,
-        api_bind,
-        api_port,
-        identity_peer_id,
+        direct_ingress_endpoint,
         jolt_now() + 24 * 60 * 60,
     )
     .await;
@@ -176,12 +175,9 @@ pub async fn run(
 
 async fn publish_direct_ingress_reachability(
     handle: &DaemonHandle,
-    api_bind: &str,
-    api_port: u16,
-    peer_id: String,
+    endpoint: LiveReachabilityEndpoint,
     expires_at: u64,
 ) {
-    let endpoint = direct_ingress_reachability_endpoint(api_bind, api_port, peer_id);
     match handle
         .publish_reachability(0, expires_at, vec![endpoint], Vec::new())
         .await
@@ -192,6 +188,14 @@ async fn publish_direct_ingress_reachability(
         ),
         Err(err) => info!("Direct ingress reachability publish skipped: {err}"),
     }
+}
+
+fn local_direct_ingress_reachability_endpoint(
+    node: &NetworkNode,
+    api_bind: &str,
+    api_port: u16,
+) -> LiveReachabilityEndpoint {
+    direct_ingress_reachability_endpoint(api_bind, api_port, node.local_peer_id().to_string())
 }
 
 fn direct_ingress_reachability_endpoint(
@@ -260,6 +264,7 @@ fn jolt_now() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     const CONFIGURED: &str =
         "/ip4/89.167.68.65/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN";
@@ -400,5 +405,19 @@ mod tests {
         assert!(endpoint.addresses.is_empty());
         assert_eq!(endpoint.protocols, vec!["recipient-ingress-v1"]);
         assert_eq!(endpoint.max_payload_bytes, 1024 * 1024);
+    }
+
+    #[tokio::test]
+    async fn startup_reachability_advertises_the_active_device_peer() {
+        let store_dir = tempdir().unwrap();
+        let owner = NodeIdentity::generate();
+        let owner_peer_id = owner.peer_id().to_string();
+        let store = ContentStore::open(store_dir.path(), CacheConfig::default()).unwrap();
+        let node = NetworkNode::new_tcp(owner, store, NetworkConfig::test_config()).unwrap();
+
+        let endpoint = local_direct_ingress_reachability_endpoint(&node, "127.0.0.1", 9862);
+
+        assert_eq!(endpoint.peer_id, node.local_peer_id().to_string());
+        assert_ne!(endpoint.peer_id, owner_peer_id);
     }
 }
