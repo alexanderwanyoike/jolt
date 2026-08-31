@@ -116,8 +116,8 @@ for source in rfcs/[0-9][0-9][0-9][0-9]-*.md; do
   rfc_count=$((rfc_count + 1))
 done
 
-test "$rfc_count" -eq 7 || {
-  echo "expected 7 published RFC sources, found $rfc_count" >&2
+test "$rfc_count" -eq 8 || {
+  echo "expected 8 published RFC sources, found $rfc_count" >&2
   exit 1
 }
 
@@ -192,14 +192,15 @@ for value in "${required_data_sdk_reference[@]}"; do
 done
 
 required_rfc_library_contract=(
-  'Protocol series · seven experimental drafts'
-  '0001-0007'
+  'Protocol series · eight experimental drafts'
+  '0001-0008'
   '0002-device-authority.html'
   '0003-device-writer-logs.html'
   '0004-encrypted-device-access.html'
   '0005-community-membership.html'
   '0006-community-app-indexes.html'
   '0007-app-sessions.html'
+  '0008-device-writer-extensions.html'
 )
 
 for value in "${required_rfc_library_contract[@]}"; do
@@ -238,6 +239,7 @@ expected = {
     "0005": "Design only",
     "0006": "Design only",
     "0007": "Implemented v0",
+    "0008": "Implemented operation levels 2/3 and sync level 2",
 }
 
 rows = {}
