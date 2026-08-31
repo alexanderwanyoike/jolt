@@ -1,4 +1,4 @@
-# Mutate an Item
+# Change an Item
 
 ```meta
 Guide: 04
