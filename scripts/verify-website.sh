@@ -13,6 +13,8 @@ required=(
   website/sdk/index.html
   website/sdk/reference.html
   website/guides/app-development.html
+  website/guides/data-sdk.html
+  website/guides/data-sdk-migrations.html
   rfcs/README.md
   sdks/js/docs/api.json
 )

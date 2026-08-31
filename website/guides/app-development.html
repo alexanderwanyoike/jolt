@@ -11,7 +11,7 @@
     <meta property="og:site_name" content="Jolt" />
     <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="jolt-guide-source-sha256" content="3620b3d797dec46f0250788d1e096e852adcd861bfe9a10d57a168c4ccd24d1f" />
+    <meta name="jolt-guide-source-sha256" content="0d71c9cc582aff767967cae70cfa071da5e0e7457a39928f1a236a8c2574571c" />
     <title>Jolt Guide | Build Chirp with the Data SDK</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -24,7 +24,7 @@
         <div><dt>App</dt><dd>Chirp</dd></div><div><dt>Stack</dt><dd>Tauri 2 · React</dd></div><div><dt>Level</dt><dd>Beginner</dd></div><div><dt>SDK</dt><dd>jolt-sdk/data</dd></div>
       </dl>
       <nav aria-label="Guide contents">
-        <ul class="toc"><li class="toc-module"><a href="#1-create-the-app">1 · Create the app</a></li><li class="toc-module"><a href="#2-let-the-desktop-app-talk-to-jolt">2 · Let the desktop app talk to Jolt</a></li><li class="toc-module"><a href="#3-describe-chirps-data">3 · Describe Chirp's data</a></li><li class="toc-module"><a href="#4-add-profiles-and-remember-who-the-user-follows">4 · Add profiles and remember who the user follows</a></li><li class="toc-module"><a href="#5-build-the-live-timeline">5 · Build the live timeline</a></li><li class="toc-module"><a href="#6-add-a-post-card">6 · Add a post card</a></li><li class="toc-module"><a href="#7-build-the-screen">7 · Build the screen</a></li><li class="toc-module"><a href="#8-run-chirp">8 · Run Chirp</a></li><li class="toc-module"><a href="#9-test-alice-and-bob-without-two-daemons">9 · Test Alice and Bob without two daemons</a></li><li class="toc-module"><a href="#10-run-it-with-a-friend">10 · Run it with a friend</a></li><li class="toc-module"><a href="#where-to-go-next">Where to go next</a></li></ul>
+        <ul class="toc"><li class="toc-module"><a href="#1-create-the-app">1 · Create the app</a></li><li class="toc-module"><a href="#2-let-the-desktop-app-talk-to-jolt">2 · Let the desktop app talk to Jolt</a></li><li class="toc-module"><a href="#3-describe-chirps-data">3 · Describe Chirp's data</a></li><li class="toc-module"><a href="#4-add-profiles-and-remember-who-the-user-follows">4 · Add profiles and remember who the user follows</a></li><li class="toc-module"><a href="#5-build-the-live-timeline">5 · Build the live timeline</a></li><li class="toc-module"><a href="#6-add-a-post-card">6 · Add a post card</a></li><li class="toc-module"><a href="#7-build-the-screen">7 · Build the screen</a></li><li class="toc-module"><a href="#8-run-chirp">8 · Run Chirp</a></li><li class="toc-module"><a href="#9-test-alice-and-bob-without-two-daemons">9 · Test Alice and Bob without two daemons</a></li><li class="toc-module"><a href="#10-run-it-with-a-friend">10 · Run it with a friend</a></li><li class="toc-module"><a href="#11-where-to-go-next">11 · Where to go next</a></li></ul>
       </nav>
     </aside>
     <main class="doc-main">
@@ -1142,12 +1142,14 @@ another through Jolt:</p>
 <p>Following does not grant read permission: Chirp posts are public. It records
 which public identities Bob wants in his timeline. Jolt remains responsible for
 signed storage, provider discovery, verification, caching, and bounded refresh.</p>
-<h2 id="where-to-go-next">Where to go next</h2>
+<h2 id="11-where-to-go-next">11 · Where to go next</h2>
 <p>The beginner app is complete. Reach for these only when a real requirement
 appears:</p>
 <ul>
-<li><a href="../sdk/reference.html#data.Migrations">Migrations</a> upgrade older stored
-  Schema values through explicit deterministic steps.</li>
+<li><a href="data-sdk.html">Data SDK fundamentals</a> explains Schema Classes, Resources,
+  Apps, Items, access, and testing without the React screen around them.</li>
+<li><a href="data-sdk-migrations.html">Schema migrations</a> shows how to upgrade older
+  stored values without adding historical model classes to the application.</li>
 <li><a href="../sdk/reference.html#data.UpdateConflict">Manual conflicts</a> expose
   concurrent alternatives instead of using the automatic defaults.</li>
 <li><strong>Content References</strong> identify one exact immutable content version. Normal

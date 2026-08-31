@@ -277,13 +277,15 @@ Following does not grant read permission: Chirp posts are public. It records
 which public identities Bob wants in his timeline. Jolt remains responsible for
 signed storage, provider discovery, verification, caching, and bounded refresh.
 
-## Where to go next
+## 11 · Where to go next
 
 The beginner app is complete. Reach for these only when a real requirement
 appears:
 
-- [Migrations](../sdk/reference.html#data.Migrations) upgrade older stored
-  Schema values through explicit deterministic steps.
+- [Data SDK fundamentals](data-sdk.html) explains Schema Classes, Resources,
+  Apps, Items, access, and testing without the React screen around them.
+- [Schema migrations](data-sdk-migrations.html) shows how to upgrade older
+  stored values without adding historical model classes to the application.
 - [Manual conflicts](../sdk/reference.html#data.UpdateConflict) expose
   concurrent alternatives instead of using the automatic defaults.
 - **Content References** identify one exact immutable content version. Normal

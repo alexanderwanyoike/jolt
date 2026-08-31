@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="Change a Schema Class without making application code understand every historical data shape." />
+    <meta property="og:title" content="Jolt Guide | Schema migrations" />
+    <meta property="og:description" content="Change a Schema Class without making application code understand every historical data shape." />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Jolt" />
+    <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="jolt-guide-source-sha256" content="711f7aa4122c7516fd38d61104ae1b45fb881e91cd08a9388fc7256b89713e88" />
+    <title>Jolt Guide | Schema migrations</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="../docs.css" />
+  </head>
+  <body class="doc-page">
+    <aside class="doc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>guide 03</small></span></a>
+      <dl>
+        <div><dt>Level</dt><dd>Fundamentals</dd></div><div><dt>SDK</dt><dd>jolt-sdk/data</dd></div>
+      </dl>
+      <nav aria-label="Guide contents">
+        <ul class="toc"><li class="toc-module"><a href="#declare-each-step">Declare each step</a></li><li class="toc-module"><a href="#what-happens-on-a-read">What happens on a read</a></li><li class="toc-module"><a href="#test-old-data-directly">Test old data directly</a></li><li class="toc-module"><a href="#keep-migrations-boring">Keep migrations boring</a></li><li class="toc-module"><a href="#continue-learning">Continue learning</a></li></ul>
+      </nav>
+    </aside>
+    <main class="doc-main">
+      <article class="doc-document">
+        <header class="doc-title">
+          <p>JOLT DATA SDK GUIDE · 03</p>
+          <h1>Schema migrations</h1>
+          <p class="doc-lede">Jolt data can outlive one version of an application. A migration turns an older
+stored value into the one current Schema Class before application code sees it.</p>
+<p>You keep <code>Post</code>, not <code>PostV1</code>, <code>PostV2</code>, and <code>PostV3</code>. Historical shapes stay
+inside small, deterministic migration steps.</p>
+
+        </header>
+        <h2 id="declare-each-step">Declare each step</h2>
+<p>Suppose version 1 called its text field <code>message</code>. Version 2 renamed that field
+to <code>text</code>. Version 3 added a required list of tags.</p>
+<figure class="code-figure"><figcaption><span>src/posts.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">Collection</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Field</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Migrations</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Read</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Schema</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">SchemaMigrationError</span><span class="p">,</span>
+<span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">PostMigrations</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Migrations</span><span class="p">.</span><span class="nx">create</span><span class="p">()</span>
+<span class="w">  </span><span class="p">.</span><span class="nx">to</span><span class="p">(</span><span class="mf">2</span><span class="p">,</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">Migrations</span><span class="p">.</span><span class="nx">rename</span><span class="p">(</span><span class="nx">value</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">message</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;text&quot;</span><span class="w"> </span><span class="p">}))</span>
+<span class="w">  </span><span class="p">.</span><span class="nx">to</span><span class="p">(</span><span class="mf">3</span><span class="p">,</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">({</span>
+<span class="w">    </span><span class="p">...</span><span class="nx">value</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">tags</span><span class="o">:</span><span class="w"> </span><span class="kt">value.tags</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">  </span><span class="p">}));</span>
+
+<span class="kd">@Schema</span><span class="p">({</span><span class="w"> </span><span class="nx">version</span><span class="o">:</span><span class="w"> </span><span class="kt">3</span><span class="p">,</span><span class="w"> </span><span class="nx">migrations</span><span class="o">:</span><span class="w"> </span><span class="kt">PostMigrations</span><span class="w"> </span><span class="p">})</span>
+<span class="k">export</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nx">Post</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="kt">string</span><span class="p">()</span>
+<span class="w">  </span><span class="nx">text</span><span class="o">!:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="nx">array</span><span class="p">(</span><span class="nx">Field</span><span class="p">.</span><span class="kt">string</span><span class="p">)</span>
+<span class="w">  </span><span class="nx">tags</span><span class="o">!:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span>
+
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="nx">dateTime</span><span class="p">()</span>
+<span class="w">  </span><span class="nx">postedAt</span><span class="o">!:</span><span class="w"> </span><span class="nb">Date</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">Posts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Collection</span><span class="p">.</span><span class="nx">create</span><span class="p">(</span><span class="nx">Post</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">access</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">read</span><span class="o">:</span><span class="w"> </span><span class="kt">Read.AnyIdentity</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">create</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">update</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="p">});</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">explainMigrationFailure</span><span class="p">(</span><span class="nx">error</span><span class="o">:</span><span class="w"> </span><span class="kt">unknown</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">error</span><span class="w"> </span><span class="ow">instanceof</span><span class="w"> </span><span class="nx">SchemaMigrationError</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="sb">`Could not upgrade schema </span><span class="si">${</span><span class="nx">error</span><span class="p">.</span><span class="nx">fromVersion</span><span class="si">}</span><span class="sb"> to </span><span class="si">${</span><span class="nx">error</span><span class="p">.</span><span class="nx">toVersion</span><span class="si">}</span><span class="sb">`</span><span class="p">;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">throw</span><span class="w"> </span><span class="nx">error</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+<p><code>Migrations.rename()</code> returns a new value. It never adds helper fields to your
+application data. A normal <code>.to(...)</code> step can perform any other pure value
+transformation.</p>
+<h2 id="what-happens-on-a-read">What happens on a read</h2>
+<p>When the Data SDK reads an older record, it:</p>
+<ol>
+<li>reads the stored schema version;</li>
+<li>applies every required step in order;</li>
+<li>validates the result against the current Schema Class; and</li>
+<li>gives application code only the current <code>Post</code> type.</li>
+</ol>
+<p>The daemon and protocol do not interpret the schema. Migration belongs to the
+application-facing SDK boundary.</p>
+<h2 id="test-old-data-directly">Test old data directly</h2>
+<p>Use the Resource's <code>migrate()</code> helper in a focused test. Pass the historical
+version and a plain stored value; do not recreate old model classes.</p>
+<figure class="code-figure"><figcaption><span>src/posts.test.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">describe</span><span class="p">,</span><span class="w"> </span><span class="nx">expect</span><span class="p">,</span><span class="w"> </span><span class="nx">it</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;vitest&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Post</span><span class="p">,</span><span class="w"> </span><span class="nx">Posts</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./migrations&quot;</span><span class="p">;</span>
+
+<span class="nx">describe</span><span class="p">(</span><span class="s2">&quot;Data SDK migrations guide&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;migrates version one data into the current Schema Class&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">post</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Posts</span><span class="p">.</span><span class="nx">migrate</span><span class="p">({</span>
+<span class="w">      </span><span class="nx">version</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">value</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">message</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Hello from version one&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">postedAt</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;2026-08-31T12:00:00.000Z&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">    </span><span class="p">});</span>
+
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">post</span><span class="p">).</span><span class="nx">toBeInstanceOf</span><span class="p">(</span><span class="nx">Post</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">post</span><span class="p">.</span><span class="nx">text</span><span class="p">).</span><span class="nx">toBe</span><span class="p">(</span><span class="s2">&quot;Hello from version one&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">post</span><span class="p">.</span><span class="nx">tags</span><span class="p">).</span><span class="nx">toEqual</span><span class="p">([]);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">post</span><span class="p">.</span><span class="nx">postedAt</span><span class="p">).</span><span class="nx">toEqual</span><span class="p">(</span><span class="ow">new</span><span class="w"> </span><span class="nb">Date</span><span class="p">(</span><span class="s2">&quot;2026-08-31T12:00:00.000Z&quot;</span><span class="p">));</span>
+<span class="w">  </span><span class="p">});</span>
+<span class="p">});</span></code></pre></figure>
+<p>This helper exists for migration tests and lower-level tooling. Ordinary reads
+apply migrations automatically.</p>
+<h2 id="keep-migrations-boring">Keep migrations boring</h2>
+<p>A migration must produce the same output every time. It must not read the
+clock, call the network, inspect the current user, or mutate its input.</p>
+<p>Every version between the stored value and the current schema needs a step. A
+missing step, a thrown transformation, or a final value that does not validate
+throws <code>SchemaMigrationError</code>. Catch that error by type when a tool or advanced
+application needs to report the failed version range.</p>
+<p><code>Migrations.rename()</code> also refuses to overwrite an existing destination or
+send two old fields to the same new field. Failing is safer than silently
+discarding stored data.</p>
+<h2 id="continue-learning">Continue learning</h2>
+<ul>
+<li>Return to <a href="data-sdk.html">Data SDK fundamentals</a>.</li>
+<li>See migrations in the <a href="../sdk/reference.html#data.Migrations">generated API reference</a>.</li>
+<li>Build the complete <a href="app-development.html">beginner Chirp app</a>.</li>
+</ul>
+        <footer class="document-footer">
+          <a href="../sdk/">← SDK overview</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/guides/data-sdk-migrations.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>
