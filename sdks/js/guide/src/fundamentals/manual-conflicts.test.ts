@@ -5,10 +5,10 @@ import { Notebook } from "./manual-conflicts";
 
 describe("Data SDK Manual conflicts guide", () => {
   it("chooses one exact concurrent alternative", async () => {
-    const resolved = await resolveConcurrentEdits("choose-phone");
+    const resolved = await resolveConcurrentEdits("choose-workstation");
 
     expect(resolved.state).toBe(State.Present);
-    expect(resolved.value.text).toBe("Phone edit");
+    expect(resolved.value.text).toBe("Workstation edit");
   });
 
   it("publishes a custom schema-valid resolution", async () => {
@@ -20,22 +20,22 @@ describe("Data SDK Manual conflicts guide", () => {
 
   it("still combines independent fields automatically", async () => {
     const world = Notebook.testWorld();
-    const phone = world.device("alice.jolt", "phone");
+    const workstation = world.device("alice.jolt", "workstation");
     const laptop = world.device("alice.jolt", "laptop");
-    const created = await phone.notes.create({ text: "Original", pinned: false });
+    const created = await workstation.notes.create({ text: "Original", pinned: false });
 
     await world.sync();
-    const phoneCopy = await phone.notes.get(created.ref);
+    const workstationCopy = await workstation.notes.get(created.ref);
     const laptopCopy = await laptop.notes.get(created.ref);
-    if (!phoneCopy.isPresent() || !laptopCopy.isPresent()) {
+    if (!workstationCopy.isPresent() || !laptopCopy.isPresent()) {
       throw new Error("Expected both devices to have the note");
     }
 
-    await phoneCopy.update({ text: "Edited" });
+    await workstationCopy.update({ text: "Edited" });
     await laptopCopy.update({ pinned: true });
     await world.sync();
 
-    const combined = await phone.notes.get(created.ref);
+    const combined = await workstation.notes.get(created.ref);
     expect(combined.isPresent()).toBe(true);
     if (!combined.isPresent()) throw new Error("Expected a combined note");
     expect(combined.value).toEqual({ text: "Edited", pinned: true });
