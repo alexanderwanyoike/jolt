@@ -211,8 +211,7 @@ async fn two_nodes_publish_and_fetch() {
 
     // Create Node A and start listening
     let store_a = make_store(dir_a.path());
-    let mut node_a =
-        NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config()).unwrap();
+    let mut node_a = NetworkNode::new_tcp(identity_a, store_a, no_mdns_config()).unwrap();
     node_a.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
 
     // Publish test content on Node A
@@ -243,8 +242,7 @@ async fn two_nodes_publish_and_fetch() {
 
     // Create Node B and dial Node A
     let store_b = make_store(dir_b.path());
-    let mut node_b =
-        NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config()).unwrap();
+    let mut node_b = NetworkNode::new_tcp(identity_b, store_b, no_mdns_config()).unwrap();
     node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     node_b.dial(addr_a).unwrap();
 
@@ -719,8 +717,7 @@ async fn two_nodes_request_and_cache_verified_update_log() {
     let identity_b = NodeIdentity::generate();
 
     let store_a = make_store(dir_a.path());
-    let mut node_a =
-        NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config()).unwrap();
+    let mut node_a = NetworkNode::new_tcp(identity_a, store_a, no_mdns_config()).unwrap();
     node_a
         .store_verified_update_log(jolt_identity.clone(), update_log.clone())
         .unwrap();
@@ -745,8 +742,7 @@ async fn two_nodes_request_and_cache_verified_update_log() {
     };
 
     let store_b = make_store(dir_b.path());
-    let mut node_b =
-        NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config()).unwrap();
+    let mut node_b = NetworkNode::new_tcp(identity_b, store_b, no_mdns_config()).unwrap();
     node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     node_b.dial(addr_a).unwrap();
 
@@ -832,8 +828,7 @@ async fn connected_peer_address_is_cached_for_later_bootstrap() {
     let identity_b = NodeIdentity::generate();
 
     let store_a = make_store(dir_a.path());
-    let mut node_a =
-        NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config()).unwrap();
+    let mut node_a = NetworkNode::new_tcp(identity_a, store_a, no_mdns_config()).unwrap();
     node_a.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
 
     let (mut node_a, addr_a, peer_a) = {
@@ -856,8 +851,7 @@ async fn connected_peer_address_is_cached_for_later_bootstrap() {
     };
 
     let store_b = make_store(dir_b.path());
-    let mut node_b =
-        NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config()).unwrap();
+    let mut node_b = NetworkNode::new_tcp(identity_b, store_b, no_mdns_config()).unwrap();
     node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     node_b.dial(addr_a).unwrap();
 

@@ -64,8 +64,7 @@ async fn two_nodes_dht_provider_announce_and_fetch() {
 
     // Create Node A, publish content
     let store_a = make_store(dir_a.path());
-    let mut node_a =
-        NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config()).unwrap();
+    let mut node_a = NetworkNode::new_tcp(identity_a, store_a, no_mdns_config()).unwrap();
     node_a.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
 
     let test_data = b"Content discovered via DHT provider records!";
@@ -94,8 +93,7 @@ async fn two_nodes_dht_provider_announce_and_fetch() {
 
     // Create Node B, connect to A
     let store_b = make_store(dir_b.path());
-    let mut node_b =
-        NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config()).unwrap();
+    let mut node_b = NetworkNode::new_tcp(identity_b, store_b, no_mdns_config()).unwrap();
     node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     node_b.dial(addr_a).unwrap();
 
@@ -198,8 +196,7 @@ async fn dht_provider_announce_is_queryable() {
     let identity_b = NodeIdentity::generate();
 
     let store_a = make_store(dir_a.path());
-    let mut node_a =
-        NetworkNode::new_tcp(identity_a, store_a, NetworkConfig::test_config()).unwrap();
+    let mut node_a = NetworkNode::new_tcp(identity_a, store_a, no_mdns_config()).unwrap();
     node_a.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
 
     // Publish content on A (which also announces to DHT)
@@ -228,8 +225,7 @@ async fn dht_provider_announce_is_queryable() {
 
     // Create Node B and connect to A
     let store_b = make_store(dir_b.path());
-    let mut node_b =
-        NetworkNode::new_tcp(identity_b, store_b, NetworkConfig::test_config()).unwrap();
+    let mut node_b = NetworkNode::new_tcp(identity_b, store_b, no_mdns_config()).unwrap();
     node_b.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
     node_b.dial(addr_a).unwrap();
 
