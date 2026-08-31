@@ -64,5 +64,6 @@ discarding stored data.
 ## Continue learning
 
 - Return to [Data SDK fundamentals](data-sdk.html).
+- Learn the typed lifecycle in [Item mutations](data-sdk-mutations.html).
 - See migrations in the [generated API reference](../sdk/reference.html#data.Migrations).
 - Build the complete [beginner Chirp app](app-development.html).
