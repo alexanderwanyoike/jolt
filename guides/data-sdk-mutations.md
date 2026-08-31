@@ -71,7 +71,8 @@ concurrent update.
 That automatic distributed behavior is separate from a `ConflictError` raised
 when application code tries to mutate an already stale Item snapshot. Advanced
 applications can override the automatic policies and expose Manual alternatives;
-the beginner path does not need that machinery.
+the beginner path does not need that machinery. When a real product does, use
+the advanced [Manual conflicts](data-sdk-manual-conflicts.html) guide.
 
 ## Continue learning
 

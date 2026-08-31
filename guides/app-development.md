@@ -288,8 +288,8 @@ appears:
   lifecycle states, and expected failure types outside the React UI.
 - [Schema migrations](data-sdk-migrations.html) shows how to upgrade older
   stored values without adding historical model classes to the application.
-- [Manual conflicts](../sdk/reference.html#data.UpdateConflict) expose
-  concurrent alternatives instead of using the automatic defaults.
+- [Manual conflicts](data-sdk-manual-conflicts.html) expose concurrent
+  alternatives instead of using the automatic defaults.
 - **Content References** identify one exact immutable content version. Normal
   relationships use stable logical [`Ref`](../sdk/reference.html#data.Ref)
   values.

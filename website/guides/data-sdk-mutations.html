@@ -11,7 +11,7 @@
     <meta property="og:site_name" content="Jolt" />
     <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="jolt-guide-source-sha256" content="ec7a60a1498e7d3f7a2bd5daeaac6069153e3f2ce47b641cc97f19469015d62d" />
+    <meta name="jolt-guide-source-sha256" content="1bf1dee87ddacff5e451e65c3c47d0357899c1801d25f4697ad472e20fc803c6" />
     <title>Jolt Guide | Change an Item</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -162,7 +162,8 @@ concurrent update.</p>
 <p>That automatic distributed behavior is separate from a <code>ConflictError</code> raised
 when application code tries to mutate an already stale Item snapshot. Advanced
 applications can override the automatic policies and expose Manual alternatives;
-the beginner path does not need that machinery.</p>
+the beginner path does not need that machinery. When a real product does, use
+the advanced <a href="data-sdk-manual-conflicts.html">Manual conflicts</a> guide.</p>
 <h2 id="continue-learning">Continue learning</h2>
 <ul>
 <li>Return to <a href="data-sdk.html">Data SDK fundamentals</a>.</li>
