@@ -11,7 +11,7 @@
     <meta property="og:site_name" content="Jolt" />
     <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="jolt-guide-source-sha256" content="13ae6f3262ecaffb0a2693e158ed22c1320c94bffe4b6090b29262c09cdd8f88" />
+    <meta name="jolt-guide-source-sha256" content="3620b3d797dec46f0250788d1e096e852adcd861bfe9a10d57a168c4ccd24d1f" />
     <title>Jolt Guide | Build Chirp with the Data SDK</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
@@ -559,6 +559,7 @@ it.</p>
 <h2 id="7-build-the-screen">7 · Build the screen</h2>
 <p>Replace the generated <code>src/App.tsx</code>:</p>
 <figure class="code-figure"><figcaption><span>src/App.tsx</span><span>tsx</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">useEffect</span><span class="p">,</span><span class="w"> </span><span class="nx">useMemo</span><span class="p">,</span><span class="w"> </span><span class="nx">useState</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;react&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">AppIncompatibleError</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
 
 <span class="k">import</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="nx">Chirp</span><span class="p">,</span>
@@ -582,6 +583,25 @@ it.</p>
 <span class="w">  </span><span class="nx">previous</span><span class="o">:</span><span class="w"> </span><span class="kt">ChirpPost</span><span class="p">;</span>
 <span class="p">};</span>
 
+<span class="kr">type</span><span class="w"> </span><span class="nx">StartupFailure</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">title</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">message</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<span class="p">};</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">describeStartupFailure</span><span class="p">(</span><span class="nx">error</span><span class="o">:</span><span class="w"> </span><span class="kt">unknown</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">StartupFailure</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">error</span><span class="w"> </span><span class="ow">instanceof</span><span class="w"> </span><span class="nx">AppIncompatibleError</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nx">title</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Chirp needs a newer Jolt&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">message</span><span class="o">:</span>
+<span class="w">        </span><span class="s2">&quot;Update Jolt Console, then choose Check again. Chirp stopped before requesting access or changing data.&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">title</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Chirp could not start&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">message</span><span class="o">:</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="ow">instanceof</span><span class="w"> </span><span class="ne">Error</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="nx">error</span><span class="p">.</span><span class="nx">message</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Please try again.&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="p">};</span>
+<span class="p">}</span>
+
 <span class="k">export</span><span class="w"> </span><span class="k">default</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">App</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">chirp</span><span class="p">,</span><span class="w"> </span><span class="nx">setChirp</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="nx">ChirpApplication</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="o">&gt;</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">following</span><span class="p">,</span><span class="w"> </span><span class="nx">setFollowing</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="nx">FollowingItem</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="o">&gt;</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
@@ -593,9 +613,11 @@ it.</p>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">friend</span><span class="p">,</span><span class="w"> </span><span class="nx">setFriend</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">);</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">deleted</span><span class="p">,</span><span class="w"> </span><span class="nx">setDeleted</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="nx">DeletedPost</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="o">&gt;</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">error</span><span class="p">,</span><span class="w"> </span><span class="nx">setError</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="o">&lt;</span><span class="nx">unknown</span><span class="o">&gt;</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">connectionAttempt</span><span class="p">,</span><span class="w"> </span><span class="nx">setConnectionAttempt</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="p">(</span><span class="mf">0</span><span class="p">);</span>
 
 <span class="w">  </span><span class="nx">useEffect</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="nx">cancelled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="p">;</span>
+<span class="w">    </span><span class="nx">setError</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
 <span class="w">    </span><span class="ow">void</span><span class="w"> </span><span class="nx">Chirp</span><span class="p">.</span><span class="nx">connect</span><span class="p">()</span>
 <span class="w">      </span><span class="p">.</span><span class="nx">then</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">(</span><span class="nx">connected</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">({</span><span class="w"> </span><span class="nx">connected</span><span class="p">,</span><span class="w"> </span><span class="nx">following</span><span class="o">:</span><span class="w"> </span><span class="kt">await</span><span class="w"> </span><span class="nx">getFollowing</span><span class="p">(</span><span class="nx">connected</span><span class="p">)</span><span class="w"> </span><span class="p">}))</span>
 <span class="w">      </span><span class="p">.</span><span class="nx">then</span><span class="p">((</span><span class="nx">connection</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
@@ -607,7 +629,7 @@ it.</p>
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">cancelled</span><span class="p">)</span><span class="w"> </span><span class="nx">setError</span><span class="p">(</span><span class="nx">error</span><span class="p">);</span>
 <span class="w">      </span><span class="p">});</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">cancelled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
-<span class="w">  </span><span class="p">},</span><span class="w"> </span><span class="p">[]);</span>
+<span class="w">  </span><span class="p">},</span><span class="w"> </span><span class="p">[</span><span class="nx">connectionAttempt</span><span class="p">]);</span>
 
 <span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">identities</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useMemo</span><span class="p">(</span>
 <span class="w">    </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">chirp</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span>
@@ -681,8 +703,26 @@ it.</p>
 <span class="w">    </span><span class="nx">setDeleted</span><span class="p">(</span><span class="kc">null</span><span class="p">);</span>
 <span class="w">  </span><span class="p">};</span>
 
-<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">timeline</span><span class="p">.</span><span class="nx">error</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="p">(</span><span class="nx">chirp</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">error</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="kc">null</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp-shell&quot;</span><span class="o">&gt;&lt;</span><span class="nx">p</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;notice notice--error&quot;</span><span class="o">&gt;</span><span class="p">{</span><span class="nb">String</span><span class="p">(</span><span class="nx">timeline</span><span class="p">.</span><span class="nx">error</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="nx">error</span><span class="p">)}</span><span class="o">&lt;</span><span class="err">/p&gt;&lt;/main&gt;;</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">chirp</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">error</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">failure</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">describeStartupFailure</span><span class="p">(</span><span class="nx">error</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span>
+<span class="w">      </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp-shell chirp-shell--centered&quot;</span><span class="o">&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">p</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;eyebrow&quot;</span><span class="o">&gt;</span><span class="nx">Chirp</span><span class="w"> </span><span class="nx">could</span><span class="w"> </span><span class="nx">not</span><span class="w"> </span><span class="nx">meet</span><span class="w"> </span><span class="nx">Jolt</span><span class="o">&lt;</span><span class="err">/p&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">h1</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">failure</span><span class="p">.</span><span class="nx">title</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/h1&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">p</span><span class="o">&gt;</span><span class="p">{</span><span class="nx">failure</span><span class="p">.</span><span class="nx">message</span><span class="p">}</span><span class="o">&lt;</span><span class="err">/p&gt;</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="nx">button</span>
+<span class="w">          </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;button&quot;</span>
+<span class="w">          </span><span class="kr">type</span><span class="o">=</span><span class="s2">&quot;button&quot;</span>
+<span class="w">          </span><span class="nx">onClick</span><span class="o">=</span><span class="p">{()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">setConnectionAttempt</span><span class="p">(</span><span class="nx">attempt</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">attempt</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mf">1</span><span class="p">)}</span>
+<span class="w">        </span><span class="o">&gt;</span>
+<span class="w">          </span><span class="nx">Check</span><span class="w"> </span><span class="nx">again</span>
+<span class="w">        </span><span class="o">&lt;</span><span class="err">/button&gt;</span>
+<span class="w">      </span><span class="o">&lt;</span><span class="err">/main&gt;</span>
+<span class="w">    </span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">timeline</span><span class="p">.</span><span class="nx">error</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="o">&lt;</span><span class="nx">main</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;chirp-shell&quot;</span><span class="o">&gt;&lt;</span><span class="nx">p</span><span class="w"> </span><span class="nx">className</span><span class="o">=</span><span class="s2">&quot;notice notice--error&quot;</span><span class="o">&gt;</span><span class="p">{</span><span class="nb">String</span><span class="p">(</span><span class="nx">timeline</span><span class="p">.</span><span class="nx">error</span><span class="p">)}</span><span class="o">&lt;</span><span class="err">/p&gt;&lt;/main&gt;;</span>
 <span class="w">  </span><span class="p">}</span>
 
 <span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">chirp</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">following</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
@@ -846,6 +886,10 @@ it.</p>
 message, runs the typed operation, and shows a dismissible error without
 throwing away the rest of the screen. Connection and timeline startup errors
 still stop the app because Chirp cannot work without those foundations.</p>
+<p>The startup boundary catches <code>AppIncompatibleError</code> by type. Instead of showing
+SDK terminology, Chirp asks the person to update Jolt and offers <strong>Check again</strong>.
+Compatibility is checked before approval or data access, so this failure cannot
+partly create the application.</p>
 <p>Present Items carry <code>State.Present</code>; deleted Items carry <code>State.Deleted</code> and
 offer <code>restore(...)</code> only when the Resource declaration allows it.</p>
 <p>There is deliberately no transport setup, compatibility Feature map, App

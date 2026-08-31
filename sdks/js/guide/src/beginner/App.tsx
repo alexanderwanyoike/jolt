@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { AppIncompatibleError } from "jolt-sdk/data";
 
 import {
   Chirp,
@@ -22,6 +23,25 @@ type DeletedPost = {
   previous: ChirpPost;
 };
 
+type StartupFailure = {
+  title: string;
+  message: string;
+};
+
+export function describeStartupFailure(error: unknown): StartupFailure {
+  if (error instanceof AppIncompatibleError) {
+    return {
+      title: "Chirp needs a newer Jolt",
+      message:
+        "Update Jolt Console, then choose Check again. Chirp stopped before requesting access or changing data.",
+    };
+  }
+  return {
+    title: "Chirp could not start",
+    message: error instanceof Error ? error.message : "Please try again.",
+  };
+}
+
 export default function App() {
   const [chirp, setChirp] = useState<ChirpApplication | null>(null);
   const [following, setFollowing] = useState<FollowingItem | null>(null);
@@ -33,9 +53,11 @@ export default function App() {
   const [friend, setFriend] = useState("");
   const [deleted, setDeleted] = useState<DeletedPost | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [connectionAttempt, setConnectionAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setError(null);
     void Chirp.connect()
       .then(async (connected) => ({ connected, following: await getFollowing(connected) }))
       .then((connection) => {
@@ -47,7 +69,7 @@ export default function App() {
         if (!cancelled) setError(error);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [connectionAttempt]);
 
   const identities = useMemo(
     () => chirp === null
@@ -121,8 +143,26 @@ export default function App() {
     setDeleted(null);
   };
 
-  if (timeline.error !== null || (chirp === null && error !== null)) {
-    return <main className="chirp-shell"><p className="notice notice--error">{String(timeline.error ?? error)}</p></main>;
+  if (chirp === null && error !== null) {
+    const failure = describeStartupFailure(error);
+    return (
+      <main className="chirp-shell chirp-shell--centered">
+        <p className="eyebrow">Chirp could not meet Jolt</p>
+        <h1>{failure.title}</h1>
+        <p>{failure.message}</p>
+        <button
+          className="button"
+          type="button"
+          onClick={() => setConnectionAttempt(attempt => attempt + 1)}
+        >
+          Check again
+        </button>
+      </main>
+    );
+  }
+
+  if (timeline.error !== null) {
+    return <main className="chirp-shell"><p className="notice notice--error">{String(timeline.error)}</p></main>;
   }
 
   if (chirp === null || following === null) {
