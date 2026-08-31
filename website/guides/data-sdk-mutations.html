@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="Update, replace, delete, and restore typed Items without handling Jolt&#x27;s storage machinery." />
+    <meta property="og:title" content="Jolt Guide | Change an Item" />
+    <meta property="og:description" content="Update, replace, delete, and restore typed Items without handling Jolt&#x27;s storage machinery." />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Jolt" />
+    <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="jolt-guide-source-sha256" content="ec7a60a1498e7d3f7a2bd5daeaac6069153e3f2ce47b641cc97f19469015d62d" />
+    <title>Jolt Guide | Change an Item</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="../docs.css" />
+  </head>
+  <body class="doc-page">
+    <aside class="doc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>guide 04</small></span></a>
+      <dl>
+        <div><dt>Level</dt><dd>Fundamentals</dd></div><div><dt>SDK</dt><dd>jolt-sdk/data</dd></div>
+      </dl>
+      <nav aria-label="Guide contents">
+        <ul class="toc"><li class="toc-module"><a href="#declare-the-allowed-changes">Declare the allowed changes</a></li><li class="toc-module"><a href="#keep-the-new-item">Keep the new Item</a></li><li class="toc-module"><a href="#read-the-item-state">Read the Item state</a></li><li class="toc-module"><a href="#catch-expected-failures-by-type">Catch expected failures by type</a></li><li class="toc-module"><a href="#automatic-conflicts-are-the-default">Automatic conflicts are the default</a></li><li class="toc-module"><a href="#continue-learning">Continue learning</a></li></ul>
+      </nav>
+    </aside>
+    <main class="doc-main">
+      <article class="doc-document">
+        <header class="doc-title">
+          <p>JOLT DATA SDK GUIDE · 04</p>
+          <h1>Change an Item</h1>
+          <p class="doc-lede">A Resource decides which changes an application may make. TypeScript then
+exposes only those methods on its Items. Application code does not manage paths,
+content identifiers, or concurrency bookkeeping.</p>
+
+        </header>
+        <h2 id="declare-the-allowed-changes">Declare the allowed changes</h2>
+<p>This Task Collection allows its owner to perform the complete Item lifecycle:</p>
+<figure class="code-figure"><figcaption><span>src/tasks.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">App</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Collection</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Field</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Read</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Schema</span><span class="p">,</span>
+<span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
+
+<span class="kd">@Schema</span><span class="p">({</span><span class="w"> </span><span class="nx">version</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="w"> </span><span class="p">})</span>
+<span class="k">export</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nx">Task</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="kt">string</span><span class="p">()</span>
+<span class="w">  </span><span class="nx">title</span><span class="o">!:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="kt">boolean</span><span class="p">()</span>
+<span class="w">  </span><span class="nx">done</span><span class="o">!:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">Tasks</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Collection</span><span class="p">.</span><span class="nx">create</span><span class="p">(</span><span class="nx">Task</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">access</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">read</span><span class="o">:</span><span class="w"> </span><span class="kt">Read.OwnIdentity</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">create</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">update</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">delete</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">restore</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="p">});</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">TaskList</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">App</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;task-list.example&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Task List&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">namespace</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;tasks&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">data</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">tasks</span><span class="o">:</span><span class="w"> </span><span class="kt">Tasks</span><span class="w"> </span><span class="p">},</span>
+<span class="p">});</span></code></pre></figure>
+<p>Remove an operation from <code>access</code> when the application does not need it. For
+example, without <code>delete: true</code>, a Present Item has no <code>delete()</code> method.</p>
+<h2 id="keep-the-new-item">Keep the new Item</h2>
+<p>Items are immutable snapshots. A successful mutation returns a new Item at the
+same stable <code>ref</code>; it does not change the older snapshot in place.</p>
+<figure class="code-figure"><figcaption><span>src/task-actions.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Ref</span><span class="p">,</span><span class="w"> </span><span class="nx">State</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Task</span><span class="p">,</span><span class="w"> </span><span class="nx">TaskList</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./mutations&quot;</span><span class="p">;</span>
+
+<span class="kr">type</span><span class="w"> </span><span class="nx">TaskCollection</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">ReturnType</span><span class="o">&lt;</span><span class="ow">typeof</span><span class="w"> </span><span class="nx">TaskList</span><span class="p">.</span><span class="nx">test</span><span class="o">&gt;</span><span class="p">[</span><span class="s2">&quot;tasks&quot;</span><span class="p">];</span>
+
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">reviseTask</span><span class="p">(</span><span class="nx">tasks</span><span class="o">:</span><span class="w"> </span><span class="kt">TaskCollection</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">created</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">tasks</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span><span class="w"> </span><span class="nx">title</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Read the guide&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">done</span><span class="o">:</span><span class="w"> </span><span class="kt">false</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">updated</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">created</span><span class="p">.</span><span class="nx">update</span><span class="p">({</span><span class="w"> </span><span class="nx">done</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">replaced</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">updated</span><span class="p">.</span><span class="nx">replace</span><span class="p">({</span><span class="w"> </span><span class="nx">title</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Build an app&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">done</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">deleted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">replaced</span><span class="p">.</span><span class="ow">delete</span><span class="p">();</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">restored</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">deleted</span><span class="p">.</span><span class="nx">restore</span><span class="p">({</span><span class="w"> </span><span class="nx">title</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Build an app&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">done</span><span class="o">:</span><span class="w"> </span><span class="kt">false</span><span class="w"> </span><span class="p">});</span>
+
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">created</span><span class="p">,</span><span class="w"> </span><span class="nx">updated</span><span class="p">,</span><span class="w"> </span><span class="nx">replaced</span><span class="p">,</span><span class="w"> </span><span class="nx">deleted</span><span class="p">,</span><span class="w"> </span><span class="nx">restored</span><span class="w"> </span><span class="p">};</span>
+<span class="p">}</span>
+
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">describeTask</span><span class="p">(</span><span class="nx">tasks</span><span class="o">:</span><span class="w"> </span><span class="kt">TaskCollection</span><span class="p">,</span><span class="w"> </span><span class="nx">ref</span><span class="o">:</span><span class="w"> </span><span class="kt">Ref</span><span class="o">&lt;</span><span class="nx">Task</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">item</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">tasks</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="nx">ref</span><span class="p">);</span>
+
+<span class="w">  </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="nx">item</span><span class="p">.</span><span class="nx">state</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="nx">State.Present</span><span class="o">:</span>
+<span class="w">      </span><span class="kt">return</span><span class="w"> </span><span class="nx">item</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">title</span><span class="p">;</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="nx">State.Deleted</span><span class="o">:</span>
+<span class="w">      </span><span class="kt">return</span><span class="w"> </span><span class="s2">&quot;This task was deleted&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="nx">State.Missing</span><span class="o">:</span>
+<span class="w">      </span><span class="kt">return</span><span class="w"> </span><span class="s2">&quot;Task not found&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="nx">State.Unavailable</span><span class="o">:</span>
+<span class="w">      </span><span class="kt">return</span><span class="w"> </span><span class="s2">&quot;Task is temporarily unavailable&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="nx">default</span><span class="o">:</span>
+<span class="w">      </span><span class="kt">throw</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="ne">Error</span><span class="p">(</span><span class="s2">&quot;Unknown task state&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span></code></pre></figure>
+<p><code>update()</code> is a shallow patch. Omitted fields stay unchanged, while a supplied
+array or nested value replaces that whole field. Use <code>replace()</code> when you mean
+to supply the complete value.</p>
+<p><code>delete()</code> returns a Deleted Item. <code>restore()</code> also takes a complete value,
+which must match the current Schema Class. This lets an application restore old
+logical data into its current shape.</p>
+<h2 id="read-the-item-state">Read the Item state</h2>
+<p>The <code>describeTask()</code> example uses a normal <code>switch</code> over <code>item.state</code>:</p>
+<ul>
+<li><code>State.Present</code> has a schema-valid <code>value</code>.</li>
+<li><code>State.Deleted</code> is deliberately deleted and may be restorable.</li>
+<li><code>State.Missing</code> has no known record at that logical reference.</li>
+<li><code>State.Unavailable</code> means Jolt cannot safely determine the current state.</li>
+</ul>
+<p>The matching <code>isPresent()</code> and <code>isDeleted()</code> helpers are useful when an early
+return reads more clearly than a switch. Both forms narrow the TypeScript type.</p>
+<h2 id="catch-expected-failures-by-type">Catch expected failures by type</h2>
+<p>Keep error handling close to the user action. Catch the specific failures the
+screen can explain, and rethrow anything it does not understand:</p>
+<figure class="code-figure"><figcaption><span>src/mutation-errors.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">AccessRevokedError</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">ConflictError</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">ItemUnavailableError</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">SchemaValidationError</span><span class="p">,</span>
+<span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">mutationMessage</span><span class="p">(</span><span class="nx">error</span><span class="o">:</span><span class="w"> </span><span class="kt">unknown</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">error</span><span class="w"> </span><span class="ow">instanceof</span><span class="w"> </span><span class="nx">ConflictError</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="s2">&quot;This item changed. Read it again before retrying.&quot;</span><span class="p">;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">error</span><span class="w"> </span><span class="ow">instanceof</span><span class="w"> </span><span class="nx">ItemUnavailableError</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="s2">&quot;Jolt cannot safely change this item right now.&quot;</span><span class="p">;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">error</span><span class="w"> </span><span class="ow">instanceof</span><span class="w"> </span><span class="nx">AccessRevokedError</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="s2">&quot;Reconnect to Jolt and request approval again.&quot;</span><span class="p">;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">error</span><span class="w"> </span><span class="ow">instanceof</span><span class="w"> </span><span class="nx">SchemaValidationError</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="sb">`Check the </span><span class="si">${</span><span class="nx">error</span><span class="p">.</span><span class="nx">field</span><span class="si">}</span><span class="sb"> field.`</span><span class="p">;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">throw</span><span class="w"> </span><span class="nx">error</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+<p><code>ConflictError</code> means the Item snapshot became stale before the mutation. Read
+the current Item, show it to the user when needed, and retry only if the action
+still makes sense. <code>ItemUnavailableError</code> prevents a change when current state
+is unknown. <code>AccessRevokedError</code> asks the application to reconnect and request
+approval again. <code>SchemaValidationError</code> identifies invalid application data.</p>
+<h2 id="automatic-conflicts-are-the-default">Automatic conflicts are the default</h2>
+<p>Resources need no conflict configuration for normal application code. Jolt
+combines concurrent changes to different top-level fields, resolves concurrent
+changes to the same field deterministically, and lets deletion win over a
+concurrent update.</p>
+<p>That automatic distributed behavior is separate from a <code>ConflictError</code> raised
+when application code tries to mutate an already stale Item snapshot. Advanced
+applications can override the automatic policies and expose Manual alternatives;
+the beginner path does not need that machinery.</p>
+<h2 id="continue-learning">Continue learning</h2>
+<ul>
+<li>Return to <a href="data-sdk.html">Data SDK fundamentals</a>.</li>
+<li>Evolve stored values with <a href="data-sdk-migrations.html">Schema migrations</a>.</li>
+<li>Build these actions into the <a href="app-development.html">beginner Chirp app</a>.</li>
+</ul>
+        <footer class="document-footer">
+          <a href="../sdk/">← SDK overview</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/guides/data-sdk-mutations.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>

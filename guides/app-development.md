@@ -284,6 +284,8 @@ appears:
 
 - [Data SDK fundamentals](data-sdk.html) explains Schema Classes, Resources,
   Apps, Items, access, and testing without the React screen around them.
+- [Item mutations](data-sdk-mutations.html) explains immutable Item snapshots,
+  lifecycle states, and expected failure types outside the React UI.
 - [Schema migrations](data-sdk-migrations.html) shows how to upgrade older
   stored values without adding historical model classes to the application.
 - [Manual conflicts](../sdk/reference.html#data.UpdateConflict) expose
