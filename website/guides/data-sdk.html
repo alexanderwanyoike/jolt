@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="Understand the small set of Data SDK building blocks before using them in an application." />
+    <meta property="og:title" content="Jolt Guide | Data SDK fundamentals" />
+    <meta property="og:description" content="Understand the small set of Data SDK building blocks before using them in an application." />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Jolt" />
+    <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="jolt-guide-source-sha256" content="e8487994f549f3bb574a0e2ab34857e33c4752f02f38b73e09f49f761d678661" />
+    <title>Jolt Guide | Data SDK fundamentals</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="../docs.css" />
+  </head>
+  <body class="doc-page">
+    <aside class="doc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>guide 02</small></span></a>
+      <dl>
+        <div><dt>Level</dt><dd>Beginner</dd></div><div><dt>SDK</dt><dd>jolt-sdk/data</dd></div>
+      </dl>
+      <nav aria-label="Guide contents">
+        <ul class="toc"><li class="toc-module"><a href="#pick-the-page-you-need">Pick the page you need</a></li><li class="toc-module"><a href="#three-building-blocks">Three building blocks</a></li><li class="toc-module"><a href="#values-and-items-are-different">Values and Items are different</a></li><li class="toc-module"><a href="#access-is-part-of-the-resource">Access is part of the Resource</a></li><li class="toc-module"><a href="#test-without-a-daemon">Test without a daemon</a></li><li class="toc-module"><a href="#where-to-go-next">Where to go next</a></li></ul>
+      </nav>
+    </aside>
+    <main class="doc-main">
+      <article class="doc-document">
+        <header class="doc-title">
+          <p>JOLT DATA SDK GUIDE · 02</p>
+          <h1>Data SDK fundamentals</h1>
+          <p class="doc-lede">The Data SDK lets an application describe its data and use it through one typed
+interface. Jolt handles identities, signed storage, paths, permissions, and
+network synchronization underneath.</p>
+<p>If you want to build something immediately, start with
+<a href="app-development.html">Build Chirp</a>. Come back here when you want the concepts
+without the React screen around them.</p>
+
+        </header>
+        <h2 id="pick-the-page-you-need">Pick the page you need</h2>
+<ul>
+<li><strong>Build a first app:</strong> follow the complete <a href="app-development.html">Chirp tutorial</a>.</li>
+<li><strong>Understand the building blocks:</strong> continue on this page.</li>
+<li><strong>Change stored data safely:</strong> read <a href="data-sdk-migrations.html">Schema migrations</a>.</li>
+<li><strong>Look up one exact method:</strong> use the <a href="../sdk/reference.html#module-data">generated API reference</a>.</li>
+</ul>
+<h2 id="three-building-blocks">Three building blocks</h2>
+<p>A Jolt data application has three parts:</p>
+<ol>
+<li>A <strong>Schema Class</strong> says what one value looks like. The class is both the
+   TypeScript type and the runtime validator.</li>
+<li>A <strong>Resource</strong> says how values are stored and who may read or change them.
+   A Collection stores many Items; a Document stores one Item per identity.</li>
+<li>An <strong>App</strong> gives those Resources names and produces the interface your code
+   connects to or tests.</li>
+</ol>
+<p>This small Notebook app contains all three:</p>
+<figure class="code-figure"><figcaption><span>src/notebook.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">App</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Collection</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Field</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Read</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Schema</span><span class="p">,</span>
+<span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
+
+<span class="kd">@Schema</span><span class="p">({</span><span class="w"> </span><span class="nx">version</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="w"> </span><span class="p">})</span>
+<span class="k">export</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nx">Note</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="kt">string</span><span class="p">()</span>
+<span class="w">  </span><span class="nx">text</span><span class="o">!:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="nx">dateTime</span><span class="p">()</span>
+<span class="w">  </span><span class="nx">createdAt</span><span class="o">!:</span><span class="w"> </span><span class="nb">Date</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">Notes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Collection</span><span class="p">.</span><span class="nx">create</span><span class="p">(</span><span class="nx">Note</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">access</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">read</span><span class="o">:</span><span class="w"> </span><span class="kt">Read.OwnIdentity</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">create</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">update</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">delete</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">restore</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="p">});</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">Notebook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">App</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;notebook.example&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Notebook&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">namespace</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;notebook&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">data</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">notes</span><span class="o">:</span><span class="w"> </span><span class="kt">Notes</span><span class="w"> </span><span class="p">},</span>
+<span class="p">});</span></code></pre></figure>
+<p>There is no decoder, inferred type alias, path prefix, capability string, or
+revision token to maintain. <code>Notebook.connect()</code> gives the real daemon-backed
+interface. <code>Notebook.test()</code> gives the same typed interface in memory.</p>
+<h2 id="values-and-items-are-different">Values and Items are different</h2>
+<p><code>Note</code> is the application value: its text and creation time. An Item wraps that
+value with the stable reference and state Jolt needs to update, delete, or
+restore it safely.</p>
+<figure class="code-figure"><figcaption><span>src/create-note.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Notebook</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./data-sdk&quot;</span><span class="p">;</span>
+
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">createFirstNote</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">notebook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Notebook</span><span class="p">.</span><span class="nx">test</span><span class="p">({</span><span class="w"> </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;alice.jolt&quot;</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">item</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">notebook</span><span class="p">.</span><span class="nx">notes</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span>
+<span class="w">    </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Hello, Jolt!&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">createdAt</span><span class="o">:</span><span class="w"> </span><span class="kt">new</span><span class="w"> </span><span class="nb">Date</span><span class="p">(),</span>
+<span class="w">  </span><span class="p">});</span>
+
+<span class="w">  </span><span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">item</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">text</span><span class="p">);</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">item</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+<p>Application code changes data through the Item methods. Each successful change
+returns a new immutable Item, which fits naturally into React or another state
+container.</p>
+<h2 id="access-is-part-of-the-resource">Access is part of the Resource</h2>
+<p>The <code>access</code> object is both the application rule and the permission declaration
+Jolt derives for approval. In Notebook, only the signed-in identity can read
+Notes, and that identity may create, update, delete, and restore them.</p>
+<p>Use <code>Read.AnyIdentity</code> only for genuinely public data. A public read rule does
+not make writes public; create and mutation authority remain explicit.</p>
+<h2 id="test-without-a-daemon">Test without a daemon</h2>
+<p>Use <code>App.test()</code> for one isolated identity. Use <code>App.testWorld()</code> when two or
+more identities should share deterministic state. The fake uses the same
+schemas, migrations, access rules, Item states, errors, and conflict policies
+as the connected interface.</p>
+<p>The fake is for fast application tests. It does not replace real-daemon tests
+for persistence, restart behavior, authorization, or multi-node networking.</p>
+<h2 id="where-to-go-next">Where to go next</h2>
+<ul>
+<li>Build the <a href="app-development.html">beginner Chirp application</a>.</li>
+<li>Learn how to evolve a Schema Class with <a href="data-sdk-migrations.html">deterministic migrations</a>.</li>
+<li>Use the <a href="../sdk/reference.html#module-data">Data SDK API reference</a> for exact signatures.</li>
+</ul>
+        <footer class="document-footer">
+          <a href="../sdk/">← SDK overview</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/guides/data-sdk.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>
