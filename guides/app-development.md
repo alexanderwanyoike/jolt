@@ -290,6 +290,8 @@ appears:
   stored values without adding historical model classes to the application.
 - [Manual conflicts](data-sdk-manual-conflicts.html) expose concurrent
   alternatives instead of using the automatic defaults.
+- [Data Subscriptions](data-sdk-subscriptions.html) explain retained remote
+  views, freshness, Change Streams, and cleanup without React.
 - **Content References** identify one exact immutable content version. Normal
   relationships use stable logical [`Ref`](../sdk/reference.html#data.Ref)
   values.

@@ -17,6 +17,7 @@ required=(
   website/guides/data-sdk-migrations.html
   website/guides/data-sdk-mutations.html
   website/guides/data-sdk-manual-conflicts.html
+  website/guides/data-sdk-subscriptions.html
   rfcs/README.md
   sdks/js/docs/api.json
 )
