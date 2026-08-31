@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="Let an application choose between concurrent Item alternatives only when automatic conflict handling is not enough." />
+    <meta property="og:title" content="Jolt Guide | Resolve Manual conflicts" />
+    <meta property="og:description" content="Let an application choose between concurrent Item alternatives only when automatic conflict handling is not enough." />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Jolt" />
+    <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="jolt-guide-source-sha256" content="dc8a19ca8764202562b02a36af40ac5e6b3baa431e65306a9990524e022f2ee1" />
+    <title>Jolt Guide | Resolve Manual conflicts</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="../docs.css" />
+  </head>
+  <body class="doc-page">
+    <aside class="doc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>guide 05</small></span></a>
+      <dl>
+        <div><dt>Level</dt><dd>Advanced</dd></div><div><dt>SDK</dt><dd>jolt-sdk/data</dd></div>
+      </dl>
+      <nav aria-label="Guide contents">
+        <ul class="toc"><li class="toc-module"><a href="#override-only-the-policy-you-need">Override only the policy you need</a></li><li class="toc-module"><a href="#create-a-conflict-in-a-test">Create a conflict in a test</a></li><li class="toc-module"><a href="#choose-or-resolve">Choose or resolve</a></li><li class="toc-module"><a href="#manual-deletion-is-separate">Manual deletion is separate</a></li><li class="toc-module"><a href="#keep-this-out-of-the-beginner-path">Keep this out of the beginner path</a></li><li class="toc-module"><a href="#continue-learning">Continue learning</a></li></ul>
+      </nav>
+    </aside>
+    <main class="doc-main">
+      <article class="doc-document">
+        <header class="doc-title">
+          <p>JOLT DATA SDK GUIDE · 05</p>
+          <h1>Resolve Manual conflicts</h1>
+          <p class="doc-lede">Most applications should keep Jolt's automatic conflict defaults. Choose a
+Manual policy only when the product must show competing edits to a person or
+apply its own domain rule.</p>
+
+        </header>
+        <h2 id="override-only-the-policy-you-need">Override only the policy you need</h2>
+<p>This Notebook asks for Manual handling when two devices change the same field.
+The delete policy keeps its automatic default because it is not overridden.</p>
+<figure class="code-figure"><figcaption><span>src/notebook.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">App</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Collection</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Field</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Read</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Schema</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">UpdateConflict</span><span class="p">,</span>
+<span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
+
+<span class="kd">@Schema</span><span class="p">({</span><span class="w"> </span><span class="nx">version</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="w"> </span><span class="p">})</span>
+<span class="k">export</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nx">Note</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="kt">string</span><span class="p">()</span>
+<span class="w">  </span><span class="nx">text</span><span class="o">!:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="kt">boolean</span><span class="p">()</span>
+<span class="w">  </span><span class="nx">pinned</span><span class="o">!:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">Notes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Collection</span><span class="p">.</span><span class="nx">create</span><span class="p">(</span><span class="nx">Note</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">access</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">read</span><span class="o">:</span><span class="w"> </span><span class="kt">Read.OwnIdentity</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">create</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">update</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nx">conflicts</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">update</span><span class="o">:</span><span class="w"> </span><span class="kt">UpdateConflict.Manual</span><span class="p">,</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="p">});</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">Notebook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">App</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;manual-notebook.example&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Manual Notebook&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">namespace</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;manual-notebook&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">data</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">notes</span><span class="o">:</span><span class="w"> </span><span class="kt">Notes</span><span class="w"> </span><span class="p">},</span>
+<span class="p">});</span></code></pre></figure>
+<p>Manual does not turn every concurrent change into a conflict. Changes to
+different top-level fields still combine automatically. <code>State.Conflicted</code>
+appears only when the declared policy needs an application decision.</p>
+<h2 id="create-a-conflict-in-a-test">Create a conflict in a test</h2>
+<p><code>App.testWorld()</code> can model two installations of the same identity without
+running two daemons. Named devices change their local copies independently;
+<code>world.sync()</code> exchanges their changes deterministically.</p>
+<figure class="code-figure"><figcaption><span>src/resolve-conflict.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Notebook</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./manual-conflicts&quot;</span><span class="p">;</span>
+
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">resolveConcurrentEdits</span><span class="p">(</span>
+<span class="w">  </span><span class="nx">resolution</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;choose-workstation&quot;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">&quot;combine&quot;</span><span class="p">,</span>
+<span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">world</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Notebook</span><span class="p">.</span><span class="nx">testWorld</span><span class="p">();</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">workstation</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">world</span><span class="p">.</span><span class="nx">device</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;workstation&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">laptop</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">world</span><span class="p">.</span><span class="nx">device</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;laptop&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">created</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">workstation</span><span class="p">.</span><span class="nx">notes</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span><span class="w"> </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Original&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">pinned</span><span class="o">:</span><span class="w"> </span><span class="kt">false</span><span class="w"> </span><span class="p">});</span>
+
+<span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">world</span><span class="p">.</span><span class="nx">sync</span><span class="p">();</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">workstationCopy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">workstation</span><span class="p">.</span><span class="nx">notes</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="nx">created</span><span class="p">.</span><span class="nx">ref</span><span class="p">);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">laptopCopy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">laptop</span><span class="p">.</span><span class="nx">notes</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="nx">created</span><span class="p">.</span><span class="nx">ref</span><span class="p">);</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">workstationCopy</span><span class="p">.</span><span class="nx">isPresent</span><span class="p">()</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="nx">laptopCopy</span><span class="p">.</span><span class="nx">isPresent</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">throw</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="ne">Error</span><span class="p">(</span><span class="s2">&quot;Expected both devices to have the note&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">workstationCopy</span><span class="p">.</span><span class="nx">update</span><span class="p">({</span><span class="w"> </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Workstation edit&quot;</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">laptopCopy</span><span class="p">.</span><span class="nx">update</span><span class="p">({</span><span class="w"> </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Laptop edit&quot;</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">world</span><span class="p">.</span><span class="nx">sync</span><span class="p">();</span>
+
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">conflict</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">workstation</span><span class="p">.</span><span class="nx">notes</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="nx">created</span><span class="p">.</span><span class="nx">ref</span><span class="p">);</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">conflict</span><span class="p">.</span><span class="nx">isConflicted</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">throw</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="ne">Error</span><span class="p">(</span><span class="s2">&quot;Expected a Manual conflict&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">resolution</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;combine&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">conflict</span><span class="p">.</span><span class="nx">resolve</span><span class="p">({</span><span class="w"> </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Combined edit&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">pinned</span><span class="o">:</span><span class="w"> </span><span class="kt">false</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">workstationEdit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">conflict</span><span class="p">.</span><span class="nx">alternatives</span><span class="p">.</span><span class="nx">find</span><span class="p">(</span><span class="nx">alternative</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="nx">alternative</span><span class="p">.</span><span class="nx">isPresent</span><span class="p">()</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">alternative</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">text</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;Workstation edit&quot;</span>
+<span class="w">  </span><span class="p">));</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">workstationEdit</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="kc">undefined</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="nx">workstationEdit</span><span class="p">.</span><span class="nx">isPresent</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">throw</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="ne">Error</span><span class="p">(</span><span class="s2">&quot;Expected the workstation edit&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">conflict</span><span class="p">.</span><span class="nx">choose</span><span class="p">(</span><span class="nx">workstationEdit</span><span class="p">);</span>
+<span class="p">}</span></code></pre></figure>
+<p>The normal Item state check narrows the result to a <code>ConflictItem</code>.
+<code>alternatives</code> then contains immutable Present or Deleted possibilities. Each
+alternative has <code>isPresent()</code> and <code>isDeleted()</code> helpers before application code
+reads its value or chooses it.</p>
+<h2 id="choose-or-resolve">Choose or resolve</h2>
+<p>Use <code>conflict.choose(alternative)</code> when one exact alternative should win. Use
+<code>conflict.resolve(value)</code> when the application creates a new combined
+value. A custom value must pass the current Schema Class.</p>
+<p>Both operations return a new immutable Item. Keep that returned Item just as
+you would after an ordinary update. If another resolution wins first, the stale
+Conflict Item throws <code>ConflictError</code>; read the Item again before deciding what
+the interface should do.</p>
+<h2 id="manual-deletion-is-separate">Manual deletion is separate</h2>
+<p>Set <code>conflicts: { delete: DeleteConflict.Manual }</code> only when a concurrent
+deletion and update also needs a product decision. The alternatives can then
+include a Deleted alternative. Choosing that alternative keeps the deletion;
+choosing a Present alternative keeps its value.</p>
+<p>An application may override update handling, delete handling, or both. Any
+omitted policy retains the automatic default.</p>
+<h2 id="keep-this-out-of-the-beginner-path">Keep this out of the beginner path</h2>
+<p>Manual resolution adds user-interface states and domain decisions. Chirp does
+not need it: its Resource definitions keep automatic handling and never expose
+<code>State.Conflicted</code>, <code>alternatives</code>, <code>choose</code>, or <code>resolve</code> to the React code.</p>
+<h2 id="continue-learning">Continue learning</h2>
+<ul>
+<li>Use the normal lifecycle in <a href="data-sdk-mutations.html">Change an Item</a>.</li>
+<li>Return to <a href="data-sdk.html">Data SDK fundamentals</a>.</li>
+<li>Look up exact policy types in the <a href="../sdk/reference.html#data.UpdateConflict">API reference</a>.</li>
+</ul>
+        <footer class="document-footer">
+          <a href="../sdk/">← SDK overview</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/guides/data-sdk-manual-conflicts.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>
