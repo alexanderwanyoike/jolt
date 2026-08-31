@@ -200,6 +200,11 @@ message, runs the typed operation, and shows a dismissible error without
 throwing away the rest of the screen. Connection and timeline startup errors
 still stop the app because Chirp cannot work without those foundations.
 
+The startup boundary catches `AppIncompatibleError` by type. Instead of showing
+SDK terminology, Chirp asks the person to update Jolt and offers **Check again**.
+Compatibility is checked before approval or data access, so this failure cannot
+partly create the application.
+
 Present Items carry `State.Present`; deleted Items carry `State.Deleted` and
 offer `restore(...)` only when the Resource declaration allows it.
 
