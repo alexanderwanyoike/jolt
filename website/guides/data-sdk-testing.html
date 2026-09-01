@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="Test typed application behavior in memory before running collaborative checks against real Jolt daemons." />
+    <meta property="og:title" content="Jolt Guide | Test without a daemon" />
+    <meta property="og:description" content="Test typed application behavior in memory before running collaborative checks against real Jolt daemons." />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Jolt" />
+    <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="jolt-guide-source-sha256" content="14606b187754fe48cb4483bce115e3e0aff74c7d14fdda8cbf7ad7af7ed8a1f4" />
+    <title>Jolt Guide | Test without a daemon</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="../docs.css" />
+  </head>
+  <body class="doc-page">
+    <aside class="doc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>guide 07</small></span></a>
+      <dl>
+        <div><dt>Level</dt><dd>Fundamentals</dd></div><div><dt>SDK</dt><dd>jolt-sdk/data</dd></div>
+      </dl>
+      <nav aria-label="Guide contents">
+        <ul class="toc"><li class="toc-module"><a href="#test-one-identity">Test one identity</a></li><li class="toc-module"><a href="#test-alice-and-bob">Test Alice and Bob</a></li><li class="toc-module"><a href="#model-separate-installations-only-when-needed">Model separate installations only when needed</a></li><li class="toc-module"><a href="#know-what-the-test-interface-proves">Know what the test interface proves</a></li><li class="toc-module"><a href="#run-the-tests">Run the tests</a></li><li class="toc-module"><a href="#continue-learning">Continue learning</a></li></ul>
+      </nav>
+    </aside>
+    <main class="doc-main">
+      <article class="doc-document">
+        <header class="doc-title">
+          <p>JOLT DATA SDK GUIDE · 07</p>
+          <h1>Test without a daemon</h1>
+          <p class="doc-lede">An App Definition provides an in-memory test interface with the same typed
+Resources and Items as <code>App.connect()</code>. Tests can exercise application rules
+without starting Jolt Console, approving a session, or waiting for a network.</p>
+
+        </header>
+        <h2 id="test-one-identity">Test one identity</h2>
+<p>Use <code>App.test()</code> for isolated application behavior. Each call starts with
+fresh state, even when it uses the same identity string.</p>
+<figure class="code-figure"><figcaption><span>src/task-list.test.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">describe</span><span class="p">,</span><span class="w"> </span><span class="nx">expect</span><span class="p">,</span><span class="w"> </span><span class="nx">it</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;vitest&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">State</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">TaskList</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./mutations&quot;</span><span class="p">;</span>
+
+<span class="nx">describe</span><span class="p">(</span><span class="s2">&quot;one identity&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;uses the normal typed Resource interface&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">app</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">TaskList</span><span class="p">.</span><span class="nx">test</span><span class="p">({</span><span class="w"> </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;alice.jolt&quot;</span><span class="w"> </span><span class="p">});</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">created</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">app</span><span class="p">.</span><span class="nx">tasks</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span><span class="w"> </span><span class="nx">title</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Write a test&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">done</span><span class="o">:</span><span class="w"> </span><span class="kt">false</span><span class="w"> </span><span class="p">});</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">updated</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">created</span><span class="p">.</span><span class="nx">update</span><span class="p">({</span><span class="w"> </span><span class="nx">done</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="w"> </span><span class="p">});</span>
+
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">updated</span><span class="p">.</span><span class="nx">value</span><span class="p">).</span><span class="nx">toEqual</span><span class="p">({</span><span class="w"> </span><span class="nx">title</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Write a test&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">done</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="p">});</span>
+
+<span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;starts each test instance with fresh state&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">first</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">TaskList</span><span class="p">.</span><span class="nx">test</span><span class="p">({</span><span class="w"> </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;alice.jolt&quot;</span><span class="w"> </span><span class="p">});</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">created</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">first</span><span class="p">.</span><span class="nx">tasks</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span><span class="w"> </span><span class="nx">title</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Temporary&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">done</span><span class="o">:</span><span class="w"> </span><span class="kt">false</span><span class="w"> </span><span class="p">});</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">second</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">TaskList</span><span class="p">.</span><span class="nx">test</span><span class="p">({</span><span class="w"> </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;alice.jolt&quot;</span><span class="w"> </span><span class="p">});</span>
+
+<span class="w">    </span><span class="nx">expect</span><span class="p">((</span><span class="k">await</span><span class="w"> </span><span class="nx">second</span><span class="p">.</span><span class="nx">tasks</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="nx">created</span><span class="p">.</span><span class="nx">ref</span><span class="p">)).</span><span class="nx">state</span><span class="p">).</span><span class="nx">toBe</span><span class="p">(</span><span class="nx">State</span><span class="p">.</span><span class="nx">Missing</span><span class="p">);</span>
+<span class="w">  </span><span class="p">});</span>
+<span class="p">});</span></code></pre></figure>
+<p>Schemas, migrations, access-shaped methods, immutable Items, lifecycle states,
+and conflict policies all remain active. Test through <code>app.tasks</code> or another
+generated Resource instead of arranging data through a separate fixture API.</p>
+<h2 id="test-alice-and-bob">Test Alice and Bob</h2>
+<p>Use <code>App.testWorld()</code> when identities should share deterministic state. Views
+from <code>world.as(identity)</code> represent application users in one synchronized test
+world.</p>
+<figure class="code-figure"><figcaption><span>src/feed.test.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">describe</span><span class="p">,</span><span class="w"> </span><span class="nx">expect</span><span class="p">,</span><span class="w"> </span><span class="nx">it</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;vitest&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Feed</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./subscriptions&quot;</span><span class="p">;</span>
+
+<span class="nx">describe</span><span class="p">(</span><span class="s2">&quot;two identities&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">it</span><span class="p">(</span><span class="s2">&quot;shares deterministic public data between Alice and Bob&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">world</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Feed</span><span class="p">.</span><span class="nx">testWorld</span><span class="p">();</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">alice</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">world</span><span class="p">.</span><span class="kr">as</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">bob</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">world</span><span class="p">.</span><span class="kr">as</span><span class="p">(</span><span class="s2">&quot;bob.jolt&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">post</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">alice</span><span class="p">.</span><span class="nx">posts</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span>
+<span class="w">      </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Hello Bob!&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">postedAt</span><span class="o">:</span><span class="w"> </span><span class="kt">new</span><span class="w"> </span><span class="nb">Date</span><span class="p">(</span><span class="s2">&quot;2026-08-31T12:00:00.000Z&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="p">});</span>
+
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">fromAlice</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">bob</span><span class="p">.</span><span class="nx">posts</span><span class="p">.</span><span class="k">for</span><span class="p">(</span><span class="s2">&quot;alice.jolt&quot;</span><span class="p">).</span><span class="nx">get</span><span class="p">(</span><span class="nx">post</span><span class="p">.</span><span class="nx">ref</span><span class="p">);</span>
+
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">fromAlice</span><span class="p">.</span><span class="nx">isPresent</span><span class="p">()).</span><span class="nx">toBe</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">fromAlice</span><span class="p">.</span><span class="nx">isPresent</span><span class="p">())</span><span class="w"> </span><span class="k">throw</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="ne">Error</span><span class="p">(</span><span class="s2">&quot;Expected Alice&#39;s post&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="nx">fromAlice</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">text</span><span class="p">).</span><span class="nx">toBe</span><span class="p">(</span><span class="s2">&quot;Hello Bob!&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">expect</span><span class="p">(</span><span class="s2">&quot;update&quot;</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="nx">fromAlice</span><span class="p">).</span><span class="nx">toBe</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span>
+<span class="w">  </span><span class="p">});</span>
+<span class="p">});</span></code></pre></figure>
+<p>Bob can read Alice's post because the Collection declares
+<code>Read.AnyIdentity</code>. His remote view remains read-only, exactly as it does in a
+connected application.</p>
+<h2 id="model-separate-installations-only-when-needed">Model separate installations only when needed</h2>
+<p><code>world.as(identity)</code> is the simple choice for application journeys. It does
+not model offline installations.</p>
+<p>When a concurrency test genuinely needs independent copies, use
+<code>world.device(identity, name)</code>. Named devices keep separate histories until
+the test calls <code>world.sync()</code>. The advanced <a href="data-sdk-manual-conflicts.html">Manual conflicts</a>
+guide shows that shape with a workstation and laptop.</p>
+<p>Do not introduce devices and synchronization into ordinary component or domain
+tests. They exist to test concurrent-edit policy, not as general fixture setup.</p>
+<h2 id="know-what-the-test-interface-proves">Know what the test interface proves</h2>
+<p>The in-memory interface is good for:</p>
+<ul>
+<li>schema validation and migrations;</li>
+<li>Resource method availability and application access shape;</li>
+<li>Item create, read, update, replace, delete, and restore behavior;</li>
+<li>automatic and Manual conflict policies; and</li>
+<li>Data Subscription and Change Stream application logic.</li>
+</ul>
+<p>It does not prove Jolt Console approval, daemon feature compatibility,
+capability enforcement or revocation, durable restart behavior, provider
+discovery, or real multi-node networking. Keep a small real-daemon test for
+those boundaries, as Jolt does for Chirp and Spoke.</p>
+<h2 id="run-the-tests">Run the tests</h2>
+<p>The guide examples use Vitest:</p>
+<pre class="doc-code"><code>yarn<span class="w"> </span>vitest<span class="w"> </span>run</code></pre>
+<p>No special Jolt test runner or fixture language is required.</p>
+<h2 id="continue-learning">Continue learning</h2>
+<ul>
+<li>Return to <a href="data-sdk.html">Data SDK fundamentals</a>.</li>
+<li>Test retained remote views with <a href="data-sdk-subscriptions.html">Data Subscriptions</a>.</li>
+<li>Build the complete <a href="app-development.html">beginner Chirp app</a>.</li>
+</ul>
+        <footer class="document-footer">
+          <a href="../sdk/">← SDK overview</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/guides/data-sdk-testing.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>

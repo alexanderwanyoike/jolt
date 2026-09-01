@@ -24,6 +24,7 @@ without the React screen around them.
 - **Change stored data safely:** read [Schema migrations](data-sdk-migrations.html).
 - **Choose between concurrent edits:** use advanced [Manual conflicts](data-sdk-manual-conflicts.html).
 - **Keep remote data current:** use [Data Subscriptions](data-sdk-subscriptions.html).
+- **Test application behavior:** use [in-memory app tests](data-sdk-testing.html).
 - **Look up one exact method:** use the [generated API reference](../sdk/reference.html#module-data).
 
 ## Three building blocks
@@ -83,4 +84,5 @@ for persistence, restart behavior, authorization, or multi-node networking.
 - Learn how to evolve a Schema Class with [deterministic migrations](data-sdk-migrations.html).
 - Opt into application decisions with advanced [Manual conflicts](data-sdk-manual-conflicts.html).
 - Keep a public remote Collection current with [Data Subscriptions and Change Streams](data-sdk-subscriptions.html).
+- Test one or more identities with [the in-memory App interface](data-sdk-testing.html).
 - Use the [Data SDK API reference](../sdk/reference.html#module-data) for exact signatures.

@@ -292,6 +292,8 @@ appears:
   alternatives instead of using the automatic defaults.
 - [Data Subscriptions](data-sdk-subscriptions.html) explain retained remote
   views, freshness, Change Streams, and cleanup without React.
+- [Data SDK testing](data-sdk-testing.html) separates fast in-memory app tests
+  from the smaller set of checks that require real Jolt daemons.
 - **Content References** identify one exact immutable content version. Normal
   relationships use stable logical [`Ref`](../sdk/reference.html#data.Ref)
   values.
