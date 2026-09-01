@@ -27,6 +27,25 @@ if (releaseProfile === null || !/^strip\s*=\s*true\s*$/m.test(releaseProfile)) {
   throw new Error("Release binaries must be stripped before packaging");
 }
 
+if (
+  !files.packageScript.includes("node_modules/.bin/tauri") ||
+  files.packageScript.includes("npm run tauri")
+) {
+  throw new Error(
+    "Release packaging must invoke the local Tauri CLI without restaging the debug daemon"
+  );
+}
+
+if (
+  !files.packageScript.includes(
+    'TAURI_BUILD_ARGS=(build --bundles "$TAURI_BUNDLE_KIND")'
+  )
+) {
+  throw new Error(
+    "Direct Tauri packaging arguments must not forward --bundles to Cargo"
+  );
+}
+
 const requiredMarkers = {
   workflow: [
     "Package Jolt Console",

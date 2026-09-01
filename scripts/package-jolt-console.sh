@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONSOLE_DIR="$ROOT_DIR/apps/jolt-console"
 SIDECAR_DIR="$CONSOLE_DIR/src-tauri/binaries"
+TAURI_CLI="$CONSOLE_DIR/node_modules/.bin/tauri"
 TARGET_TRIPLE="${JOLT_TARGET_TRIPLE:-}"
 BUNDLE_KIND="${JOLT_BUNDLE_KIND:-}"
 TAURI_CACHE_DIR="${TAURI_CACHE_DIR:-$HOME/.cache/tauri}"
@@ -189,6 +190,7 @@ Jolt Console v0 packaging plan
   tauri bundles: $TAURI_BUNDLE_KIND
   daemon binary: $HOST_BIN
   sidecar:       $SIDECAR_BIN
+  tauri command: $TAURI_CLI
   prepare only:  $PREPARE_ONLY
   updater files: $CREATE_UPDATER_ARTIFACTS
 PLAN
@@ -236,11 +238,11 @@ if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" ]]; then
 fi
 
 echo "==> Building Tauri $TAURI_BUNDLE_KIND bundle"
-TAURI_BUILD_ARGS=(build -- --bundles "$TAURI_BUNDLE_KIND")
+TAURI_BUILD_ARGS=(build --bundles "$TAURI_BUNDLE_KIND")
 if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" ]]; then
   TAURI_BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
 fi
-(cd "$CONSOLE_DIR" && run_with_retries 3 npm run tauri "${TAURI_BUILD_ARGS[@]}")
+(cd "$CONSOLE_DIR" && run_with_retries 3 "$TAURI_CLI" "${TAURI_BUILD_ARGS[@]}")
 
 echo "==> Bundle artifacts"
 find "$ROOT_DIR/target/release/bundle" -maxdepth 3 -type f \( \
