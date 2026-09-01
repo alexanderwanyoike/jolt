@@ -36,6 +36,16 @@ if (
   );
 }
 
+if (
+  !files.packageScript.includes(
+    'TAURI_BUILD_ARGS=(build --bundles "$TAURI_BUNDLE_KIND")'
+  )
+) {
+  throw new Error(
+    "Direct Tauri packaging arguments must not forward --bundles to Cargo"
+  );
+}
+
 const requiredMarkers = {
   workflow: [
     "Package Jolt Console",

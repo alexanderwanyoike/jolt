@@ -238,7 +238,7 @@ if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" ]]; then
 fi
 
 echo "==> Building Tauri $TAURI_BUNDLE_KIND bundle"
-TAURI_BUILD_ARGS=(build -- --bundles "$TAURI_BUNDLE_KIND")
+TAURI_BUILD_ARGS=(build --bundles "$TAURI_BUNDLE_KIND")
 if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" ]]; then
   TAURI_BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
 fi
