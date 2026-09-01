@@ -91,6 +91,47 @@ async fn wait_for_listener(mut node: NetworkNode) -> NetworkNode {
     .expect("timed out waiting for listener")
 }
 
+async fn wait_for_peer(node: &mut NetworkNode, expected_peer: &PeerId) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !node.connected_peers().contains(expected_peer) {
+            let event = node.next_event().await;
+            node.handle_swarm_event(event);
+        }
+    })
+    .await
+    .expect("timed out waiting for peer connection");
+}
+
+async fn wait_for_relay_chain(relays: &[(&DaemonHandle, usize)]) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let mut ready = true;
+            for (relay, expected_peers) in relays {
+                let status = relay
+                    .status()
+                    .await
+                    .expect("relay status should be available");
+                ready &= status.connected_peers >= *expected_peers;
+            }
+
+            if ready {
+                return;
+            }
+
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("timed out waiting for recursive relay chain");
+}
+
+fn spawn_test_daemon(mut node: NetworkNode) -> (DaemonHandle, tokio::task::JoinHandle<()>) {
+    let (tx, rx) = tokio::sync::mpsc::channel(4);
+    let daemon = DaemonHandle::new(tx);
+    let task = tokio::spawn(async move { node.run_daemon_loop(rx).await });
+    (daemon, task)
+}
+
 fn listener_with_peer(addr: &Multiaddr, peer: &PeerId) -> Multiaddr {
     addr.clone().with(Protocol::P2p(*peer))
 }
@@ -1167,7 +1208,7 @@ async fn identity_provider_query_forwarding_crosses_multiple_relay_hops() {
         .store_verified_update_log(alice_id.clone(), alice_update_log.clone())
         .unwrap();
     node_r4.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
-    let mut node_r4 = wait_for_listener(node_r4).await;
+    let node_r4 = wait_for_listener(node_r4).await;
     let r4_peer = *node_r4.local_peer_id();
     let record_seen_at = unix_now();
     let r4_record = node_r4
@@ -1181,7 +1222,7 @@ async fn identity_provider_query_forwarding_crosses_multiple_relay_hops() {
         .unwrap();
     let mut node_r3 = NetworkNode::new_tcp(identity_r3, store_r3, relay_config()).unwrap();
     node_r3.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
-    let mut node_r3 = wait_for_listener(node_r3).await;
+    let node_r3 = wait_for_listener(node_r3).await;
     let r3_record = node_r3
         .local_relay_record(record_seen_at)
         .unwrap()
@@ -1193,7 +1234,7 @@ async fn identity_provider_query_forwarding_crosses_multiple_relay_hops() {
         .unwrap();
     let mut node_r2 = NetworkNode::new_tcp(identity_r2, store_r2, relay_config()).unwrap();
     node_r2.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
-    let mut node_r2 = wait_for_listener(node_r2).await;
+    let node_r2 = wait_for_listener(node_r2).await;
     let r2_record = node_r2
         .local_relay_record(record_seen_at)
         .unwrap()
@@ -1205,7 +1246,8 @@ async fn identity_provider_query_forwarding_crosses_multiple_relay_hops() {
         .unwrap();
     let mut node_r1 = NetworkNode::new_tcp(identity_r1, store_r1, relay_config()).unwrap();
     node_r1.listen_on("/ip4/127.0.0.1/tcp/0").unwrap();
-    let mut node_r1 = wait_for_listener(node_r1).await;
+    let node_r1 = wait_for_listener(node_r1).await;
+    let r1_peer = *node_r1.local_peer_id();
     let r1_addr = listener_with_peer(&node_r1.listeners()[0], node_r1.local_peer_id());
 
     let mut tim_config = no_mdns_config();
@@ -1216,30 +1258,22 @@ async fn identity_provider_query_forwarding_crosses_multiple_relay_hops() {
     let mut tim = wait_for_listener(tim).await;
     tim.connect_peer_multiaddr(&r1_addr.to_string()).unwrap();
 
-    let r1_handle = tokio::spawn(async move {
-        node_r1.run_event_loop().await;
-    });
-    let r2_handle = tokio::spawn(async move {
-        node_r2.run_event_loop().await;
-    });
-    let r3_handle = tokio::spawn(async move {
-        node_r3.run_event_loop().await;
-    });
-    let r4_handle = tokio::spawn(async move {
-        node_r4.run_event_loop().await;
-    });
+    let (r1_daemon, r1_task) = spawn_test_daemon(node_r1);
+    let (r2_daemon, r2_task) = spawn_test_daemon(node_r2);
+    let (r3_daemon, r3_task) = spawn_test_daemon(node_r3);
+    let (r4_daemon, r4_task) = spawn_test_daemon(node_r4);
+
+    wait_for_peer(&mut tim, &r1_peer).await;
+    wait_for_relay_chain(&[
+        (&r1_daemon, 2),
+        (&r2_daemon, 2),
+        (&r3_daemon, 2),
+        (&r4_daemon, 1),
+    ])
+    .await;
 
     let expected_log = alice_update_log.clone();
     let provider = tokio::time::timeout(Duration::from_secs(45), async {
-        let settle_deadline = tokio::time::Instant::now() + Duration::from_secs(8);
-        while tokio::time::Instant::now() < settle_deadline {
-            if let Ok(event) =
-                tokio::time::timeout(Duration::from_millis(100), tim.next_event()).await
-            {
-                tim.handle_swarm_event(event);
-            }
-        }
-
         let mut query_interval = tokio::time::interval(Duration::from_secs(2));
         query_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -1284,10 +1318,10 @@ async fn identity_provider_query_forwarding_crosses_multiple_relay_hops() {
         Some(expected_log.as_slice())
     );
 
-    r1_handle.abort();
-    r2_handle.abort();
-    r3_handle.abort();
-    r4_handle.abort();
+    r1_task.abort();
+    r2_task.abort();
+    r3_task.abort();
+    r4_task.abort();
 }
 
 #[tokio::test]
