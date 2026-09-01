@@ -59,7 +59,7 @@ async fn start_test_server_with_identity_and_session_path(
 ) -> (u16, DaemonHandle, tempfile::TempDir) {
     let local_identity_address = identity.jolt_address().to_string();
     let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, no_mdns_config()).unwrap();
     node.set_fetch_timeout(std::time::Duration::from_secs(2));
     node.set_resolve_timeout(std::time::Duration::from_secs(2));
 
@@ -85,7 +85,7 @@ async fn start_test_server_with_network_settings_path(
     let identity = NodeIdentity::generate();
     let local_identity_address = identity.jolt_address().to_string();
     let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, no_mdns_config()).unwrap();
     node.set_fetch_timeout(std::time::Duration::from_secs(2));
     node.set_resolve_timeout(std::time::Duration::from_secs(2));
 
@@ -121,7 +121,7 @@ async fn start_test_server_with_profile_dir(
     let content_store_dir = profile_dir.join("data");
     let identity = NodeIdentity::load_or_generate(&identity_dir).unwrap();
     let store = ContentStore::open(&content_store_dir, CacheConfig::default()).unwrap();
-    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, no_mdns_config()).unwrap();
     node.set_fetch_timeout(std::time::Duration::from_secs(2));
     node.set_resolve_timeout(std::time::Duration::from_secs(2));
 
@@ -163,7 +163,7 @@ async fn start_test_server_with_node(
     let dir = tempfile::tempdir().unwrap();
     let identity = NodeIdentity::generate();
     let store = ContentStore::open(dir.path(), CacheConfig::default()).unwrap();
-    let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+    let mut node = NetworkNode::new_tcp(identity, store, no_mdns_config()).unwrap();
 
     if let Some(port) = p2p_port {
         node.listen_on(&format!("/ip4/127.0.0.1/tcp/{port}"))
