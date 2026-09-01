@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0f0f" />
+    <meta name="description" content="Open a retained Data Subscription and receive local Change Stream events without application polling." />
+    <meta property="og:title" content="Jolt Guide | Keep a remote Collection current" />
+    <meta property="og:description" content="Open a retained Data Subscription and receive local Change Stream events without application polling." />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Jolt" />
+    <meta property="og:image" content="https://alexanderwanyoike.github.io/jolt/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="jolt-guide-source-sha256" content="4306e3139cd04a2369616332ae423a107f8718fbe8b8c004ac2739196a9fd650" />
+    <title>Jolt Guide | Keep a remote Collection current</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="../docs.css" />
+  </head>
+  <body class="doc-page">
+    <aside class="doc-sidebar">
+      <a class="brand" href="../"><img class="brand-mark" src="../favicon.svg" alt="" width="30" height="30" /><span><strong>Jolt</strong><small>guide 06</small></span></a>
+      <dl>
+        <div><dt>Level</dt><dd>Fundamentals</dd></div><div><dt>SDK</dt><dd>jolt-sdk/data</dd></div>
+      </dl>
+      <nav aria-label="Guide contents">
+        <ul class="toc"><li class="toc-module"><a href="#start-with-a-public-collection">Start with a public Collection</a></li><li class="toc-module"><a href="#create-the-subscription">Create the Subscription</a></li><li class="toc-module"><a href="#listen-without-polling">Listen without polling</a></li><li class="toc-module"><a href="#understand-freshness">Understand freshness</a></li><li class="toc-module"><a href="#close-the-right-thing">Close the right thing</a></li><li class="toc-module"><a href="#continue-learning">Continue learning</a></li></ul>
+      </nav>
+    </aside>
+    <main class="doc-main">
+      <article class="doc-document">
+        <header class="doc-title">
+          <p>JOLT DATA SDK GUIDE · 06</p>
+          <h1>Keep a remote Collection current</h1>
+          <p class="doc-lede">A Data Subscription keeps a verified local view of one identity's public
+Collection. Application code can show retained data immediately, while Jolt
+refreshes it within bounded network and storage limits.</p>
+
+        </header>
+        <h2 id="start-with-a-public-collection">Start with a public Collection</h2>
+<p>Only a Resource using <code>Read.AnyIdentity</code> has <code>.for(identity)</code>, because only
+that Resource can be read through another identity's public view.</p>
+<figure class="code-figure"><figcaption><span>src/feed.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">App</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Collection</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Field</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Read</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">Schema</span><span class="p">,</span>
+<span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
+
+<span class="kd">@Schema</span><span class="p">({</span><span class="w"> </span><span class="nx">version</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="w"> </span><span class="p">})</span>
+<span class="k">export</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nx">Post</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="kt">string</span><span class="p">()</span>
+<span class="w">  </span><span class="nx">text</span><span class="o">!:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+
+<span class="w">  </span><span class="kd">@Field</span><span class="p">.</span><span class="nx">dateTime</span><span class="p">()</span>
+<span class="w">  </span><span class="nx">postedAt</span><span class="o">!:</span><span class="w"> </span><span class="nb">Date</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">Posts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Collection</span><span class="p">.</span><span class="nx">create</span><span class="p">(</span><span class="nx">Post</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">access</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">read</span><span class="o">:</span><span class="w"> </span><span class="kt">Read.AnyIdentity</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">create</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="p">});</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">Feed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">App</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;feed.example&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Feed&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">namespace</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;feed&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">data</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">posts</span><span class="o">:</span><span class="w"> </span><span class="kt">Posts</span><span class="w"> </span><span class="p">},</span>
+<span class="p">});</span></code></pre></figure>
+<h2 id="create-the-subscription">Create the Subscription</h2>
+<p>Pass the remote Collection view to <code>Subscription.create()</code>:</p>
+<figure class="code-figure"><figcaption><span>src/open-author-posts.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Subscription</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Feed</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./subscriptions&quot;</span><span class="p">;</span>
+
+<span class="kr">type</span><span class="w"> </span><span class="nx">FeedApplication</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">ReturnType</span><span class="o">&lt;</span><span class="ow">typeof</span><span class="w"> </span><span class="nx">Feed</span><span class="p">.</span><span class="nx">test</span><span class="o">&gt;</span><span class="p">;</span>
+
+<span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">openAuthorPosts</span><span class="p">(</span>
+<span class="w">  </span><span class="nx">feed</span><span class="o">:</span><span class="w"> </span><span class="kt">FeedApplication</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">identity</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span>
+<span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">subscription</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">Subscription</span><span class="p">.</span><span class="nx">create</span><span class="p">(</span><span class="nx">feed</span><span class="p">.</span><span class="nx">posts</span><span class="p">.</span><span class="k">for</span><span class="p">(</span><span class="nx">identity</span><span class="p">));</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">posts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">subscription</span><span class="p">.</span><span class="nx">get</span><span class="p">();</span>
+
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">subscription</span><span class="p">,</span><span class="w"> </span><span class="nx">posts</span><span class="w"> </span><span class="p">};</span>
+<span class="p">}</span></code></pre></figure>
+<p><code>subscription.get()</code> returns the current retained verified Items. It does not
+make the application enumerate the network. Calling <code>Subscription.create()</code>
+again for the same authorized target safely reuses the daemon's bounded
+subscription work.</p>
+<p><code>App.connect()</code> derives the required subscription access for Jolt Console
+approval. If the node cannot admit more retained views, creation throws
+<code>SubscriptionCapacityError</code>.</p>
+<h2 id="listen-without-polling">Listen without polling</h2>
+<p>A Change Stream is an async sequence of changes to the local retained view. A
+new stream starts with a full <code>ChangeType.Snapshot</code>, then reports changes and
+freshness transitions.</p>
+<figure class="code-figure"><figcaption><span>src/watch-posts.ts</span><span>ts</span></figcaption><pre class="doc-code"><code><span class="k">import</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">ChangeType</span><span class="p">,</span>
+<span class="w">  </span><span class="kr">type</span><span class="w"> </span><span class="nx">DataSubscription</span><span class="p">,</span>
+<span class="w">  </span><span class="kr">type</span><span class="w"> </span><span class="nx">PresentItem</span><span class="p">,</span>
+<span class="w">  </span><span class="kr">type</span><span class="w"> </span><span class="nx">SubscriptionStateValue</span><span class="p">,</span>
+<span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;jolt-sdk/data&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Post</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./subscriptions&quot;</span><span class="p">;</span>
+
+<span class="kr">type</span><span class="w"> </span><span class="nx">PostItem</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">PresentItem</span><span class="o">&lt;</span><span class="nx">Post</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="kr">type</span><span class="w"> </span><span class="nx">ViewListener</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="nx">posts</span><span class="o">:</span><span class="w"> </span><span class="kt">readonly</span><span class="w"> </span><span class="nx">PostItem</span><span class="p">[])</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="ow">void</span><span class="p">;</span>
+<span class="kr">type</span><span class="w"> </span><span class="nx">StateListener</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="nx">state</span><span class="o">:</span><span class="w"> </span><span class="kt">SubscriptionStateValue</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="ow">void</span><span class="p">;</span>
+
+<span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">watchPosts</span><span class="p">(</span>
+<span class="w">  </span><span class="nx">subscription</span><span class="o">:</span><span class="w"> </span><span class="kt">DataSubscription</span><span class="o">&lt;</span><span class="nx">Post</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">showPosts</span><span class="o">:</span><span class="w"> </span><span class="kt">ViewListener</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">showState</span><span class="o">:</span><span class="w"> </span><span class="kt">StateListener</span><span class="p">,</span>
+<span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">stream</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">subscription</span><span class="p">.</span><span class="nx">changes</span><span class="p">();</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">done</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="k">for</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">change</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="nx">stream</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="nx">change</span><span class="p">.</span><span class="kr">type</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="k">case</span><span class="w"> </span><span class="nx">ChangeType.Snapshot</span><span class="o">:</span>
+<span class="w">            </span><span class="kt">showPosts</span><span class="p">(</span><span class="nx">change</span><span class="p">.</span><span class="nx">items</span><span class="p">);</span>
+<span class="w">            </span><span class="nx">showState</span><span class="p">(</span><span class="nx">change</span><span class="p">.</span><span class="nx">state</span><span class="p">);</span>
+<span class="w">            </span><span class="k">break</span><span class="p">;</span>
+<span class="w">          </span><span class="k">case</span><span class="w"> </span><span class="nx">ChangeType.Changed</span><span class="o">:</span>
+<span class="w">          </span><span class="kt">case</span><span class="w"> </span><span class="nx">ChangeType.ResyncRequired</span><span class="o">:</span>
+<span class="w">            </span><span class="kt">showPosts</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">subscription</span><span class="p">.</span><span class="nx">get</span><span class="p">());</span>
+<span class="w">            </span><span class="k">break</span><span class="p">;</span>
+<span class="w">          </span><span class="k">case</span><span class="w"> </span><span class="nx">ChangeType.State</span><span class="o">:</span>
+<span class="w">            </span><span class="kt">showState</span><span class="p">(</span><span class="nx">change</span><span class="p">.</span><span class="nx">state</span><span class="p">);</span>
+<span class="w">            </span><span class="k">break</span><span class="p">;</span>
+<span class="w">          </span><span class="k">case</span><span class="w"> </span><span class="nx">ChangeType.Cancelled</span><span class="o">:</span>
+<span class="w">          </span><span class="kt">case</span><span class="w"> </span><span class="nx">ChangeType.Revoked</span><span class="o">:</span>
+<span class="w">            </span><span class="kt">return</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">finally</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="k">await</span><span class="w"> </span><span class="nx">stream</span><span class="p">.</span><span class="nx">cancel</span><span class="p">();</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">})();</span>
+
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nb">Object</span><span class="p">.</span><span class="nx">freeze</span><span class="p">({</span>
+<span class="w">    </span><span class="nx">done</span><span class="p">,</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="nx">close</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="k">await</span><span class="w"> </span><span class="nx">stream</span><span class="p">.</span><span class="nx">cancel</span><span class="p">();</span>
+<span class="w">      </span><span class="k">await</span><span class="w"> </span><span class="nx">done</span><span class="p">;</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">  </span><span class="p">});</span>
+<span class="p">}</span></code></pre></figure>
+<p>The example rereads the complete local view after <code>Changed</code> or
+<code>ResyncRequired</code>. That is the simplest correct choice for one small
+subscription. A larger feed can instead apply <code>change.items</code> and
+<code>change.removed</code> to its own map, as Chirp does.</p>
+<p>There is no timer in this code. Jolt wakes the local stream when verified data
+or its freshness changes.</p>
+<h2 id="understand-freshness">Understand freshness</h2>
+<p><code>subscription.state</code> and <code>State</code> on an Item answer different questions. Item
+state says whether one logical record is Present, Deleted, Missing, or
+Unavailable. <code>SubscriptionState</code> says how current the retained Collection view
+is:</p>
+<ul>
+<li><code>Loading</code>: the application has not received a verified view yet.</li>
+<li><code>Updating</code>: a retained view is available while Jolt refreshes it.</li>
+<li><code>Ready</code>: the latest refresh succeeded.</li>
+<li><code>Stale</code>: retained data remains usable, but refresh failed; inspect <code>reason</code>.</li>
+<li><code>Unavailable</code>: Jolt has no usable view at the moment.</li>
+<li><code>Cancelled</code> and <code>Revoked</code>: the Subscription is terminal.</li>
+</ul>
+<p><code>lastVerifiedAt</code> records the last successful verification time when one is
+available. A stale view is intentionally different from an empty Collection.</p>
+<h2 id="close-the-right-thing">Close the right thing</h2>
+<p><code>stream.cancel()</code> stops one listener and leaves the retained Data Subscription
+available. <code>subscription.remove()</code> removes the Subscription when the
+application no longer wants Jolt to maintain that view.</p>
+<p>Always close a Change Stream when its screen or controller stops. Treat
+<code>ChangeType.Cancelled</code> and <code>ChangeType.Revoked</code> as terminal instead of starting
+a hidden retry loop.</p>
+<h2 id="continue-learning">Continue learning</h2>
+<ul>
+<li>See this pattern inside the <a href="app-development.html">beginner Chirp app</a>.</li>
+<li>Return to <a href="data-sdk.html">Data SDK fundamentals</a>.</li>
+<li>Use the normal local lifecycle in <a href="data-sdk-mutations.html">Change an Item</a>.</li>
+</ul>
+        <footer class="document-footer">
+          <a href="../sdk/">← SDK overview</a>
+          <a href="https://github.com/alexanderwanyoike/jolt/blob/dev/guides/data-sdk-subscriptions.md">Canonical Markdown ↗</a>
+        </footer>
+      </article>
+    </main>
+  </body>
+</html>

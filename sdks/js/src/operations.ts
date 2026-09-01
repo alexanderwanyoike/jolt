@@ -13,18 +13,29 @@
 import type { CallOptions, JoltTransport } from "./transport.js";
 import type {
   AppendRecordInfo,
+  AppApiFeatureManifestResponse,
   AppSessionRequestResponse,
   AppSessionStatusResponse,
   CurrentAppSession,
   DecryptedEncryptedObject,
+  DataSubscriptionChangeResponse,
+  DataSubscriptionRecordResponse,
+  DataSubscriptionViewResponse,
   DecryptedIngress,
   EncryptedPublishResponse,
   FetchResult,
+  HomeRelayPinResponse,
   IngressRecord,
+  LocalRecordDeleteResponse,
+  LocalRecordRestoreResponse,
+  LocalRecordUpdateResponse,
+  LocalRecordReadResponse,
   NodeStatus,
+  OpenedEncryptedObject,
   PublishedContent,
   PublishResponse,
   ResolveResponse,
+  RemoveDataSubscriptionResponse,
 } from "./wire.js";
 
 /** What an app declares when opening a Jolt session. */
@@ -32,8 +43,8 @@ export type SessionRequest = {
   appId: string;
   appName: string;
   appOrigin: string;
-  /** The identity whose authority the session requests. */
-  identity: string;
+  /** The identity whose authority the session requests, or null for local identity discovery. */
+  identity: string | null;
   /** Requested capability strings, e.g. `publish:/myapp/*`. */
   capabilities: readonly string[];
 };
@@ -55,7 +66,6 @@ export function requestSession(
     ...options,
   });
 }
-
 /** Poll a session request until it carries a `session_token`. */
 export function getSessionRequestStatus(
   transport: JoltTransport,
@@ -77,6 +87,14 @@ export function getCurrentSession(
 /** Local daemon status: identity address, peer id, connectivity. */
 export function getStatus(transport: JoltTransport, options?: CallOptions): Promise<NodeStatus> {
   return transport.request("daemon", "/status", options);
+}
+
+/** Generic App API behavior advertised by the local daemon. */
+export function getAppApiFeatures(
+  transport: JoltTransport,
+  options?: CallOptions
+): Promise<AppApiFeatureManifestResponse> {
+  return transport.request("app", "/features", options);
 }
 
 /** Publish a JSON object at a signed path (last-writer-wins update log). */
@@ -155,6 +173,81 @@ export function enumerate(
   });
 }
 
+/** Register one session-owned identity/path-prefix Data Subscription. */
+export function createDataSubscription(
+  transport: JoltTransport,
+  token: string,
+  identity: string,
+  prefix: string,
+  options?: CallOptions
+): Promise<DataSubscriptionRecordResponse> {
+  return transport.request("app", "/data-subscriptions", {
+    token,
+    json: { identity, prefix },
+    ...options,
+  });
+}
+
+/** List Data Subscriptions owned by the current app session. */
+export function listDataSubscriptions(
+  transport: JoltTransport,
+  token: string,
+  options?: CallOptions
+): Promise<DataSubscriptionRecordResponse[]> {
+  return transport.request("app", "/data-subscriptions", {
+    method: "GET",
+    token,
+    ...options,
+  });
+}
+
+/** Perform a bounded refresh and read one subscription's Last Verified View. */
+export function getDataSubscriptionView(
+  transport: JoltTransport,
+  token: string,
+  subscriptionId: string,
+  options?: CallOptions
+): Promise<DataSubscriptionViewResponse> {
+  return transport.request(
+    "app",
+    `/data-subscriptions/${encodeURIComponent(subscriptionId)}`,
+    { method: "GET", token, ...options },
+  );
+}
+
+/** Wait for one bounded local Materialized View event after `cursor`. */
+export function nextDataSubscriptionChange(
+  transport: JoltTransport,
+  token: string,
+  subscriptionId: string,
+  cursor?: string,
+  options?: CallOptions,
+): Promise<DataSubscriptionChangeResponse> {
+  return transport.request(
+    "app",
+    `/data-subscriptions/${encodeURIComponent(subscriptionId)}/changes`,
+    {
+      token,
+      json: cursor === undefined ? {} : { cursor },
+      ...options,
+    },
+  );
+}
+
+/** Remove one Data Subscription owned by the current app session. */
+export function removeDataSubscription(
+  transport: JoltTransport,
+  token: string,
+  subscriptionId: string,
+  options?: CallOptions
+): Promise<RemoveDataSubscriptionResponse> {
+  return transport.request(
+    "app",
+    `/data-subscriptions/${encodeURIComponent(subscriptionId)}`,
+    { method: "DELETE", token, ...options },
+  );
+}
+
 /** Publish a JSON object encrypted to `recipients` (identity addresses). */
 export function publishEncryptedJson(
   transport: JoltTransport,
@@ -217,6 +310,92 @@ export function fetchTarget(
   return transport.request("app", "/fetch", { token, json: { target }, ...options });
 }
 
+/** Read one path from the local identity's authoritative singleton state. */
+export function readLocalRecord(
+  transport: JoltTransport,
+  token: string,
+  path: string,
+  options?: CallOptions
+): Promise<LocalRecordReadResponse> {
+  return transport.request("app", "/records/read", {
+    token,
+    json: { path },
+    ...options,
+  });
+}
+
+/** Compare-and-set one local stable record against an observed revision. */
+export function updateLocalRecord(
+  transport: JoltTransport,
+  token: string,
+  path: string,
+  body: object,
+  revision: string,
+  mutationId: string,
+  observedRevisions: readonly string[] | undefined,
+  options?: CallOptions
+): Promise<LocalRecordUpdateResponse> {
+  const data = Array.from(new TextEncoder().encode(JSON.stringify(body)));
+  return transport.request("app", "/records/update", {
+    token,
+    json: {
+      path,
+      revision,
+      ...(observedRevisions === undefined ? {} : { observed_revisions: observedRevisions }),
+      mutation_id: mutationId,
+      data,
+    },
+    ...options,
+  });
+}
+
+/** Compare-and-set one local stable record to a Tombstone. */
+export function deleteLocalRecord(
+  transport: JoltTransport,
+  token: string,
+  path: string,
+  revision: string,
+  mutationId: string,
+  observedRevisions: readonly string[] | undefined,
+  options?: CallOptions
+): Promise<LocalRecordDeleteResponse> {
+  return transport.request("app", "/records/delete", {
+    token,
+    json: {
+      path,
+      revision,
+      ...(observedRevisions === undefined ? {} : { observed_revisions: observedRevisions }),
+      mutation_id: mutationId,
+    },
+    ...options,
+  });
+}
+
+/** Compare-and-set one local Tombstone to new immutable content. */
+export function restoreLocalRecord(
+  transport: JoltTransport,
+  token: string,
+  path: string,
+  body: object,
+  revision: string,
+  mutationId: string,
+  observedRevisions: readonly string[] | undefined,
+  options?: CallOptions
+): Promise<LocalRecordRestoreResponse> {
+  const data = Array.from(new TextEncoder().encode(JSON.stringify(body)));
+  return transport.request("app", "/records/restore", {
+    token,
+    json: {
+      path,
+      revision,
+      ...(observedRevisions === undefined ? {} : { observed_revisions: observedRevisions }),
+      mutation_id: mutationId,
+      data,
+    },
+    ...options,
+  });
+}
+
 /** Resolve + decrypt an encrypted publication addressed to this session's identity. */
 export function decryptEncryptedTarget(
   transport: JoltTransport,
@@ -227,6 +406,21 @@ export function decryptEncryptedTarget(
   return transport.request("app", "/encrypted/decrypt", { token, json: { target }, ...options });
 }
 
+/** Open encrypted content, preserving ciphertext when this identity cannot decrypt it. */
+export function openEncryptedTarget(
+  transport: JoltTransport,
+  token: string,
+  target: string,
+  path?: string,
+  options?: CallOptions
+): Promise<OpenedEncryptedObject> {
+  return transport.request("app", "/encrypted/open", {
+    token,
+    json: { target, ...(path ? { path } : {}) },
+    ...options,
+  });
+}
+
 /** This node's published inventory. */
 export function listPublished(
   transport: JoltTransport,
@@ -234,6 +428,21 @@ export function listPublished(
   options?: CallOptions
 ): Promise<PublishedContent[]> {
   return transport.request("app", "/published", { token, ...options });
+}
+
+/** Ask the configured home relay to retain one of this app's own publications. */
+export function pinHomeRelay(
+  transport: JoltTransport,
+  token: string,
+  contentId: string,
+  path?: string,
+  options?: CallOptions
+): Promise<HomeRelayPinResponse> {
+  return transport.request("app", "/home-relay/pins", {
+    token,
+    json: { content_id: contentId, ...(path ? { path } : {}) },
+    ...options,
+  });
 }
 
 /**

@@ -49,3 +49,4 @@ product behavior normally do not need an RFC.
 | [0005](0005-community-membership.md) | Community Identities and Membership | Experimental Draft | Design only |
 | [0006](0006-community-app-indexes.md) | Community-Scoped App Indexes and Local Discovery | Experimental Draft | Design only |
 | [0007](0007-app-sessions.md) | Capability-Scoped Local App Sessions | Experimental Draft | Implemented v0 |
+| [0008](0008-device-writer-extensions.md) | Device Writer Tombstones, Causal Heads, and Delta Sync | Experimental Draft | Implemented operation levels 2/3 and sync level 2 |

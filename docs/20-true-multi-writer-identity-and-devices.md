@@ -15,10 +15,11 @@ in the codebase:
 - per-device append-only writer logs with deterministic merge
   (`device_writer_log.rs`);
 - admin routes `/admin/v1/device-authority` (list/authorize/revoke);
-- the `/jolt/device-writer/1.0.0` sync protocol;
+- versioned device-writer sync with bounded delta pages;
 - legacy-root migration (`dev_legacy_root`).
 
-Sections marked as future below (such as tombstones) are not yet implemented.
+JOLT-RFC-0008 now specifies the implemented Tombstone, causal-head, and delta
+sync extensions that were future work in the original proposal.
 
 ## Problem
 
@@ -247,10 +248,10 @@ records have the same entry hash, in which case they are the same record.
 Lamport-style counter, not trusted as a wall-clock security boundary. Wall-clock
 timestamps are useful for display, not authority.
 
-> Note: the v0 implementation deviates from this guidance. It currently orders
-> singleton conflicts by `(created_at, device_sequence, device_id, entry_hash)`,
-> where `created_at` is a wall-clock timestamp rather than a logical clock. This
-> is a known gap.
+> Note: JOLT-RFC-0008 replaces the original v0 singleton rule. Signed observed
+> heads establish causal supersession. Remaining concurrent heads use
+> `(device_sequence, device_id, entry_hash)` for deterministic selection and do
+> not use the device wall clock.
 
 ### Append Records
 
@@ -270,13 +271,15 @@ whether they are posts, replies, pastes, messages, or something else.
 
 ### Tombstones
 
-> Future design, not implemented in v0. `DeviceWriterPathMode` currently only
-> has `Singleton` and `Append` variants; there is no remove operation yet.
+Tombstones are implemented as the generic signed
+`TombstonePath { path }` device-writer operation defined by JOLT-RFC-0008. A
+Tombstone becomes the current singleton state without containing application
+content. A restore is a later singleton `SetPath` that observes the Tombstone;
+the complete signed history remains available so stale state cannot reintroduce
+the deleted value.
 
-Remove operations would be tombstones. A tombstone should name the target entry
-or path and the device entry that created it when known. Resolvers would
-preserve enough history to avoid reintroducing deleted records from a stale
-device log.
+The operation is logical deletion. It does not erase immutable content already
+stored or copied elsewhere.
 
 ## Merged Identity State
 

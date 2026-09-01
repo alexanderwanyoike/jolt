@@ -8,5 +8,7 @@ pub use config::CacheConfig;
 pub use error::StoreError;
 pub use store::{
     ContentStore, DiscoveredPeerHint, HomeRelayPinRecord, LocalIdentityEncryptionKeypair,
-    PersistedDeviceWriterLog, PersistedIngressRecord, PublishedContentEntry, StoredRelayRecord,
+    PersistedDeviceWriterLog, PersistedIngressRecord, PersistedRecordMutation,
+    PersistedRecordMutationOperation, PersistedRemoteIdentityState, PublishedContentEntry,
+    RemoteIdentityStateStore, StoredRelayRecord,
 };

@@ -11,6 +11,7 @@ use tracing::info;
 
 use jolt_network::DaemonHandle;
 
+use crate::data_change_streams::DataChangeStreams;
 use crate::device_authority::DeviceAuthorityStore;
 use crate::identity_recovery::IdentityRecoveryStore;
 use crate::local_identities::LocalIdentityStore;
@@ -46,8 +47,12 @@ pub fn build_router_with_stores(
     )
     .unwrap_or_else(|err| panic!("failed to open local identity store: {err}"));
     let device_authority = DeviceAuthorityStore::new();
+    let change_refresh_interval = sessions.data_subscription_change_refresh_interval();
+    let data_change_streams = DataChangeStreams::for_refresh_interval(change_refresh_interval);
+    data_change_streams.start_idle_eviction(change_refresh_interval);
     let state = AppState {
         daemon,
+        data_change_streams,
         sessions,
         network_settings,
         local_identities,
@@ -57,6 +62,7 @@ pub fn build_router_with_stores(
 
     Router::new()
         .route("/", get(routes::dashboard::console_entry))
+        .route("/app/v1/features", get(routes::app_features::get_features))
         .route(
             "/app/v1/sessions/request",
             post(routes::app_sessions::request_session),
@@ -71,11 +77,41 @@ pub fn build_router_with_stores(
         )
         .route("/app/v1/resolve", post(routes::app_api::resolve_address))
         .route("/app/v1/fetch", post(routes::app_api::fetch_content))
+        .route(
+            "/app/v1/records/read",
+            post(routes::app_api::read_local_record),
+        )
+        .route(
+            "/app/v1/records/update",
+            post(routes::app_api::update_local_record),
+        )
+        .route(
+            "/app/v1/records/delete",
+            post(routes::app_api::delete_local_record),
+        )
+        .route(
+            "/app/v1/records/restore",
+            post(routes::app_api::restore_local_record),
+        )
         .route("/app/v1/publish", post(routes::app_api::publish_file))
         .route("/app/v1/append", post(routes::app_api::append_record))
         .route(
             "/app/v1/enumerate",
             post(routes::app_api::enumerate_append_records),
+        )
+        .route(
+            "/app/v1/data-subscriptions",
+            post(routes::app_api::create_data_subscription)
+                .get(routes::app_api::list_data_subscriptions),
+        )
+        .route(
+            "/app/v1/data-subscriptions/{subscription_id}",
+            get(routes::app_api::get_data_subscription_view)
+                .delete(routes::app_api::remove_data_subscription),
+        )
+        .route(
+            "/app/v1/data-subscriptions/{subscription_id}/changes",
+            post(routes::app_api::next_data_subscription_change),
         )
         .route(
             "/app/v1/encrypted/publish",

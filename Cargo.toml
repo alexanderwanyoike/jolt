@@ -9,10 +9,11 @@ members = [
     "crates/jolt-node",
     "apps/jolt-console/src-tauri",
     "sdks/tauri-plugin",
+    "tools/jolt-social-graph-load",
 ]
 
 [workspace.package]
-version = "0.3.22"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 
@@ -86,3 +87,6 @@ hex = "0.4"
 data-encoding = "2"
 tempfile = "3"
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+
+[profile.release]
+strip = true

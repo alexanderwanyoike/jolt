@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { createJoltClient, type JoltTransport } from "../src/index.js";
+import {
+  createDataClient,
+  createJoltClient,
+  JoltApiError,
+  JoltTransportError,
+  type JoltTransport,
+} from "../src/index.js";
 
 /** A transport that records every call and replays canned responses. */
 function recordingTransport(responses: Record<string, unknown>) {
@@ -24,21 +30,433 @@ function recordingTransport(responses: Record<string, unknown>) {
 const token = () => "tok_test";
 
 describe("createJoltClient", () => {
+  it("evaluates required and optional App API feature levels", async () => {
+    const { transport, calls } = recordingTransport({
+      "/features": {
+        app_api: 1,
+        features: {
+          "data.documents": 2,
+          "data.subscriptions": 1,
+        },
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    const result = await jolt.checkCompatibility({
+      appApi: 1,
+      requiredFeatures: {
+        "data.documents": 1,
+        "data.tombstones": 1,
+      },
+      optionalFeatures: {
+        "data.subscriptions": 2,
+      },
+    });
+
+    expect(result).toEqual({
+      status: "incompatible",
+      manifest: {
+        appApi: 1,
+        features: {
+          "data.documents": 2,
+          "data.subscriptions": 1,
+        },
+        discovery: "advertised",
+      },
+      appApi: { requiredLevel: 1, availableLevel: 1, supported: true },
+      requiredFeatures: {
+        "data.documents": { requiredLevel: 1, availableLevel: 2, supported: true },
+        "data.tombstones": { requiredLevel: 1, availableLevel: null, supported: false },
+      },
+      optionalFeatures: {
+        "data.subscriptions": { requiredLevel: 2, availableLevel: 1, supported: false },
+      },
+    });
+    expect(calls.map(({ base, path }) => ({ base, path }))).toEqual([
+      { base: "app", path: "/features" },
+    ]);
+  });
+
+  it("keeps old apps compatible when daemon release metadata and features change", async () => {
+    const responses = {
+      "/features": {
+        app_api: 1,
+        daemon_version: "0.3.23",
+        features: { "data.documents": 1 },
+      },
+    };
+    const { transport } = recordingTransport(responses);
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const oldAppDeclaration = { appApi: 1 };
+
+    const beforeUpgrade = await jolt.checkCompatibility(oldAppDeclaration);
+    responses["/features"] = {
+      app_api: 1,
+      daemon_version: "9.0.0",
+      features: { "data.documents": 3 },
+    };
+    const afterUpgrade = await jolt.checkCompatibility(oldAppDeclaration, { refresh: true });
+
+    expect(beforeUpgrade.status).toBe("compatible");
+    expect(afterUpgrade.status).toBe("compatible");
+    expect(beforeUpgrade.appApi).toEqual(afterUpgrade.appApi);
+  });
+
+  it("treats missing feature discovery as the Legacy App API v1 Baseline", async () => {
+    const transport: JoltTransport = {
+      async request(): Promise<never> {
+        throw new JoltApiError("not found", { status: 404 });
+      },
+      async upload(): Promise<never> {
+        throw new Error("unused");
+      },
+    };
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    const result = await jolt.checkCompatibility({
+      appApi: 1,
+      requiredFeatures: { "data.documents": 1 },
+    });
+
+    expect(result.status).toBe("incompatible");
+    expect(result.manifest).toEqual({ appApi: 1, features: {}, discovery: "legacy" });
+    expect(result.appApi).toEqual({ requiredLevel: 1, availableLevel: 1, supported: true });
+    expect(result.requiredFeatures["data.documents"]).toEqual({
+      requiredLevel: 1,
+      availableLevel: null,
+      supported: false,
+    });
+  });
+
+  it("retains existing v1 operations when feature discovery selects the legacy baseline", async () => {
+    const transport: JoltTransport = {
+      async request(): Promise<never> {
+        throw new JoltApiError("not found", { status: 404 });
+      },
+      async upload<T>(): Promise<T> {
+        return {
+          content_id: "cid_legacy",
+          size: 2,
+          latest_sequence: 4,
+          path: "/legacy/post",
+        } as T;
+      },
+    };
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    await expect(jolt.checkCompatibility({ appApi: 1 })).resolves.toMatchObject({
+      status: "compatible",
+      manifest: { discovery: "legacy" },
+    });
+    await expect(jolt.publishJson("/legacy/post", { ok: true })).resolves.toMatchObject({
+      contentId: "cid_legacy",
+      latestSequence: 4,
+    });
+  });
+
+  it("caches one daemon manifest and refreshes it after reconnection", async () => {
+    const responses = {
+      "/features": { app_api: 1, features: { "data.documents": 1 } },
+    };
+    const { transport, calls } = recordingTransport(responses);
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const declaration = { appApi: 1, requiredFeatures: { "data.documents": 1 } };
+
+    await expect(jolt.checkCompatibility(declaration)).resolves.toMatchObject({
+      status: "compatible",
+    });
+    responses["/features"] = { app_api: 1, features: {} };
+
+    await expect(jolt.checkCompatibility(declaration)).resolves.toMatchObject({
+      status: "compatible",
+    });
+    await expect(
+      jolt.checkCompatibility(declaration, { refresh: true })
+    ).resolves.toMatchObject({ status: "incompatible" });
+    expect(calls.filter(({ path }) => path === "/features")).toHaveLength(2);
+  });
+
+  it("keeps transport unavailability distinct and retries discovery", async () => {
+    const unavailable = new JoltTransportError("daemon unavailable");
+    let calls = 0;
+    const transport: JoltTransport = {
+      async request<T>(): Promise<T> {
+        calls += 1;
+        if (calls === 1) throw unavailable;
+        return { app_api: 1, features: {} } as T;
+      },
+      async upload(): Promise<never> {
+        throw new Error("unused");
+      },
+    };
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const declaration = { appApi: 1 };
+
+    await expect(jolt.checkCompatibility(declaration)).rejects.toBe(unavailable);
+    await expect(jolt.checkCompatibility(declaration)).resolves.toMatchObject({
+      status: "compatible",
+      manifest: { discovery: "advertised" },
+    });
+    expect(calls).toBe(2);
+  });
+
   it("publishJson uploads multipart JSON and marshals the result", async () => {
     const { transport, calls } = recordingTransport({
-      "/publish": { content_id: "cid_1", size: 2, latest_sequence: 4, path: "/a/p" },
+      "/publish": {
+        content_id: "cid_1",
+        size: 2,
+        latest_sequence: 4,
+        path: "/a/p",
+        revision: "revision_4",
+      },
     });
     const jolt = createJoltClient({ transport, getSessionToken: token });
 
     const result = await jolt.publishJson("/a/p", { x: 1 });
 
-    expect(result).toEqual({ contentId: "cid_1", latestSequence: 4, path: "/a/p", address: null });
+    expect(result).toEqual({
+      contentId: "cid_1",
+      latestSequence: 4,
+      path: "/a/p",
+      address: null,
+      revision: "revision_4",
+    });
     const call = calls[0]!;
     expect(call.kind).toBe("upload");
     const detail = call.detail as { token: string; path: string; mimeType: string };
     expect(detail.token).toBe("tok_test");
     expect(detail.path).toBe("/a/p");
     expect(detail.mimeType).toBe("application/json");
+  });
+
+  it("sends opaque compare-and-set context when updating a stable record", async () => {
+    const { transport, calls } = recordingTransport({
+      "/records/update": {
+        path: "/chirp/posts/jlt_1",
+        content_id: "cid_2",
+        revision: "revision_2",
+        data: [123, 125],
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_1" };
+
+    await expect(jolt.updateRecord(
+      ref,
+      { version: 1, value: { text: "Edited" } },
+      { revision: "revision_1", mutationId: "mut_1" },
+    )).resolves.toEqual({
+      state: "present",
+      ref,
+      contentId: "cid_2",
+      revision: "revision_2",
+      bytes: [123, 125],
+    });
+    expect(calls).toEqual([{
+      kind: "request",
+      base: "app",
+      path: "/records/update",
+      detail: {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_1",
+          mutation_id: "mut_1",
+          data: expect.any(Array),
+        },
+      },
+    }]);
+  });
+
+  it("sends every observed head when resolving a stable-record conflict", async () => {
+    const { transport, calls } = recordingTransport({
+      "/records/update": {
+        path: "/chirp/posts/jlt_1",
+        content_id: "cid_resolved",
+        revision: "revision_resolved",
+        data: [123, 125],
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_1" };
+
+    await jolt.updateRecord(
+      ref,
+      { version: 1, value: { text: "Resolved" } },
+      {
+        revision: "revision_phone",
+        observedRevisions: ["revision_laptop", "revision_phone"],
+        mutationId: "mut_resolve_1",
+      },
+    );
+
+    expect(calls[0]).toEqual({
+      kind: "request",
+      base: "app",
+      path: "/records/update",
+      detail: {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_phone",
+          observed_revisions: ["revision_laptop", "revision_phone"],
+          mutation_id: "mut_resolve_1",
+          data: expect.any(Array),
+        },
+      },
+    });
+  });
+
+  it("sends opaque compare-and-set context when deleting a stable record", async () => {
+    const { transport, calls } = recordingTransport({
+      "/records/delete": {
+        path: "/chirp/posts/jlt_1",
+        revision: "revision_tombstone",
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_1" };
+
+    await expect(jolt.deleteRecord(
+      ref,
+      { revision: "revision_1", mutationId: "mut_delete_1" },
+    )).resolves.toEqual({
+      state: "deleted",
+      ref,
+      revision: "revision_tombstone",
+    });
+    expect(calls).toEqual([{
+      kind: "request",
+      base: "app",
+      path: "/records/delete",
+      detail: {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_1",
+          mutation_id: "mut_delete_1",
+        },
+      },
+    }]);
+  });
+
+  it("sends content and opaque Tombstone context when restoring a stable record", async () => {
+    const { transport, calls } = recordingTransport({
+      "/records/restore": {
+        path: "/chirp/posts/jlt_1",
+        content_id: "cid_restored",
+        revision: "revision_restored",
+        data: [123, 125],
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_1" };
+
+    await expect(jolt.restoreRecord(
+      ref,
+      { version: 1, value: { text: "Restored" } },
+      { revision: "revision_tombstone", mutationId: "mut_restore_1" },
+    )).resolves.toEqual({
+      state: "present",
+      ref,
+      contentId: "cid_restored",
+      revision: "revision_restored",
+      bytes: [123, 125],
+    });
+    expect(calls).toEqual([{
+      kind: "request",
+      base: "app",
+      path: "/records/restore",
+      detail: {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_tombstone",
+          mutation_id: "mut_restore_1",
+          data: expect.any(Array),
+        },
+      },
+    }]);
+  });
+
+  it("sends every observed head for delete and restore conflict resolutions", async () => {
+    const { transport, calls } = recordingTransport({
+      "/records/delete": {
+        path: "/chirp/posts/jlt_1",
+        revision: "revision_deleted",
+      },
+      "/records/restore": {
+        path: "/chirp/posts/jlt_1",
+        content_id: "cid_restored",
+        revision: "revision_restored",
+        data: [123, 125],
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_1" };
+    const observedRevisions = ["revision_laptop", "revision_phone"];
+
+    await jolt.deleteRecord(ref, {
+      revision: "revision_phone",
+      observedRevisions,
+      mutationId: "mut_delete_conflict",
+    });
+    await jolt.restoreRecord(
+      ref,
+      { version: 1, value: { text: "Restored" } },
+      {
+        revision: "revision_phone",
+        observedRevisions,
+        mutationId: "mut_restore_conflict",
+      },
+    );
+
+    expect(calls.map(call => call.detail)).toEqual([
+      {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_phone",
+          observed_revisions: observedRevisions,
+          mutation_id: "mut_delete_conflict",
+        },
+      },
+      {
+        token: "tok_test",
+        json: {
+          path: "/chirp/posts/jlt_1",
+          revision: "revision_phone",
+          observed_revisions: observedRevisions,
+          mutation_id: "mut_restore_conflict",
+          data: expect.any(Array),
+        },
+      },
+    ]);
+  });
+
+  it("can request a session before the local identity is known", async () => {
+    const { transport, calls } = recordingTransport({
+      "/sessions/request": { request_id: "req_1", status: "pending" },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    await jolt.requestSession({
+      appId: "pastey.local",
+      appName: "Pastey",
+      appOrigin: "http://127.0.0.1:5174",
+      identity: null,
+      capabilities: ["publish:/pastes/*"],
+    });
+
+    expect(calls[0]).toMatchObject({
+      path: "/sessions/request",
+      detail: {
+        json: {
+          requested_identity: null,
+          requested_capabilities: ["publish:/pastes/*"],
+        },
+      },
+    });
   });
 
   it("read resolves, fetches, and decodes; returns null when decode rejects", async () => {
@@ -82,6 +500,143 @@ describe("createJoltClient", () => {
     ).resolves.toBeNull();
   });
 
+  it("keeps read tolerant while strict resolution preserves a verified Tombstone", async () => {
+    const tombstoned = new JoltApiError("Path is tombstoned", {
+      status: 410,
+      code: "path_tombstoned",
+    });
+    const transport: JoltTransport = {
+      async request(): Promise<never> {
+        throw tombstoned;
+      },
+      async upload(): Promise<never> {
+        throw new Error("unused");
+      },
+    };
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    const ref = { identity: "alice.jolt", path: "/posts/deleted" };
+
+    await expect(jolt.read(ref, value => value)).resolves.toBeNull();
+    await expect(jolt.resolve(ref)).rejects.toBe(tombstoned);
+  });
+
+  it("reads explicit local record state without collapsing daemon failures", async () => {
+    const responses: Record<string, unknown> = {
+      "/records/read": {
+        state: "present",
+        path: "/chirp/posts/jlt_record",
+        content_id: "cid_record",
+        revision: "revision_record",
+        data: [1, 2, 3],
+      },
+    };
+    const { transport, calls } = recordingTransport(responses);
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+    const ref = { identity: "alice.jolt", path: "/chirp/posts/jlt_record" };
+
+    await expect(jolt.readRecord(ref)).resolves.toEqual({
+      state: "present",
+      ref,
+      contentId: "cid_record",
+      revision: "revision_record",
+      bytes: [1, 2, 3],
+    });
+    expect(calls[0]).toMatchObject({
+      kind: "request",
+      base: "app",
+      path: "/records/read",
+      detail: {
+        token: "tok_test",
+        json: { path: "/chirp/posts/jlt_record" },
+      },
+    });
+
+    responses["/records/read"] = {
+      state: "missing",
+      path: "/chirp/posts/jlt_record",
+    };
+    await expect(jolt.readRecord(ref)).resolves.toEqual({
+      state: "missing",
+      ref,
+    });
+
+    responses["/records/read"] = {
+      state: "deleted",
+      path: "/chirp/posts/jlt_record",
+      revision: "revision_tombstone",
+    };
+    await expect(jolt.readRecord(ref)).resolves.toEqual({
+      state: "deleted",
+      ref,
+      revision: "revision_tombstone",
+    });
+
+    responses["/records/read"] = {
+      state: "conflicted",
+      path: "/chirp/posts/jlt_record",
+      alternatives: [
+        {
+          state: "deleted",
+          revision: "revision_deleted",
+        },
+        {
+          state: "present",
+          content_id: "cid_present",
+          revision: "revision_present",
+          data: [4, 5, 6],
+        },
+      ],
+      base: {
+        state: "present",
+        content_id: "cid_base",
+        revision: "revision_base",
+        data: [1, 2, 3],
+      },
+    };
+    await expect(jolt.readRecord(ref)).resolves.toEqual({
+      state: "conflicted",
+      ref,
+      alternatives: [
+        {
+          state: "deleted",
+          ref,
+          revision: "revision_deleted",
+        },
+        {
+          state: "present",
+          ref,
+          contentId: "cid_present",
+          revision: "revision_present",
+          bytes: [4, 5, 6],
+        },
+      ],
+      base: {
+        state: "present",
+        ref,
+        contentId: "cid_base",
+        revision: "revision_base",
+        bytes: [1, 2, 3],
+      },
+    });
+
+    const failure = new JoltTransportError("daemon unavailable");
+    const unavailableTransport: JoltTransport = {
+      async request(): Promise<never> {
+        throw failure;
+      },
+      async upload(): Promise<never> {
+        throw new Error("unused");
+      },
+    };
+    const unavailableClient = createJoltClient({
+      transport: unavailableTransport,
+      getSessionToken: token,
+    });
+
+    await expect(unavailableClient.readRecord(ref)).rejects.toBe(failure);
+  });
+
   it("sendObject publishes encrypted, fetches the bytes, and ingress-sends them", async () => {
     const { transport, calls } = recordingTransport({
       "/encrypted/publish": { content_id: "cid_3", size: 9, latest_sequence: 0, recipient_count: 1 },
@@ -107,6 +662,75 @@ describe("createJoltClient", () => {
     expect(send.json.encrypted_object).toEqual([1, 2, 3]);
   });
 
+  it("opens encrypted content without hiding a ciphertext-only result", async () => {
+    const { transport, calls } = recordingTransport({
+      "/encrypted/open": {
+        content_id: "cid_encrypted",
+        path: "/pastes/secret",
+        status: "ciphertext",
+        access_status: "not_accessible",
+        plaintext: null,
+        ciphertext: [1, 2, 3],
+        size: 3,
+        content_type: null,
+        decrypt_error: "no matching recipient key",
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    await expect(jolt.openEncrypted("alice.jolt/pastes/secret")).resolves.toEqual({
+      contentId: "cid_encrypted",
+      path: "/pastes/secret",
+      status: "ciphertext",
+      accessStatus: "not_accessible",
+      bytes: [1, 2, 3],
+      size: 3,
+      contentType: null,
+      decryptError: "no matching recipient key",
+    });
+    expect(calls[0]).toMatchObject({
+      kind: "request",
+      base: "app",
+      path: "/encrypted/open",
+      detail: {
+        token: "tok_test",
+        json: { target: "alice.jolt/pastes/secret" },
+      },
+    });
+  });
+
+  it("requests home-relay availability for the app's own publication", async () => {
+    const { transport, calls } = recordingTransport({
+      "/home-relay/pins": {
+        status: "pinned",
+        relay: "12D3KooWRelay",
+        owner: "alice.jolt",
+        content_id: "cid_public",
+        latest_sequence: 4,
+        size: 12,
+      },
+    });
+    const jolt = createJoltClient({ transport, getSessionToken: token });
+
+    await expect(jolt.pinHomeRelay("cid_public", "/pastes/hello")).resolves.toEqual({
+      status: "pinned",
+      relay: "12D3KooWRelay",
+      owner: "alice.jolt",
+      contentId: "cid_public",
+      latestSequence: 4,
+      size: 12,
+    });
+    expect(calls[0]).toMatchObject({
+      kind: "request",
+      base: "app",
+      path: "/home-relay/pins",
+      detail: {
+        token: "tok_test",
+        json: { content_id: "cid_public", path: "/pastes/hello" },
+      },
+    });
+  });
+
   it("enumerate marshals wire records into camelCase", async () => {
     const { transport } = recordingTransport({
       "/enumerate": [
@@ -115,7 +739,7 @@ describe("createJoltClient", () => {
           content_id: "cid_4",
           device_id: "dev_a",
           device_sequence: 2,
-          created_at: "2026-01-01T00:00:00Z",
+          created_at: 42,
           entry_hash: "h",
         },
       ],
@@ -131,10 +755,122 @@ describe("createJoltClient", () => {
         contentId: "cid_4",
         deviceId: "dev_a",
         deviceSequence: 2,
-        createdAt: "2026-01-01T00:00:00Z",
+        createdAt: 42,
         entryHash: "h",
       },
     ]);
+  });
+
+  it("manages capability-scoped data subscriptions in domain shape", async () => {
+    const subscription = {
+      id: "sub_1",
+      session_id: "ses_private",
+      identity: "alice.jolt",
+      prefix: "/spoke/posts/",
+      lifecycle: "dormant",
+      refresh: { status: "loading" },
+      created_at: 42,
+    };
+    const { transport, calls } = recordingTransport({
+      "/data-subscriptions": subscription,
+      "/data-subscriptions/sub_1": {
+        identity: "alice.jolt",
+        records: [{
+          path: "/spoke/posts/p1",
+          content_id: "cid_1",
+          revision: "revision_7",
+          created_at: 43,
+        }],
+        source: {
+          subscription: "sub_1",
+          state: { status: "ready", last_verified_at: 44 },
+        },
+      },
+    });
+    const jolt = createDataClient({ transport, getSessionToken: token });
+
+    await expect(
+      jolt.createDataSubscription("alice.jolt", "/spoke/posts/"),
+    ).resolves.toEqual({
+      id: "sub_1",
+      identity: "alice.jolt",
+      prefix: "/spoke/posts/",
+      lifecycle: "dormant",
+      refresh: { status: "loading" },
+      createdAt: 42,
+    });
+    await expect(jolt.getDataSubscriptionView("sub_1")).resolves.toEqual({
+      records: [{
+        identity: "alice.jolt",
+        path: "/spoke/posts/p1",
+        contentId: "cid_1",
+        revision: "revision_7",
+        createdAt: 43,
+      }],
+      source: {
+        subscription: "sub_1",
+        state: { status: "ready", lastVerifiedAt: 44 },
+      },
+    });
+    await jolt.removeDataSubscription("sub_1");
+
+    expect(calls.map(({ path, detail }) => ({ path, detail }))).toEqual([
+      {
+        path: "/data-subscriptions",
+        detail: {
+          token: "tok_test",
+          json: { identity: "alice.jolt", prefix: "/spoke/posts/" },
+        },
+      },
+      {
+        path: "/data-subscriptions/sub_1",
+        detail: { method: "GET", token: "tok_test" },
+      },
+      {
+        path: "/data-subscriptions/sub_1",
+        detail: { method: "DELETE", token: "tok_test" },
+      },
+    ]);
+  });
+
+  it("long-polls one internal Data Subscription change after a cursor", async () => {
+    const { transport, calls } = recordingTransport({
+      "/data-subscriptions/sub_1/changes": {
+        type: "changed",
+        cursor: "stream_boot_1:2",
+        identity: "alice.jolt",
+        records: [{
+          path: "/spoke/posts/p1",
+          content_id: "cid_1",
+          revision: "revision_7",
+          created_at: 43,
+        }],
+        removed: ["/spoke/posts/p0"],
+      },
+    });
+    const jolt = createDataClient({ transport, getSessionToken: token });
+
+    await expect(
+      jolt.nextDataSubscriptionChange("sub_1", "stream_boot_1:1"),
+    ).resolves.toEqual({
+      type: "changed",
+      cursor: "stream_boot_1:2",
+      records: [{
+        identity: "alice.jolt",
+        path: "/spoke/posts/p1",
+        contentId: "cid_1",
+        revision: "revision_7",
+        createdAt: 43,
+      }],
+      removed: [{ identity: "alice.jolt", path: "/spoke/posts/p0" }],
+    });
+    expect(calls.map(({ path, detail }) => ({ path, detail }))).toEqual([{
+      path: "/data-subscriptions/sub_1/changes",
+      detail: {
+        token: "tok_test",
+        json: { cursor: "stream_boot_1:1" },
+      },
+    }]);
   });
 
   it("openIngress parses plaintext JSON and tolerates garbage", async () => {

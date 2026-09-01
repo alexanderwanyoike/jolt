@@ -1,68 +1,61 @@
-# Building Chirp
+# Build Chirp with the Data SDK
 
 ```meta
 Guide: 01
 App: Chirp
 Stack: Tauri 2 · React
-SDK: jolt-sdk
-Description: Build Chirp, a minimal twitter-style app on Jolt with Tauri: scoped sessions, append records, timelines, follow requests over ingress, a working UI, and tests.
+Level: Beginner
+SDK: jolt-sdk/data
+Description: Build a small social app with profiles, follows, a live timeline, editing, deletion, restore, and an Alice/Bob test.
 ```
 
-A minimal twitter-style app on Jolt, built with Tauri and React. By the end you will have a running desktop app that borrows the user's identity through a capability-scoped session, publishes signed posts, assembles a timeline from other people's nodes, exchanges follow requests through recipient-controlled ingress, and tests all of it against an in-memory fake. Requires a running [Jolt Console](../#download) and the [Jolt SDK](../sdk/).
+Chirp is a small social app. You can choose a nickname, publish a post, follow
+another Jolt identity, see who you follow beside the timeline, edit your own
+posts, and undo a deletion. There is no application server, account table, path
+design, decoder, session code, or network polling to write.
 
-Every code file on this page is lifted verbatim from [`sdks/js/guide`](https://github.com/alexanderwanyoike/jolt/tree/dev/sdks/js/guide) in the Jolt repository, where it is type-checked and unit-tested against the SDK on every change. If you follow along file by file, you end up with the same app.
+This is a complete application tutorial. Every TypeScript file shown here is
+compiled and tested against the public SDK in Jolt's repository. Follow it from
+the top and you will finish with a working desktop app, not an isolated API
+example.
 
-## Why every Jolt app is social
+> **Before you start:** Chirp requires Jolt **0.4.0 or newer**. Jolt 0.3.22
+> does not yet provide the live Data SDK behavior used by this tutorial. This
+> guide must remain on the development site until 0.4.0 is released.
 
-Chirp has no backend, no user table, and no signup screen, and it does not need them. On Jolt, **identity comes from the network**: the local daemon holds the user's keys and signs everything Chirp publishes, so a "Chirp account" is just the user's existing Jolt identity wearing a different interface. And **distribution comes from the network**: anything Chirp publishes is resolvable and fetchable by any other node, and anything other identities publish under Chirp's paths is readable by your app.
+## 1 · Create the app
 
-That makes Jolt apps social by nature. The moment Chirp writes its first post, that post has a stable address any other app can read, and Chirp can read everyone else's. You are not building a silo with a network attached; you are building a lens over a network that already exists. The flip side is honest too: public publications are public. "Following" in Chirp is not permission to read (nobody needs permission to read public posts); it is a subscription list that decides whose posts your timeline assembles.
-
-Chirp exercises the whole app surface specified in [JOLT-RFC-0007](../rfcs/0007-app-sessions.html): session bootstrap, signed publication, append records and enumeration, encrypted objects, and ingress.
-
-## 1 · Scaffold a Tauri + React app
-
-Start from the standard Tauri scaffold with the React and TypeScript template:
+Start with Tauri's React and TypeScript template:
 
 ```bash
 yarn create tauri-app chirp --template react-ts
 cd chirp
 yarn
-yarn tauri dev
-```
-
-You should see the template window open. Everything Jolt-specific happens in two places: `src-tauri/` (one plugin registration) and `src/` (the SDK calls). By the end of this guide you will have touched exactly seven files:
-
-```text
-chirp/
-├── src-tauri/
-│   ├── Cargo.toml                    # add one dependency
-│   ├── capabilities/default.json     # add one permission
-│   └── src/lib.rs                    # add one line
-└── src/
-    ├── jolt.ts                       # client + session  (section 3)
-    ├── chirp.ts                      # posts + timeline  (section 4)
-    ├── follows.ts                    # ingress handshake (section 5)
-    ├── App.tsx                       # the UI            (section 6)
-    └── App.css                       # replace the scaffold's styles
-```
-
-## 2 · Add jolt-sdk and tauri-plugin-jolt
-
-Add the SDK:
-
-```bash
 yarn add jolt-sdk
 ```
 
-In a desktop shell the webview should not talk to the daemon directly; daemon calls go through audited Rust proxy commands. The [`tauri-plugin-jolt`](https://crates.io/crates/tauri-plugin-jolt) crate ships those commands so you never write them yourself. One dependency in `src-tauri/Cargo.toml`, next to the tauri dependencies the template generated:
+Schema Classes use TypeScript decorators. Add this option to the generated
+`tsconfig.json`:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true
+  }
+}
+```
+
+## 2 · Let the desktop app talk to Jolt
+
+The webview should not make direct requests to the local daemon. Add Jolt's
+small Tauri plugin to `src-tauri/Cargo.toml`:
 
 ```toml src-tauri/Cargo.toml
 [dependencies]
 tauri-plugin-jolt = "0.1"
 ```
 
-One line in the builder in `src-tauri/src/lib.rs`:
+Register it in the builder Tauri generated:
 
 ```rust src-tauri/src/lib.rs
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -70,11 +63,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_jolt::init())
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("error while running Chirp");
 }
 ```
 
-And one permission in `src-tauri/capabilities/default.json`, next to the defaults the template generated:
+Then allow the plugin in `src-tauri/capabilities/default.json`:
 
 ```json src-tauri/capabilities/default.json
 {
@@ -84,70 +77,226 @@ And one permission in `src-tauri/capabilities/default.json`, next to the default
 }
 ```
 
-On the TypeScript side, the Tauri transport pairs with the plugin when you pass `{ plugin: true }`, which you will do in the next section. The plugin reaches the daemon at `http://127.0.0.1:9862`; set `JOLT_DAEMON_URL` to override it.
+That is all the connection plumbing Chirp owns. `Chirp.connect()` will find
+Jolt, check that the required Data SDK behavior is available, request the exact
+permissions declared by the app, reuse an existing approval, and wait when a
+new approval is required.
 
-## 3 · Request a scoped session
+## 3 · Describe Chirp's data
 
-Chirp now declares who it is and exactly what it wants to do. Capabilities follow the grammar of [RFC 0007](../rfcs/0007-app-sessions.html): an action, optionally narrowed to a path scope with at most one trailing wildcard. Chirp asks for the full set it will use in this guide, and nothing more; the daemon will refuse any call outside the granted set, and the user can narrow the grant further at approval time.
+Create `src/chirp.ts`:
 
-@include sdks/js/guide/src/jolt.ts as src/jolt.ts
+@include sdks/js/guide/src/beginner/chirp.ts as src/chirp.ts
 
-Run the app and call `connect()`. The request now sits pending on the daemon: open **Jolt Console → Apps**, find the pending "Chirp" request, review the capability list, and approve it. The poll loop picks up the token and Chirp is connected. The token is a bearer secret scoped to exactly these capabilities; if the user revokes the session in Console, every call starts failing with `JoltApiError` and `connect()` will request a fresh session on next launch.
+`Post`, `Profile`, and `Following` are ordinary classes and runtime schemas at
+the same time. `Collection.create` gives every post a stable reference. The
+public `profile` Document stores one nickname, while the private `following`
+Document stores one identity list for the signed-in person.
 
-## 4 · Publish chirps, assemble timelines
+The access declarations are also the complete permission declaration:
 
-A chirp is an append record: `publishAppend` writes coexisting records that never overwrite each other, which is exactly what a feed of posts wants (and it keeps concurrent devices safe). Each chirp gets its own path under `/chirp/posts/`, and readers list them back with `enumerate`, never with resolve. The follow list is the opposite kind of data: a singleton settings-like object at `/chirp/follows`, updated with `publishJson` where last-writer-wins is fine. It is published under your identity, so any Chirp instance on any device sees the same list.
+- anyone may read posts;
+- anyone may read a Chirp nickname, but only its identity may change it;
+- the local identity may create, edit, delete, and restore its posts; and
+- only the local identity may read or change its following list.
 
-@include sdks/js/guide/src/chirp.ts as src/chirp.ts
+`App.create` derives the paths and session request. There are no path prefixes,
+capability strings, revision tokens, mutation IDs, or decoders in application
+code. Automatic conflict handling is used unless the application explicitly
+chooses a different policy.
 
-Note the shape of these functions: each takes the narrow interface it needs (`JoltAppendSdk`, `JoltSdk`) rather than the whole client, and the clock is injectable. Every client sub-interface (`JoltSdk`, `JoltAppendSdk`, `JoltEncryptedSdk`, `JoltIngressSdk`) is intentionally small so features declare exactly the capability they use; this pays off in section 7.
+## 4 · Add profiles and remember who the user follows
 
-Reads are tolerant: in `loadTimeline`, a record that is missing, unreachable, or not a valid chirp simply comes back `null` from `readContent` and is skipped, so one bad record never breaks the feed.
+Create `src/profiles.ts`:
 
-## 5 · Follow requests over ingress
+@include sdks/js/guide/src/beginner/profiles.ts as src/profiles.ts
 
-Following someone requires no permission: their posts are public, and `follow()` above is enough to read them. What ingress adds is the social handshake, telling someone you exist without spam. On Jolt, one identity cannot write into another identity's state; the only way to hand an object to someone else is the **recipient-controlled ingress door**: the sender encrypts an object to the recipient and delivers it to the recipient's daemon, where it waits in a pending queue until the recipient's app opens it and decides.
+`saveNickname()` creates the local profile once and updates the same typed
+Document afterward. `getProfiles()` reads each public profile through its Jolt
+identity. A nickname is friendly and deliberately non-unique, so Chirp always
+keeps the canonical `.jolt` identity next to it on posts and in the Following
+list. Missing profiles simply fall back to that identity.
 
-`sendObject` does the sender's half in one call: it encrypt-publishes the object at the given path (that is the sender's own copy, under `publish:encrypted:/chirp/*`), then delivers the envelope to the recipient's daemon. On the receiving side, `listFollowRequests` lists the pending queue, opens each envelope to see what it is, and classifies it; the transport layer does not know or care what a "follow request" is, classifying payloads is the app's job. Envelopes that are not Chirp objects are left alone for whatever app they belong to, and envelopes whose claimed sender does not match the envelope's actual sender are rejected on sight. Deciding is deliberately left to the UI: accept and reject are one SDK call each.
+Create `src/following.ts`:
 
-@include sdks/js/guide/src/follows.ts as src/follows.ts
+@include sdks/js/guide/src/beginner/following.ts as src/following.ts
 
-## 6 · The UI
+`getOrCreate` means a new Chirp user starts with an empty list while a returning
+user receives the Document already stored under their Jolt identity. Updating
+returns a new immutable Item, so React can replace its old state directly.
 
-One file ties it together. `App.tsx` connects on mount, then renders four things: a composer that calls `postChirp`, a follow form that subscribes and says hello, the pending follow requests with accept and ignore buttons, and the timeline. Every action ends by re-running `refresh`, so the UI is always a projection of daemon state; when Bob accepts Alice's request, Chirp accepts the envelope and follows back, so nothing lands in Bob's world without Bob's daemon holding it at the door first.
+## 5 · Build the live timeline
 
-@include sdks/js/guide/src/App.tsx as src/App.tsx
+Chirp's timeline reads the signed-in person's posts and the posts of every
+identity they follow. Each identity gets one cache-first Data Subscription.
 
-Replace the scaffold's `src/App.css` with a small stylesheet (the scaffold's `main.tsx` already renders `<App />`, so no other file changes):
+Think of a subscription as one local, verified window onto one person's Posts
+Collection. It does not expose networking to Chirp. Jolt discovers that
+person's nodes, verifies their signed records, retains the last good view, and
+refreshes it in the background.
 
-@include sdks/js/guide/src/App.css as src/App.css
+The Change Stream has a deliberate order:
 
-Run `yarn tauri dev` again. Approve the session in Jolt Console when the window says it is waiting, and post your first chirp.
+1. It begins with a **Snapshot** containing the complete Last Verified View.
+   Chirp can render that immediately, even while the other person is offline.
+2. Later **Changed** events patch that view with verified additions, edits,
+   deletions, and restores.
+3. **ResyncRequired** means Chirp missed part of the stream, so it asks the
+   subscription for a fresh complete view instead of guessing.
 
-## 7 · Test it all with the fake
+Create `src/timeline.ts`:
 
-Because every Chirp function takes a client interface instead of reaching for a global, all of the flows above run against `createFakeJolt`: a deterministic in-memory implementation of the full `JoltClient` with no daemon and no network. Publishes land in an in-memory store, enumeration lists them back, sends are recorded, and `deliverIngress` injects incoming envelopes as if a remote sender delivered them. Add `vitest` (`yarn add -D vitest`) and drop this next to the code:
+@include sdks/js/guide/src/beginner/timeline.ts as src/timeline.ts
 
-@include sdks/js/guide/src/chirp.test.ts as src/chirp.test.ts
+`Timeline.open()` waits for that first Snapshot before it returns. This avoids
+racing an older view read against a newer streamed change. One `Map` holds the
+current Items for each followed identity; `publish()` combines those Maps and
+sorts their typed `postedAt` values for React. The exhaustive `switch` makes
+resynchronization and terminal events explicit instead of turning them into
+strings for the UI to guess about.
 
-These tests exercise Chirp's schemas and flows, not cryptography: the fake simulates encryption by recording recipients and storing plaintext, which is exactly the right level for app tests. The same code runs unchanged against the real daemon because `createFakeJolt` satisfies `JoltClient` and every sub-interface.
+Keep the React boundary small with `src/use-timeline.ts`:
 
-## 8 · Run it with a friend
+@include sdks/js/guide/src/beginner/use-timeline.ts as src/use-timeline.ts
 
-The whole point of a Jolt app is that two installs of it form a network with no server in between. To see Chirp actually be social you need a second identity, either a friend running Jolt Console on their machine or your own second machine.
+Opening, cancelling, and replacing timeline sources now follows the normal
+React effect lifecycle. The component receives one immutable snapshot.
 
-1. Both sides launch Jolt Console, run Chirp with `yarn tauri dev`, and approve the session request.
-2. Swap `.jolt` addresses (each of you sees your own at the top of the Chirp window).
-3. Each of you posts a chirp.
-4. You type their address into the follow form. Two things happen at once: their existing posts appear in your timeline on the next refresh, because following is just reading public records, and a follow request lands at their daemon's door.
-5. Their Chirp shows "Follow requests" with your address. When they hit **Accept**, Chirp follows back, and both timelines now interleave both authors, newest first.
+To keep this tutorial small, changing the follow list closes and rebuilds its
+few subscriptions. A large production feed would reconcile long-lived
+subscriptions instead; Chirp deliberately does not teach that optimisation.
 
-If the other side is offline, nothing breaks: chirps are served by whichever nodes hold them (the author's devices, and relays if the author pins there), and the follow request waits in the daemon's ingress queue and retries. Delivery, retries, and queue persistence are the daemon's job, not yours.
+## 6 · Add a post card
 
-## Where to go next
+Create `src/PostCard.tsx`:
 
-- The [SDK reference](../sdk/reference.html) documents every exported class, interface, function, and type, including the typed `operations` layer for endpoints the client does not wrap (binary publish, raw ingress send).
-- [JOLT-RFC-0007](../rfcs/0007-app-sessions.html) specifies the session and capability model Chirp just used, including the grants this guide did not need: `inventory`, `pin:own`, `encrypt`, and `decrypt`.
-- [JOLT-RFC-0003](../rfcs/0003-device-writer-logs.html) explains why append records from several devices merge deterministically, which is what made `publishAppend` safe to call from anywhere.
-- For private content between chirpers, look at `publishEncryptedJson` and `readEncrypted` in the reference, backed by [JOLT-RFC-0004](../rfcs/0004-encrypted-device-access.html).
-- Want your content reachable while your machines sleep? [Run your own relay](run-a-relay.html); it takes ten minutes and a small VPS.
+@include sdks/js/guide/src/beginner/PostCard.tsx as src/PostCard.tsx
+
+Remote posts are read-only. Each card uses the separately loaded public profile
+for its friendly nickname and keeps the post reference's Jolt identity visible
+underneath. Chirp shows edit and delete controls only when that reference
+belongs to `chirp.identity`. The callback receives the stable post reference;
+the application asks its local Collection for the current Item before mutating
+it.
+
+## 7 · Build the screen
+
+Replace the generated `src/App.tsx`:
+
+@include sdks/js/guide/src/beginner/App.tsx as src/App.tsx
+
+This is the whole product flow:
+
+1. `Chirp.connect()` connects and exposes the local Jolt identity.
+2. `getFollowing()` loads the user's saved follows.
+3. `getProfiles()` loads public nicknames without replacing canonical IDs.
+4. `useTimeline()` opens subscriptions for the user and their friends.
+5. The profile form and composer save typed Documents and Posts.
+6. Following somebody updates one typed Document and the sidebar.
+7. Edit, delete, and restore call methods on typed Items.
+
+Each button action uses the small `run()` helper. It clears the previous
+message, runs the typed operation, and shows a dismissible error without
+throwing away the rest of the screen. Connection and timeline startup errors
+still stop the app because Chirp cannot work without those foundations.
+
+The startup boundary catches `AppIncompatibleError` by type. Instead of showing
+SDK terminology, Chirp asks the person to update Jolt and offers **Check again**.
+Compatibility is checked before approval or data access, so this failure cannot
+partly create the application.
+
+Present Items carry `State.Present`; deleted Items carry `State.Deleted` and
+offer `restore(...)` only when the Resource declaration allows it.
+
+There is deliberately no transport setup, compatibility Feature map, App
+Session Capability list, content identifier, or manual refresh loop in this
+component.
+
+Replace `src/App.css` as well:
+
+@include sdks/js/guide/src/beginner/App.css as src/App.css
+
+The scaffold's existing `src/main.tsx` already renders `<App />`, so there are
+no other frontend files to change.
+
+## 8 · Run Chirp
+
+Confirm Jolt Console is version 0.4.0 or newer, start it, then run:
+
+```bash
+yarn tauri dev
+```
+
+The first launch waits at **Approve Chirp in Jolt Console**. Open Jolt Console,
+review the generated request, and approve it. Chirp then shows the identity
+owned by that Jolt installation.
+
+Save a nickname and publish a post. Close and reopen Chirp: the profile, post,
+and following Document remain under the same identity, and the timeline starts
+from its retained verified view rather than waiting for the network.
+
+## 9 · Test Alice and Bob without two daemons
+
+Install Vitest:
+
+```bash
+yarn add --dev vitest
+```
+
+Create `src/chirp.test.ts`:
+
+@include sdks/js/guide/src/beginner/chirp.test.ts as src/chirp.test.ts
+
+`Chirp.test()` gives one isolated typed app. `Chirp.testWorld()` gives Alice and
+Bob two identity-bound views of shared deterministic state. The tests use the
+same public profiles, private following list, posts, Item mutations, Data
+Subscription, and Change Stream interfaces as the desktop application; no
+daemon or network is needed.
+
+Run them:
+
+```bash
+yarn vitest run
+```
+
+## 10 · Run it with a friend
+
+To see the real network path, run Chirp on two laptops that can discover one
+another through Jolt:
+
+1. Alice and Bob each start Jolt Console and Chirp.
+2. Each approves Chirp's generated request.
+3. Alice saves a nickname and publishes a chirp.
+4. Bob enters Alice's `.jolt` identity in the follow form; Alice appears in his
+   Following sidebar by nickname and canonical identity.
+5. Alice's existing posts appear from Bob's retained verified view, and later
+   verified changes arrive through the same timeline subscription.
+6. Alice can follow Bob in the same way.
+
+Following does not grant read permission: Chirp posts are public. It records
+which public identities Bob wants in his timeline. Jolt remains responsible for
+signed storage, provider discovery, verification, caching, and bounded refresh.
+
+## 11 · Where to go next
+
+The beginner app is complete. Reach for these only when a real requirement
+appears:
+
+- [Data SDK fundamentals](data-sdk.html) explains Schema Classes, Resources,
+  Apps, Items, access, and testing without the React screen around them.
+- [Item mutations](data-sdk-mutations.html) explains immutable Item snapshots,
+  lifecycle states, and expected failure types outside the React UI.
+- [Schema migrations](data-sdk-migrations.html) shows how to upgrade older
+  stored values without adding historical model classes to the application.
+- [Manual conflicts](data-sdk-manual-conflicts.html) expose concurrent
+  alternatives instead of using the automatic defaults.
+- [Data Subscriptions](data-sdk-subscriptions.html) explain retained remote
+  views, freshness, Change Streams, and cleanup without React.
+- [Data SDK testing](data-sdk-testing.html) separates fast in-memory app tests
+  from the smaller set of checks that require real Jolt daemons.
+- **Content References** identify one exact immutable content version. Normal
+  relationships use stable logical [`Ref`](../sdk/reference.html#data.Ref)
+  values.
+- [bulk mutations](../sdk/reference.html#data.BulkMutationResult) perform
+  independent itemwise operations with indexed partial-success results; they
+  are not transactions.

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -12,7 +12,8 @@ use jolt_core::{
     JoltAddress, IDENTITY_ENCRYPTION_KEYS_PATH,
 };
 use jolt_network::{
-    AppendRecordInfo, EncryptedObjectResponse, FetchResult, NetworkError, PublishResponse,
+    AppendRecordInfo, EncryptedObjectResponse, FetchResult, MaterializedRecordInfo,
+    MaterializedRecordRefreshOutcome, MaterializedRecordView, NetworkError, PublishResponse,
     PublishedContentInfo, ResolveResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +23,9 @@ use crate::error::ApiError;
 use crate::routes::fetch::{fetch_error_for_target, FetchRequest};
 use crate::routes::home_relay::HomeRelayPinRequest;
 use crate::routes::resolve::ResolveRequest;
-use crate::session_store::{AppSessionStoreError, AppSessionView};
+use crate::session_store::{
+    AppSessionStoreError, AppSessionView, DataSubscriptionRecord, DataSubscriptionRefresh,
+};
 use crate::state::AppState;
 
 static APP_TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -67,6 +70,211 @@ pub async fn fetch_content(
         .await
         .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &content_id)))?;
     Ok(Json(result))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LocalRecordReadRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum LocalRecordReadHeadResponse {
+    Deleted {
+        revision: String,
+    },
+    Present {
+        content_id: String,
+        revision: String,
+        data: Vec<u8>,
+    },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum LocalRecordReadResponse {
+    Missing {
+        path: String,
+    },
+    Deleted {
+        path: String,
+        revision: String,
+    },
+    Present {
+        path: String,
+        content_id: String,
+        revision: String,
+        data: Vec<u8>,
+    },
+    Conflicted {
+        path: String,
+        alternatives: Vec<LocalRecordReadHeadResponse>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        base: Option<LocalRecordReadHeadResponse>,
+    },
+}
+
+async fn read_local_record_head(
+    state: &AppState,
+    head: jolt_network::LocalRecordHead,
+) -> Result<LocalRecordReadHeadResponse, AppApiError> {
+    match head {
+        jolt_network::LocalRecordHead::Deleted { revision } => {
+            Ok(LocalRecordReadHeadResponse::Deleted { revision })
+        }
+        jolt_network::LocalRecordHead::Present(record) => {
+            let fetched = state
+                .daemon
+                .fetch(record.content_id.clone())
+                .await
+                .map_err(|err| {
+                    AppApiError::Network(fetch_error_for_target(err, &record.content_id))
+                })?;
+            Ok(LocalRecordReadHeadResponse::Present {
+                content_id: record.content_id,
+                revision: record.revision,
+                data: fetched.data,
+            })
+        }
+    }
+}
+
+pub async fn read_local_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<LocalRecordReadRequest>,
+) -> Result<Json<LocalRecordReadResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+    require_capability(&session, "resolve:public")?;
+    require_capability(&session, "fetch:public")?;
+    let path = normalize_path(&req.path)?;
+    let record = match state.daemon.inspect_local_record(path).await? {
+        jolt_network::LocalRecordState::Missing { path } => {
+            return Ok(Json(LocalRecordReadResponse::Missing { path }));
+        }
+        jolt_network::LocalRecordState::Deleted { path, revision } => {
+            return Ok(Json(LocalRecordReadResponse::Deleted { path, revision }));
+        }
+        jolt_network::LocalRecordState::Conflicted {
+            path,
+            alternatives,
+            base,
+        } => {
+            let mut responses = Vec::with_capacity(alternatives.len());
+            for alternative in alternatives {
+                responses.push(read_local_record_head(&state, alternative).await?);
+            }
+            let base = match base {
+                Some(base) => Some(read_local_record_head(&state, base).await?),
+                None => None,
+            };
+            return Ok(Json(LocalRecordReadResponse::Conflicted {
+                path,
+                alternatives: responses,
+                base,
+            }));
+        }
+        jolt_network::LocalRecordState::Present(record) => record,
+    };
+    let fetched = state
+        .daemon
+        .fetch(record.content_id.clone())
+        .await
+        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &record.content_id)))?;
+    Ok(Json(LocalRecordReadResponse::Present {
+        path: record.path,
+        content_id: record.content_id,
+        revision: record.revision,
+        data: fetched.data,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LocalRecordUpdateRequest {
+    pub path: String,
+    pub revision: String,
+    #[serde(default)]
+    pub observed_revisions: Vec<String>,
+    pub mutation_id: String,
+    pub data: Vec<u8>,
+}
+
+pub async fn update_local_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<LocalRecordUpdateRequest>,
+) -> Result<Json<jolt_network::LocalRecordUpdate>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+    let path = normalize_path(&req.path)?;
+    require_path_capability(&session, "publish:", &path)?;
+    let updated = state
+        .daemon
+        .update_local_record(
+            path.clone(),
+            req.data,
+            req.revision,
+            req.observed_revisions,
+            req.mutation_id,
+        )
+        .await?;
+    publish_local_record_change(&state, &path).await;
+    Ok(Json(updated))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LocalRecordDeleteRequest {
+    pub path: String,
+    pub revision: String,
+    #[serde(default)]
+    pub observed_revisions: Vec<String>,
+    pub mutation_id: String,
+}
+
+pub async fn delete_local_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<LocalRecordDeleteRequest>,
+) -> Result<Json<jolt_network::LocalRecordDelete>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+    let path = normalize_path(&req.path)?;
+    require_path_capability(&session, "delete:", &path)?;
+    let deleted = state
+        .daemon
+        .delete_local_record(
+            path.clone(),
+            req.revision,
+            req.observed_revisions,
+            req.mutation_id,
+        )
+        .await?;
+    publish_local_record_change(&state, &path).await;
+    Ok(Json(deleted))
+}
+
+pub async fn restore_local_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<LocalRecordUpdateRequest>,
+) -> Result<Json<jolt_network::LocalRecordRestore>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    require_local_identity(&state, &session).await?;
+    let path = normalize_path(&req.path)?;
+    require_path_capability(&session, "publish:", &path)?;
+    let restored = state
+        .daemon
+        .restore_local_record(
+            path.clone(),
+            req.data,
+            req.revision,
+            req.observed_revisions,
+            req.mutation_id,
+        )
+        .await?;
+    publish_local_record_change(&state, &path).await;
+    Ok(Json(restored))
 }
 
 #[derive(Debug, Deserialize)]
@@ -375,14 +583,8 @@ pub async fn publish_file(
     let (data, path) = read_file_and_path_fields(multipart).await?;
     require_path_capability(&session, "publish:", &path)?;
 
-    let temp_path = persist_app_temp_file("publish", &data)?;
-    let result = state.daemon.publish(temp_path.clone(), Some(path)).await;
-    let _ = std::fs::remove_file(&temp_path);
-
-    match result {
-        Ok(response) => Ok((StatusCode::OK, Json(json!(response))).into_response()),
-        Err(e) => Err(AppApiError::Network(e)),
-    }
+    let response = publish_app_bytes(&state, data, path).await?;
+    Ok((StatusCode::OK, Json(json!(response))).into_response())
 }
 
 /// Publish content as an append record bound to a path the app owns. Unlike
@@ -476,6 +678,379 @@ pub struct EnumerateRequest {
     pub path_prefix: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateDataSubscriptionRequest {
+    pub identity: String,
+    pub prefix: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DataSubscriptionInfo {
+    pub id: String,
+    pub identity: String,
+    pub prefix: String,
+    pub lifecycle: crate::session_store::DataSubscriptionLifecycle,
+    pub refresh: crate::session_store::DataSubscriptionRefresh,
+    pub created_at: u64,
+}
+
+impl From<crate::session_store::DataSubscriptionRecord> for DataSubscriptionInfo {
+    fn from(record: crate::session_store::DataSubscriptionRecord) -> Self {
+        Self {
+            id: record.id,
+            identity: record.identity,
+            prefix: record.prefix,
+            lifecycle: record.lifecycle,
+            refresh: record.refresh,
+            created_at: record.created_at,
+        }
+    }
+}
+
+pub async fn create_data_subscription(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateDataSubscriptionRequest>,
+) -> Result<Json<DataSubscriptionInfo>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let identity = recipient_identity(&req.identity)?;
+    let prefix = normalize_path(&req.prefix)?;
+    require_data_subscription_capability(&session, &identity, &prefix)?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    let subscription = state
+        .sessions
+        .register_data_subscription(session_id, format!("{identity}.jolt"), prefix)
+        .await?;
+    let _ = begin_background_data_subscription_refresh(
+        state,
+        session_id.to_string(),
+        subscription.clone(),
+        identity,
+    )
+    .await?;
+    Ok(Json(subscription.into()))
+}
+
+pub async fn list_data_subscriptions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<DataSubscriptionInfo>>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    Ok(Json(
+        state
+            .sessions
+            .list_data_subscriptions(session_id)
+            .await
+            .into_iter()
+            .map(DataSubscriptionInfo::from)
+            .collect(),
+    ))
+}
+
+#[derive(Debug, Serialize)]
+pub struct DataSubscriptionSource {
+    pub subscription: String,
+    pub state: crate::session_store::DataSubscriptionRefresh,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DataSubscriptionView {
+    pub identity: String,
+    pub records: Vec<MaterializedRecordInfo>,
+    pub source: DataSubscriptionSource,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NextDataSubscriptionChangeRequest {
+    pub cursor: Option<String>,
+}
+
+pub async fn next_data_subscription_change(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subscription_id): Path<String>,
+    Json(req): Json<NextDataSubscriptionChangeRequest>,
+) -> Result<Json<crate::data_change_streams::DataChangeEvent>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    let subscription = state
+        .sessions
+        .data_subscription(session_id, &subscription_id)
+        .await?;
+    let identity = recipient_identity(&subscription.identity)?;
+    require_data_subscription_capability(&session, &identity, &subscription.prefix)?;
+    let view = state
+        .daemon
+        .read_materialized_record_snapshot(identity.clone(), subscription.prefix.clone())
+        .await?;
+    let _ = begin_background_data_subscription_refresh(
+        state.clone(),
+        session_id.to_string(),
+        subscription.clone(),
+        identity,
+    )
+    .await?;
+    let refresh_interval = state.sessions.data_subscription_change_refresh_interval();
+    let expires_at = session.expires_at;
+    let expiry = async move {
+        match expires_at {
+            Some(expires_at) => {
+                tokio::time::sleep(std::time::Duration::from_secs(
+                    expires_at.saturating_sub(unix_now()),
+                ))
+                .await;
+            }
+            None => std::future::pending::<()>().await,
+        }
+    };
+
+    let change = state.data_change_streams.next(
+        session_id,
+        &subscription_id,
+        &subscription.identity,
+        view.records,
+        subscription.refresh,
+        req.cursor.as_deref(),
+    );
+    tokio::pin!(change);
+    tokio::pin!(expiry);
+    loop {
+        tokio::select! {
+            event = &mut change => return Ok(Json(event)),
+            () = &mut expiry => {
+                state.data_change_streams.revoke_session(session_id).await;
+                return Ok(Json(crate::data_change_streams::DataChangeEvent::Revoked));
+            }
+            () = tokio::time::sleep(refresh_interval) => {
+                if !state
+                    .sessions
+                    .data_subscription_session_is_active(session_id)
+                    .await
+                {
+                    state.data_change_streams.revoke_session(session_id).await;
+                    return Ok(Json(crate::data_change_streams::DataChangeEvent::Revoked));
+                }
+                let current = match state
+                    .sessions
+                    .data_subscription(session_id, &subscription_id)
+                    .await
+                {
+                    Ok(current) => current,
+                    Err(AppSessionStoreError::DataSubscriptionNotFound(_)) => {
+                        state
+                            .data_change_streams
+                            .cancel_subscription(session_id, &subscription_id)
+                            .await;
+                        continue;
+                    }
+                    Err(error) => return Err(error.into()),
+                };
+                let identity = recipient_identity(&current.identity)?;
+                let _ = begin_background_data_subscription_refresh(
+                    state.clone(),
+                    session_id.to_string(),
+                    current,
+                    identity,
+                )
+                .await?;
+            }
+        }
+    }
+}
+
+pub async fn get_data_subscription_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subscription_id): Path<String>,
+) -> Result<Json<DataSubscriptionView>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    let subscription = state
+        .sessions
+        .data_subscription(session_id, &subscription_id)
+        .await?;
+    let identity = recipient_identity(&subscription.identity)?;
+    require_data_subscription_capability(&session, &identity, &subscription.prefix)?;
+
+    let in_progress = refreshing_data_subscription(&subscription.refresh);
+    let view = state
+        .daemon
+        .read_materialized_record_snapshot(identity.clone(), subscription.prefix.clone())
+        .await?;
+    let refresh_started = begin_background_data_subscription_refresh(
+        state,
+        session_id.to_string(),
+        subscription.clone(),
+        identity,
+    )
+    .await?;
+    let response_refresh = if refresh_started
+        || subscription.lifecycle == crate::session_store::DataSubscriptionLifecycle::Active
+    {
+        in_progress
+    } else {
+        subscription.refresh.clone()
+    };
+
+    Ok(Json(DataSubscriptionView {
+        identity: subscription.identity,
+        records: view.records,
+        source: DataSubscriptionSource {
+            subscription: subscription_id,
+            state: response_refresh,
+        },
+    }))
+}
+
+async fn begin_background_data_subscription_refresh(
+    state: AppState,
+    session_id: String,
+    subscription: DataSubscriptionRecord,
+    identity: IdentityId,
+) -> Result<bool, AppApiError> {
+    if !state
+        .sessions
+        .begin_data_subscription_refresh(&session_id, &subscription.id)
+        .await?
+    {
+        return Ok(false);
+    }
+
+    tokio::spawn(async move {
+        let stream_identity = subscription.identity.clone();
+        let stream_prefix = subscription.prefix.clone();
+        let refresh = match state
+            .daemon
+            .refresh_materialized_record_view(identity.clone(), stream_prefix.clone())
+            .await
+        {
+            Ok(view) => completed_data_subscription_refresh(&view),
+            Err(_) => DataSubscriptionRefresh::Unavailable {
+                reason: "networkUnavailable".to_string(),
+            },
+        };
+        let completed = state
+            .sessions
+            .complete_data_subscription_refresh(&session_id, &subscription.id, refresh.clone())
+            .await;
+        if completed.is_ok() {
+            if let Ok(view) = state
+                .daemon
+                .read_materialized_record_snapshot(identity, stream_prefix)
+                .await
+            {
+                state
+                    .data_change_streams
+                    .publish(
+                        &session_id,
+                        &subscription.id,
+                        &stream_identity,
+                        view.records,
+                        refresh,
+                    )
+                    .await;
+            }
+        }
+    });
+    Ok(true)
+}
+
+fn refreshing_data_subscription(
+    refresh: &crate::session_store::DataSubscriptionRefresh,
+) -> crate::session_store::DataSubscriptionRefresh {
+    match refresh {
+        crate::session_store::DataSubscriptionRefresh::Ready { last_verified_at }
+        | crate::session_store::DataSubscriptionRefresh::Stale {
+            last_verified_at, ..
+        } => crate::session_store::DataSubscriptionRefresh::Updating {
+            last_verified_at: Some(*last_verified_at),
+        },
+        crate::session_store::DataSubscriptionRefresh::Updating { last_verified_at } => {
+            crate::session_store::DataSubscriptionRefresh::Updating {
+                last_verified_at: *last_verified_at,
+            }
+        }
+        crate::session_store::DataSubscriptionRefresh::Loading
+        | crate::session_store::DataSubscriptionRefresh::Unavailable { .. } => {
+            crate::session_store::DataSubscriptionRefresh::Loading
+        }
+    }
+}
+
+fn completed_data_subscription_refresh(
+    view: &MaterializedRecordView,
+) -> crate::session_store::DataSubscriptionRefresh {
+    match view.refresh {
+        MaterializedRecordRefreshOutcome::Ready => {
+            crate::session_store::DataSubscriptionRefresh::Ready {
+                last_verified_at: view.last_verified_at.unwrap_or_else(unix_now),
+            }
+        }
+        MaterializedRecordRefreshOutcome::NetworkUnavailable => {
+            failed_subscription_refresh(view.last_verified_at, "networkUnavailable")
+        }
+        MaterializedRecordRefreshOutcome::VerificationFailed => {
+            failed_subscription_refresh(view.last_verified_at, "verificationFailed")
+        }
+        MaterializedRecordRefreshOutcome::Overloaded => {
+            failed_subscription_refresh(view.last_verified_at, "overloaded")
+        }
+    }
+}
+
+fn failed_subscription_refresh(
+    last_verified_at: Option<u64>,
+    reason: &'static str,
+) -> crate::session_store::DataSubscriptionRefresh {
+    match last_verified_at {
+        Some(last_verified_at) => crate::session_store::DataSubscriptionRefresh::Stale {
+            last_verified_at,
+            reason: reason.to_string(),
+        },
+        None => crate::session_store::DataSubscriptionRefresh::Unavailable {
+            reason: reason.to_string(),
+        },
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct RemoveDataSubscriptionResponse {
+    pub status: &'static str,
+    pub subscription_id: String,
+}
+
+pub async fn remove_data_subscription(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subscription_id): Path<String>,
+) -> Result<Json<RemoveDataSubscriptionResponse>, AppApiError> {
+    let session = authenticated_session(&state, &headers).await?;
+    let session_id = session.session_id.as_deref().ok_or_else(|| {
+        AppApiError::Forbidden("app session has no active session id".to_string())
+    })?;
+    state
+        .sessions
+        .remove_data_subscription(session_id, &subscription_id)
+        .await?;
+    state
+        .data_change_streams
+        .cancel_subscription(session_id, &subscription_id)
+        .await;
+    Ok(Json(RemoveDataSubscriptionResponse {
+        status: "cancelled",
+        subscription_id,
+    }))
+}
+
 /// List an identity's append records whose path starts with `path_prefix`. This
 /// is the read seam a Collection is assembled from. Reads cached merged
 /// device-writer state, never a rewritten blob.
@@ -523,15 +1098,74 @@ fn require_enumerate_capability(
     }
 }
 
+fn require_data_subscription_capability(
+    session: &AppSessionView,
+    requested_identity: &IdentityId,
+    prefix: &str,
+) -> Result<(), AppApiError> {
+    if session.allows_data_subscription(requested_identity, prefix) {
+        Ok(())
+    } else {
+        Err(AppApiError::Forbidden(format!(
+            "data subscription for identity {requested_identity} at {prefix} is outside the granted identity and path scope"
+        )))
+    }
+}
+
 async fn publish_app_bytes(
     state: &AppState,
     data: Vec<u8>,
     path: String,
 ) -> Result<PublishResponse, AppApiError> {
     let temp_path = persist_app_temp_file("publish", &data)?;
-    let result = state.daemon.publish(temp_path.clone(), Some(path)).await;
+    let result = state
+        .daemon
+        .publish(temp_path.clone(), Some(path.clone()))
+        .await;
     let _ = std::fs::remove_file(&temp_path);
-    result.map_err(AppApiError::Network)
+    let published = result.map_err(AppApiError::Network)?;
+    publish_local_record_change(state, &path).await;
+    Ok(published)
+}
+
+async fn publish_local_record_change(state: &AppState, path: &str) {
+    let Some(identity) = state.daemon.local_identity_address() else {
+        return;
+    };
+    let subscriptions = state
+        .sessions
+        .data_subscriptions_matching_record(identity, path)
+        .await;
+    let Ok(identity_id) = recipient_identity(identity) else {
+        return;
+    };
+
+    for subscription in subscriptions {
+        if !state
+            .data_change_streams
+            .is_active(&subscription.session_id, &subscription.id)
+            .await
+        {
+            continue;
+        }
+        let Ok(view) = state
+            .daemon
+            .read_materialized_record_snapshot(identity_id.clone(), subscription.prefix.clone())
+            .await
+        else {
+            continue;
+        };
+        state
+            .data_change_streams
+            .publish_if_active(
+                &subscription.session_id,
+                &subscription.id,
+                &subscription.identity,
+                view.records,
+                subscription.refresh,
+            )
+            .await;
+    }
 }
 
 async fn publish_app_append_bytes(

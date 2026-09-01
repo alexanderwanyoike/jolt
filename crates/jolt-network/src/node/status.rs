@@ -1,10 +1,14 @@
 use tracing::warn;
 
-use crate::command::NodeStatus;
+use crate::command::{DeviceWriterSyncWorkStatus, NodeStatus};
 
 use super::{unix_now, NetworkNode};
 
 impl NetworkNode {
+    pub(super) fn local_device_id(&self) -> String {
+        format!("dev_{}", self.local_device_identity.identity_id())
+    }
+
     pub(super) fn build_status(&self) -> NodeStatus {
         let direct = self
             .peer_connections
@@ -31,6 +35,7 @@ impl NetworkNode {
             daemon_version: env!("CARGO_PKG_VERSION").to_string(),
             peer_id: self.swarm.local_peer_id().to_string(),
             identity_address: self.identity.jolt_address().to_string(),
+            local_device_id: self.local_device_id(),
             uptime_secs: self.started_at.elapsed().as_secs(),
             connected_peers: self.swarm.connected_peers().count(),
             direct_peers: direct,
@@ -51,6 +56,23 @@ impl NetworkNode {
             effective_bootstrap_relays: self.effective_bootstrap_relays.clone(),
             effective_bootstrap_relay_count: self.effective_bootstrap_relays.len(),
             known_relay_count,
+            device_writer_sync_work: DeviceWriterSyncWorkStatus {
+                max_concurrency: self.device_writer_sync_work.max_concurrency,
+                queue_capacity: self.device_writer_sync_work.queue_capacity,
+                active: self.device_writer_sync_work.active.len(),
+                queued: self.device_writer_sync_work.queued.len(),
+                verified: self.device_writer_sync_work.verified,
+                verification_failed: self.device_writer_sync_work.verification_failed,
+                rejected: self.device_writer_sync_work.rejected,
+                cancelled: self.device_writer_sync_work.cancelled,
+                timed_out: self.device_writer_sync_work.timed_out,
+                full_responses: self.device_writer_sync_work.full_responses,
+                delta_responses: self.device_writer_sync_work.delta_responses,
+                delta_continuations: self.device_writer_sync_work.delta_continuations,
+                received_entries: self.device_writer_sync_work.received_entries,
+                received_bytes: self.device_writer_sync_work.received_bytes,
+                full_recoveries: self.device_writer_sync_work.full_recoveries,
+            },
             connected_bootstrap_peers,
             last_bootstrap_error: self.last_bootstrap_error.clone(),
             home_relay: self.home_relay.clone(),
@@ -87,7 +109,7 @@ impl NetworkNode {
 mod tests {
     use std::str::FromStr;
 
-    use jolt_core::{IdentityId, JoltAddress, RelayRecordCapability};
+    use jolt_core::{DeviceAuthorizationOperation, IdentityId, JoltAddress, RelayRecordCapability};
     use jolt_identity::NodeIdentity;
     use jolt_store::{CacheConfig, ContentStore};
     use tempfile::tempdir;
@@ -136,6 +158,142 @@ mod tests {
         assert_eq!(status.daemon_version, env!("CARGO_PKG_VERSION"));
         assert!(!status.peer_id.is_empty());
         assert_eq!(status.connected_peers, 0);
+        assert_eq!(status.device_writer_sync_work.max_concurrency, 2);
+        assert_eq!(status.device_writer_sync_work.queue_capacity, 64);
+        assert_eq!(status.device_writer_sync_work.active, 0);
+        assert_eq!(status.device_writer_sync_work.queued, 0);
+
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn daemon_status_reports_stable_local_device_across_restart() {
+        let store_dir = tempdir().unwrap();
+        let identity_dir = tempdir().unwrap();
+        let identity = NodeIdentity::generate();
+        identity.save(identity_dir.path()).unwrap();
+
+        let first_device_id = {
+            let store = make_store(store_dir.path());
+            let mut node =
+                NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+            let (cmd_tx, cmd_rx) = mpsc::channel(16);
+            let handle = DaemonHandle::new(cmd_tx);
+            let daemon = tokio::spawn(async move {
+                node.run_daemon_loop(cmd_rx).await;
+            });
+
+            let status = handle.status().await.unwrap();
+            handle.shutdown().await.unwrap();
+            daemon.await.unwrap();
+            status.local_device_id
+        };
+
+        let reloaded_identity = NodeIdentity::load(identity_dir.path()).unwrap();
+        let store = make_store(store_dir.path());
+        let mut restarted =
+            NetworkNode::new_tcp(reloaded_identity, store, NetworkConfig::test_config()).unwrap();
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = DaemonHandle::new(cmd_tx);
+        let daemon = tokio::spawn(async move {
+            restarted.run_daemon_loop(cmd_rx).await;
+        });
+
+        let restarted_status = handle.status().await.unwrap();
+        assert_eq!(restarted_status.local_device_id, first_device_id);
+        assert!(restarted_status.local_device_id.starts_with("dev_"));
+        assert_ne!(restarted_status.local_device_id, "dev_legacy_root");
+
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn append_records_are_written_by_the_reported_local_device() {
+        let dir = tempdir().unwrap();
+        let identity = NodeIdentity::generate();
+        let identity_id = identity.identity_id();
+        let file = dir.path().join("post.json");
+        std::fs::write(&file, b"{\"text\":\"hello\"}").unwrap();
+        let store = make_store(dir.path());
+        let mut node = NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = DaemonHandle::new(cmd_tx);
+        let daemon = tokio::spawn(async move {
+            node.run_daemon_loop(cmd_rx).await;
+        });
+
+        let status = handle.status().await.unwrap();
+        handle
+            .publish_append(file, "/chirp/posts/post-1".to_string())
+            .await
+            .unwrap();
+        let records = handle
+            .enumerate_append_records(identity_id, "/chirp/posts/".to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].device_id, status.local_device_id);
+
+        handle.shutdown().await.unwrap();
+        daemon.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn revoked_local_device_restarts_read_only() {
+        let store_dir = tempdir().unwrap();
+        let identity_dir = tempdir().unwrap();
+        let identity = NodeIdentity::generate();
+        identity.save(identity_dir.path()).unwrap();
+
+        let local_device_id = {
+            let store = make_store(store_dir.path());
+            let mut node =
+                NetworkNode::new_tcp(identity, store, NetworkConfig::test_config()).unwrap();
+            let (cmd_tx, cmd_rx) = mpsc::channel(16);
+            let handle = DaemonHandle::new(cmd_tx);
+            let daemon = tokio::spawn(async move {
+                node.run_daemon_loop(cmd_rx).await;
+            });
+            let local_device_id = handle.status().await.unwrap().local_device_id;
+
+            handle
+                .append_local_device_authority(DeviceAuthorizationOperation::revoke_device(
+                    local_device_id.clone(),
+                    Some(0),
+                    Some("replaced installation".to_string()),
+                    unix_now(),
+                ))
+                .await
+                .unwrap();
+            handle.shutdown().await.unwrap();
+            daemon.await.unwrap();
+            local_device_id
+        };
+
+        let reloaded_identity = NodeIdentity::load(identity_dir.path()).unwrap();
+        let store = make_store(store_dir.path());
+        let mut restarted =
+            NetworkNode::new_tcp(reloaded_identity, store, NetworkConfig::test_config()).unwrap();
+        let file = store_dir.path().join("post-revocation.json");
+        std::fs::write(&file, b"{\"text\":\"blocked\"}").unwrap();
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let handle = DaemonHandle::new(cmd_tx);
+        let daemon = tokio::spawn(async move {
+            restarted.run_daemon_loop(cmd_rx).await;
+        });
+
+        assert_eq!(
+            handle.status().await.unwrap().local_device_id,
+            local_device_id
+        );
+        let error = handle
+            .publish_append(file, "/chirp/posts/blocked".to_string())
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("is revoked"));
 
         handle.shutdown().await.unwrap();
         daemon.await.unwrap();

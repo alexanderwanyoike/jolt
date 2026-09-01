@@ -27,12 +27,13 @@ impl NetworkNode {
                 let size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
                 let result = match path {
                     Some(path) => self.publish_file_at_path(&file_path, &path).map(
-                        |(content_id, address, latest_sequence)| PublishResponse {
+                        |(content_id, address, latest_sequence, revision)| PublishResponse {
                             content_id: content_id.to_string(),
                             size,
                             path: Some(address.path().to_string()),
                             address: Some(address.to_string()),
                             latest_sequence: Some(latest_sequence),
+                            revision: Some(revision),
                         },
                     ),
                     None => self
@@ -43,6 +44,7 @@ impl NetworkNode {
                             path: None,
                             address: None,
                             latest_sequence: None,
+                            revision: None,
                         }),
                 };
                 let _ = response_tx.send(result);
@@ -60,6 +62,7 @@ impl NetworkNode {
                         path: Some(address.path().to_string()),
                         address: Some(address.to_string()),
                         latest_sequence: Some(device_sequence),
+                        revision: None,
                     },
                 );
                 let _ = response_tx.send(result);
@@ -92,6 +95,37 @@ impl NetworkNode {
                         },
                     );
                 }
+            }
+            DaemonCommand::RefreshMaterializedRecordView {
+                identity,
+                path_prefix,
+                response_tx,
+            } => {
+                let is_local = identity == self.identity.identity_id();
+                if is_local {
+                    let result = self.materialized_record_view(
+                        &identity,
+                        &path_prefix,
+                        crate::command::MaterializedRecordRefreshOutcome::Ready,
+                    );
+                    let _ = response_tx.send(result);
+                } else {
+                    self.begin_device_writer_sync(
+                        super::resolution::DeviceWriterSyncWaiter::MaterializedView {
+                            identity,
+                            path_prefix,
+                            response_tx,
+                        },
+                    );
+                }
+            }
+            DaemonCommand::ReadMaterializedRecordSnapshot {
+                identity,
+                path_prefix,
+                response_tx,
+            } => {
+                let result = self.materialized_record_snapshot(&identity, &path_prefix);
+                let _ = response_tx.send(result);
             }
             DaemonCommand::Fetch {
                 content_id,
@@ -146,11 +180,20 @@ impl NetworkNode {
                     }
                 };
 
-                if let Ok(response) =
-                    self.resolve_device_writer_response_from_cache(&address, "device_writer_cache")
+                match self
+                    .resolve_device_writer_response_from_cache(&address, "device_writer_cache")
                 {
-                    let _ = response_tx.send(Ok(response));
-                    return;
+                    Ok(response) => {
+                        let _ = response_tx.send(Ok(response));
+                        self.begin_cached_device_writer_refresh(address.identity());
+                        return;
+                    }
+                    Err(error @ NetworkError::PathTombstoned { .. }) => {
+                        let _ = response_tx.send(Err(error));
+                        self.begin_cached_device_writer_refresh(address.identity());
+                        return;
+                    }
+                    Err(_) => {}
                 }
 
                 let fallback_response = self
@@ -317,6 +360,16 @@ impl NetworkNode {
             } => {
                 let _ = response_tx.send(self.identity.sign(&payload));
             }
+            DaemonCommand::GetLocalDeviceAuthority { response_tx } => {
+                let _ = response_tx.send(self.local_device_authority_records());
+            }
+            DaemonCommand::AppendLocalDeviceAuthority {
+                operation,
+                response_tx,
+            } => {
+                let result = self.append_local_device_authority_operation(operation);
+                let _ = response_tx.send(result);
+            }
             DaemonCommand::GetPeers { response_tx } => {
                 let peers = self
                     .swarm
@@ -365,6 +418,54 @@ impl NetworkNode {
             }
             DaemonCommand::ListPublishedContent { response_tx } => {
                 let _ = response_tx.send(self.published_content_inventory());
+            }
+            DaemonCommand::InspectLocalRecord { path, response_tx } => {
+                let _ = response_tx.send(self.inspect_local_record(&path));
+            }
+            DaemonCommand::UpdateLocalRecord {
+                path,
+                data,
+                revision,
+                observed_revisions,
+                mutation_id,
+                response_tx,
+            } => {
+                let result = self.update_local_record(
+                    &path,
+                    &data,
+                    &revision,
+                    &observed_revisions,
+                    &mutation_id,
+                );
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::DeleteLocalRecord {
+                path,
+                revision,
+                observed_revisions,
+                mutation_id,
+                response_tx,
+            } => {
+                let result =
+                    self.delete_local_record(&path, &revision, &observed_revisions, &mutation_id);
+                let _ = response_tx.send(result);
+            }
+            DaemonCommand::RestoreLocalRecord {
+                path,
+                data,
+                revision,
+                observed_revisions,
+                mutation_id,
+                response_tx,
+            } => {
+                let result = self.restore_local_record(
+                    &path,
+                    &data,
+                    &revision,
+                    &observed_revisions,
+                    &mutation_id,
+                );
+                let _ = response_tx.send(result);
             }
             DaemonCommand::Pin {
                 content_id,

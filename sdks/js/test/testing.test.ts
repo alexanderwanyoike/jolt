@@ -3,6 +3,60 @@ import { describe, expect, it } from "vitest";
 import { createFakeJolt } from "../src/testing.js";
 
 describe("createFakeJolt", () => {
+  it("returns the complete local status shape used by applications", async () => {
+    const { client } = createFakeJolt("alice.jolt");
+
+    await expect(client.getStatus()).resolves.toMatchObject({
+      identity_address: "alice.jolt",
+      local_device_id: "dev_fake_local",
+      direct_peers: 0,
+      relayed_peers: 0,
+      active_relays: 0,
+      published_count: 0,
+      cached_count: 0,
+      bootstrap_state: "idle",
+      known_relay_count: 0,
+      connected_bootstrap_peers: 0,
+      home_relay: null,
+    });
+  });
+
+  it("matches daemon compatibility evaluation for application tests", async () => {
+    const { client } = createFakeJolt("alice.jolt", {
+      appApi: 1,
+      features: { "data.documents": 1 },
+    });
+
+    const result = await client.checkCompatibility({
+      appApi: 1,
+      requiredFeatures: { "data.documents": 1 },
+      optionalFeatures: { "data.subscriptions": 1 },
+    });
+
+    expect(result.status).toBe("compatible");
+    expect(result.manifest).toEqual({
+      appApi: 1,
+      features: { "data.documents": 1 },
+      discovery: "advertised",
+    });
+    expect(result.optionalFeatures["data.subscriptions"]?.supported).toBe(false);
+  });
+
+  it("can model the Legacy App API Baseline in application fixtures", async () => {
+    const { client } = createFakeJolt("alice.jolt", {
+      featureDiscovery: "legacy",
+    });
+
+    const result = await client.checkCompatibility({ appApi: 1 });
+
+    expect(result.status).toBe("compatible");
+    expect(result.manifest).toEqual({
+      appApi: 1,
+      features: {},
+      discovery: "legacy",
+    });
+  });
+
   it("round-trips public publish and read with sequences", async () => {
     const { client } = createFakeJolt("alice.jolt");
     await client.publishJson("/app/profile", { name: "Alice" });
@@ -15,6 +69,84 @@ describe("createFakeJolt", () => {
 
     expect(got?.value.name).toBe("Alice II");
     expect(got?.latestSequence).toBe(1);
+  });
+
+  it("makes record mutation IDs idempotent and stale revisions conflicting", async () => {
+    const { client } = createFakeJolt("alice.jolt");
+    const ref = { identity: "alice.jolt", path: "/app/profile" };
+    await client.publishJson(ref.path, { name: "Alice" });
+    const observed = await client.readRecord(ref);
+    if (observed.state !== "present") throw new Error("expected a present record");
+    const mutation = { revision: observed.revision, mutationId: "mut_retry" };
+
+    const first = await client.updateRecord(ref, { name: "Alice II" }, mutation);
+    const retried = await client.updateRecord(ref, { name: "ignored retry body" }, mutation);
+
+    expect(retried).toEqual(first);
+    await expect(client.updateRecord(
+      ref,
+      { name: "stale" },
+      { revision: observed.revision, mutationId: "mut_stale" },
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "record_conflict",
+    });
+  });
+
+  it("makes record deletion retries idempotent and stale revisions conflicting", async () => {
+    const { client } = createFakeJolt("alice.jolt");
+    const ref = { identity: "alice.jolt", path: "/app/profile" };
+    await client.publishJson(ref.path, { name: "Alice" });
+    const observed = await client.readRecord(ref);
+    if (observed.state !== "present") throw new Error("expected a present record");
+    const mutation = { revision: observed.revision, mutationId: "mut_delete_retry" };
+
+    const first = await client.deleteRecord(ref, mutation);
+    const retried = await client.deleteRecord(ref, mutation);
+
+    expect(retried).toEqual(first);
+    await expect(client.readRecord(ref)).resolves.toEqual(first);
+    await expect(client.deleteRecord(
+      ref,
+      { revision: observed.revision, mutationId: "mut_delete_stale" },
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "record_conflict",
+    });
+  });
+
+  it("makes record restore retries idempotent and stale Tombstones conflicting", async () => {
+    const { client } = createFakeJolt("alice.jolt");
+    const ref = { identity: "alice.jolt", path: "/app/profile" };
+    await client.publishJson(ref.path, { name: "Alice" });
+    const present = await client.readRecord(ref);
+    if (present.state !== "present") throw new Error("expected a present record");
+    const deleted = await client.deleteRecord(ref, {
+      revision: present.revision,
+      mutationId: "mut_delete_before_restore",
+    });
+    await expect(client.restoreRecord(
+      ref,
+      { name: "Wrong replay" },
+      { revision: deleted.revision, mutationId: "mut_delete_before_restore" },
+    )).rejects.toMatchObject({
+      status: 400,
+      code: "invalid_input",
+    });
+    const mutation = { revision: deleted.revision, mutationId: "mut_restore_retry" };
+
+    const first = await client.restoreRecord(ref, { name: "Alice again" }, mutation);
+    const retried = await client.restoreRecord(ref, { name: "ignored retry body" }, mutation);
+
+    expect(retried).toEqual(first);
+    await expect(client.restoreRecord(
+      ref,
+      { name: "stale" },
+      { revision: deleted.revision, mutationId: "mut_restore_stale" },
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "record_conflict",
+    });
   });
 
   it("separates public and encrypted reads", async () => {
@@ -33,6 +165,41 @@ describe("createFakeJolt", () => {
     expect(asPublic).toBeNull();
     expect(asEncrypted?.value.s).toBe(1);
     expect(encryptedRecipients.get("/app/secret")).toEqual(["alice.jolt"]);
+  });
+
+  it("matches encrypted open behavior for app tests", async () => {
+    const { client } = createFakeJolt("alice.jolt");
+    await client.publishEncryptedJson("/app/secret", { s: 1 }, ["alice.jolt"]);
+
+    const opened = await client.openEncrypted("alice.jolt/app/secret");
+
+    expect(opened).toMatchObject({
+      path: "/app/secret",
+      status: "decrypted",
+      accessStatus: "available",
+      contentType: "application/json",
+      decryptError: null,
+    });
+    expect(JSON.parse(new TextDecoder().decode(new Uint8Array(opened.bytes)))).toEqual({ s: 1 });
+  });
+
+  it("matches home-relay pin state transitions for app tests", async () => {
+    const { client } = createFakeJolt("alice.jolt");
+    const published = await client.publishJson("/app/public", { hello: "relay" });
+
+    await expect(client.listPublished()).resolves.toMatchObject([
+      { content_id: published.contentId, pin_state: "local_only" },
+    ]);
+    await expect(
+      client.pinHomeRelay(published.contentId, "/app/public")
+    ).resolves.toMatchObject({
+      status: "pinned",
+      contentId: published.contentId,
+      latestSequence: 0,
+    });
+    await expect(client.listPublished()).resolves.toMatchObject([
+      { content_id: published.contentId, pin_state: "relay_backed" },
+    ]);
   });
 
   it("records sends and delivers injected ingress through the review flow", async () => {

@@ -38,6 +38,28 @@ pub enum NetworkError {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    #[error("Record changed since the observed revision")]
+    RecordConflict,
+
+    #[error("Local device {device_id} is revoked")]
+    LocalDeviceRevoked { device_id: String },
+
+    #[error("Local device {device_id} signing key does not match its authority record")]
+    LocalDeviceSigningKeyMismatch { device_id: String },
+
+    #[error("Path is Tombstoned: {path}")]
+    PathTombstoned { path: String },
+
+    #[error(
+        "Device-writer history requires operation version {required}, but this node supports {supported}"
+    )]
+    UnsupportedDeviceWriterOperationVersion { supported: u16, required: u16 },
+
+    #[error(
+        "Device-writer synchronization requires envelope version {required}, but this node supports {supported}"
+    )]
+    UnsupportedDeviceWriterSyncVersion { supported: u16, required: u16 },
+
     #[error("Content not found: {0}")]
     ContentNotFound(String),
 
@@ -46,6 +68,9 @@ pub enum NetworkError {
 
     #[error("Timeout waiting for response")]
     Timeout,
+
+    #[error("Daemon is shutting down")]
+    ShuttingDown,
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),

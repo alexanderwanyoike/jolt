@@ -16,9 +16,9 @@ Obsoletes: none
 This document specifies an experimental Jolt multi-writer protocol. It is not
 an IETF publication. Distribution of this memo is unlimited.
 
-The v1 structures and merge described here are implemented, but the memo
-remains a draft because singleton ordering uses wall-clock time and the long-
-term logical-clock rule is unresolved.
+The v1 structures described here are implemented. JOLT-RFC-0008 updates the
+singleton merge rule and adds versioned Tombstone, causal-head, and delta-sync
+behavior. This memo remains the operation-level-1 compatibility foundation.
 
 ### Abstract
 
@@ -92,7 +92,8 @@ This memo defines:
 This memo does not define:
 
 - application-specific document merging or CRDT semantics;
-- tombstones or removal operations;
+- tombstones, causal heads, or delta synchronization, which are defined by
+  JOLT-RFC-0008;
 - a global total order across identities;
 - the content schemas referenced by path records;
 - durable storage policy for remote identity caches.
@@ -319,8 +320,10 @@ New writes SHOULD populate device-writer state. Resolvers MAY answer from legacy
 state while asynchronously warming device-writer state, but MUST identify the
 source when diagnostics expose it.
 
-Adding tombstones, new operation classes, or a logical-clock merge key changes
-compatibility semantics and requires a versioned update.
+Adding tombstones, causal heads, new operation classes, or a logical-clock merge
+key changes compatibility semantics and requires a versioned update.
+JOLT-RFC-0008 provides the implemented operation-level negotiation for
+Tombstones and causal heads while preserving this memo's v1 signed bytes.
 
 ## 15. Security Considerations
 
@@ -356,12 +359,12 @@ persistence, remote synchronization, enumeration, and merged-state resolution
 are implemented across `jolt-core`, `jolt-network`, `jolt-store`, and
 `jolt-server`.
 
-Known gaps are the wall-clock merge key, no tombstone operation, inline rather
-than CID-pinned remote log snapshots, and no periodic background synchronization
-independent of resolve/enumerate calls. The current importer rejects the whole
-imported batch when any supplied writer log is invalid, which is stricter than
-the per-log rejection described by this memo. Delivery and verification are
-recorded in cards 091 and 094.
+JOLT-RFC-0008 updates the wall-clock singleton merge rule, adds Tombstones and
+causal supersession, and defines bounded delta synchronization. Remaining gaps
+include inline rather than CID-pinned remote log snapshots. The current
+importer rejects the whole imported batch when any supplied writer log is
+invalid, which is stricter than the per-log rejection described by this memo.
+Delivery and verification are recorded in cards 091 and 094.
 
 ## 19. References
 
@@ -369,6 +372,7 @@ recorded in cards 091 and 094.
 
 - JOLT-RFC-0001, “Signed Path Records and Resolution.”
 - JOLT-RFC-0002, “Device Authorization and Revocation.”
+- JOLT-RFC-0008, “Device Writer Tombstones, Causal Heads, and Delta Sync.”
 - [RFC2119] Bradner, S., RFC 2119.
 - [RFC8174] Leiba, B., RFC 8174.
 - [Ed25519] RFC 8032.

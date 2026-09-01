@@ -32,10 +32,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "sdks" / "js" / "docs" / "api.json"
 OUTPUT = ROOT / "website" / "sdk" / "reference.html"
 
-MODULE_ORDER = ["index", "transport-http", "transport-tauri", "testing"]
+MODULE_ORDER = ["index", "data", "transport-http", "transport-tauri", "testing"]
 
 MODULE_IMPORTS = {
     "index": "jolt-sdk",
+    "data": "jolt-sdk/data",
     "transport-http": "jolt-sdk/transport-http",
     "transport-tauri": "jolt-sdk/transport-tauri",
     "testing": "jolt-sdk/testing",
@@ -47,6 +48,7 @@ LEGACY_PACKAGE_NAME = "@jolt/sdk"
 PACKAGE_NAME = "jolt-sdk"
 
 KIND_NAMESPACE = 4
+KIND_VARIABLE = 32
 KIND_FUNCTION = 64
 KIND_CLASS = 128
 KIND_INTERFACE = 256
@@ -58,6 +60,7 @@ KIND_REEXPORT = 4194304
 
 KIND_LABELS = {
     KIND_NAMESPACE: "namespace",
+    KIND_VARIABLE: "const",
     KIND_FUNCTION: "function",
     KIND_CLASS: "class",
     KIND_INTERFACE: "interface",
@@ -116,6 +119,9 @@ def collect_anchors(modules: list[dict]) -> Anchors:
                     anchors.register(
                         nested, member_anchor(module["name"], member["name"], nested["name"])
                     )
+            elif member["kind"] == KIND_FUNCTION:
+                for nested in member.get("children", []):
+                    anchors.register(nested, f"{anchor}.{nested['name']}")
             elif member["kind"] in (KIND_CLASS, KIND_INTERFACE):
                 for nested in member.get("children", []):
                     # Only callable members render their own headings; property
@@ -382,6 +388,17 @@ def render_function(member: dict, anchor: str, anchors: Anchors, level: int = 3)
         parts.append(signature_line(sig, anchors, name=member["name"], prefix="function "))
         parts.append(render_markdown(comment_markdown(sig.get("comment"), anchors)))
         parts.append(params_table(sig, anchors))
+    for child in member.get("children", []):
+        declaration = child.get("type", {}).get("declaration", {})
+        for sig in declaration.get("signatures", []):
+            child_anchor = f"{anchor}.{child['name']}"
+            parts.append(
+                f'<h4 class="api-sub-name" id="{escape(child_anchor)}">'
+                f"{escape(child['name'])}</h4>"
+            )
+            parts.append(signature_line(sig, anchors, name=child["name"]))
+            parts.append(render_markdown(comment_markdown(sig.get("comment"), anchors)))
+            parts.append(params_table(sig, anchors))
     return "".join(parts)
 
 
@@ -466,6 +483,19 @@ def render_type_alias(member: dict, anchor: str, anchors: Anchors) -> str:
     return "".join(parts)
 
 
+def render_variable(member: dict, anchor: str, anchors: Anchors) -> str:
+    parts = [member_header(anchor, KIND_LABELS[KIND_VARIABLE], member["name"])]
+    props = object_properties(member.get("type"))
+    rendered_type = "{ ... }" if props else render_type(member.get("type"), anchors)
+    parts.append(
+        f'<pre class="api-signature"><code>const {escape(member["name"])}: '
+        f"{rendered_type}</code></pre>"
+    )
+    parts.append(summary_html(member, anchors))
+    parts.append(properties_table(props, anchors))
+    return "".join(parts)
+
+
 def render_reexport(member: dict, anchor: str, anchors: Anchors) -> str:
     target_anchor = anchors.resolve(member.get("target"))
     parts = [member_header(anchor, KIND_LABELS[KIND_REEXPORT], member["name"])]
@@ -494,6 +524,8 @@ def render_member(
     member: dict, module_name: str, anchor: str, anchors: Anchors, level: int = 3
 ) -> str:
     kind = member["kind"]
+    if kind == KIND_VARIABLE:
+        return render_variable(member, anchor, anchors)
     if kind == KIND_FUNCTION:
         return render_function(member, anchor, anchors, level)
     if kind == KIND_CLASS:
@@ -606,7 +638,7 @@ def render_page(project: dict, digest: str) -> str:
         <header class="doc-title">
           <p>JOLT SDK · API REFERENCE</p>
           <h1>jolt-sdk</h1>
-          <p class="doc-lede">Every exported class, interface, function, and type of the four SDK modules, generated from the committed typedoc output. Start with the <a href="index.html">SDK overview</a> or the <a href="../guides/app-development.html">app development guide</a>.</p>
+          <p class="doc-lede">Every exported class, interface, function, and type across the SDK modules, generated from the committed typedoc output. Start with the <a href="index.html">SDK overview</a> or the <a href="../guides/app-development.html">app development guide</a>.</p>
         </header>
         {body}
         <footer class="document-footer">

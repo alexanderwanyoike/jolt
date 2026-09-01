@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod commands;
@@ -31,7 +32,7 @@ use jolt_core::{
 #[cfg(test)]
 use jolt_core::{EncryptedObjectRecipient, IdentityHeadHint, RelayRecord, RelayRecordCapability};
 use jolt_identity::NodeIdentity;
-use jolt_store::ContentStore;
+use jolt_store::{ContentStore, PersistedRecordMutation};
 
 use crate::behaviour::{JoltBehaviour, JoltBehaviourEvent};
 use crate::command::{
@@ -61,6 +62,12 @@ struct PendingUpdateLogPin {
 struct CachedDeviceWriterState {
     authority_sequence: u64,
     merged: MergedDeviceIdentityState,
+    /// Wall-clock time when these signed inputs last passed verification. This
+    /// is observation metadata, not a claim about the remote author's clock.
+    last_verified_at: u64,
+    /// Peer that supplied the latest accepted snapshot, when it came from the
+    /// network. Direct/admin ingestion has no peer provenance.
+    source_peer: Option<String>,
     /// The raw verified authority chain, retained so this node can re-serve the
     /// device-writer state to other nodes over the network and re-merge it when
     /// additional device logs arrive.
@@ -133,6 +140,7 @@ impl PeerConnectionInfo {
 pub struct NetworkNode {
     swarm: Swarm<JoltBehaviour>,
     identity: NodeIdentity,
+    local_device_identity: NodeIdentity,
     store: ContentStore,
     pending_fetches: HashMap<
         OutboundRequestId,
@@ -172,6 +180,8 @@ pub struct NetworkNode {
     /// Device-writer sync waiters parked until a provider is discovered for an
     /// identity, keyed by identity.
     pending_device_writer_waiters: HashMap<IdentityId, Vec<resolution::DeviceWriterSyncWaiter>>,
+    device_writer_sync_work: resolution::DeviceWriterSyncWorkQueue,
+    remote_identity_persistence: resolution::RemoteIdentityPersistenceWorker,
     /// Active provider discovery queries, coalesced by identity so concurrent
     /// resolve paths share one DHT and relay lookup.
     active_update_log_provider_queries: HashMap<IdentityId, libp2p::kad::QueryId>,
@@ -186,15 +196,35 @@ pub struct NetworkNode {
     /// Verified update logs by owner identity.
     update_logs: HashMap<IdentityId, Vec<UpdateLogEntry>>,
     /// Verified merged device-writer state by owner identity.
-    device_writer_states: HashMap<IdentityId, CachedDeviceWriterState>,
+    device_writer_states: HashMap<IdentityId, Arc<CachedDeviceWriterState>>,
     /// Local per-device writer logs by owner identity.
     local_device_writer_logs: HashMap<IdentityId, Vec<DeviceWriterLogEntry>>,
     /// Local device authority records by owner identity.
     local_device_authority_records: HashMap<IdentityId, Vec<DeviceAuthorizationRecord>>,
+    /// Durable successful stable-record mutations, loaded once and carried
+    /// through the same atomic save as each local device-writer append.
+    local_record_mutations: HashMap<IdentityId, BTreeMap<String, PersistedRecordMutation>>,
+    /// Local device histories that were observed to fork from another verified
+    /// copy. Further appends are refused so this installation cannot deepen the
+    /// fork.
+    blocked_local_device_writer_identities: HashSet<IdentityId>,
+    /// One local mutation arrived while a same-owner sync was already in
+    /// flight; start one coalesced follow-up round when that request settles.
+    pending_local_device_writer_refresh: bool,
+    /// Verified same-owner installation peers still awaiting the current
+    /// mutation offer. A later mutation coalesces into one subsequent round.
+    pending_local_device_writer_refresh_peers: VecDeque<libp2p::PeerId>,
     /// Signed, expiring identity-head hints learned through relay gossip.
     identity_head_hints: IdentityHeadHintBook,
     /// Connection quality tracking: peer -> connection info
     peer_connections: HashMap<libp2p::PeerId, PeerConnectionInfo>,
+    /// Peers reached through explicit user dialing or local mDNS. Only these
+    /// peers may be probed for this installation's own identity history;
+    /// relays and incidental DHT neighbours are excluded.
+    local_device_sync_candidates: HashSet<libp2p::PeerId>,
+    /// Candidate peers whose successful signed authority exchange proves that
+    /// their transport identity is an authorized device for the local owner.
+    verified_local_device_sync_peers: HashSet<libp2p::PeerId>,
     /// When the node was created (for uptime reporting)
     started_at: Instant,
     /// Manages in-flight fetch operations for the daemon loop
@@ -577,6 +607,11 @@ impl NetworkNode {
                         }
                     }
                 }
+                completion = self.device_writer_sync_work.completion_rx.recv(), if !self.device_writer_sync_work.active.is_empty() => {
+                    if let Some(completion) = completion {
+                        self.handle_device_writer_sync_completion(completion);
+                    }
+                }
                 event = self.swarm.select_next_some() => {
                     let summary = format!("{event:?}");
                     let started = Instant::now();
@@ -647,6 +682,8 @@ impl NetworkNode {
         let should_shutdown = matches!(command, DaemonCommand::Shutdown { .. });
         self.handle_command(command);
         if should_shutdown {
+            self.shutdown_device_writer_sync_work();
+            self.remote_identity_persistence.shutdown();
             info!("Daemon shutting down");
         }
         should_shutdown
@@ -657,6 +694,11 @@ impl NetworkNode {
         let mut relay_mesh_interval = tokio::time::interval(RELAY_MESH_EXPLORATION_INTERVAL);
         loop {
             tokio::select! {
+                completion = self.device_writer_sync_work.completion_rx.recv(), if !self.device_writer_sync_work.active.is_empty() => {
+                    if let Some(completion) = completion {
+                        self.handle_device_writer_sync_completion(completion);
+                    }
+                }
                 event = self.swarm.select_next_some() => {
                     self.handle_swarm_event(event);
                 }

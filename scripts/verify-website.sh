@@ -13,6 +13,12 @@ required=(
   website/sdk/index.html
   website/sdk/reference.html
   website/guides/app-development.html
+  website/guides/data-sdk.html
+  website/guides/data-sdk-migrations.html
+  website/guides/data-sdk-mutations.html
+  website/guides/data-sdk-manual-conflicts.html
+  website/guides/data-sdk-subscriptions.html
+  website/guides/data-sdk-testing.html
   rfcs/README.md
   sdks/js/docs/api.json
 )
@@ -79,6 +85,17 @@ grep -Fq "workflows: [\"Package Jolt Console\"]" .github/workflows/pages.yml || 
   echo "Pages workflow does not follow tagged Jolt Console releases" >&2
   exit 1
 }
+
+for sdk_docs_path in \
+  'sdks/js/docs/api.json' \
+  'sdks/js/typedoc.json' \
+  'scripts/render-sdk-docs.py'; do
+  grep -Fq "\"${sdk_docs_path}\"" .github/workflows/pages.yml || {
+    echo "Pages workflow does not verify SDK docs change: $sdk_docs_path" >&2
+    exit 1
+  }
+done
+
 grep -Fq 'gh release view' .github/workflows/pages.yml || {
   echo "Pages workflow does not resolve the latest published release" >&2
   exit 1
@@ -99,12 +116,22 @@ for source in rfcs/[0-9][0-9][0-9][0-9]-*.md; do
   rfc_count=$((rfc_count + 1))
 done
 
-test "$rfc_count" -eq 7 || {
-  echo "expected 7 published RFC sources, found $rfc_count" >&2
+test "$rfc_count" -eq 8 || {
+  echo "expected 8 published RFC sources, found $rfc_count" >&2
   exit 1
 }
 
 sdk_source_sha="$(sha256sum sdks/js/docs/api.json | cut -d' ' -f1)"
+(cd sdks/js && yarn docs >/dev/null)
+regenerated_sdk_source_sha="$(sha256sum sdks/js/docs/api.json | cut -d' ' -f1)"
+if [[ "$regenerated_sdk_source_sha" != "$sdk_source_sha" ]]; then
+  echo "SDK API snapshot is stale: sdks/js/docs/api.json; run: cd sdks/js && yarn docs" >&2
+  exit 1
+fi
+if grep -Fq '"sources":' sdks/js/docs/api.json; then
+  echo "SDK API snapshot contains volatile source metadata; enable TypeDoc disableSources" >&2
+  exit 1
+fi
 grep -q "jolt-sdk-source-sha256.*${sdk_source_sha}" website/sdk/reference.html || {
   echo "rendered SDK reference is stale: website/sdk/reference.html; run: python3 scripts/render-sdk-docs.py" >&2
   exit 1
@@ -120,6 +147,13 @@ for guide_source in guides/*.md; do
     exit 1
   }
 done
+
+# These calls expose protocol/session plumbing. Their presence in the rendered
+# beginner app is an architectural regression, independent of tutorial wording.
+if grep -Eq 'publishAppend|requestSession|createJoltClient' website/guides/app-development.html; then
+  echo "beginner Chirp guide leaks low-level SDK setup" >&2
+  exit 1
+fi
 
 required_sdk_contract=(
   'href="sdk/"'
@@ -141,15 +175,32 @@ grep -Fq 'yarn add jolt-sdk' <(sed 's/<[^>]*>//g' website/sdk/index.html) || {
   exit 1
 }
 
+required_data_sdk_reference=(
+  'id="module-data"'
+  'jolt-sdk/data'
+  'id="data.Schema"'
+  'id="data.Schema.parse"'
+  'id="data.Schema.migrate"'
+  'id="data.Migrations"'
+)
+
+for value in "${required_data_sdk_reference[@]}"; do
+  grep -Fq "$value" website/sdk/reference.html || {
+    echo "SDK reference is missing the Data SDK contract: $value" >&2
+    exit 1
+  }
+done
+
 required_rfc_library_contract=(
-  'Protocol series · seven experimental drafts'
-  '0001-0007'
+  'Protocol series · eight experimental drafts'
+  '0001-0008'
   '0002-device-authority.html'
   '0003-device-writer-logs.html'
   '0004-encrypted-device-access.html'
   '0005-community-membership.html'
   '0006-community-app-indexes.html'
   '0007-app-sessions.html'
+  '0008-device-writer-extensions.html'
 )
 
 for value in "${required_rfc_library_contract[@]}"; do
@@ -167,7 +218,7 @@ grep -Fq 'https://alexanderwanyoike.github.io/spoke/' website/index.html &&
 
 em_dash="$(printf '\342\200\224')"
 for file in website/index.html website/rfcs/index.html website/docs.css \
-  website/sdk/index.html website/sdk/reference.html website/guides/app-development.html \
+  website/sdk/index.html website/sdk/reference.html website/guides/*.html \
   scripts/render-rfcs.py scripts/render-sdk-docs.py scripts/verify-website.sh; do
   if grep -Fq "$em_dash" "$file"; then
     echo "house-style em dash remains in $file" >&2
@@ -188,6 +239,7 @@ expected = {
     "0005": "Design only",
     "0006": "Design only",
     "0007": "Implemented v0",
+    "0008": "Implemented operation levels 2/3 and sync level 2",
 }
 
 rows = {}

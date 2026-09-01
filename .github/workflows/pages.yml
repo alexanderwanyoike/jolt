@@ -6,7 +6,10 @@ on:
     paths:
       - "website/**"
       - "rfcs/**"
+      - "sdks/js/docs/api.json"
+      - "sdks/js/typedoc.json"
       - "scripts/render-rfcs.py"
+      - "scripts/render-sdk-docs.py"
       - "scripts/verify-website.sh"
       - ".github/workflows/pages.yml"
   push:
@@ -14,7 +17,10 @@ on:
     paths:
       - "website/**"
       - "rfcs/**"
+      - "sdks/js/docs/api.json"
+      - "sdks/js/typedoc.json"
       - "scripts/render-rfcs.py"
+      - "scripts/render-sdk-docs.py"
       - "scripts/verify-website.sh"
       - ".github/workflows/pages.yml"
   release:
@@ -38,6 +44,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: sdks/js/yarn.lock
+      - name: Install SDK documentation toolchain
+        working-directory: sdks/js
+        run: yarn install --frozen-lockfile
       - name: Verify static site
         run: ./scripts/verify-website.sh
 

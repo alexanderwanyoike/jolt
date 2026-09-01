@@ -6,8 +6,8 @@ use jolt_core::verify_update_log_for_identity;
 use crate::behaviour::JoltBehaviourEvent;
 use crate::error::NetworkError;
 use crate::protocol::{
-    ContentResponse, DeviceWriterSyncResponse, IngressSubmitResponse, RelayExchangeRequest,
-    RelayExchangeResponse, UpdateLogRequest, UpdateLogResponse,
+    ContentResponse, DeviceWriterSyncRequest, DeviceWriterSyncResponse, IngressSubmitResponse,
+    RelayExchangeRequest, RelayExchangeResponse, UpdateLogRequest, UpdateLogResponse,
 };
 
 use super::{unix_now, NetworkNode, PeerConnectionInfo};
@@ -39,6 +39,7 @@ impl NetworkNode {
             ))) => {
                 for (peer_id, addr) in peers {
                     info!("mDNS discovered peer: {peer_id} at {addr}");
+                    self.local_device_sync_candidates.insert(peer_id);
                     self.swarm.add_peer_address(peer_id, addr.clone());
                     if let Err(e) = self.swarm.dial(addr) {
                         debug!("Failed to dial discovered peer: {e}");
@@ -372,6 +373,7 @@ impl NetworkNode {
             // --- Device Writer Sync ---
             SwarmEvent::Behaviour(JoltBehaviourEvent::DeviceWriterSync(
                 request_response::Event::Message {
+                    peer,
                     message:
                         request_response::Message::Request {
                             request, channel, ..
@@ -383,15 +385,59 @@ impl NetworkNode {
                     "Received device-writer sync request for: {}",
                     request.identity
                 );
+                let response_request = DeviceWriterSyncRequest {
+                    identity: request.identity.clone(),
+                    max_operation_version: request.max_operation_version,
+                    max_sync_version: request.max_sync_version,
+                    cursors: request.cursors.clone(),
+                    authority_records: Vec::new(),
+                    device_logs: Vec::new(),
+                };
+
+                if !request.authority_records.is_empty()
+                    && request.identity == self.identity.identity_id()
+                    && super::resolution::authority_records_authorize_peer(
+                        &request.identity,
+                        &request.authority_records,
+                        &peer,
+                    )
+                {
+                    let offered_identity = request.identity.clone();
+                    match self
+                        .store_verified_device_writer_logs(
+                            offered_identity.clone(),
+                            request.authority_records,
+                            request.device_logs,
+                        )
+                        .and_then(|_| {
+                            self.persist_synced_local_device_writer_state(&offered_identity)
+                        }) {
+                        Ok(()) => {
+                            self.verified_local_device_sync_peers.insert(peer);
+                        }
+                        Err(error) => {
+                            warn!(
+                                "Rejected offered device-writer state for {}: {error}",
+                                offered_identity
+                            );
+                        }
+                    }
+                } else if !request.authority_records.is_empty() {
+                    debug!(
+                        "Ignored device-writer offer for non-local or unauthorized identity {} from {peer}",
+                        request.identity
+                    );
+                }
 
                 let response = self
                     .device_writer_sync_snapshot(&request.identity)
-                    .map(
-                        |(authority_records, device_logs)| DeviceWriterSyncResponse {
+                    .map(|(authority_records, device_logs)| {
+                        DeviceWriterSyncResponse::for_sync_request(
+                            &response_request,
                             authority_records,
                             device_logs,
-                        },
-                    )
+                        )
+                    })
                     .unwrap_or_default();
 
                 if let Err(e) = self
@@ -420,27 +466,53 @@ impl NetworkNode {
                         pending.identity,
                         response.device_logs.len()
                     );
-                    let result = if response.authority_records.is_empty() {
+                    let provider_is_authorized_local_device = pending.identity
+                        == self.identity.identity_id()
+                        && super::resolution::authority_records_authorize_peer(
+                            &pending.identity,
+                            &response.authority_records,
+                            &pending.provider,
+                        );
+                    let protocol_result = if let Err(error) = response.ensure_supported(
+                        crate::protocol::CAUSAL_HEADS_DEVICE_WRITER_OPERATION_VERSION,
+                        crate::protocol::DELTA_DEVICE_WRITER_SYNC_VERSION,
+                    ) {
+                        Err(error)
+                    } else if response.authority_records.is_empty() {
                         Err(Self::identity_head_invalid_failure(
                             &pending.identity,
                             "provider returned no device-authority records",
                         ))
                     } else {
+                        Ok(())
+                    };
+                    if protocol_result.is_ok() && pending.identity != self.identity.identity_id() {
+                        self.schedule_device_writer_sync_verification(pending, response);
+                        return;
+                    }
+                    let result = protocol_result.and_then(|_| {
                         self.store_verified_device_writer_logs(
                             pending.identity.clone(),
                             response.authority_records,
                             response.device_logs,
                         )
-                        .map(|_| ())
+                        .and_then(|_| {
+                            self.persist_synced_local_device_writer_state(&pending.identity)
+                        })
                         .map_err(|e| {
                             Self::identity_head_invalid_failure(&pending.identity, e.to_string())
                         })
-                    };
+                    });
+                    if result.is_ok() && provider_is_authorized_local_device {
+                        self.verified_local_device_sync_peers
+                            .insert(pending.provider);
+                    }
                     self.on_device_writer_sync_settled(
                         &pending.identity,
                         &pending.provider,
                         result.err(),
                     );
+                    self.retry_pending_local_device_writer_refresh();
                 }
             }
 
@@ -456,6 +528,7 @@ impl NetworkNode {
                         &pending.provider,
                         Some(NetworkError::Protocol(error.to_string())),
                     );
+                    self.retry_pending_local_device_writer_refresh();
                 }
             }
 
@@ -927,6 +1000,16 @@ impl NetworkNode {
 
                 // Notify fetch manager in case this is a provider we're waiting for
                 self.fetch_manager.on_peer_connected(&peer_id);
+                let identity = self.identity.identity_id();
+                if self.has_device_writer_state(&identity)
+                    && self.local_device_sync_candidates.contains(&peer_id)
+                {
+                    self.refresh_local_device_writer_state_from_candidate(peer_id, false);
+                } else if self.has_device_writer_state(&identity) {
+                    if let Err(error) = self.announce_update_log_provider(&identity) {
+                        debug!("Failed to announce local identity after connection: {error}");
+                    }
+                }
             }
 
             SwarmEvent::ConnectionClosed { peer_id, .. } => {

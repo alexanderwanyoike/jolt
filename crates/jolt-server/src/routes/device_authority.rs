@@ -35,10 +35,15 @@ pub async fn revoke_device(
         .device_authority
         .revoke_device(&state.daemon, device_id.clone(), request)
         .await?;
-    state
+    let revoked_sessions = state
         .sessions
         .revoke_sessions_for_device(&device_id)
         .await?;
+    for session in revoked_sessions {
+        if let Some(session_id) = session.session_id {
+            state.data_change_streams.revoke_session(&session_id).await;
+        }
+    }
     Ok(Json(response))
 }
 
@@ -67,9 +72,15 @@ impl IntoResponse for DeviceAuthorityApiError {
             DeviceAuthorityError::UnknownDevice(_) => {
                 (StatusCode::NOT_FOUND, "device_authority_unknown_device")
             }
+            DeviceAuthorityError::InvalidEnrollment(_) => {
+                (StatusCode::BAD_REQUEST, "device_enrollment_invalid")
+            }
             DeviceAuthorityError::MissingLocalIdentity
             | DeviceAuthorityError::InvalidLocalIdentity(_)
             | DeviceAuthorityError::Authority(_) => {
+                (StatusCode::BAD_REQUEST, "device_authority_invalid")
+            }
+            DeviceAuthorityError::Network(jolt_network::NetworkError::InvalidInput(_)) => {
                 (StatusCode::BAD_REQUEST, "device_authority_invalid")
             }
             DeviceAuthorityError::Network(_) => (

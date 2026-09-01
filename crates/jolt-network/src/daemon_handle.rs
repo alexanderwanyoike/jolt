@@ -3,14 +3,15 @@ use std::{path::PathBuf, time::Duration};
 use tokio::sync::{mpsc, oneshot};
 
 use jolt_core::{
-    DeviceAuthorizationRecord, DeviceWriterLogEntry, EncryptedObjectRecipient,
-    IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint, OfflineIngressEndpoint,
-    PinRequest, UpdateLogEntry,
+    DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
+    OfflineIngressEndpoint, PinRequest, UpdateLogEntry,
 };
 
 use crate::command::{
     AppendRecordInfo, CacheEntryInfo, CacheStatsResponse, DaemonCommand, DecryptedObjectResponse,
-    EncryptedObjectResponse, FetchResult, IngressRecord, NodeStatus, PeerConnectResponse, PeerInfo,
+    EncryptedObjectResponse, FetchResult, IngressRecord, LocalRecordDelete, LocalRecordRestore,
+    LocalRecordState, LocalRecordUpdate, NodeStatus, PeerConnectResponse, PeerInfo,
     PublishReachabilityResponse, PublishResponse, PublishedContentInfo,
     RelayDiagnoseIdentityResponse, ResolveResponse,
 };
@@ -158,6 +159,43 @@ impl DaemonHandle {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
             .send(DaemonCommand::EnumerateAppendRecords {
+                identity,
+                path_prefix,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    /// Refresh and return the last verified logical records for one identity and
+    /// path prefix, including the bounded refresh outcome.
+    pub async fn refresh_materialized_record_view(
+        &self,
+        identity: IdentityId,
+        path_prefix: String,
+    ) -> Result<crate::command::MaterializedRecordView, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::RefreshMaterializedRecordView {
+                identity,
+                path_prefix,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    /// Return the current Last Verified View without starting network work.
+    pub async fn read_materialized_record_snapshot(
+        &self,
+        identity: IdentityId,
+        path_prefix: String,
+    ) -> Result<crate::command::MaterializedRecordSnapshot, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::ReadMaterializedRecordSnapshot {
                 identity,
                 path_prefix,
                 response_tx: tx,
@@ -419,6 +457,34 @@ impl DaemonHandle {
         receive_plain(rx).await
     }
 
+    /// Return the daemon's single persisted root-signed device authority chain.
+    pub async fn local_device_authority(
+        &self,
+    ) -> Result<Vec<DeviceAuthorizationRecord>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::GetLocalDeviceAuthority { response_tx: tx })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_plain(rx).await
+    }
+
+    /// Append one root-signed operation to the daemon's persisted authority chain.
+    pub async fn append_local_device_authority(
+        &self,
+        operation: DeviceAuthorizationOperation,
+    ) -> Result<Vec<DeviceAuthorizationRecord>, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::AppendLocalDeviceAuthority {
+                operation,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
     /// Get the list of connected peers.
     pub async fn peers(&self) -> Result<Vec<PeerInfo>, NetworkError> {
         let (tx, rx) = oneshot::channel();
@@ -457,6 +523,92 @@ impl DaemonHandle {
             .await
             .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
         receive_plain(rx).await
+    }
+
+    /// Inspect one path in the local identity's merged singleton state.
+    pub async fn inspect_local_record(
+        &self,
+        path: String,
+    ) -> Result<LocalRecordState, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::InspectLocalRecord {
+                path,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_plain(rx).await
+    }
+
+    /// Compare-and-set one local stable record in the serialized daemon loop.
+    pub async fn update_local_record(
+        &self,
+        path: String,
+        data: Vec<u8>,
+        revision: String,
+        observed_revisions: Vec<String>,
+        mutation_id: String,
+    ) -> Result<LocalRecordUpdate, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::UpdateLocalRecord {
+                path,
+                data,
+                revision,
+                observed_revisions,
+                mutation_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    /// Compare-and-set one present local stable record to a Tombstone.
+    pub async fn delete_local_record(
+        &self,
+        path: String,
+        revision: String,
+        observed_revisions: Vec<String>,
+        mutation_id: String,
+    ) -> Result<LocalRecordDelete, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::DeleteLocalRecord {
+                path,
+                revision,
+                observed_revisions,
+                mutation_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
+    }
+
+    /// Compare-and-set one local Tombstone to new immutable content.
+    pub async fn restore_local_record(
+        &self,
+        path: String,
+        data: Vec<u8>,
+        revision: String,
+        observed_revisions: Vec<String>,
+        mutation_id: String,
+    ) -> Result<LocalRecordRestore, NetworkError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(DaemonCommand::RestoreLocalRecord {
+                path,
+                data,
+                revision,
+                observed_revisions,
+                mutation_id,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| NetworkError::Protocol("Daemon not running".to_string()))?;
+        receive_result(rx).await
     }
 
     /// Pin content to prevent cache eviction.

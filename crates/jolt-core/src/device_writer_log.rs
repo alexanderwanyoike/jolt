@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,7 @@ const RECORD_TYPE: &str = "jolt.device_writer_log_entry";
 const RECORD_VERSION: u16 = 1;
 const PUBLIC_KEY_LEN: usize = 32;
 const SIGNATURE_LEN: usize = 64;
+const OBSERVED_HEADS_SEPARATOR: &[u8] = b"\0jolt:observed-singleton-heads:v1\0";
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum DeviceWriterLogError {
@@ -51,6 +52,9 @@ pub enum DeviceWriterLogError {
     #[error("device writer log genesis entry must not have a previous entry hash")]
     GenesisHasPreviousHash,
 
+    #[error("observed device writer heads must be sorted and unique")]
+    NonCanonicalObservedHeads,
+
     #[error("device writer log entry at index {index} has a broken previous-entry hash")]
     BrokenPreviousHash { index: usize },
 
@@ -65,6 +69,9 @@ pub enum DeviceWriterLogError {
 
     #[error("no merged singleton path found for {path}")]
     PathNotFound { path: String },
+
+    #[error("merged singleton path is Tombstoned: {path}")]
+    PathTombstoned { path: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -90,6 +97,9 @@ pub enum DeviceWriterOperation {
         content_id: ContentId,
         mode: DeviceWriterPathMode,
     },
+    TombstonePath {
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +112,8 @@ pub struct DeviceWriterLogEntryBody {
     pub previous_entry_hash: Option<DeviceWriterLogEntryHash>,
     pub operation: DeviceWriterOperation,
     pub created_at: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub observed_heads: Vec<DeviceWriterLogEntryHash>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,12 +127,12 @@ pub struct MergedDeviceIdentityState {
     pub identity: IdentityId,
     pub singleton_paths: BTreeMap<String, MergedDeviceWriterEntry>,
     pub singleton_conflicts: BTreeMap<String, Vec<MergedDeviceWriterEntry>>,
-    pub append_records: BTreeMap<String, Vec<MergedDeviceWriterEntry>>,
+    pub append_records: BTreeMap<String, Vec<MergedAppendRecord>>,
     pub rejected_entries: Vec<RejectedDeviceWriterEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MergedDeviceWriterEntry {
+pub struct MergedAppendRecord {
     pub identity: IdentityId,
     pub device_id: String,
     pub device_sequence: u64,
@@ -130,12 +142,37 @@ pub struct MergedDeviceWriterEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergedDeviceWriterEntry {
+    pub identity: IdentityId,
+    pub device_id: String,
+    pub device_sequence: u64,
+    pub entry_hash: DeviceWriterLogEntryHash,
+    pub created_at: u64,
+    pub state: DeviceWriterPathState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeviceWriterPathState {
+    Present { content_id: ContentId },
+    Tombstone,
+}
+
+impl MergedDeviceWriterEntry {
+    pub fn content_id(&self) -> Option<&ContentId> {
+        match &self.state {
+            DeviceWriterPathState::Present { content_id } => Some(content_id),
+            DeviceWriterPathState::Tombstone => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RejectedDeviceWriterEntry {
     pub identity: IdentityId,
     pub device_id: String,
     pub device_sequence: u64,
     pub entry_hash: DeviceWriterLogEntryHash,
-    pub content_id: ContentId,
+    pub content_id: Option<ContentId>,
     pub reason: DeviceWriterRejectionReason,
 }
 
@@ -149,7 +186,7 @@ impl MergedDeviceIdentityState {
     /// Enumerate append records whose path starts with `prefix`, paired with
     /// their path, in deterministic order (paths ascending, then per-path merge
     /// order). This is the read seam a Collection is assembled from.
-    pub fn append_records_under(&self, prefix: &str) -> Vec<(&str, &MergedDeviceWriterEntry)> {
+    pub fn append_records_under(&self, prefix: &str) -> Vec<(&str, &MergedAppendRecord)> {
         self.append_records
             .iter()
             .filter(|(path, _)| path.starts_with(prefix))
@@ -175,6 +212,10 @@ impl DeviceWriterOperation {
         Self::set_path(path, content_id, DeviceWriterPathMode::Append)
     }
 
+    pub fn tombstone_path(path: impl Into<String>) -> Self {
+        Self::TombstonePath { path: path.into() }
+    }
+
     fn encode(&self, bytes: &mut Vec<u8>) {
         match self {
             Self::SetPath {
@@ -189,6 +230,10 @@ impl DeviceWriterOperation {
                     DeviceWriterPathMode::Singleton => 0,
                     DeviceWriterPathMode::Append => 1,
                 });
+            }
+            Self::TombstonePath { path } => {
+                bytes.push(1);
+                put_string(bytes, path);
             }
         }
     }
@@ -205,6 +250,29 @@ impl DeviceWriterLogEntry {
     where
         F: FnOnce(&[u8]) -> Vec<u8>,
     {
+        Self::genesis_observing(
+            identity,
+            device_id,
+            operation,
+            Vec::new(),
+            created_at,
+            signer,
+        )
+    }
+
+    pub fn genesis_observing<F>(
+        identity: IdentityId,
+        device_id: impl Into<String>,
+        operation: DeviceWriterOperation,
+        mut observed_heads: Vec<DeviceWriterLogEntryHash>,
+        created_at: u64,
+        signer: F,
+    ) -> Result<Self, DeviceWriterLogError>
+    where
+        F: FnOnce(&[u8]) -> Vec<u8>,
+    {
+        observed_heads.sort_by(|left, right| left.0.cmp(&right.0));
+        observed_heads.dedup();
         let body = DeviceWriterLogEntryBody {
             record_type: RECORD_TYPE.to_string(),
             version: RECORD_VERSION,
@@ -214,6 +282,7 @@ impl DeviceWriterLogEntry {
             previous_entry_hash: None,
             operation,
             created_at,
+            observed_heads,
         };
         Self::sign_body(body, signer)
     }
@@ -227,6 +296,21 @@ impl DeviceWriterLogEntry {
     where
         F: FnOnce(&[u8]) -> Vec<u8>,
     {
+        self.append_observing(operation, Vec::new(), created_at, signer)
+    }
+
+    pub fn append_observing<F>(
+        &self,
+        operation: DeviceWriterOperation,
+        mut observed_heads: Vec<DeviceWriterLogEntryHash>,
+        created_at: u64,
+        signer: F,
+    ) -> Result<Self, DeviceWriterLogError>
+    where
+        F: FnOnce(&[u8]) -> Vec<u8>,
+    {
+        observed_heads.sort_by(|left, right| left.0.cmp(&right.0));
+        observed_heads.dedup();
         let body = DeviceWriterLogEntryBody {
             record_type: RECORD_TYPE.to_string(),
             version: RECORD_VERSION,
@@ -236,6 +320,7 @@ impl DeviceWriterLogEntry {
             previous_entry_hash: Some(self.entry_hash()),
             operation,
             created_at,
+            observed_heads,
         };
         Self::sign_body(body, signer)
     }
@@ -273,6 +358,13 @@ impl DeviceWriterLogEntryBody {
         }
         self.operation.encode(&mut bytes);
         bytes.extend_from_slice(&self.created_at.to_be_bytes());
+        if !self.observed_heads.is_empty() {
+            bytes.extend_from_slice(OBSERVED_HEADS_SEPARATOR);
+            bytes.extend_from_slice(&(self.observed_heads.len() as u64).to_be_bytes());
+            for head in &self.observed_heads {
+                bytes.extend_from_slice(&head.0);
+            }
+        }
         bytes
     }
 }
@@ -285,7 +377,9 @@ where
     I: IntoIterator<Item = Vec<DeviceWriterLogEntry>>,
 {
     let mut singleton_candidates: BTreeMap<String, Vec<MergedDeviceWriterEntry>> = BTreeMap::new();
-    let mut append_records: BTreeMap<String, Vec<MergedDeviceWriterEntry>> = BTreeMap::new();
+    let mut superseded_singletons: BTreeMap<String, HashSet<DeviceWriterLogEntryHash>> =
+        BTreeMap::new();
+    let mut append_records: BTreeMap<String, Vec<MergedAppendRecord>> = BTreeMap::new();
     let mut rejected_entries = Vec::new();
 
     for log in logs {
@@ -294,6 +388,8 @@ where
         };
         verify_device_log_shape(&authority.identity, &log)?;
         let device = authority.devices.get(&first.body.device_id);
+        let mut previous_singleton_by_path: BTreeMap<String, DeviceWriterLogEntryHash> =
+            BTreeMap::new();
 
         for entry in &log {
             let entry_hash = entry.entry_hash();
@@ -326,38 +422,75 @@ where
                     path,
                     content_id,
                     mode,
-                } => {
-                    let merged = MergedDeviceWriterEntry {
-                        identity: entry.body.identity.clone(),
-                        device_id: entry.body.device_id.clone(),
-                        device_sequence: entry.body.device_sequence,
-                        entry_hash,
-                        created_at: entry.body.created_at,
-                        content_id: content_id.clone(),
-                    };
-                    match mode {
-                        DeviceWriterPathMode::Singleton => {
-                            singleton_candidates
-                                .entry(path.clone())
-                                .or_default()
-                                .push(merged);
+                } => match mode {
+                    DeviceWriterPathMode::Singleton => {
+                        let superseded = superseded_singletons.entry(path.clone()).or_default();
+                        superseded.extend(entry.body.observed_heads.iter().cloned());
+                        if let Some(previous) =
+                            previous_singleton_by_path.insert(path.clone(), entry_hash.clone())
+                        {
+                            superseded.insert(previous);
                         }
-                        DeviceWriterPathMode::Append => {
-                            append_records.entry(path.clone()).or_default().push(merged);
-                        }
+                        singleton_candidates.entry(path.clone()).or_default().push(
+                            MergedDeviceWriterEntry {
+                                identity: entry.body.identity.clone(),
+                                device_id: entry.body.device_id.clone(),
+                                device_sequence: entry.body.device_sequence,
+                                entry_hash,
+                                created_at: entry.body.created_at,
+                                state: DeviceWriterPathState::Present {
+                                    content_id: content_id.clone(),
+                                },
+                            },
+                        );
                     }
+                    DeviceWriterPathMode::Append => {
+                        append_records
+                            .entry(path.clone())
+                            .or_default()
+                            .push(MergedAppendRecord {
+                                identity: entry.body.identity.clone(),
+                                device_id: entry.body.device_id.clone(),
+                                device_sequence: entry.body.device_sequence,
+                                entry_hash,
+                                created_at: entry.body.created_at,
+                                content_id: content_id.clone(),
+                            });
+                    }
+                },
+                DeviceWriterOperation::TombstonePath { path } => {
+                    let superseded = superseded_singletons.entry(path.clone()).or_default();
+                    superseded.extend(entry.body.observed_heads.iter().cloned());
+                    if let Some(previous) =
+                        previous_singleton_by_path.insert(path.clone(), entry_hash.clone())
+                    {
+                        superseded.insert(previous);
+                    }
+                    singleton_candidates.entry(path.clone()).or_default().push(
+                        MergedDeviceWriterEntry {
+                            identity: entry.body.identity.clone(),
+                            device_id: entry.body.device_id.clone(),
+                            device_sequence: entry.body.device_sequence,
+                            entry_hash,
+                            created_at: entry.body.created_at,
+                            state: DeviceWriterPathState::Tombstone,
+                        },
+                    );
                 }
             }
         }
     }
 
     for records in append_records.values_mut() {
-        records.sort_by(entry_order);
+        records.sort_by(append_record_order);
     }
 
     let mut singleton_paths = BTreeMap::new();
     let mut singleton_conflicts = BTreeMap::new();
     for (path, mut candidates) in singleton_candidates {
+        if let Some(superseded) = superseded_singletons.get(&path) {
+            candidates.retain(|candidate| !superseded.contains(&candidate.entry_hash));
+        }
         candidates.sort_by(entry_order);
         let winner = candidates
             .pop()
@@ -405,12 +538,15 @@ pub fn resolve_merged_device_jolt_address(
         .get(address.path())
         .ok_or_else(|| DeviceWriterLogError::PathNotFound { path: path.clone() })?;
 
-    Ok(ResolvedJoltTarget {
-        identity: merged.identity.clone(),
-        path,
-        content_id: entry.content_id.clone(),
-        reachability: Vec::new(),
-    })
+    match &entry.state {
+        DeviceWriterPathState::Present { content_id } => Ok(ResolvedJoltTarget {
+            identity: merged.identity.clone(),
+            path,
+            content_id: content_id.clone(),
+            reachability: Vec::new(),
+        }),
+        DeviceWriterPathState::Tombstone => Err(DeviceWriterLogError::PathTombstoned { path }),
+    }
 }
 
 fn verify_device_log_shape(
@@ -460,7 +596,8 @@ fn rejected_entry(
     reason: DeviceWriterRejectionReason,
 ) -> RejectedDeviceWriterEntry {
     let content_id = match &entry.body.operation {
-        DeviceWriterOperation::SetPath { content_id, .. } => content_id.clone(),
+        DeviceWriterOperation::SetPath { content_id, .. } => Some(content_id.clone()),
+        DeviceWriterOperation::TombstonePath { .. } => None,
     };
     RejectedDeviceWriterEntry {
         identity: entry.body.identity.clone(),
@@ -480,8 +617,16 @@ fn validate_body(body: &DeviceWriterLogEntryBody) -> Result<(), DeviceWriterLogE
         return Err(DeviceWriterLogError::UnsupportedEntryVersion);
     }
     validate_device_id(&body.device_id)?;
+    if body
+        .observed_heads
+        .windows(2)
+        .any(|heads| heads[0].0 >= heads[1].0)
+    {
+        return Err(DeviceWriterLogError::NonCanonicalObservedHeads);
+    }
     match &body.operation {
         DeviceWriterOperation::SetPath { path, .. } => validate_path(&body.identity, path),
+        DeviceWriterOperation::TombstonePath { path } => validate_path(&body.identity, path),
     }
 }
 
@@ -540,6 +685,19 @@ fn entry_order(
     left: &MergedDeviceWriterEntry,
     right: &MergedDeviceWriterEntry,
 ) -> std::cmp::Ordering {
+    (left.device_sequence, &left.device_id, &left.entry_hash.0).cmp(&(
+        right.device_sequence,
+        &right.device_id,
+        &right.entry_hash.0,
+    ))
+}
+
+fn append_record_order(
+    left: &MergedAppendRecord,
+    right: &MergedAppendRecord,
+) -> std::cmp::Ordering {
+    // Append records are retained feed entries, not competing singleton winners;
+    // their signed timestamp is presentation order rather than conflict resolution.
     (
         left.created_at,
         left.device_sequence,

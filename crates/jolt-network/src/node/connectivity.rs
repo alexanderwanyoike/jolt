@@ -22,6 +22,17 @@ impl NetworkNode {
 
     /// Dial a specific peer address.
     pub fn dial(&mut self, addr: Multiaddr) -> Result<(), NetworkError> {
+        let sync_candidate = addr.iter().find_map(|protocol| match protocol {
+            Protocol::P2p(peer_id) => Some(peer_id),
+            _ => None,
+        });
+        if let Some(peer_id) = sync_candidate {
+            self.local_device_sync_candidates.insert(peer_id);
+            if self.swarm.is_connected(&peer_id) || self.peer_connections.contains_key(&peer_id) {
+                self.refresh_local_device_writer_state_from_candidate(peer_id, true);
+                return Ok(());
+            }
+        }
         self.swarm
             .dial(addr)
             .map_err(|e| NetworkError::Swarm(e.to_string()))?;
@@ -94,6 +105,11 @@ impl NetworkNode {
     ) -> Result<Option<libp2p::PeerId>, NetworkError> {
         if addr.contains("/p2p/") {
             let (peer_id, transport_addr) = crate::bootstrap::parse_bootstrap_addr(addr)?;
+            self.local_device_sync_candidates.insert(peer_id);
+            if self.swarm.is_connected(&peer_id) || self.peer_connections.contains_key(&peer_id) {
+                self.refresh_local_device_writer_state_from_candidate(peer_id, true);
+                return Ok(Some(peer_id));
+            }
             self.swarm
                 .behaviour_mut()
                 .kademlia
@@ -281,5 +297,23 @@ mod tests {
             first, second,
             "one identity should have only one active DHT and relay discovery"
         );
+    }
+
+    #[tokio::test]
+    async fn configured_provider_record_capacity_is_enforced() {
+        let dir = tempdir().unwrap();
+        let mut config = NetworkConfig::test_config();
+        config.provider_record_capacity = Some(1);
+        let mut node =
+            NetworkNode::new_tcp(NodeIdentity::generate(), make_store(dir.path()), config).unwrap();
+        let first = NodeIdentity::generate().identity_id();
+        let second = NodeIdentity::generate().identity_id();
+
+        node.announce_update_log_provider(&first).unwrap();
+        let error = node
+            .announce_update_log_provider(&second)
+            .expect_err("the configured one-key capacity must reject a second key");
+
+        assert!(error.to_string().contains("MaxProvidedKeys"));
     }
 }

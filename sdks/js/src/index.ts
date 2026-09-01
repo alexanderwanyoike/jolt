@@ -40,6 +40,7 @@
  */
 
 export {
+  createDataClient,
   createJoltClient,
   makeId,
   referenceKey,
@@ -48,19 +49,47 @@ export {
 export type {
   Decoder,
   EnumeratedRecord,
+  HomeRelayPinResult,
   JoltAppendSdk,
+  JoltAvailabilitySdk,
   JoltClient,
   JoltClientOptions,
   JoltEncryptedSdk,
   JoltIngressSdk,
   JoltSdk,
   JoltSessionSdk,
+  OpenEncryptedResult,
   PublishResult,
+  RecordConflictResult,
+  RecordDeletedResult,
+  RecordHeadResult,
+  RecordMissingResult,
+  RecordMutationContext,
+  RecordPresentResult,
+  RecordReadResult,
   Reference,
+  ResolvedReference,
   Versioned,
 } from "./client.js";
 
-export { apiErrorMessage, JoltApiError, JoltTransportError } from "./errors.js";
+export type {
+  AppApiFeatureManifest,
+  AppCompatibilityDeclaration,
+  AppCompatibilityDeclarationWire,
+  AppCompatibilityResult,
+  CompatibilityCheckOptions,
+  ContractLevelCheck,
+  JoltCompatibilitySdk,
+} from "./compatibility.js";
+export { decodeAppCompatibilityDeclaration } from "./compatibility.js";
+
+export {
+  apiErrorMessage,
+  isContentUnavailableError,
+  isJoltUnavailableError,
+  JoltApiError,
+  JoltTransportError,
+} from "./errors.js";
 
 export type {
   ApiBase,
@@ -75,17 +104,31 @@ export type { SessionRequest } from "./operations.js";
 
 export type {
   AppendRecordInfo,
+  AppApiFeatureManifestResponse,
   AppSessionRequestResponse,
   AppSessionStatus,
   AppSessionStatusResponse,
   CurrentAppSession,
+  DataSubscriptionRecordResponse,
+  DataSubscriptionChangeResponse,
+  DataSubscriptionRefreshResponse,
+  DataSubscriptionViewResponse,
   DecryptedEncryptedObject,
   DecryptedIngress,
   EncryptedPublishResponse,
   FetchResult,
+  HomeRelayPinResponse,
   IngressRecord,
+  LocalRecordDeleteResponse,
+  LocalRecordHeadResponse,
+  LocalRecordReadResponse,
+  LocalRecordRestoreResponse,
+  LocalRecordUpdateResponse,
+  MaterializedRecordInfo,
   NodeStatus,
+  OpenedEncryptedObject,
   PublishedContent,
   PublishResponse,
   ResolveResponse,
+  RemoveDataSubscriptionResponse,
 } from "./wire.js";

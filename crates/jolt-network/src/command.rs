@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
 use jolt_core::{
-    DeviceAuthorizationRecord, DeviceWriterLogEntry, EncryptedObjectRecipient,
-    IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint, OfflineIngressEndpoint,
-    PinRequest, RelayHint, RelayRecord, VerifiedReachability,
+    DeviceAuthorizationOperation, DeviceAuthorizationRecord, DeviceWriterLogEntry,
+    EncryptedObjectRecipient, IdentityEncryptionKey, IdentityId, LiveReachabilityEndpoint,
+    OfflineIngressEndpoint, PinRequest, RelayHint, RelayRecord, VerifiedReachability,
 };
 
 use crate::config::HomeRelayConfig;
@@ -28,6 +28,16 @@ pub enum DaemonCommand {
         identity: IdentityId,
         path_prefix: String,
         response_tx: oneshot::Sender<Result<Vec<AppendRecordInfo>, NetworkError>>,
+    },
+    RefreshMaterializedRecordView {
+        identity: IdentityId,
+        path_prefix: String,
+        response_tx: oneshot::Sender<Result<MaterializedRecordView, NetworkError>>,
+    },
+    ReadMaterializedRecordSnapshot {
+        identity: IdentityId,
+        path_prefix: String,
+        response_tx: oneshot::Sender<Result<MaterializedRecordSnapshot, NetworkError>>,
     },
     Fetch {
         content_id: String,
@@ -108,6 +118,13 @@ pub enum DaemonCommand {
         payload: Vec<u8>,
         response_tx: oneshot::Sender<Vec<u8>>,
     },
+    GetLocalDeviceAuthority {
+        response_tx: oneshot::Sender<Vec<DeviceAuthorizationRecord>>,
+    },
+    AppendLocalDeviceAuthority {
+        operation: DeviceAuthorizationOperation,
+        response_tx: oneshot::Sender<Result<Vec<DeviceAuthorizationRecord>, NetworkError>>,
+    },
     GetPeers {
         response_tx: oneshot::Sender<Vec<PeerInfo>>,
     },
@@ -119,6 +136,33 @@ pub enum DaemonCommand {
     },
     ListPublishedContent {
         response_tx: oneshot::Sender<Vec<PublishedContentInfo>>,
+    },
+    InspectLocalRecord {
+        path: String,
+        response_tx: oneshot::Sender<LocalRecordState>,
+    },
+    UpdateLocalRecord {
+        path: String,
+        data: Vec<u8>,
+        revision: String,
+        observed_revisions: Vec<String>,
+        mutation_id: String,
+        response_tx: oneshot::Sender<Result<LocalRecordUpdate, NetworkError>>,
+    },
+    DeleteLocalRecord {
+        path: String,
+        revision: String,
+        observed_revisions: Vec<String>,
+        mutation_id: String,
+        response_tx: oneshot::Sender<Result<LocalRecordDelete, NetworkError>>,
+    },
+    RestoreLocalRecord {
+        path: String,
+        data: Vec<u8>,
+        revision: String,
+        observed_revisions: Vec<String>,
+        mutation_id: String,
+        response_tx: oneshot::Sender<Result<LocalRecordRestore, NetworkError>>,
     },
     Pin {
         content_id: String,
@@ -175,9 +219,11 @@ pub struct PublishResponse {
     pub address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppendRecordInfo {
     pub path: String,
     pub content_id: String,
@@ -187,12 +233,99 @@ pub struct AppendRecordInfo {
     pub entry_hash: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterializedRecordInfo {
+    pub path: String,
+    pub content_id: String,
+    pub revision: String,
+    pub created_at: u64,
+}
+
+/// Result of one bounded attempt to refresh a generic logical-record view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MaterializedRecordRefreshOutcome {
+    Ready,
+    NetworkUnavailable,
+    VerificationFailed,
+    Overloaded,
+}
+
+/// The last verified records for one identity/path prefix and the outcome of
+/// the bounded refresh that preceded this snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterializedRecordView {
+    pub records: Vec<MaterializedRecordInfo>,
+    pub last_verified_at: Option<u64>,
+    pub refresh: MaterializedRecordRefreshOutcome,
+}
+
+/// Current verified records without initiating or describing network work.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterializedRecordSnapshot {
+    pub records: Vec<MaterializedRecordInfo>,
+    pub last_verified_at: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FetchResult {
     pub data: Vec<u8>,
     pub content_id: String,
     pub size: u64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LocalRecordInfo {
+    pub path: String,
+    pub content_id: String,
+    /// Opaque revision token; equal if and only if it names the same winning log entry.
+    pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LocalRecordHead {
+    Deleted {
+        /// Opaque revision token naming this Tombstone entry.
+        revision: String,
+    },
+    Present(LocalRecordInfo),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LocalRecordState {
+    Missing {
+        path: String,
+    },
+    Deleted {
+        path: String,
+        /// Opaque revision token naming the winning Tombstone entry.
+        revision: String,
+    },
+    Present(LocalRecordInfo),
+    Conflicted {
+        path: String,
+        /// Every current signed head in deterministic protocol order.
+        alternatives: Vec<LocalRecordHead>,
+        /// Latest unambiguous common singleton-path ancestor, when known.
+        base: Option<LocalRecordHead>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LocalRecordUpdate {
+    pub path: String,
+    pub content_id: String,
+    pub revision: String,
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LocalRecordDelete {
+    pub path: String,
+    pub revision: String,
+}
+
+pub type LocalRecordRestore = LocalRecordUpdate;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolveResponse {
@@ -331,6 +464,8 @@ pub struct NodeStatus {
     pub daemon_version: String,
     pub peer_id: String,
     pub identity_address: String,
+    /// Stable identifier for this installation's local signing device.
+    pub local_device_id: String,
     pub uptime_secs: u64,
     pub connected_peers: usize,
     pub direct_peers: usize,
@@ -347,11 +482,31 @@ pub struct NodeStatus {
     pub effective_bootstrap_relays: Vec<String>,
     pub effective_bootstrap_relay_count: usize,
     pub known_relay_count: usize,
+    pub device_writer_sync_work: DeviceWriterSyncWorkStatus,
     pub connected_bootstrap_peers: usize,
     pub last_bootstrap_error: Option<String>,
     pub home_relay: Option<HomeRelayConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relay_record: Option<RelayRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceWriterSyncWorkStatus {
+    pub max_concurrency: usize,
+    pub queue_capacity: usize,
+    pub active: usize,
+    pub queued: usize,
+    pub verified: u64,
+    pub verification_failed: u64,
+    pub rejected: u64,
+    pub cancelled: u64,
+    pub timed_out: u64,
+    pub full_responses: u64,
+    pub delta_responses: u64,
+    pub delta_continuations: u64,
+    pub received_entries: u64,
+    pub received_bytes: u64,
+    pub full_recoveries: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

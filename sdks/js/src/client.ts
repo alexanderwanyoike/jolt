@@ -9,7 +9,7 @@
  * projections.
  *
  * The interfaces ({@link JoltSdk}, {@link JoltEncryptedSdk},
- * {@link JoltIngressSdk}, {@link JoltAppendSdk}) are intentionally small so
+ * {@link JoltAvailabilitySdk}, {@link JoltIngressSdk}, {@link JoltAppendSdk}) are intentionally small so
  * tests can fake exactly the capability a feature uses; `jolt-sdk/testing`
  * ships a ready-made in-memory implementation.
  *
@@ -17,12 +17,16 @@
  */
 
 import * as ops from "./operations.js";
+import { createCompatibilityChecker } from "./compatibility.js";
+import type { JoltCompatibilitySdk } from "./compatibility.js";
+import { JoltApiError } from "./errors.js";
 import type { CallOptions, JoltTransport } from "./transport.js";
 import type {
   AppSessionRequestResponse,
   AppSessionStatusResponse,
   CurrentAppSession,
   IngressRecord,
+  LocalRecordHeadResponse,
   NodeStatus,
   PublishedContent,
   PublishResponse,
@@ -40,6 +44,8 @@ export type PublishResult = {
   latestSequence: number;
   path: string;
   address: string | null;
+  /** Opaque stable-record revision when the daemon bound a singleton path. */
+  revision?: string;
 };
 
 /**
@@ -57,6 +63,78 @@ export type Versioned<T> = {
   contentId: string;
 };
 
+/** Strict resolution metadata for one logical reference, before content fetch. */
+export type ResolvedReference = {
+  ref: Reference;
+  latestSequence: number;
+  contentId: string;
+};
+
+/** One authoritative local stable record reference that has no current value. */
+export type RecordMissingResult = {
+  state: "missing";
+  ref: Reference;
+};
+
+/** One authoritative local stable record whose current state is a Tombstone. */
+export type RecordDeletedResult = {
+  state: "deleted";
+  ref: Reference;
+  revision: string;
+};
+
+/** One present authoritative local stable record. */
+export type RecordPresentResult = {
+  state: "present";
+  ref: Reference;
+  contentId: string;
+  revision: string;
+  bytes: number[];
+};
+
+/** One immutable current or common-base head in a local record conflict. */
+export type RecordHeadResult = RecordDeletedResult | RecordPresentResult;
+
+/** Every current local record head, plus an unambiguous common base when known. */
+export type RecordConflictResult = {
+  state: "conflicted";
+  ref: Reference;
+  /** Canonical deterministic winner order; the final alternative wins. */
+  alternatives: RecordHeadResult[];
+  base?: RecordHeadResult;
+};
+
+/** Strict authoritative state for one local stable record reference. */
+export type RecordReadResult =
+  | RecordMissingResult
+  | RecordDeletedResult
+  | RecordPresentResult
+  | RecordConflictResult;
+
+/** Opaque compare-and-set context used by advanced record mutations. */
+export type RecordMutationContext = {
+  readonly revision: string;
+  /** Every current conflict head in daemon canonical order. Omitted for ordinary CAS. */
+  readonly observedRevisions?: readonly string[];
+  readonly mutationId: string;
+};
+
+function recordHeadResult(
+  ref: Reference,
+  head: LocalRecordHeadResponse,
+): RecordHeadResult {
+  if (head.state === "deleted") {
+    return { state: "deleted", ref, revision: head.revision };
+  }
+  return {
+    state: "present",
+    ref,
+    contentId: head.content_id,
+    revision: head.revision,
+    bytes: head.data,
+  };
+}
+
 /** One append record, marshalled into domain shape. */
 export type EnumeratedRecord = {
   identity: string;
@@ -64,14 +142,123 @@ export type EnumeratedRecord = {
   contentId: string;
   deviceId: string;
   deviceSequence: number;
-  createdAt: string;
+  createdAt: number;
   entryHash: string;
+};
+
+export type DataSubscriptionRefresh =
+  | { status: "loading" }
+  | { status: "updating"; lastVerifiedAt?: number }
+  | { status: "ready"; lastVerifiedAt: number }
+  | {
+      status: "stale";
+      lastVerifiedAt: number;
+      reason: "networkUnavailable" | "verificationFailed" | "overloaded";
+    }
+  | {
+      status: "unavailable";
+      reason: "networkUnavailable" | "verificationFailed" | "overloaded";
+    };
+
+export type DataSubscription = {
+  id: string;
+  identity: string;
+  prefix: string;
+  lifecycle: "active" | "dormant";
+  refresh: DataSubscriptionRefresh;
+  createdAt: number;
+};
+
+export type DataSubscriptionView = {
+  records: MaterializedRecord[];
+  source: {
+    subscription: string;
+    state: DataSubscriptionRefresh;
+  };
+};
+
+export type DataSubscriptionChange =
+  | {
+      type: "snapshot";
+      cursor: string;
+      records: MaterializedRecord[];
+      state: DataSubscriptionRefresh;
+    }
+  | {
+      type: "changed";
+      cursor: string;
+      records: MaterializedRecord[];
+      removed: Reference[];
+    }
+  | {
+      type: "state";
+      cursor: string;
+      state: DataSubscriptionRefresh;
+    }
+  | { type: "timeout"; cursor: string }
+  | { type: "resyncRequired" }
+  | { type: "cancelled" }
+  | { type: "revoked" };
+
+export type MaterializedRecord = {
+  identity: string;
+  path: string;
+  contentId: string;
+  revision: string;
+  createdAt: number;
+};
+
+/** @internal Raw Data Subscription transport used by the high-level Data SDK. */
+export interface JoltDataSubscriptionSdk {
+  createDataSubscription(
+    identity: string,
+    prefix: string,
+    options?: CallOptions,
+  ): Promise<DataSubscription>;
+  listDataSubscriptions(options?: CallOptions): Promise<DataSubscription[]>;
+  getDataSubscriptionView(
+    subscriptionId: string,
+    options?: CallOptions,
+  ): Promise<DataSubscriptionView>;
+  nextDataSubscriptionChange(
+    subscriptionId: string,
+    cursor?: string,
+    options?: CallOptions,
+  ): Promise<DataSubscriptionChange>;
+  removeDataSubscription(
+    subscriptionId: string,
+    options?: CallOptions,
+  ): Promise<void>;
+}
+
+/** Encrypted content plus the daemon's honest decrypt/access state. */
+export type OpenEncryptedResult = {
+  contentId: string;
+  path: string;
+  status: "decrypted" | "ciphertext";
+  accessStatus: "available" | "needs_rewrap" | "not_accessible";
+  bytes: number[];
+  size: number;
+  contentType: string | null;
+  decryptError: string | null;
+};
+
+/** Confirmation that a home relay accepted an availability request. */
+export type HomeRelayPinResult = {
+  status: string;
+  relay: string;
+  owner: string;
+  contentId: string;
+  latestSequence: number;
+  size: number;
 };
 
 /** Public publish and tolerant versioned reads. */
 export interface JoltSdk {
   /** Publish a JSON object at a signed path (last-writer-wins). */
   publishJson(path: string, body: object, options?: CallOptions): Promise<PublishResult>;
+  /** Resolve a reference strictly, preserving daemon errors such as Tombstones. */
+  resolve(ref: Reference, options?: CallOptions): Promise<ResolvedReference>;
   /**
    * Resolve, fetch, parse, and decode a publication. Returns `null` when the
    * reference is missing/unreachable or the bytes do not decode to `T`.
@@ -88,6 +275,28 @@ export interface JoltSdk {
     decode: Decoder<T>,
     options?: CallOptions
   ): Promise<Versioned<T> | null>;
+  /** Read authoritative local record state without collapsing failures into absence. */
+  readRecord(ref: Reference, options?: CallOptions): Promise<RecordReadResult>;
+  /** Compare-and-set one local stable record against an observed revision. */
+  updateRecord(
+    ref: Reference,
+    body: object,
+    mutation: RecordMutationContext,
+    options?: CallOptions,
+  ): Promise<RecordPresentResult>;
+  /** Compare-and-set one present local stable record to a Tombstone. */
+  deleteRecord(
+    ref: Reference,
+    mutation: RecordMutationContext,
+    options?: CallOptions,
+  ): Promise<RecordDeletedResult>;
+  /** Compare-and-set one local Tombstone to new immutable content. */
+  restoreRecord(
+    ref: Reference,
+    body: object,
+    mutation: RecordMutationContext,
+    options?: CallOptions,
+  ): Promise<RecordPresentResult>;
 }
 
 /** Coexisting append records and their enumeration. */
@@ -121,8 +330,24 @@ export interface JoltEncryptedSdk {
     decode: Decoder<T>,
     options?: CallOptions
   ): Promise<Versioned<T> | null>;
+  /** Open encrypted content without hiding a ciphertext-only result. */
+  openEncrypted(
+    target: string,
+    path?: string,
+    options?: CallOptions
+  ): Promise<OpenEncryptedResult>;
   /** The local node's published inventory. */
   listPublished(options?: CallOptions): Promise<PublishedContent[]>;
+}
+
+/** Explicit application-owned requests for delegated content availability. */
+export interface JoltAvailabilitySdk {
+  /** Ask the configured home relay to retain one of this app's own publications. */
+  pinHomeRelay(
+    contentId: string,
+    path?: string,
+    options?: CallOptions
+  ): Promise<HomeRelayPinResult>;
 }
 
 /**
@@ -171,8 +396,10 @@ export interface JoltSessionSdk {
 export type JoltClient = JoltSdk &
   JoltAppendSdk &
   JoltEncryptedSdk &
+  JoltAvailabilitySdk &
   JoltIngressSdk &
-  JoltSessionSdk & {
+  JoltSessionSdk &
+  JoltCompatibilitySdk & {
     /** The transport backing this client, for operations the client does not wrap. */
     readonly transport: JoltTransport;
   };
@@ -212,6 +439,9 @@ function toPublishResult(response: PublishResponse, path: string): PublishResult
     latestSequence: response.latest_sequence ?? 0,
     path: response.path ?? path,
     address: response.address ?? null,
+    ...(response.revision === undefined || response.revision === null
+      ? {}
+      : { revision: response.revision }),
   };
 }
 
@@ -223,9 +453,78 @@ function parseJsonBytes(bytes: number[]): unknown | undefined {
   }
 }
 
+function toDataSubscriptionRefresh(
+  refresh: import("./wire.js").DataSubscriptionRefreshResponse,
+): DataSubscriptionRefresh {
+  if (refresh.status === "loading") return refresh;
+  if (refresh.status === "updating") {
+    return refresh.last_verified_at === undefined
+      ? { status: "updating" }
+      : { status: "updating", lastVerifiedAt: refresh.last_verified_at };
+  }
+  if (refresh.status === "ready") {
+    return { status: "ready", lastVerifiedAt: refresh.last_verified_at };
+  }
+  if (refresh.status === "stale") {
+    return {
+      status: "stale",
+      lastVerifiedAt: refresh.last_verified_at,
+      reason: refresh.reason,
+    };
+  }
+  return { status: "unavailable", reason: refresh.reason };
+}
+
+function toDataSubscription(
+  subscription: import("./wire.js").DataSubscriptionRecordResponse,
+): DataSubscription {
+  return {
+    id: subscription.id,
+    identity: subscription.identity,
+    prefix: subscription.prefix,
+    lifecycle: subscription.lifecycle,
+    refresh: toDataSubscriptionRefresh(subscription.refresh),
+    createdAt: subscription.created_at,
+  };
+}
+
 /** Build a {@link JoltClient} over a transport and a session-token source. */
 export function createJoltClient(options: JoltClientOptions): JoltClient {
+  const {
+    createDataSubscription: _createDataSubscription,
+    listDataSubscriptions: _listDataSubscriptions,
+    getDataSubscriptionView: _getDataSubscriptionView,
+    nextDataSubscriptionChange: _nextDataSubscriptionChange,
+    removeDataSubscription: _removeDataSubscription,
+    ...client
+  } = createDataClient(options);
+  return client;
+}
+
+/** Build the advanced transport required by an already-authorized Data SDK host. */
+export function createDataClient(
+  options: JoltClientOptions,
+): JoltClient & JoltDataSubscriptionSdk {
   const { transport, getSessionToken } = options;
+  const checkCompatibility = createCompatibilityChecker(transport);
+
+  async function resolveReference(
+    ref: Reference,
+    call?: CallOptions,
+    token = getSessionToken(),
+  ): Promise<ResolvedReference> {
+    const resolved = await ops.resolveAddress(
+      transport,
+      token,
+      referenceTarget(ref),
+      call,
+    );
+    return {
+      ref,
+      latestSequence: resolved.latest_sequence,
+      contentId: resolved.content_id,
+    };
+  }
 
   async function resolveDecode<T>(
     ref: Reference,
@@ -237,8 +536,8 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
     let resolved;
     let bytes: number[];
     try {
-      resolved = await ops.resolveAddress(transport, token, referenceTarget(ref), call);
-      bytes = await getBytes(token, resolved.content_id, call);
+      resolved = await resolveReference(ref, call, token);
+      bytes = await getBytes(token, resolved.contentId, call);
     } catch {
       return null; // missing or unreachable
     }
@@ -249,18 +548,22 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
     return {
       ref,
       value,
-      latestSequence: resolved.latest_sequence,
-      contentId: resolved.content_id,
+      latestSequence: resolved.latestSequence,
+      contentId: resolved.contentId,
     };
   }
 
   return {
     transport,
 
+    checkCompatibility,
+
     async publishJson(path, body, call) {
       const response = await ops.publishJson(transport, getSessionToken(), path, body, call);
       return toPublishResult(response, path);
     },
+
+    resolve: resolveReference,
 
     async read(ref, decode, call) {
       return resolveDecode(
@@ -285,6 +588,95 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
       return { ref, value, latestSequence, contentId };
     },
 
+    async readRecord(ref, call) {
+      const result = await ops.readLocalRecord(
+        transport,
+        getSessionToken(),
+        ref.path,
+        call
+      );
+      if (result.state === "missing") {
+        return { state: "missing", ref };
+      }
+      if (result.state === "deleted") {
+        return { state: "deleted", ref, revision: result.revision };
+      }
+      if (result.state === "conflicted") {
+        return {
+          state: "conflicted",
+          ref,
+          alternatives: result.alternatives.map(head => recordHeadResult(ref, head)),
+          ...(result.base === undefined
+            ? {}
+            : { base: recordHeadResult(ref, result.base) }),
+        };
+      }
+      return {
+        state: "present",
+        ref,
+        contentId: result.content_id,
+        revision: result.revision,
+        bytes: result.data,
+      };
+    },
+
+    async updateRecord(ref, body, mutation, call) {
+      const response = await ops.updateLocalRecord(
+        transport,
+        getSessionToken(),
+        ref.path,
+        body,
+        mutation.revision,
+        mutation.mutationId,
+        mutation.observedRevisions,
+        call,
+      );
+      return {
+        state: "present",
+        ref,
+        contentId: response.content_id,
+        revision: response.revision,
+        bytes: response.data,
+      };
+    },
+
+    async deleteRecord(ref, mutation, call) {
+      const response = await ops.deleteLocalRecord(
+        transport,
+        getSessionToken(),
+        ref.path,
+        mutation.revision,
+        mutation.mutationId,
+        mutation.observedRevisions,
+        call,
+      );
+      return {
+        state: "deleted",
+        ref,
+        revision: response.revision,
+      };
+    },
+
+    async restoreRecord(ref, body, mutation, call) {
+      const response = await ops.restoreLocalRecord(
+        transport,
+        getSessionToken(),
+        ref.path,
+        body,
+        mutation.revision,
+        mutation.mutationId,
+        mutation.observedRevisions,
+        call,
+      );
+      return {
+        state: "present",
+        ref,
+        contentId: response.content_id,
+        revision: response.revision,
+        bytes: response.data,
+      };
+    },
+
     async publishAppend(path, body, call) {
       const response = await ops.appendPublishJson(transport, getSessionToken(), path, body, call);
       return toPublishResult(response, path);
@@ -301,6 +693,97 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
         createdAt: record.created_at,
         entryHash: record.entry_hash,
       }));
+    },
+
+    async createDataSubscription(identity, prefix, call) {
+      return toDataSubscription(await ops.createDataSubscription(
+        transport,
+        getSessionToken(),
+        identity,
+        prefix,
+        call,
+      ));
+    },
+
+    async listDataSubscriptions(call) {
+      const subscriptions = await ops.listDataSubscriptions(
+        transport,
+        getSessionToken(),
+        call,
+      );
+      return subscriptions.map(toDataSubscription);
+    },
+
+    async getDataSubscriptionView(subscriptionId, call) {
+      const view = await ops.getDataSubscriptionView(
+        transport,
+        getSessionToken(),
+        subscriptionId,
+        call,
+      );
+      return {
+        records: view.records.map((record) => ({
+          identity: view.identity,
+          path: record.path,
+          contentId: record.content_id,
+          revision: record.revision,
+          createdAt: record.created_at,
+        })),
+        source: {
+          subscription: view.source.subscription,
+          state: toDataSubscriptionRefresh(view.source.state),
+        },
+      };
+    },
+
+    async nextDataSubscriptionChange(subscriptionId, cursor, call) {
+      const change = await ops.nextDataSubscriptionChange(
+        transport,
+        getSessionToken(),
+        subscriptionId,
+        cursor,
+        call,
+      );
+      if (change.type === "resync_required") return { type: "resyncRequired" };
+      if (change.type === "timeout") return change;
+      if (change.type === "cancelled" || change.type === "revoked") return change;
+      if (change.type === "state") {
+        return {
+          type: "state",
+          cursor: change.cursor,
+          state: toDataSubscriptionRefresh(change.state),
+        };
+      }
+      const records = change.records.map(record => ({
+        identity: change.identity,
+        path: record.path,
+        contentId: record.content_id,
+        revision: record.revision,
+        createdAt: record.created_at,
+      }));
+      if (change.type === "snapshot") {
+        return {
+          type: "snapshot",
+          cursor: change.cursor,
+          records,
+          state: toDataSubscriptionRefresh(change.state),
+        };
+      }
+      return {
+        type: "changed",
+        cursor: change.cursor,
+        records,
+        removed: change.removed.map(path => ({ identity: change.identity, path })),
+      };
+    },
+
+    async removeDataSubscription(subscriptionId, call) {
+      await ops.removeDataSubscription(
+        transport,
+        getSessionToken(),
+        subscriptionId,
+        call,
+      );
     },
 
     async publishEncryptedJson(path, body, recipients, call) {
@@ -336,8 +819,46 @@ export function createJoltClient(options: JoltClientOptions): JoltClient {
       return { ref, value, latestSequence: resolved.latest_sequence, contentId };
     },
 
+    async openEncrypted(target, path, call) {
+      const opened = await ops.openEncryptedTarget(
+        transport,
+        getSessionToken(),
+        target,
+        path,
+        call
+      );
+      return {
+        contentId: opened.content_id,
+        path: opened.path,
+        status: opened.status,
+        accessStatus: opened.access_status,
+        bytes: opened.status === "decrypted" ? opened.plaintext ?? [] : opened.ciphertext ?? [],
+        size: opened.size,
+        contentType: opened.content_type ?? null,
+        decryptError: opened.decrypt_error ?? null,
+      };
+    },
+
     async listPublished(call) {
       return ops.listPublished(transport, getSessionToken(), call);
+    },
+
+    async pinHomeRelay(contentId, path, call) {
+      const pinned = await ops.pinHomeRelay(
+        transport,
+        getSessionToken(),
+        contentId,
+        path,
+        call
+      );
+      return {
+        status: pinned.status,
+        relay: pinned.relay,
+        owner: pinned.owner,
+        contentId: pinned.content_id,
+        latestSequence: pinned.latest_sequence,
+        size: pinned.size,
+      };
     },
 
     async sendObject(recipient, path, body, call) {

@@ -1,4 +1,5 @@
 pub mod app_api;
+pub mod app_features;
 pub mod app_sessions;
 pub mod cache;
 pub mod dashboard;
