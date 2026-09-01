@@ -19,9 +19,9 @@ compiled and tested against the public SDK in Jolt's repository. Follow it from
 the top and you will finish with a working desktop app, not an isolated API
 example.
 
-> **Before you start:** Chirp requires Jolt **0.3.23 or newer**. Jolt 0.3.22
+> **Before you start:** Chirp requires Jolt **0.4.0 or newer**. Jolt 0.3.22
 > does not yet provide the live Data SDK behavior used by this tutorial. This
-> guide must remain on the development site until 0.3.23 is released.
+> guide must remain on the development site until 0.4.0 is released.
 
 ## 1 · Create the app
 
@@ -221,7 +221,7 @@ no other frontend files to change.
 
 ## 8 · Run Chirp
 
-Confirm Jolt Console is version 0.3.23 or newer, start it, then run:
+Confirm Jolt Console is version 0.4.0 or newer, start it, then run:
 
 ```bash
 yarn tauri dev
