@@ -23,6 +23,7 @@ without the React screen around them.
 - **Change an Item:** read [Item mutations](data-sdk-mutations.html).
 - **Change stored data safely:** read [Schema migrations](data-sdk-migrations.html).
 - **Choose between concurrent edits:** use advanced [Manual conflicts](data-sdk-manual-conflicts.html).
+- **Keep remote data current:** use [Data Subscriptions](data-sdk-subscriptions.html).
 - **Look up one exact method:** use the [generated API reference](../sdk/reference.html#module-data).
 
 ## Three building blocks
@@ -81,4 +82,5 @@ for persistence, restart behavior, authorization, or multi-node networking.
 - Update, replace, delete, and restore with [Item mutations](data-sdk-mutations.html).
 - Learn how to evolve a Schema Class with [deterministic migrations](data-sdk-migrations.html).
 - Opt into application decisions with advanced [Manual conflicts](data-sdk-manual-conflicts.html).
+- Keep a public remote Collection current with [Data Subscriptions and Change Streams](data-sdk-subscriptions.html).
 - Use the [Data SDK API reference](../sdk/reference.html#module-data) for exact signatures.
