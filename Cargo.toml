@@ -87,3 +87,6 @@ hex = "0.4"
 data-encoding = "2"
 tempfile = "3"
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+
+[profile.release]
+strip = true

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 const files = {
+  workspaceCargo: readFileSync("Cargo.toml", "utf8"),
   workflow: readFileSync(".github/workflows/package-jolt-console.yml", "utf8"),
   tauriConfig: readFileSync("apps/jolt-console/src-tauri/tauri.conf.json", "utf8"),
   installer: readFileSync("scripts/install-jolt-console.sh", "utf8"),
@@ -10,6 +11,21 @@ const files = {
   updateManifest: readFileSync("scripts/write-jolt-console-update-manifest.mjs", "utf8"),
   readme: readFileSync("README.md", "utf8")
 };
+
+function tomlSection(source, name) {
+  const header = `[${name}]`;
+  const start = source.indexOf(header);
+  if (start === -1) return null;
+
+  const body = source.slice(start + header.length);
+  const nextSection = body.search(/^\[/m);
+  return nextSection === -1 ? body : body.slice(0, nextSection);
+}
+
+const releaseProfile = tomlSection(files.workspaceCargo, "profile.release");
+if (releaseProfile === null || !/^strip\s*=\s*true\s*$/m.test(releaseProfile)) {
+  throw new Error("Release binaries must be stripped before packaging");
+}
 
 const requiredMarkers = {
   workflow: [
