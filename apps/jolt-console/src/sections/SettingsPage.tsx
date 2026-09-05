@@ -542,6 +542,7 @@ function updateTitle(updateCheck: ConsoleUpdateCheck | null, action: string | nu
   if (action === "check") return "Checking for updates";
   if (action === "install") return "Installing update";
   if (updateCheck?.available) return "Update available";
+  if (updateCheck?.managedByPackage) return "Updates come from your package manager";
   if (updateCheck) return "Console is up to date";
   return "Update status unknown";
 }
@@ -550,6 +551,9 @@ function updateSummary(updateCheck: ConsoleUpdateCheck | null) {
   if (!updateCheck) return "Console checks for signed updates when Settings opens.";
   if (updateCheck.available) {
     return "A signed Console update is available. Installing will relaunch Console after the update is applied.";
+  }
+  if (updateCheck.managedByPackage) {
+    return "This Console was installed from a system package. Install the next release's package to update; the built-in updater only serves the AppImage.";
   }
   return "No newer signed Console release is available.";
 }
