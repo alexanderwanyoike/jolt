@@ -98,8 +98,11 @@ fn first_with_extension(dir: &Path, extension: &str) -> Option<PathBuf> {
 
 /// Rewrites the bundled entry so it launches this AppImage and uses the icon
 /// installed alongside it. `StartupWMClass` is kept verbatim: it is how the
-/// panel ties the running window to this entry.
-pub fn render_desktop_entry(bundled: &str, appimage: &Path) -> String {
+/// panel ties the running window to this entry. The icon is written as an
+/// absolute path rather than a theme name: a name only resolves once the
+/// desktop's icon cache has seen the new file, and on some desktops that never
+/// happened, leaving the matched entry with no icon at all.
+pub fn render_desktop_entry(bundled: &str, appimage: &Path, icon: &Path) -> String {
     let mut lines: Vec<String> = Vec::new();
     let mut saw_categories = false;
     for line in bundled.lines() {
@@ -108,7 +111,7 @@ pub fn render_desktop_entry(bundled: &str, appimage: &Path) -> String {
         } else if line.starts_with("TryExec=") {
             continue;
         } else if line.starts_with("Icon=") {
-            format!("Icon={IDENTIFIER}")
+            format!("Icon={}", icon.display())
         } else if let Some(value) = line.strip_prefix("Categories=") {
             saw_categories = true;
             if value.trim().is_empty() {
@@ -157,7 +160,7 @@ pub fn install(context: &AppImageContext, paths: &IntegrationPaths) -> Result<()
     )?;
     write_file(
         &paths.desktop_entry,
-        render_desktop_entry(&bundled, &context.appimage).as_bytes(),
+        render_desktop_entry(&bundled, &context.appimage, &paths.icon).as_bytes(),
     )?;
     refresh_desktop_database(paths);
     Ok(())
@@ -196,11 +199,16 @@ mod tests {
 
     #[test]
     fn rendered_entry_launches_the_appimage_with_the_installed_icon() {
-        let rendered =
-            render_desktop_entry(BUNDLED, Path::new("/home/a b/Apps/jolt-console.AppImage"));
+        let rendered = render_desktop_entry(
+            BUNDLED,
+            Path::new("/home/a b/Apps/jolt-console.AppImage"),
+            Path::new("/home/a b/.local/share/icons/hicolor/512x512/apps/net.jolt.console.png"),
+        );
 
         assert!(rendered.contains("Exec=\"/home/a b/Apps/jolt-console.AppImage\"\n"));
-        assert!(rendered.contains("Icon=net.jolt.console\n"));
+        assert!(rendered.contains(
+            "Icon=/home/a b/.local/share/icons/hicolor/512x512/apps/net.jolt.console.png\n"
+        ));
         assert!(rendered.contains("StartupWMClass=jolt-console\n"));
         assert!(rendered.contains("Categories=Network;\n"));
         assert!(!rendered.contains("Exec=jolt-console"));
@@ -262,6 +270,7 @@ mod tests {
         assert_eq!(std::fs::read(&paths.icon).unwrap(), b"png-bytes");
         let entry = std::fs::read_to_string(&paths.desktop_entry).unwrap();
         assert!(entry.contains("Exec=\"/opt/jolt-console.AppImage\"\n"));
+        assert!(entry.contains(&format!("Icon={}\n", paths.icon.display())));
     }
 
     #[test]
