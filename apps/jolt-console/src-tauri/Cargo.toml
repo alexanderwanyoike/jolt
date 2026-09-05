@@ -22,6 +22,7 @@ tauri-plugin-dialog = "2.7.1"
 reqwest = { workspace = true }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-single-instance = "2"
 
 [dev-dependencies]
 tempfile = { workspace = true }
