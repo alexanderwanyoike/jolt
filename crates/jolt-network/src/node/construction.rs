@@ -679,6 +679,94 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn local_singleton_write_supersedes_a_longer_legacy_device_log() {
+        // The 2 September incident: the legacy root device had written the
+        // reachability path many times, so its last entry carried a higher
+        // device sequence than anything the new device would write for months.
+        // Concurrent singleton candidates tie-break on device sequence, so a
+        // renewed record that observed nothing kept losing to the expired one.
+        let dir = tempdir().unwrap();
+        let key_dir = tempdir().unwrap();
+        let root = NodeIdentity::generate();
+        root.save(key_dir.path()).unwrap();
+        let identity = root.identity_id();
+        let legacy_device_id = "dev_legacy_root";
+        let path = "/.well-known/jolt/reachability";
+        let authority_records = vec![DeviceAuthorizationRecord::genesis(
+            root.public_key_bytes(),
+            identity.clone(),
+            DeviceAuthorizationOperation::authorize_device(
+                legacy_device_id,
+                root.public_key_bytes(),
+                vec!["identity:write".to_string()],
+                Some("Legacy root device".to_string()),
+                100,
+            ),
+            100,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        let mut legacy_log = vec![DeviceWriterLogEntry::genesis(
+            identity.clone(),
+            legacy_device_id,
+            DeviceWriterOperation::set_path(
+                path,
+                ContentId::from_bytes(b"record 0"),
+                DeviceWriterPathMode::Singleton,
+            ),
+            101,
+            |bytes| root.sign(bytes),
+        )
+        .unwrap()];
+        for n in 1..=5u64 {
+            let next = legacy_log
+                .last()
+                .unwrap()
+                .append(
+                    DeviceWriterOperation::set_path(
+                        path,
+                        ContentId::from_bytes(format!("record {n}").as_bytes()),
+                        DeviceWriterPathMode::Singleton,
+                    ),
+                    101 + n,
+                    |bytes| root.sign(bytes),
+                )
+                .unwrap();
+            legacy_log.push(next);
+        }
+        let expired = legacy_log.last().unwrap().body.device_sequence;
+        assert!(expired >= 5);
+        let store = make_store(dir.path());
+        store
+            .save_device_writer_log(
+                &identity,
+                &PersistedDeviceWriterLog {
+                    authority_records,
+                    device_log: legacy_log,
+                    other_device_logs: Vec::new(),
+                    record_mutations: BTreeMap::new(),
+                },
+            )
+            .unwrap();
+        drop(store);
+
+        let reloaded = NodeIdentity::load(key_dir.path()).unwrap();
+        let store = make_store(dir.path());
+        let mut node = NetworkNode::new_tcp(reloaded, store, NetworkConfig::test_config()).unwrap();
+        let (renewed, _, _, _) = node.publish_bytes_at_path(b"renewed record", path).unwrap();
+
+        let address = JoltAddress::new(identity.clone(), path).unwrap();
+        let resolved = node
+            .resolve_device_writer_response_from_cache(&address, "test")
+            .unwrap();
+        assert_eq!(
+            resolved.content_id,
+            renewed.to_string(),
+            "the new device's first write must supersede the legacy device's later sequence"
+        );
+    }
+
+    #[tokio::test]
     async fn persisted_tombstone_is_rebuilt_as_deleted_state_after_restart() {
         let dir = tempdir().unwrap();
         let key_dir = tempdir().unwrap();

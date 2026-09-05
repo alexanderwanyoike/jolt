@@ -106,6 +106,41 @@ impl NetworkNode {
         Ok(())
     }
 
+    /// The heads a plain singleton write must supersede: the path's current
+    /// winner and any concurrent candidates. A write that observes nothing is
+    /// merely concurrent with them, and the device-sequence tie-break then
+    /// lets an older, longer-lived device keep winning: the legacy root
+    /// device's 1 September reachability record beat every renewed one.
+    fn current_singleton_heads(
+        &self,
+        identity: &IdentityId,
+        operation: &DeviceWriterOperation,
+    ) -> Vec<DeviceWriterLogEntryHash> {
+        let path = match operation {
+            DeviceWriterOperation::SetPath {
+                path,
+                mode: DeviceWriterPathMode::Singleton,
+                ..
+            } => path,
+            DeviceWriterOperation::TombstonePath { path } => path,
+            DeviceWriterOperation::SetPath { .. } => return Vec::new(),
+        };
+        let Some(state) = self.device_writer_states.get(identity) else {
+            return Vec::new();
+        };
+        let mut heads: Vec<DeviceWriterLogEntryHash> = state
+            .merged
+            .singleton_paths
+            .get(path)
+            .map(|entry| entry.entry_hash.clone())
+            .into_iter()
+            .collect();
+        if let Some(conflicts) = state.merged.singleton_conflicts.get(path) {
+            heads.extend(conflicts.iter().map(|entry| entry.entry_hash.clone()));
+        }
+        heads
+    }
+
     fn observed_record_head_hashes(
         &self,
         identity: &IdentityId,
@@ -524,7 +559,7 @@ impl NetworkNode {
             Some(ref mutation) => {
                 self.observed_record_head_hashes(&identity, mutation.observed_revisions)?
             }
-            None => Vec::new(),
+            None => self.current_singleton_heads(&identity, &operation),
         };
         let local_device_id = self.local_device_id();
         let entry = match self
