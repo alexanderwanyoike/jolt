@@ -192,8 +192,12 @@ pub(super) fn snapshot_links(links: &[ShapedLink]) -> NetworkBytes {
 }
 
 pub(super) async fn wait_for_link_quiescence(links: &[ShapedLink]) {
-    const QUIET_FOR: Duration = Duration::from_millis(50);
-    const GIVE_UP_AFTER: Duration = Duration::from_secs(2);
+    // libp2p-kad schedules an automatic bootstrap query 500 ms after the last
+    // routing-table update (its automatic bootstrap throttle, not configurable
+    // from outside the crate). A quiet window shorter than that lets the query
+    // land inside the next phase and count as that phase's network bytes.
+    const QUIET_FOR: Duration = Duration::from_millis(600);
+    const GIVE_UP_AFTER: Duration = Duration::from_secs(3);
     const SAMPLE_EVERY: Duration = Duration::from_millis(10);
 
     let deadline = Instant::now() + GIVE_UP_AFTER;
