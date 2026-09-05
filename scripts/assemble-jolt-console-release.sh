@@ -55,6 +55,8 @@ find "$DIST_DIR" -maxdepth 2 -type f -exec cp {} "$RELEASE_DIR/" \;
 
 required_assets=(
   "jolt-console-x86_64.AppImage.sig"
+  "jolt-console-amd64.deb"
+  "jolt-console-amd64.deb.sha256"
   "jolt-console-aarch64.app.tar.gz.sig"
   "jolt-console-x86_64-setup.exe.sig"
   "jolt-linux-x86_64.sha256"
