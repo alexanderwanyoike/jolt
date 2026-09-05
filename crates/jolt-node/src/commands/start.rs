@@ -12,6 +12,9 @@ use jolt_store::{CacheConfig, ContentStore};
 use crate::cli::TransportMode;
 use crate::config::{NodeConfig, NodeSettings};
 use crate::daemon;
+use crate::reachability_renewal::{
+    renew_if_due, RenewalOutcome, RenewalSchedule, REACHABILITY_TTL_SECS, RENEWAL_CHECK_INTERVAL,
+};
 
 pub async fn run(
     api_port: u16,
@@ -126,12 +129,10 @@ pub async fn run(
         node.run_daemon_loop(cmd_rx).await;
     });
 
-    publish_direct_ingress_reachability(
-        &handle,
+    tokio::spawn(keep_direct_ingress_reachability_published(
+        handle.clone(),
         direct_ingress_endpoint,
-        jolt_now() + 24 * 60 * 60,
-    )
-    .await;
+    ));
 
     // Write PID and port files
     let pid = std::process::id();
@@ -173,20 +174,32 @@ pub async fn run(
     Ok(())
 }
 
-async fn publish_direct_ingress_reachability(
-    handle: &DaemonHandle,
+async fn keep_direct_ingress_reachability_published(
+    handle: DaemonHandle,
     endpoint: LiveReachabilityEndpoint,
-    expires_at: u64,
 ) {
-    match handle
-        .publish_reachability(0, expires_at, vec![endpoint], Vec::new())
-        .await
-    {
-        Ok(response) => info!(
-            "Published direct ingress reachability: {}",
-            response.address
-        ),
-        Err(err) => info!("Direct ingress reachability publish skipped: {err}"),
+    let mut schedule = RenewalSchedule::new(REACHABILITY_TTL_SECS);
+    let mut ticker = tokio::time::interval(RENEWAL_CHECK_INTERVAL);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let (handle, endpoint) = (&handle, &endpoint);
+        let outcome = renew_if_due(&mut schedule, jolt_now(), |expires_at| async move {
+            handle
+                .publish_reachability(0, expires_at, vec![endpoint.clone()], Vec::new())
+                .await
+                .map(|_| ())
+        })
+        .await;
+        match outcome {
+            RenewalOutcome::NotDue => {}
+            RenewalOutcome::Published { expires_at } => {
+                info!("Published direct ingress reachability, expires at {expires_at}")
+            }
+            RenewalOutcome::Failed(err) => {
+                warn!("Direct ingress reachability publish failed, will retry: {err}")
+            }
+        }
     }
 }
 

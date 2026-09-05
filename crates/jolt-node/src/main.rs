@@ -3,6 +3,7 @@ mod client;
 mod commands;
 mod config;
 mod daemon;
+mod reachability_renewal;
 
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
