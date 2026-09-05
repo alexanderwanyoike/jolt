@@ -507,6 +507,11 @@ struct DaemonLifecycleReport {
 pub fn run() {
     tauri::Builder::default()
         .manage(Mutex::new(DaemonLifecycleManager::default()))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // A second launch while the window is parked in the tray reopens it
+            // instead of starting a second console against the same daemon.
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
@@ -524,9 +529,17 @@ pub fn run() {
                     }
                 }
             }
-            #[cfg(not(target_os = "linux"))]
-            let _ = app;
+            install_tray(app)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window parks the console in the tray with the daemon
+            // still running, the Docker Desktop model. Quit in the tray menu is
+            // the exit that stops the daemon too.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             daemon_get,
@@ -546,6 +559,60 @@ pub fn run() {
                 detach_owned_daemon_on_exit(&app_handle.state::<Mutex<DaemonLifecycleManager>>());
             }
         });
+}
+
+const TRAY_OPEN: &str = "open-console";
+const TRAY_QUIT: &str = "quit-and-stop-daemon";
+
+fn install_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let open = MenuItem::with_id(app, TRAY_OPEN, "Open Jolt Console", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, TRAY_QUIT, "Quit and stop daemon", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &quit])?;
+    let mut tray = TrayIconBuilder::with_id("jolt-console")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .tooltip("Jolt Console")
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            TRAY_OPEN => show_main_window(app),
+            TRAY_QUIT => quit_console(app),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon().cloned() {
+        tray = tray.icon(icon);
+    }
+    tray.build(app)?;
+    Ok(())
+}
+
+fn show_main_window(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn quit_console(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let lifecycle = app.state::<Mutex<DaemonLifecycleManager>>();
+    if let Err(error) = stop_any_daemon(&lifecycle) {
+        eprintln!("Jolt Console quit: daemon was not stopped: {error}");
+    }
+    app.exit(0);
 }
 
 #[cfg(test)]
@@ -612,6 +679,24 @@ mod tests {
         );
 
         let _ = Command::new("kill").arg(pid.to_string()).status();
+    }
+
+    #[test]
+    fn quit_stops_a_console_owned_daemon() {
+        // Quit is the one exit that takes the daemon down; closing the window
+        // only parks the console in the tray.
+        let child = long_running_child();
+        let pid = child.id();
+        let lifecycle = Mutex::new(DaemonLifecycleManager {
+            child: Some(child),
+            last_error: None,
+            log_path: None,
+        });
+
+        stop_any_daemon(&lifecycle).unwrap();
+
+        assert!(lifecycle.lock().unwrap().child.is_none());
+        assert!(!process_is_running(pid), "quit must stop the owned daemon");
     }
 
     #[test]
