@@ -346,7 +346,8 @@ footer a:hover { color: var(--text); }
   .download-action { margin: 0; padding: 0; font-size: 0; }
   .download-action b { margin: 0; font-size: 16px; }
   .download-choice .download-actions { display: flex; gap: 16px; margin: 0; padding: 0; }
-  .download-choice .download-action { font-size: 11px; }
+  .download-choice .download-action { font-size: 11px; white-space: nowrap; }
+  .download-choice .download-action b { margin-left: 6px; }
   .download-foot { align-items: flex-start; flex-direction: column; }
   .macos-help { grid-template-columns: 1fr; gap: 10px; }
   .actions { align-items: flex-start; flex-direction: column; gap: 18px; }
