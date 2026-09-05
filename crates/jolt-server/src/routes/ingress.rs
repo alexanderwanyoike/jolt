@@ -3,7 +3,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use jolt_core::{
     verify_reachability_record_for_identity, IdentityId, JoltAddress, ReachabilityRecord,
-    SIGNED_REACHABILITY_PATH,
+    ReachabilityRecordError, VerifiedReachability, SIGNED_REACHABILITY_PATH,
 };
 use jolt_network::{DecryptedObjectResponse, IngressRecord};
 use serde::{Deserialize, Serialize};
@@ -158,22 +158,22 @@ async fn resolve_live_ingress_peer(
     identity: &IdentityId,
     object_bytes: usize,
 ) -> Result<String, AppApiError> {
-    let address = JoltAddress::new(identity.clone(), SIGNED_REACHABILITY_PATH).map_err(|err| {
-        AppApiError::Network(jolt_network::NetworkError::InvalidInput(err.to_string()))
-    })?;
-    let resolved = state.daemon.resolve(address.to_string()).await?;
-    let fetched = state
-        .daemon
-        .fetch(resolved.content_id.clone())
-        .await
-        .map_err(|err| AppApiError::Network(fetch_error_for_target(err, &resolved.content_id)))?;
-    let record: ReachabilityRecord = serde_json::from_slice(&fetched.data).map_err(|err| {
-        AppApiError::Network(jolt_network::NetworkError::InvalidInput(err.to_string()))
-    })?;
-    let verified =
-        verify_reachability_record_for_identity(identity, &record, unix_now()).map_err(|err| {
-            AppApiError::Network(jolt_network::NetworkError::InvalidInput(err.to_string()))
-        })?;
+    let verified = resolve_with_bounded_refresh(
+        || resolve_verified_reachability(state, identity),
+        || async {
+            if let Err(err) = state
+                .daemon
+                .refresh_materialized_record_view(
+                    identity.clone(),
+                    SIGNED_REACHABILITY_PATH.to_string(),
+                )
+                .await
+            {
+                tracing::debug!("reachability refresh for {identity} skipped: {err}");
+            }
+        },
+    )
+    .await?;
 
     verified
         .live
@@ -195,6 +195,74 @@ async fn resolve_live_ingress_peer(
         })
 }
 
+enum ResolveAttempt<T, E> {
+    Ready(T),
+    Expired(E),
+    Failed(E),
+}
+
+// `daemon.resolve` answers from cache and refreshes in the background, so a
+// sender can hold a recipient's expired record for a while after the recipient
+// has already renewed it. One bounded refresh followed by a second resolve
+// closes that window. Validation is never relaxed: a record that is still
+// expired after the refresh is reported as expired.
+async fn resolve_with_bounded_refresh<T, E, R, RF, Rf, RfF>(
+    mut resolve: R,
+    refresh: Rf,
+) -> Result<T, E>
+where
+    R: FnMut() -> RF,
+    RF: std::future::Future<Output = ResolveAttempt<T, E>>,
+    Rf: FnOnce() -> RfF,
+    RfF: std::future::Future<Output = ()>,
+{
+    match resolve().await {
+        ResolveAttempt::Ready(value) => return Ok(value),
+        ResolveAttempt::Failed(err) => return Err(err),
+        ResolveAttempt::Expired(_) => {}
+    }
+    refresh().await;
+    match resolve().await {
+        ResolveAttempt::Ready(value) => Ok(value),
+        ResolveAttempt::Expired(err) | ResolveAttempt::Failed(err) => Err(err),
+    }
+}
+
+async fn resolve_verified_reachability(
+    state: &AppState,
+    identity: &IdentityId,
+) -> ResolveAttempt<VerifiedReachability, AppApiError> {
+    fn invalid(err: impl std::fmt::Display) -> AppApiError {
+        AppApiError::Network(jolt_network::NetworkError::InvalidInput(err.to_string()))
+    }
+    let address = match JoltAddress::new(identity.clone(), SIGNED_REACHABILITY_PATH) {
+        Ok(address) => address,
+        Err(err) => return ResolveAttempt::Failed(invalid(err)),
+    };
+    let resolved = match state.daemon.resolve(address.to_string()).await {
+        Ok(resolved) => resolved,
+        Err(err) => return ResolveAttempt::Failed(AppApiError::Network(err)),
+    };
+    let fetched = match state.daemon.fetch(resolved.content_id.clone()).await {
+        Ok(fetched) => fetched,
+        Err(err) => {
+            return ResolveAttempt::Failed(AppApiError::Network(fetch_error_for_target(
+                err,
+                &resolved.content_id,
+            )))
+        }
+    };
+    let record: ReachabilityRecord = match serde_json::from_slice(&fetched.data) {
+        Ok(record) => record,
+        Err(err) => return ResolveAttempt::Failed(invalid(err)),
+    };
+    match verify_reachability_record_for_identity(identity, &record, unix_now()) {
+        Ok(verified) => ResolveAttempt::Ready(verified),
+        Err(err @ ReachabilityRecordError::ExpiredRecord) => ResolveAttempt::Expired(invalid(err)),
+        Err(err) => ResolveAttempt::Failed(invalid(err)),
+    }
+}
+
 fn recipient_identity(raw: &str) -> Result<IdentityId, AppApiError> {
     match JoltAddress::from_str(raw) {
         Ok(address) => Ok(address.identity().clone()),
@@ -211,4 +279,77 @@ fn unix_now() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::{Cell, RefCell};
+
+    fn scripted<'a>(
+        script: &'a RefCell<Vec<ResolveAttempt<&'static str, &'static str>>>,
+    ) -> impl FnMut() -> std::future::Ready<ResolveAttempt<&'static str, &'static str>> + 'a {
+        move || std::future::ready(script.borrow_mut().remove(0))
+    }
+
+    fn counting<'a>(refreshes: &'a Cell<u32>) -> impl FnOnce() -> std::future::Ready<()> + 'a {
+        move || {
+            refreshes.set(refreshes.get() + 1);
+            std::future::ready(())
+        }
+    }
+
+    #[tokio::test]
+    async fn fresh_record_never_refreshes() {
+        let script = RefCell::new(vec![ResolveAttempt::Ready("peer")]);
+        let refreshes = Cell::new(0);
+
+        let result = resolve_with_bounded_refresh(scripted(&script), counting(&refreshes)).await;
+
+        assert_eq!(result, Ok("peer"));
+        assert_eq!(refreshes.get(), 0);
+    }
+
+    #[tokio::test]
+    async fn expired_cache_refreshes_once_and_uses_the_renewed_record() {
+        let script = RefCell::new(vec![
+            ResolveAttempt::Expired("expired"),
+            ResolveAttempt::Ready("peer"),
+        ]);
+        let refreshes = Cell::new(0);
+
+        let result = resolve_with_bounded_refresh(scripted(&script), counting(&refreshes)).await;
+
+        assert_eq!(result, Ok("peer"));
+        assert_eq!(refreshes.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn still_expired_after_refresh_fails_with_the_expiry_error() {
+        let script = RefCell::new(vec![
+            ResolveAttempt::Expired("expired"),
+            ResolveAttempt::Expired("expired"),
+        ]);
+        let refreshes = Cell::new(0);
+
+        let result = resolve_with_bounded_refresh(scripted(&script), counting(&refreshes)).await;
+
+        assert_eq!(result, Err("expired"));
+        assert_eq!(refreshes.get(), 1);
+        assert!(
+            script.borrow().is_empty(),
+            "exactly two resolves, never a third"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_expiry_failures_are_not_retried() {
+        let script = RefCell::new(vec![ResolveAttempt::Failed("bad signature")]);
+        let refreshes = Cell::new(0);
+
+        let result = resolve_with_bounded_refresh(scripted(&script), counting(&refreshes)).await;
+
+        assert_eq!(result, Err("bad signature"));
+        assert_eq!(refreshes.get(), 0);
+    }
 }
