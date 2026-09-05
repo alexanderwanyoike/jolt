@@ -466,11 +466,54 @@ impl DaemonLifecycleManager {
 fn tail_lines(path: &PathBuf, line_count: usize) -> Vec<String> {
     std::fs::read_to_string(path)
         .map(|content| {
-            let lines = content.lines().map(str::to_string).collect::<Vec<_>>();
+            let lines = content.lines().map(strip_ansi).collect::<Vec<_>>();
             let start = lines.len().saturating_sub(line_count);
             lines[start..].to_vec()
         })
         .unwrap_or_default()
+}
+
+// Daemons before 0.5.3 wrote terminal colour codes into the log file; the
+// Settings page renders it as plain text, so the escapes are dropped here.
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\u{1b}' {
+            out.push(ch);
+            continue;
+        }
+        match chars.peek() {
+            // CSI: ESC [ ... final byte in 0x40..=0x7e
+            Some('[') => {
+                chars.next();
+                for next in chars.by_ref() {
+                    if ('\u{40}'..='\u{7e}').contains(&next) {
+                        break;
+                    }
+                }
+            }
+            // OSC: ESC ] ... terminated by BEL or ESC \
+            Some(']') => {
+                chars.next();
+                while let Some(next) = chars.next() {
+                    if next == '\u{7}' {
+                        break;
+                    }
+                    if next == '\u{1b}' && chars.peek() == Some(&'\\') {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            // Two-byte escapes such as ESC ( B
+            Some(_) => {
+                chars.next();
+            }
+            None => {}
+        }
+    }
+    out
 }
 
 enum HealthProbe {
@@ -760,6 +803,22 @@ mod tests {
 
         assert!(lifecycle.lock().unwrap().child.is_none());
         assert!(!process_is_running(pid), "quit must stop the owned daemon");
+    }
+
+    #[test]
+    fn tail_lines_drops_terminal_colour_codes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("daemon.log");
+        std::fs::write(
+            &path,
+            "\u{1b}[2m2026-09-05T20:49:06Z\u{1b}[0m \u{1b}[32m INFO\u{1b}[0m \u{1b}[2mjolt_network::node\u{1b}[2m:\u{1b}[0m Announcing\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            tail_lines(&path, 5),
+            vec!["2026-09-05T20:49:06Z  INFO jolt_network::node: Announcing"]
+        );
     }
 
     #[test]
