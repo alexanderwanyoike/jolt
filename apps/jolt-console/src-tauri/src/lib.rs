@@ -1,3 +1,6 @@
+#[cfg(target_os = "linux")]
+mod desktop_integration;
+
 use std::{
     fs::OpenOptions,
     path::PathBuf,
@@ -530,6 +533,8 @@ pub fn run() {
                 }
             }
             install_tray(app)?;
+            #[cfg(target_os = "linux")]
+            offer_appimage_menu_entry(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -550,7 +555,8 @@ pub fn run() {
             daemon_lifecycle_stop,
             daemon_lifecycle_restart,
             identity_export_save_file,
-            identity_export_open_file
+            identity_export_open_file,
+            console_install_kind
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Jolt Console")
@@ -559,6 +565,63 @@ pub fn run() {
                 detach_owned_daemon_on_exit(&app_handle.state::<Mutex<DaemonLifecycleManager>>());
             }
         });
+}
+
+/// How this Console was installed, so the updater is only offered for the
+/// bundle types whose update payload we publish (the AppImage on Linux).
+#[tauri::command]
+fn console_install_kind() -> String {
+    use tauri::utils::config::BundleType;
+    use tauri::utils::platform::bundle_type;
+    match bundle_type() {
+        Some(BundleType::AppImage) => "appimage",
+        Some(BundleType::Deb) => "deb",
+        Some(BundleType::Rpm) => "rpm",
+        Some(BundleType::Msi) | Some(BundleType::Nsis) => "windows",
+        Some(BundleType::App) => "macos",
+        _ => "unknown",
+    }
+    .to_string()
+}
+
+// Offers, once, to add the AppImage to the applications menu. The dialog is
+// modal, so it runs off the main thread after the window is up.
+#[cfg(target_os = "linux")]
+fn offer_appimage_menu_entry(app: tauri::AppHandle) {
+    use desktop_integration as integration;
+    let Some(context) = integration::appimage_context() else {
+        return;
+    };
+    let Some(data_home) = integration::data_home() else {
+        return;
+    };
+    let paths = integration::integration_paths(&data_home);
+    if integration::integration_state(&paths) != integration::IntegrationState::Offer {
+        return;
+    }
+    std::thread::spawn(move || {
+        use tauri_plugin_dialog::{MessageDialogButtons, MessageDialogKind};
+        let add = app
+            .dialog()
+            .message(
+                "Add Jolt Console to your applications menu? This writes a menu entry and icon for this AppImage into your home directory, so the panel and app menu show it with the right icon.",
+            )
+            .title("Jolt Console")
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Add to menu".to_string(),
+                "Not now".to_string(),
+            ))
+            .blocking_show();
+        let result = if add {
+            integration::install(&context, &paths)
+        } else {
+            integration::decline(&paths)
+        };
+        if let Err(error) = result {
+            eprintln!("Jolt Console menu entry: {error}");
+        }
+    });
 }
 
 const TRAY_OPEN: &str = "open-console";

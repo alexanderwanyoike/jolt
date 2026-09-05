@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 
@@ -12,6 +13,9 @@ export type ConsoleUpdateAvailable = {
 export type ConsoleUpdateUnavailable = {
   available: false;
   currentVersion?: string;
+  // Installed from a system package (.deb, .rpm). The updater only publishes
+  // the AppImage on Linux, so these installs update through the package.
+  managedByPackage?: boolean;
 };
 
 export type ConsoleUpdateCheck = ConsoleUpdateAvailable | ConsoleUpdateUnavailable;
@@ -25,6 +29,10 @@ let pendingUpdate: Update | null = null;
 
 export const tauriConsoleUpdateClient: ConsoleUpdateClient = {
   async check() {
+    const installKind = await invoke<string>("console_install_kind");
+    if (installKind === "deb" || installKind === "rpm") {
+      return { available: false, managedByPackage: true };
+    }
     const update = await check();
     pendingUpdate = update ?? null;
 

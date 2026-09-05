@@ -7,6 +7,10 @@ vi.mock("@tauri-apps/plugin-updater", () => ({
   check: vi.fn()
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async () => "appimage")
+}));
+
 vi.mock("@tauri-apps/plugin-process", () => ({
   relaunch: vi.fn()
 }));
@@ -15,6 +19,17 @@ describe("tauriConsoleUpdateClient", () => {
   beforeEach(() => {
     vi.mocked(check).mockReset();
     vi.mocked(relaunch).mockReset();
+  });
+
+  it("never consults the updater for a package install", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockResolvedValueOnce("deb");
+
+    await expect(tauriConsoleUpdateClient.check()).resolves.toEqual({
+      available: false,
+      managedByPackage: true
+    });
+    expect(check).not.toHaveBeenCalled();
   });
 
   it("reports no update when the Tauri updater returns none", async () => {
