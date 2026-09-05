@@ -12,6 +12,12 @@ use std::path::{Path, PathBuf};
 
 pub const IDENTIFIER: &str = "net.jolt.console";
 
+/// The window's app id on Wayland and its WM_CLASS on X11. Tauri does not set
+/// a GTK application id, so both fall back to the binary name. Panels match a
+/// window to the desktop entry with this file name, so the entry must carry
+/// it; `StartupWMClass` alone is only honoured by some X11 desktops.
+pub const APP_ID: &str = "jolt-console";
+
 pub struct AppImageContext {
     pub appimage: PathBuf,
     pub appdir: PathBuf,
@@ -46,7 +52,7 @@ pub fn integration_paths(data_home: &Path) -> IntegrationPaths {
     IntegrationPaths {
         desktop_entry: data_home
             .join("applications")
-            .join(format!("{IDENTIFIER}.desktop")),
+            .join(format!("{APP_ID}.desktop")),
         icon: data_home
             .join("icons/hicolor/512x512/apps")
             .join(format!("{IDENTIFIER}.png")),
@@ -214,7 +220,7 @@ mod tests {
 
         assert_eq!(
             paths.desktop_entry,
-            PathBuf::from("/home/x/.local/share/applications/net.jolt.console.desktop")
+            PathBuf::from("/home/x/.local/share/applications/jolt-console.desktop")
         );
         assert_eq!(
             paths.icon,
