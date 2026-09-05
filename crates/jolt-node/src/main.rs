@@ -19,6 +19,9 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
+        // The Console redirects this output to a log file it shows in Settings;
+        // colour escapes there are noise.
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
         .init();
 
     let cli = Cli::parse();
