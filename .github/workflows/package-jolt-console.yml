@@ -1,25 +1,14 @@
 name: Package Jolt Console
 
 on:
+  # Feature PRs run tests only (ci.yml). Packaging is expensive, so it runs
+  # here only when a PR touches packaging itself (Linux only), on release PRs
+  # to main (all platforms), on tags, and on demand.
   pull_request:
     branches:
       - dev
-    paths:
-      - ".github/workflows/package-jolt-console.yml"
-      - "apps/jolt-console/**"
-      - "crates/**"
-      - "sdks/**"
-      - "scripts/package-jolt-console.sh"
-      - "scripts/normalize-jolt-console-artifacts.sh"
-      - "scripts/assemble-jolt-console-release.sh"
-      - "scripts/install-jolt-console.sh"
-      - "scripts/verify-distribution.mjs"
-      - "scripts/write-jolt-console-update-manifest.mjs"
-      - "Cargo.lock"
-      - "Cargo.toml"
+      - main
   push:
-    branches:
-      - dev
     tags:
       - "v*"
   workflow_dispatch:
@@ -28,42 +17,59 @@ permissions:
   contents: write
 
 jobs:
+  plan:
+    name: Decide what to package
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Choose the packaging matrix
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          linux='{"name":"Linux AppImage and deb","runner":"ubuntu-22.04","platform":"linux-x86_64","bundle":"linux","artifact_name":"jolt-console-linux-x86_64","console_asset":"jolt-console-x86_64.AppImage","updater_asset":"jolt-console-x86_64.AppImage","deb_asset":"jolt-console-amd64.deb","cli_asset":"jolt-linux-x86_64","cli_source":"target/release/jolt"}'
+          macos='{"name":"macOS DMG","runner":"macos-latest","platform":"darwin-aarch64","bundle":"dmg","artifact_name":"jolt-console-macos-aarch64","console_asset":"jolt-console-aarch64.dmg","updater_asset":"jolt-console-aarch64.app.tar.gz","cli_asset":"jolt-macos-aarch64","cli_source":"target/release/jolt"}'
+          windows='{"name":"Windows NSIS","runner":"windows-latest","platform":"windows-x86_64","bundle":"nsis","artifact_name":"jolt-console-windows-x86_64","console_asset":"jolt-console-x86_64-setup.exe","updater_asset":"jolt-console-x86_64-setup.exe","cli_asset":"jolt-windows-x86_64.exe","cli_source":"target/release/jolt.exe"}'
+
+          # A PR to dev packages only when it touches one of these files.
+          packaging_paths=(
+            .github/workflows/package-jolt-console.yml
+            scripts/package-jolt-console.sh
+            scripts/normalize-jolt-console-artifacts.sh
+            scripts/assemble-jolt-console-release.sh
+            scripts/install-jolt-console.sh
+            scripts/verify-distribution.mjs
+            scripts/write-jolt-console-update-manifest.mjs
+            apps/jolt-console/src-tauri/tauri.conf.json
+            apps/jolt-console/src-tauri/Cargo.toml
+            apps/jolt-console/package.json
+          )
+
+          matrix="[]"
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" || "$GITHUB_BASE_REF" == "main" ]]; then
+            matrix="[$linux,$macos,$windows]"
+          elif gh api "repos/$GITHUB_REPOSITORY/pulls/${{ github.event.pull_request.number }}/files" \
+              --paginate -q '.[].filename' \
+              | grep -Eq -e "^apps/jolt-console/src-tauri/capabilities/" -f <(printf '%s\n' "${packaging_paths[@]}" | sed 's/[.]/\\./g; s/^/^/; s/$/$/'); then
+            matrix="[$linux]"
+          fi
+
+          echo "Packaging matrix: $matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   package:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
+    needs: plan
+    if: needs.plan.outputs.matrix != '[]'
 
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: Linux AppImage and deb
-            runner: ubuntu-22.04
-            platform: linux-x86_64
-            bundle: linux
-            artifact_name: jolt-console-linux-x86_64
-            console_asset: jolt-console-x86_64.AppImage
-            updater_asset: jolt-console-x86_64.AppImage
-            deb_asset: jolt-console-amd64.deb
-            cli_asset: jolt-linux-x86_64
-            cli_source: target/release/jolt
-          - name: macOS DMG
-            runner: macos-latest
-            platform: darwin-aarch64
-            bundle: dmg
-            artifact_name: jolt-console-macos-aarch64
-            console_asset: jolt-console-aarch64.dmg
-            updater_asset: jolt-console-aarch64.app.tar.gz
-            cli_asset: jolt-macos-aarch64
-            cli_source: target/release/jolt
-          - name: Windows NSIS
-            runner: windows-latest
-            platform: windows-x86_64
-            bundle: nsis
-            artifact_name: jolt-console-windows-x86_64
-            console_asset: jolt-console-x86_64-setup.exe
-            updater_asset: jolt-console-x86_64-setup.exe
-            cli_asset: jolt-windows-x86_64.exe
-            cli_source: target/release/jolt.exe
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
 
     steps:
       - name: Checkout
