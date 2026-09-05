@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["appimage"],
+    "targets": ["appimage", "deb"],
     "externalBin": ["binaries/jolt"],
     "icon": ["icons/icon.png", "icons/icon.ico"]
   },

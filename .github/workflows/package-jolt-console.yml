@@ -36,13 +36,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Linux AppImage
+          - name: Linux AppImage and deb
             runner: ubuntu-22.04
             platform: linux-x86_64
-            bundle: appimage
+            bundle: linux
             artifact_name: jolt-console-linux-x86_64
             console_asset: jolt-console-x86_64.AppImage
             updater_asset: jolt-console-x86_64.AppImage
+            deb_asset: jolt-console-amd64.deb
             cli_asset: jolt-linux-x86_64
             cli_source: target/release/jolt
           - name: macOS DMG
@@ -85,7 +86,7 @@ jobs:
         run: node scripts/verify-distribution.mjs
 
       - name: Install Linux desktop packaging dependencies
-        if: matrix.bundle == 'appimage'
+        if: matrix.bundle == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -115,7 +116,8 @@ jobs:
             --console-asset "${{ matrix.console_asset }}" \
             --updater-asset "${{ matrix.updater_asset }}" \
             --cli-asset "${{ matrix.cli_asset }}" \
-            --cli-source "${{ matrix.cli_source }}"
+            --cli-source "${{ matrix.cli_source }}" \
+            --deb-asset "${{ matrix.deb_asset || '' }}"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4

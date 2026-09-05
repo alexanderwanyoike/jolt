@@ -75,6 +75,7 @@ Usage:
 Options:
   --bundle KIND   Tauri bundle kind. Defaults by host OS:
                   Linux=appimage, macOS=dmg, Windows=nsis.
+                  linux builds both the AppImage and the .deb, as CI does.
   --prepare-only  Build and stage the daemon sidecar and web assets, but skip
                   the Tauri bundle step.
   --dry-run       Print the resolved packaging plan without building.
@@ -159,11 +160,11 @@ if [[ -z "$BUNDLE_KIND" ]]; then
 fi
 
 case "$BUNDLE_KIND" in
-  appimage|dmg|nsis)
+  appimage|deb|linux|dmg|nsis)
     ;;
   *)
     echo "Unsupported Jolt Console bundle kind: $BUNDLE_KIND" >&2
-    echo "Supported bundle kinds: appimage, dmg, nsis" >&2
+    echo "Supported bundle kinds: appimage, deb, linux, dmg, nsis" >&2
     exit 2
     ;;
 esac
@@ -171,6 +172,11 @@ esac
 TAURI_BUNDLE_KIND="$BUNDLE_KIND"
 if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" && "$BUNDLE_KIND" == "dmg" ]]; then
   TAURI_BUNDLE_KIND="app,dmg"
+fi
+if [[ "$BUNDLE_KIND" == "linux" ]]; then
+  # The AppImage stays the updater payload; the .deb installs the desktop
+  # entry and icon that a bare AppImage cannot provide on Mint and Ubuntu.
+  TAURI_BUNDLE_KIND="appimage,deb"
 fi
 
 BIN_EXT=""
@@ -225,7 +231,7 @@ if [[ "$PREPARE_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-if [[ "$BUNDLE_KIND" == "appimage" ]]; then
+if [[ "$BUNDLE_KIND" == "appimage" || "$BUNDLE_KIND" == "linux" ]]; then
   prefetch_tauri_appimage_helpers
 fi
 
@@ -248,6 +254,7 @@ echo "==> Bundle artifacts"
 find "$ROOT_DIR/target/release/bundle" -maxdepth 3 -type f \( \
   -name '*.AppImage' -o \
   -name '*.AppImage.sig' -o \
+  -name '*.deb' -o \
   -name '*.dmg' -o \
   -name '*.app.tar.gz' -o \
   -name '*.app.tar.gz.sig' -o \

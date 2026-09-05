@@ -307,6 +307,7 @@ and Windows packages with the same Console/sidecar model:
 
 ```text
 jolt-console-x86_64.AppImage
+jolt-console-amd64.deb
 jolt-console-aarch64.dmg
 jolt-console-aarch64.app.tar.gz
 jolt-console-x86_64-setup.exe
@@ -318,6 +319,17 @@ latest.json
 
 The macOS `.app.tar.gz` asset is the signed Tauri updater payload; the `.dmg`
 is the user-facing installer image.
+
+On Debian, Ubuntu, and Linux Mint the `.deb` is the recommended install. It
+registers the applications-menu entry and icon that a bare AppImage cannot,
+and it uses the system GTK and GLib instead of bundled copies:
+
+```bash
+sudo apt install ./jolt-console-amd64.deb
+```
+
+The `.deb` does not self-update; install the next release the same way. The
+AppImage remains the self-updating build and the path the install script uses.
 
 Current macOS releases are not Apple Developer ID signed or notarized yet. If
 macOS says `Jolt Console.app` is damaged after dragging it from the DMG into
