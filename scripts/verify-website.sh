@@ -31,6 +31,7 @@ required_download_contract=(
   '__VERSION__'
   '__RELEASE_DATE__'
   'https://github.com/alexanderwanyoike/jolt/releases/download/__VERSION__/jolt-console-x86_64.AppImage'
+  'https://github.com/alexanderwanyoike/jolt/releases/download/__VERSION__/jolt-console-amd64.deb'
   'https://github.com/alexanderwanyoike/jolt/releases/download/__VERSION__/jolt-console-aarch64.dmg'
   'https://github.com/alexanderwanyoike/jolt/releases/download/__VERSION__/jolt-console-x86_64-setup.exe'
   'xattr -dr com.apple.quarantine "/Applications/Jolt Console.app"'
