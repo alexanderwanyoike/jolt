@@ -1,3 +1,6 @@
+#[cfg(target_os = "linux")]
+mod desktop_integration;
+
 use std::{
     fs::OpenOptions,
     path::PathBuf,
@@ -507,6 +510,11 @@ struct DaemonLifecycleReport {
 pub fn run() {
     tauri::Builder::default()
         .manage(Mutex::new(DaemonLifecycleManager::default()))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // A second launch while the window is parked in the tray reopens it
+            // instead of starting a second console against the same daemon.
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
@@ -524,9 +532,19 @@ pub fn run() {
                     }
                 }
             }
-            #[cfg(not(target_os = "linux"))]
-            let _ = app;
+            install_tray(app)?;
+            #[cfg(target_os = "linux")]
+            offer_appimage_menu_entry(app.handle().clone());
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window parks the console in the tray with the daemon
+            // still running, the Docker Desktop model. Quit in the tray menu is
+            // the exit that stops the daemon too.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             daemon_get,
@@ -537,7 +555,8 @@ pub fn run() {
             daemon_lifecycle_stop,
             daemon_lifecycle_restart,
             identity_export_save_file,
-            identity_export_open_file
+            identity_export_open_file,
+            console_install_kind
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Jolt Console")
@@ -546,6 +565,117 @@ pub fn run() {
                 detach_owned_daemon_on_exit(&app_handle.state::<Mutex<DaemonLifecycleManager>>());
             }
         });
+}
+
+/// How this Console was installed, so the updater is only offered for the
+/// bundle types whose update payload we publish (the AppImage on Linux).
+#[tauri::command]
+fn console_install_kind() -> String {
+    use tauri::utils::config::BundleType;
+    use tauri::utils::platform::bundle_type;
+    match bundle_type() {
+        Some(BundleType::AppImage) => "appimage",
+        Some(BundleType::Deb) => "deb",
+        Some(BundleType::Rpm) => "rpm",
+        Some(BundleType::Msi) | Some(BundleType::Nsis) => "windows",
+        Some(BundleType::App) => "macos",
+        _ => "unknown",
+    }
+    .to_string()
+}
+
+// Offers, once, to add the AppImage to the applications menu. The dialog is
+// modal, so it runs off the main thread after the window is up.
+#[cfg(target_os = "linux")]
+fn offer_appimage_menu_entry(app: tauri::AppHandle) {
+    use desktop_integration as integration;
+    let Some(context) = integration::appimage_context() else {
+        return;
+    };
+    let Some(data_home) = integration::data_home() else {
+        return;
+    };
+    let paths = integration::integration_paths(&data_home);
+    if integration::integration_state(&paths) != integration::IntegrationState::Offer {
+        return;
+    }
+    std::thread::spawn(move || {
+        use tauri_plugin_dialog::{MessageDialogButtons, MessageDialogKind};
+        let add = app
+            .dialog()
+            .message(
+                "Add Jolt Console to your applications menu? This writes a menu entry and icon for this AppImage into your home directory, so the panel and app menu show it with the right icon.",
+            )
+            .title("Jolt Console")
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Add to menu".to_string(),
+                "Not now".to_string(),
+            ))
+            .blocking_show();
+        let result = if add {
+            integration::install(&context, &paths)
+        } else {
+            integration::decline(&paths)
+        };
+        if let Err(error) = result {
+            eprintln!("Jolt Console menu entry: {error}");
+        }
+    });
+}
+
+const TRAY_OPEN: &str = "open-console";
+const TRAY_QUIT: &str = "quit-and-stop-daemon";
+
+fn install_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let open = MenuItem::with_id(app, TRAY_OPEN, "Open Jolt Console", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, TRAY_QUIT, "Quit and stop daemon", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &quit])?;
+    let mut tray = TrayIconBuilder::with_id("jolt-console")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .tooltip("Jolt Console")
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            TRAY_OPEN => show_main_window(app),
+            TRAY_QUIT => quit_console(app),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon().cloned() {
+        tray = tray.icon(icon);
+    }
+    tray.build(app)?;
+    Ok(())
+}
+
+fn show_main_window(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn quit_console(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let lifecycle = app.state::<Mutex<DaemonLifecycleManager>>();
+    if let Err(error) = stop_any_daemon(&lifecycle) {
+        eprintln!("Jolt Console quit: daemon was not stopped: {error}");
+    }
+    app.exit(0);
 }
 
 #[cfg(test)]
@@ -612,6 +742,24 @@ mod tests {
         );
 
         let _ = Command::new("kill").arg(pid.to_string()).status();
+    }
+
+    #[test]
+    fn quit_stops_a_console_owned_daemon() {
+        // Quit is the one exit that takes the daemon down; closing the window
+        // only parks the console in the tray.
+        let child = long_running_child();
+        let pid = child.id();
+        let lifecycle = Mutex::new(DaemonLifecycleManager {
+            child: Some(child),
+            last_error: None,
+            log_path: None,
+        });
+
+        stop_any_daemon(&lifecycle).unwrap();
+
+        assert!(lifecycle.lock().unwrap().child.is_none());
+        assert!(!process_is_running(pid), "quit must stop the owned daemon");
     }
 
     #[test]

@@ -12,10 +12,12 @@ Usage:
     --console-asset NAME \
     --updater-asset NAME \
     --cli-asset NAME \
-    --cli-source PATH
+    --cli-source PATH \
+    [--deb-asset NAME]
 
 Bundle kinds:
   appimage  Linux AppImage bundle
+  linux     Linux AppImage bundle plus the .deb package (requires --deb-asset)
   dmg       macOS DMG bundle plus .app.tar.gz updater payload
   nsis      Windows NSIS setup bundle
 
@@ -30,6 +32,7 @@ CONSOLE_ASSET=""
 UPDATER_ASSET=""
 CLI_ASSET=""
 CLI_SOURCE=""
+DEB_ASSET=""
 REQUIRE_UPDATER_ARTIFACTS="${JOLT_REQUIRE_UPDATER_ARTIFACTS:-0}"
 
 while [[ $# -gt 0 ]]; do
@@ -56,6 +59,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cli-source)
       CLI_SOURCE="${2:-}"
+      shift 2
+      ;;
+    --deb-asset)
+      DEB_ASSET="${2:-}"
       shift 2
       ;;
     --help|-h)
@@ -93,12 +100,24 @@ hash_file() {
 
 mkdir -p "$DIST_DIR"
 
+copy_appimage() {
+  cp target/release/bundle/appimage/*.AppImage "$DIST_DIR/$CONSOLE_ASSET"
+  if compgen -G "target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
+    cp target/release/bundle/appimage/*.AppImage.sig "$DIST_DIR/$UPDATER_ASSET.sig"
+  fi
+}
+
 case "$BUNDLE_KIND" in
   appimage)
-    cp target/release/bundle/appimage/*.AppImage "$DIST_DIR/$CONSOLE_ASSET"
-    if compgen -G "target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
-      cp target/release/bundle/appimage/*.AppImage.sig "$DIST_DIR/$UPDATER_ASSET.sig"
+    copy_appimage
+    ;;
+  linux)
+    if [[ -z "$DEB_ASSET" ]]; then
+      echo "--deb-asset is required for the linux bundle kind" >&2
+      exit 2
     fi
+    copy_appimage
+    cp target/release/bundle/deb/*.deb "$DIST_DIR/$DEB_ASSET"
     ;;
   dmg)
     cp target/release/bundle/dmg/*.dmg "$DIST_DIR/$CONSOLE_ASSET"
@@ -137,6 +156,9 @@ chmod 0755 "$DIST_DIR/$CLI_ASSET"
 
 hash_file "$DIST_DIR/$CONSOLE_ASSET"
 hash_file "$DIST_DIR/$CLI_ASSET"
+if [[ -n "$DEB_ASSET" && -f "$DIST_DIR/$DEB_ASSET" ]]; then
+  hash_file "$DIST_DIR/$DEB_ASSET"
+fi
 if [[ -f "$DIST_DIR/$UPDATER_ASSET" && "$UPDATER_ASSET" != "$CONSOLE_ASSET" ]]; then
   hash_file "$DIST_DIR/$UPDATER_ASSET"
 fi
