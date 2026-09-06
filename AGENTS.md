@@ -12,11 +12,11 @@
 ## PR Closeout and Context Handoff
 
 - Treat the repository as the durable project memory; do not rely on chat history surviving context resets.
-- At the end of each PR, update the relevant `.notes/cards/*.md` status and verification notes, and push the `.notes` repo (jolt-development-docs).
+- At the end of each PR, update the relevant `../jolt-development-docs/cards/*.md` status and verification notes, and push the `../jolt-development-docs` repository.
 - Keep PR descriptions descriptive: explain what changed, why it matters, how it was tested, and any known follow-up debt.
-- Maintain `.notes/current-context.md` as gitignored working memory for the next session. Include the active branch/PR, recent verification commands, local process state, blockers, and the next intended task.
-- When a context reset is expected, make sure project changes are committed and pushed, then refresh `.notes/current-context.md` before stopping.
-- On a fresh session, read `AGENTS.md`, the active/relevant cards under `.notes/cards`, and `.notes/current-context.md` before continuing work. `.notes` is a gitignored checkout of the private jolt-development-docs repo.
+- Maintain `../jolt-development-docs/current-context.md` as working memory for the next session. Include the active branch/PR, recent verification commands, local process state, blockers, and the next intended task.
+- When a context reset is expected, make sure project changes are committed and pushed, then refresh `../jolt-development-docs/current-context.md` before stopping.
+- On a fresh session, read `AGENTS.md`, the active/relevant cards under `../jolt-development-docs/cards`, and `../jolt-development-docs/current-context.md` before continuing work. The sibling `../jolt-development-docs` checkout is the canonical private notes repository; do not create or use a `jolt/.notes` checkout.
 
 ## Protocol Boundary
 
@@ -26,3 +26,17 @@
 - Application and lens concepts should be represented as signed content, schemas, manifests, and capability records above the protocol layer.
 - A valid protocol statement is: identity `X` maps path `/gallery` to CID `Y` at sequence `N`.
 - A valid application/lens statement is: CID `Y` is a gallery manifest and this lens knows how to render or edit it.
+
+## Agent skills
+
+### Issue tracker
+
+Engineering work cards live in the canonical private sibling checkout at `../jolt-development-docs/cards/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Work cards use Jolt's `Type` and `Status` metadata rather than external labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Jolt uses a multi-context domain layout in `../jolt-development-docs/`. See `docs/agents/domain.md`.
